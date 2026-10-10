@@ -1,4 +1,5 @@
-package errs 
+package errs
+
 import (
 	"net/http"
 )
@@ -64,4 +65,42 @@ func NewInternalServerError() *HTTPError {
 
 func ValidationError(err error) *HTTPError {
 	return NewBadRequestError("Validation failed: "+err.Error(), false, nil, nil, nil)
+}
+
+func NewConflictError(message string, override bool) *HTTPError {
+	return &HTTPError{
+		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusConflict)),
+		Message:  message,
+		Status:   http.StatusConflict,
+		Override: override,
+	}
+}
+
+func NewPayloadTooLargeError(message string, override bool) *HTTPError {
+	return &HTTPError{
+		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusRequestEntityTooLarge)),
+		Message:  message,
+		Status:   http.StatusRequestEntityTooLarge,
+		Override: override,
+	}
+}
+
+// NewTooManyRequestsError builds a 429 carrying a Retry-After in seconds.
+func NewTooManyRequestsError(message string, retryAfterSeconds int) *HTTPError {
+	return &HTTPError{
+		Code:       MakeUpperCaseWithUnderscores(http.StatusText(http.StatusTooManyRequests)),
+		Message:    message,
+		Status:     http.StatusTooManyRequests,
+		RetryAfter: retryAfterSeconds,
+	}
+}
+
+// NewServiceUnavailableError builds a 503 carrying an optional Retry-After.
+func NewServiceUnavailableError(message string, retryAfterSeconds int) *HTTPError {
+	return &HTTPError{
+		Code:       MakeUpperCaseWithUnderscores(http.StatusText(http.StatusServiceUnavailable)),
+		Message:    message,
+		Status:     http.StatusServiceUnavailable,
+		RetryAfter: retryAfterSeconds,
+	}
 }

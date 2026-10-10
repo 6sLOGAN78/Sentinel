@@ -21,15 +21,40 @@ type Action struct {
 	Value   string     `json:"value"`
 }
 
+// ErrorBody is the spec section 8 error payload.
+type ErrorBody struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id"`
+}
+
+// ErrorResponse is the only error shape written to the wire.
+type ErrorResponse struct {
+	Error ErrorBody `json:"error"`
+}
+
+// HTTPError is the internal API error type. Only the envelope built by
+// Response reaches clients, so every field here is hidden from JSON.
 type HTTPError struct {
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Status   int    `json:"status"`
-	Override bool   `json:"override"`
+	Code     string `json:"-"`
+	Message  string `json:"-"`
+	Status   int    `json:"-"`
+	Override bool   `json:"-"`
 	// field level errors
-	Errors []FieldError `json:"errors"`
+	Errors []FieldError `json:"-"`
 	// action to be taken
-	Action *Action `json:"action"`
+	Action *Action `json:"-"`
+	// RetryAfter is the Retry-After header value in seconds (429 and 503).
+	RetryAfter int `json:"-"`
+}
+
+// Response builds the spec section 8 envelope for this error.
+func (e *HTTPError) Response(requestID string) ErrorResponse {
+	return ErrorResponse{Error: ErrorBody{
+		Code:      e.Code,
+		Message:   e.Message,
+		RequestID: requestID,
+	}}
 }
 
 func (e *HTTPError) Error() string {
@@ -50,6 +75,8 @@ func (e *HTTPError) WithMessage(message string) *HTTPError {
 		Override: e.Override,
 		Errors:   e.Errors,
 		Action:   e.Action,
+
+		RetryAfter: e.RetryAfter,
 	}
 }
 
