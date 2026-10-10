@@ -498,15 +498,22 @@ bench: ; @echo "bench is available from Phase 5"; exit 1
 | A7 | Deleting `handler/`, `router/`, `model/`, `service/`, `repository/` entirely is acceptable (CONTEXT lists `handler` and `router` neither under remove nor keep) | Boilerplate | If the user wants them kept, the refactor effort grows (base.go + health.go + router NR/limiter removal) |
 | A8 | Kafka integration tests via a generic `apache/kafka:4.3.1` container rather than the testcontainers kafka module | Pitfall 9 | If the module later supports apache/kafka, switch |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Migration invocation without a sixth binary.**
    - Known: D-01 fixes five binaries; D-10 needs `make migrate`; tern CLI works as a tool.
    - Unclear: where the ClickHouse runner executable lives.
    - Recommendation: `backend/tools/chmigrate` (tooling `main`, not under `cmd/`) plus tern via `go tool`; record in ADR 0001. Alternatively run migrations as a `-migrate` flag on one service binary (rejected: D-06).
+   - **RESOLVED:** D-29. `backend/tools/chmigrate` tooling main plus tern via `go tool`; recorded in ADR 0001.
+
 2. **Strict UUIDv7 enforcement.** D-14 says "validated as a UUID (v7 recommended)". Recommendation: schema `format: uuid` only, with generator emitting v7; do not reject other versions.
+   - **RESOLVED:** D-30. Schema `format: uuid` with `AssertFormat()`; generator emits v7; other versions accepted.
+
 3. **Handler/router/model deletion** (A7). Recommend delete; confirm during plan check.
+   - **RESOLVED:** D-28. Delete `handler/`, `router/`, `model/`, `service/`, `repository/` entirely.
+
 4. **OpenAPI schema drift strategy** (inline + fixture test vs `$ref`): left to planner per Discretion; fixture-based test recommended.
+   - **RESOLVED:** Claude's Discretion, exercised in plan 01-11 (inline schemas plus fixture-based drift test).
 
 ## Environment Availability
 

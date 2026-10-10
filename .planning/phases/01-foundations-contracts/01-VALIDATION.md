@@ -65,7 +65,7 @@ Task IDs are bound by the planner. Rows are keyed by requirement and behavior.
 - [ ] `backend/internal/contracts/*_test.go` plus `testdata/` valid/invalid fixtures
 - [ ] `backend/test/` build-tagged integration harness (container helpers for postgres/redis/clickhouse/kafka)
 - [ ] OpenAPI validation test with expected-route table
-- [ ] `web/` Vitest + jsdom setup; `generator/tests/test_seed.py`
+- [ ] `web/` Vitest + jsdom setup; `generator/tests/test_events.py`
 - [ ] Framework installs: `npm ci` (web), `uv sync --locked` (generator), `GOTOOLCHAIN=go1.26.9`
 
 ---
