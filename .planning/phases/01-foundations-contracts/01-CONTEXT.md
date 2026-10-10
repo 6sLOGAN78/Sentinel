@@ -188,6 +188,11 @@ The binaries exist and start, but carry no business logic yet.
   - `SENTINEL_RATELIMIT.FAIL_MODE=open` allows fail-open with a metric and warning log.
   - Startup with Redis unreachable is fatal (D-05).
 
+### Resolved after research (auto mode, 2026-10-10)
+- **D-28:** Delete the boilerplate `backend/internal/handler/`, `router/`, `model/`, `service/` and `repository/` packages entirely (RESEARCH A7). They depend on `server.Server`, New Relic and Clerk, and carry no domain logic. Phase 2 creates the ingest HTTP layer fresh on top of `httpx` and the retained middleware.
+- **D-29:** The ClickHouse migration runner is a tooling `main` at `backend/tools/chmigrate` (not under `cmd/`, so it doesn't count as a sixth service binary). `make migrate` runs it alongside tern via `go tool`. Record this in ADR 0001 (RESEARCH Open Question 1).
+- **D-30:** event_id is validated with JSON Schema `format: uuid` (asserted via `AssertFormat()`). The generator emits UUIDv7 but other UUID versions are not rejected (RESEARCH Open Question 2).
+
 ### Claude's Discretion
 - Internal package names beyond those listed (e.g. `redisx`, `kafkax` naming), Makefile internals, and Compose port numbers (avoid host collisions; document them).
 - golangci-lint rule selection (start from the existing `backend/.golangci.yml`).
