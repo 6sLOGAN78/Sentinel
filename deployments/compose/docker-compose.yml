@@ -1,0 +1,108 @@
+# Sentinel local dependency stack (D-07, D-08, D-09).
+#
+# - All images are pinned by tag AND sha256 digest (D-21).
+# - All published ports bind 127.0.0.1 only.
+# - Replication factor 1 everywhere: this is a single-node, NON-HA dev stack.
+# - Topic partition counts are fixed at creation. Changing the events partition
+#   count later re-maps keys to partitions, which is unsafe while detector
+#   per-key state matters (D-09). Use `make reset CONFIRM=1` for a clean slate.
+# - Secrets come from .env via ${VAR:?}; there are no literal secrets here.
+name: sentinel
+
+services:
+  kafka:
+    image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+    ports: ["127.0.0.1:29092:29092"]
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk" # fixed for the life of the volume
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes: ["kafka-data:/var/lib/kafka/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 15s
+
+  # One-shot, idempotent topic creation (--if-not-exists). Run by `make dev-up`.
+  topic-init:
+    image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      EVENTS_PARTITIONS: ${EVENTS_PARTITIONS:-6}
+      ALERTS_PARTITIONS: ${ALERTS_PARTITIONS:-3}
+      EVENTS_RETENTION_MS: ${EVENTS_RETENTION_MS:-86400000}
+      ALERTS_RETENTION_MS: ${ALERTS_RETENTION_MS:-604800000}
+      DLQ_RETENTION_MS: ${DLQ_RETENTION_MS:-604800000}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        B=kafka:9092; T=/opt/kafka/bin/kafka-topics.sh
+        $$T --bootstrap-server $$B --create --if-not-exists --topic security.events.v1 --partitions $${EVENTS_PARTITIONS:-6} --replication-factor 1 --config retention.ms=$${EVENTS_RETENTION_MS:-86400000}
+        $$T --bootstrap-server $$B --create --if-not-exists --topic security.alerts.v1 --partitions $${ALERTS_PARTITIONS:-3} --replication-factor 1 --config retention.ms=$${ALERTS_RETENTION_MS:-604800000}
+        $$T --bootstrap-server $$B --create --if-not-exists --topic security.events.dlq.v1 --partitions 1 --replication-factor 1 --config retention.ms=$${DLQ_RETENTION_MS:-604800000}
+        $$T --bootstrap-server $$B --list
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3.47.6@sha256:55a55347b1b959ae51d40373901e81aa671d7fc9e6d05d0603d1e0ad3ac22c6d
+    ports: ["127.0.0.1:18123:8123", "127.0.0.1:19000:9000"]
+    environment:
+      CLICKHOUSE_DB: sentinel
+      CLICKHOUSE_USER: sentinel
+      CLICKHOUSE_PASSWORD: ${SENTINEL_CLICKHOUSE_PASSWORD:?set in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes: ["clickhouse-data:/var/lib/clickhouse"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok."]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres:
+    image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    ports: ["127.0.0.1:15432:5432"]
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_DB: sentinel
+      POSTGRES_PASSWORD: ${SENTINEL_POSTGRES_PASSWORD:?set in .env}
+    # PG 18 images: mount the parent dir, not /var/lib/postgresql/data
+    volumes: ["postgres-data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8.10.2@sha256:2c2dff791878316e3b083188be0d578423b24813cdda5de0e80ea4f7b3e6bfd6
+    ports: ["127.0.0.1:16379:6379"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"] # rate-limit state is ephemeral
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  kafka-data: {}
+  clickhouse-data: {}
+  postgres-data: {}
