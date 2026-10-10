@@ -1,12 +1,16 @@
 package database_test
 
 import (
+	"bytes"
 	"context"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
+	pgxzero "github.com/jackc/pgx-zerolog"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/tracelog"
 	"github.com/rs/zerolog"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
@@ -35,6 +39,38 @@ func TestConnStringSpecialPassword(t *testing.T) {
 	if cc.Password != cfg.Password || cc.User != cfg.User || cc.Host != cfg.Host ||
 		int(cc.Port) != cfg.Port || cc.Database != cfg.Name {
 		t.Fatalf("round trip mismatch: %+v", cc)
+	}
+}
+
+func TestConnStringParseFailureHidesPassword(t *testing.T) {
+	t.Parallel()
+
+	cfg := testCfg()
+	cfg.SSLMode = "bogus"
+
+	_, err := database.PoolConfig(cfg, zerolog.Nop())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	if strings.Contains(err.Error(), cfg.Password) || strings.Contains(err.Error(), "p@ss") {
+		t.Fatalf("error leaks password: %v", err)
+	}
+}
+
+func TestRedactPgxTraceArgs(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	l := database.RedactingLogger(pgxzero.NewLogger(zerolog.New(&buf)))
+	l.Log(context.Background(), tracelog.LogLevelInfo, "Query", map[string]any{
+		"sql": "select 1", "args": []any{"secret"}, "password": "secret", "connString": "postgres://u:secret@h",
+	})
+
+	out := buf.String()
+	if strings.Contains(out, "secret") || !strings.Contains(out, "select 1") {
+		t.Fatalf("unexpected log line: %s", out)
 	}
 }
 

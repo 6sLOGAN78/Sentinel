@@ -3,11 +3,14 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	pgxzero "github.com/jackc/pgx-zerolog"
@@ -20,6 +23,31 @@ import (
 )
 
 const pingTimeout = 10 * time.Second
+
+var errInvalidConfig = errors.New("invalid database configuration")
+
+// redactedKeys are removed from pgx trace data before logging.
+var redactedKeys = []string{"args", "password", "connstring", "conn_string", "dsn"} //nolint:gochecknoglobals // constant lookup list
+
+type redactingLogger struct{ inner tracelog.Logger }
+
+// RedactingLogger wraps a tracelog.Logger and strips bound query arguments and
+// credential-like keys from the data before delegating.
+func RedactingLogger(inner tracelog.Logger) tracelog.Logger {
+	return redactingLogger{inner: inner}
+}
+
+func (r redactingLogger) Log(ctx context.Context, level tracelog.LogLevel, msg string, data map[string]any) {
+	clean := make(map[string]any, len(data))
+
+	for k, v := range data {
+		if !slices.Contains(redactedKeys, strings.ToLower(k)) {
+			clean[k] = v
+		}
+	}
+
+	r.inner.Log(ctx, level, msg, clean)
+}
 
 // Database wraps the pgx connection pool.
 type Database struct {
@@ -45,7 +73,9 @@ func ConnString(c config.DatabaseConfig) string {
 func PoolConfig(c config.DatabaseConfig, log zerolog.Logger) (*pgxpool.Config, error) {
 	pc, err := pgxpool.ParseConfig(ConnString(c))
 	if err != nil {
-		return nil, fmt.Errorf("parsing pgx pool config: %w", err)
+		// The cause is deliberately dropped: it may echo the DSN, which holds
+		// the password.
+		return nil, errInvalidConfig
 	}
 
 	pc.MaxConns = int32(min(max(c.MaxOpenConns, 1), math.MaxInt32)) //nolint:gosec // clamped to the int32 range
@@ -55,7 +85,7 @@ func PoolConfig(c config.DatabaseConfig, log zerolog.Logger) (*pgxpool.Config, e
 	// SQL tracing is for local debugging only.
 	if level := log.GetLevel(); level <= zerolog.DebugLevel {
 		pc.ConnConfig.Tracer = &tracelog.TraceLog{
-			Logger:   pgxzero.NewLogger(loggerConfig.NewPgxLogger(level)),
+			Logger:   RedactingLogger(pgxzero.NewLogger(loggerConfig.NewPgxLogger(level))),
 			LogLevel: tracelog.LogLevel(loggerConfig.GetPgxTraceLogLevel(level)),
 		}
 	}
