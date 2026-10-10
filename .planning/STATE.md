@@ -4,8 +4,8 @@ milestone: v2.8.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-10-10T17:36:37.330Z"
-last_activity: 2026-10-10 -- Phase 1 planning complete
+last_updated: "2026-10-10T17:37:56.013Z"
+last_activity: 2026-10-10 -- Phase 1 execution started
 progress:
   total_phases: 6
   completed_phases: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-10)
 
 **Core value:** The end-to-end flow (generator → ingest → Kafka → detector → ClickHouse/PostgreSQL → API → live dashboard) works and is provably correct under failure, with deterministic, deduplicated alerts and no loss of acknowledged events.
-**Current focus:** Phase 1: Foundations & Contracts
+**Current focus:** Phase 1 — Foundations & Contracts
 
 ## Current Position
 
-Phase: 1 of 6 (Foundations & Contracts)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-10-10 -- Phase 1 planning complete
+Phase: 1 (Foundations & Contracts) — EXECUTING
+Plan: 1 of 13
+Status: Executing Phase 1
+Last activity: 2026-10-10 -- Phase 1 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
