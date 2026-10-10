@@ -1,0 +1,4 @@
+# Placeholder rule configuration. Phase 3 defines the schema and the rules
+# AUTH_BRUTE_FORCE, PORT_SCAN, REQUEST_FLOOD and DENY_SPIKE.
+schema_version: 1
+rules: []
