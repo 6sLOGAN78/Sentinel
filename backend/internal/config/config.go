@@ -1,37 +1,77 @@
+// Package config loads and validates Sentinel service configuration from the
+// process environment.
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
-	"strings" 
+	"strings"
+	"time"
+
 	"github.com/go-playground/validator/v10"
-	_ "github.com/joho/godotenv/autoload"
+	"github.com/joho/godotenv"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/v2"
-	"github.com/rs/zerolog"
 )
 
+const (
+	envPrefix          = "SENTINEL_"
+	envKeyPrimaryEnv   = "SENTINEL_PRIMARY.ENV"
+	envKeyEnvFile      = "SENTINEL_ENV_FILE"
+	defaultEnvFile     = "../.env"
+	localEnvironment   = "local"
+	failModeClosed     = "closed"
+	defaultSSLMode     = "prefer"
+	defaultDBPort      = 5432
+	defaultMaxConns    = 25
+	defaultConnSeconds = 300
+	defaultAttrKeys    = 32
+	defaultAttrBytes   = 4096
+	defaultFutureSkew  = 5 * time.Minute
+	defaultPastSkew    = 168 * time.Hour
+	defaultSlowQuery   = 100 * time.Millisecond
+	defaultCHDatabase  = "sentinel"
+	defaultCHUser      = "default"
+)
+
+// Service names accepted by Load.
+const (
+	ServiceIngest      = "ingest"
+	ServiceDetector    = "detector"
+	ServiceEventWriter = "event-writer"
+	ServiceAlertWriter = "alert-writer"
+	ServiceQueryAPI    = "query-api"
+)
+
+// Config is the complete runtime configuration for a Sentinel binary.
 type Config struct {
-	Primary       Primary              `koanf:"primary" validate:"required"`
-	Server        ServerConfig         `koanf:"server" validate:"required"`
-	Database      DatabaseConfig       `koanf:"database" validate:"required"`
-	Auth          AuthConfig           `koanf:"auth" validate:"required"`
-	Redis         RedisConfig          `koanf:"redis" validate:"required"`
-	Integration   IntegrationConfig    `koanf:"integration" validate:"required"`
+	Primary       Primary              `koanf:"primary"`
 	Observability *ObservabilityConfig `koanf:"observability"`
+	Server        ServerConfig         `koanf:"server"`
+	Database      DatabaseConfig       `koanf:"database"`
+	Redis         RedisConfig          `koanf:"redis"`
+	Kafka         KafkaConfig          `koanf:"kafka"`
+	ClickHouse    ClickHouseConfig     `koanf:"clickhouse"`
+	RateLimit     RateLimitConfig      `koanf:"ratelimit"`
+	Contracts     ContractsConfig      `koanf:"contracts"`
 }
 
+// Primary holds settings that every binary needs.
 type Primary struct {
 	Env string `koanf:"env" validate:"required"`
 }
 
+// ServerConfig holds optional HTTP server settings.
 type ServerConfig struct {
-	Port               string   `koanf:"port" validate:"required"`
-	ReadTimeout        int      `koanf:"read_timeout" validate:"required"`
-	WriteTimeout       int      `koanf:"write_timeout" validate:"required"`
-	IdleTimeout        int      `koanf:"idle_timeout" validate:"required"`
-	CORSAllowedOrigins []string `koanf:"cors_allowed_origins" validate:"required"`
+	Port               string   `koanf:"port"`
+	ReadTimeout        int      `koanf:"read_timeout"`
+	WriteTimeout       int      `koanf:"write_timeout"`
+	IdleTimeout        int      `koanf:"idle_timeout"`
+	CORSAllowedOrigins []string `koanf:"cors_allowed_origins"`
 }
 
+// DatabaseConfig holds PostgreSQL connection settings.
 type DatabaseConfig struct {
 	Host            string `koanf:"host" validate:"required"`
 	Port            int    `koanf:"port" validate:"required"`
@@ -44,57 +84,166 @@ type DatabaseConfig struct {
 	ConnMaxLifetime int    `koanf:"conn_max_lifetime" validate:"required"`
 	ConnMaxIdleTime int    `koanf:"conn_max_idle_time" validate:"required"`
 }
+
+// RedisConfig holds the Redis address as host:port without a URL scheme.
 type RedisConfig struct {
-	Address string `koanf:"address" validate:"required"`
+	Address string `koanf:"address" validate:"required,hostname_port"`
 }
 
-type IntegrationConfig struct {
-	ResendAPIKey string `koanf:"resend_api_key" validate:"required"`
+// KafkaConfig holds comma-separated host:port broker addresses.
+type KafkaConfig struct {
+	Brokers string `koanf:"brokers" validate:"required"`
 }
 
-type AuthConfig struct {
-	SecretKey string `koanf:"secret_key" validate:"required"`
+// ClickHouseConfig holds ClickHouse connection settings. Addresses are
+// host:port without a URL scheme.
+type ClickHouseConfig struct {
+	HTTPAddress   string `koanf:"http_address" validate:"required,hostname_port"`
+	NativeAddress string `koanf:"native_address" validate:"omitempty,hostname_port"`
+	User          string `koanf:"user" validate:"required"`
+	Password      string `koanf:"password"`
+	Database      string `koanf:"database" validate:"required"`
 }
 
-func LoadConfig() (*Config, error) {
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
+// RateLimitConfig controls rate limiter behaviour when Redis is unavailable.
+type RateLimitConfig struct {
+	FailMode string `koanf:"fail_mode" validate:"required,oneof=closed open"`
+}
+
+// ContractsConfig bounds event contract validation.
+type ContractsConfig struct {
+	MaxAttrKeys  int           `koanf:"max_attr_keys" validate:"min=1"`
+	MaxAttrBytes int           `koanf:"max_attr_bytes" validate:"min=1"`
+	FutureSkew   time.Duration `koanf:"future_skew" validate:"min=0"`
+	PastSkew     time.Duration `koanf:"past_skew" validate:"min=0"`
+}
+
+// requiredSections lists, per binary, the optional sections that must validate.
+func requiredSections() map[string][]string {
+	return map[string][]string{
+		ServiceIngest:      {"redis", "kafka"},
+		ServiceDetector:    {"kafka"},
+		ServiceEventWriter: {"kafka", "clickhouse"},
+		ServiceAlertWriter: {"kafka", "database", "clickhouse"},
+		ServiceQueryAPI:    {"database", "clickhouse", "redis"},
+	}
+}
+
+// EnvFilePath returns the dotenv file path: SENTINEL_ENV_FILE taken literally
+// when set, otherwise ../.env (the repo-root file when run from backend/).
+func EnvFilePath() string {
+	if p := os.Getenv(envKeyEnvFile); p != "" {
+		return p
+	}
+
+	return defaultEnvFile
+}
+
+// Load builds and validates the configuration for the named binary. It never
+// exits the process; callers decide how to handle the returned error.
+func Load(service string) (*Config, error) {
+	sections, ok := requiredSections()[service]
+	if !ok {
+		return nil, fmt.Errorf("unknown service %q", service)
+	}
+
+	// Dotenv is a local-development convenience only.
+	if os.Getenv(envKeyPrimaryEnv) == localEnvironment {
+		if err := godotenv.Load(EnvFilePath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("load env file: %w", err)
+		}
+	}
 
 	k := koanf.New(".")
+	setDefaults(k)
 
 	err := k.Load(env.Provider("SENTINEL_", ".", func(s string) string {
-		return strings.ToLower(strings.TrimPrefix(s, "SENTINEL_"))
+		return strings.ToLower(strings.TrimPrefix(s, envPrefix))
 	}), nil)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("could not load initial env variables")
+		return nil, fmt.Errorf("load environment variables: %w", err)
 	}
 
-	mainConfig := &Config{}
-
-	err = k.Unmarshal("", mainConfig)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("could not unmarshal main config")
+	cfg := &Config{}
+	if err := k.Unmarshal("", cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	validate := validator.New()
+	cfg.Observability.ServiceName = service
+	cfg.Observability.Environment = cfg.Primary.Env
 
-	err = validate.Struct(mainConfig)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("config validation failed")
+	if err := validateFor(cfg, sections); err != nil {
+		return nil, err
 	}
 
-	// Set default observability config if not provided
-	if mainConfig.Observability == nil {
-		mainConfig.Observability = DefaultObservabilityConfig()
+	return cfg, nil
+}
+
+func setDefaults(k *koanf.Koanf) {
+	defaults := map[string]any{
+		"observability.logging.level":                "info",
+		"observability.logging.format":               "json",
+		"observability.logging.slow_query_threshold": defaultSlowQuery,
+		"database.port":                              defaultDBPort,
+		"database.ssl_mode":                          defaultSSLMode,
+		"database.max_open_conns":                    defaultMaxConns,
+		"database.max_idle_conns":                    defaultMaxConns,
+		"database.conn_max_lifetime":                 defaultConnSeconds,
+		"database.conn_max_idle_time":                defaultConnSeconds,
+		"clickhouse.user":                            defaultCHUser,
+		"clickhouse.database":                        defaultCHDatabase,
+		"ratelimit.fail_mode":                        failModeClosed,
+		"contracts.max_attr_keys":                    defaultAttrKeys,
+		"contracts.max_attr_bytes":                   defaultAttrBytes,
+		"contracts.future_skew":                      defaultFutureSkew,
+		"contracts.past_skew":                        defaultPastSkew,
 	}
 
-	// Override service name and environment from primary config
-	mainConfig.Observability.ServiceName = "sentinel"
-	mainConfig.Observability.Environment = mainConfig.Primary.Env
+	for key, val := range defaults {
+		// Set only fails on invalid paths, which cannot happen for literals.
+		_ = k.Set(key, val)
+	}
+}
 
-	// Validate observability config
-	if err := mainConfig.Observability.Validate(); err != nil {
-		logger.Fatal().Err(err).Msg("invalid observability config")
+func validateFor(cfg *Config, sections []string) error {
+	v := validator.New()
+
+	if err := v.Struct(cfg.Primary); err != nil {
+		return fmt.Errorf("validate primary config: %w", err)
 	}
 
-	return mainConfig, nil
+	if err := v.Struct(cfg.RateLimit); err != nil {
+		return fmt.Errorf("validate ratelimit config: %w", err)
+	}
+
+	if err := v.Struct(cfg.Contracts); err != nil {
+		return fmt.Errorf("validate contracts config: %w", err)
+	}
+
+	if err := cfg.Observability.Validate(); err != nil {
+		return fmt.Errorf("validate observability config: %w", err)
+	}
+
+	for _, section := range sections {
+		var target any
+
+		switch section {
+		case "database":
+			target = cfg.Database
+		case "redis":
+			target = cfg.Redis
+		case "kafka":
+			target = cfg.Kafka
+		case "clickhouse":
+			target = cfg.ClickHouse
+		default:
+			return fmt.Errorf("unknown config section %q", section)
+		}
+
+		if err := v.Struct(target); err != nil {
+			return fmt.Errorf("validate %s config: %w", section, err)
+		}
+	}
+
+	return nil
 }

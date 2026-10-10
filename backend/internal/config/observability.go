@@ -1,38 +1,26 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
 
+// ObservabilityConfig holds logging settings for a binary.
 type ObservabilityConfig struct {
-	ServiceName  string             `koanf:"service_name" validate:"required"`
-	Environment  string             `koanf:"environment" validate:"required"`
-	Logging      LoggingConfig      `koanf:"logging" validate:"required"`
-	NewRelic     NewRelicConfig     `koanf:"new_relic" validate:"required"`
-	HealthChecks HealthChecksConfig `koanf:"health_checks" validate:"required"`
+	ServiceName string        `koanf:"service_name"`
+	Environment string        `koanf:"environment"`
+	Logging     LoggingConfig `koanf:"logging"`
 }
 
+// LoggingConfig controls log level and format.
 type LoggingConfig struct {
-	Level              string        `koanf:"level" validate:"required"`
-	Format             string        `koanf:"format" validate:"required"`
+	Level              string        `koanf:"level"`
+	Format             string        `koanf:"format"`
 	SlowQueryThreshold time.Duration `koanf:"slow_query_threshold"`
 }
 
-type NewRelicConfig struct {
-	LicenseKey                string `koanf:"license_key" validate:"required"`
-	AppLogForwardingEnabled   bool   `koanf:"app_log_forwarding_enabled"`
-	DistributedTracingEnabled bool   `koanf:"distributed_tracing_enabled"`
-	DebugLogging              bool   `koanf:"debug_logging"`
-}
-
-type HealthChecksConfig struct {
-	Enabled  bool          `koanf:"enabled"`
-	Interval time.Duration `koanf:"interval" validate:"min=1s"`
-	Timeout  time.Duration `koanf:"timeout" validate:"min=1s"`
-	Checks   []string      `koanf:"checks"`
-}
-
+// DefaultObservabilityConfig returns the default observability settings.
 func DefaultObservabilityConfig() *ObservabilityConfig {
 	return &ObservabilityConfig{
 		ServiceName: "sentinel",
@@ -40,58 +28,44 @@ func DefaultObservabilityConfig() *ObservabilityConfig {
 		Logging: LoggingConfig{
 			Level:              "info",
 			Format:             "json",
-			SlowQueryThreshold: 100 * time.Millisecond,
-		},
-		NewRelic: NewRelicConfig{
-			LicenseKey:                "",
-			AppLogForwardingEnabled:   true,
-			DistributedTracingEnabled: true,
-			DebugLogging:              false, // Disabled by default to avoid mixed log formats
-		},
-		HealthChecks: HealthChecksConfig{
-			Enabled:  true,
-			Interval: 30 * time.Second,
-			Timeout:  5 * time.Second,
-			Checks:   []string{"database", "redis"},
+			SlowQueryThreshold: defaultSlowQuery,
 		},
 	}
 }
 
+// Validate checks the observability settings.
 func (c *ObservabilityConfig) Validate() error {
 	if c.ServiceName == "" {
-		return fmt.Errorf("service_name is required")
+		return errors.New("service_name is required")
 	}
 
-	// Validate log level
-	validLevels := map[string]bool{
-		"debug": true, "info": true, "warn": true, "error": true,
-	}
-	if !validLevels[c.Logging.Level] {
+	switch c.Logging.Level {
+	case "debug", "info", "warn", "error":
+	default:
 		return fmt.Errorf("invalid logging level: %s (must be one of: debug, info, warn, error)", c.Logging.Level)
 	}
 
-	// Validate slow query threshold
 	if c.Logging.SlowQueryThreshold < 0 {
-		return fmt.Errorf("logging slow_query_threshold must be non-negative")
+		return errors.New("logging slow_query_threshold must be non-negative")
 	}
 
 	return nil
 }
 
+// GetLogLevel returns the effective log level.
 func (c *ObservabilityConfig) GetLogLevel() string {
-	switch c.Environment {
-	case "production":
-		if c.Logging.Level == "" {
-			return "info"
-		}
-	case "development":
-		if c.Logging.Level == "" {
-			return "debug"
-		}
+	if c.Logging.Level != "" {
+		return c.Logging.Level
 	}
-	return c.Logging.Level
+
+	if c.Environment == "production" {
+		return "info"
+	}
+
+	return "debug"
 }
 
+// IsProduction reports whether the environment is production.
 func (c *ObservabilityConfig) IsProduction() bool {
 	return c.Environment == "production"
 }
