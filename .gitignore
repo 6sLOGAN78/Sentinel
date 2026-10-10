@@ -65,3 +65,6 @@ generator/.venv/
 **/__pycache__/
 *.pyc
 backend/bin/
+
+# Agent worktrees created by Claude Code
+.claude/worktrees/

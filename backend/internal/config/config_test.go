@@ -222,3 +222,38 @@ func TestDotenvIgnoresCwdEnv(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "kafka")
 }
+
+func TestLoadDatabaseSSLMode(t *testing.T) {
+	setCompleteEnv(t)
+
+	cfg, err := config.Load("alert-writer")
+	require.NoError(t, err)
+	require.Equal(t, "verify-full", cfg.Database.SSLMode)
+
+	t.Setenv("SENTINEL_DATABASE.SSL_MODE", "bogus")
+
+	_, err = config.Load("alert-writer")
+	require.Error(t, err)
+
+	t.Setenv("SENTINEL_PRIMARY.ENV", "production")
+
+	for _, mode := range []string{"disable", "allow", "prefer"} {
+		t.Setenv("SENTINEL_DATABASE.SSL_MODE", mode)
+
+		_, err = config.Load("alert-writer")
+		require.Error(t, err, mode)
+		require.Contains(t, err.Error(), "ssl_mode")
+	}
+
+	t.Setenv("SENTINEL_DATABASE.SSL_MODE", "require")
+
+	_, err = config.Load("alert-writer")
+	require.NoError(t, err)
+
+	t.Setenv("SENTINEL_PRIMARY.ENV", "local")
+	t.Setenv("SENTINEL_ENV_FILE", filepath.Join(t.TempDir(), "absent.env"))
+	t.Setenv("SENTINEL_DATABASE.SSL_MODE", "disable")
+
+	_, err = config.Load("alert-writer")
+	require.NoError(t, err)
+}

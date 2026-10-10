@@ -21,8 +21,9 @@ const (
 	envKeyEnvFile      = "SENTINEL_ENV_FILE"
 	defaultEnvFile     = "../.env"
 	localEnvironment   = "local"
+	testEnvironment    = "test"
 	failModeClosed     = "closed"
-	defaultSSLMode     = "prefer"
+	defaultSSLMode     = "verify-full"
 	defaultDBPort      = 5432
 	defaultMaxConns    = 25
 	defaultConnSeconds = 300
@@ -78,7 +79,7 @@ type DatabaseConfig struct {
 	User            string `koanf:"user" validate:"required"`
 	Password        string `koanf:"password"`
 	Name            string `koanf:"name" validate:"required"`
-	SSLMode         string `koanf:"ssl_mode" validate:"required"`
+	SSLMode         string `koanf:"ssl_mode" validate:"required,oneof=disable allow prefer require verify-ca verify-full"`
 	MaxOpenConns    int    `koanf:"max_open_conns" validate:"required"`
 	MaxIdleConns    int    `koanf:"max_idle_conns" validate:"required"`
 	ConnMaxLifetime int    `koanf:"conn_max_lifetime" validate:"required"`
@@ -243,7 +244,28 @@ func validateFor(cfg *Config, sections []string) error {
 		if err := v.Struct(target); err != nil {
 			return fmt.Errorf("validate %s config: %w", section, err)
 		}
+
+		if section == "database" {
+			if err := validateSSLMode(cfg.Primary.Env, cfg.Database.SSLMode); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
+}
+
+// validateSSLMode rejects Postgres sslmodes that allow plaintext or skip
+// certificate verification outside local development and tests.
+func validateSSLMode(environment, mode string) error {
+	if environment == localEnvironment || environment == testEnvironment {
+		return nil
+	}
+
+	switch mode {
+	case "require", "verify-ca", "verify-full":
+		return nil
+	default:
+		return fmt.Errorf("database ssl_mode %q is not allowed in environment %q", mode, environment)
+	}
 }
