@@ -25,7 +25,9 @@ target-version = "py313"
 select = ["E", "F", "I", "B", "UP", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+# S101: pytest uses plain asserts.
+# S311: tests construct seeded random.Random instances on purpose (see below).
+"tests/**" = ["S101", "S311"]
 # The seeded random.Random is deliberately non-cryptographic: reproducibility
 # from a seed is the requirement for synthetic traffic, not unpredictability.
 "src/sentinel_generator/events.py" = ["S311"]
