@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "event_id": "018ff000-0000-7000-8000-000000000001",
+  "tenant_id": "demo",
+  "occurred_at": "2026-10-10T11:59:00Z",
+  "source": "generator",
+  "event_type": "auth.failure",
+  "received_at": null,
+  "source_ip": null,
+  "destination_ip": null,
+  "destination_port": null,
+  "protocol": null,
+  "principal": null,
+  "action": null,
+  "outcome": null,
+  "attributes": null
+}

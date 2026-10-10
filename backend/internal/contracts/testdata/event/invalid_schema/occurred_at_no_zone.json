@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "event_id": "018ff000-0000-7000-8000-000000000001",
+  "tenant_id": "demo",
+  "occurred_at": "2026-10-10T11:59:00",
+  "received_at": "2026-10-10T11:59:01Z",
+  "source": "generator",
+  "event_type": "auth.failure",
+  "source_ip": "192.0.2.10",
+  "destination_ip": "198.51.100.20",
+  "destination_port": 443,
+  "protocol": "tcp",
+  "principal": "example-user",
+  "action": "deny",
+  "outcome": "failure",
+  "attributes": {
+    "service": "login",
+    "reason": "invalid_credentials"
+  }
+}
