@@ -7,11 +7,9 @@ linters:
   default: none
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
-    - typecheck
     - unused
     - asasalint
     - asciicheck
@@ -68,7 +66,6 @@ linters:
     - sloglint
     - spancheck
     - sqlclosecheck
-    - stylecheck
 
     - testableexamples
     - testifylint

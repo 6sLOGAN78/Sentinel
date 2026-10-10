@@ -56,3 +56,12 @@ tsconfig.tsbuildinfo
 .env
 .turbo
 .vscode
+# Phase 1 additions
+/.env
+.env
+web/node_modules/
+web/dist/
+generator/.venv/
+**/__pycache__/
+*.pyc
+backend/bin/
