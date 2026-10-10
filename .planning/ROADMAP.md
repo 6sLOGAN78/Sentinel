@@ -35,9 +35,9 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Remove boilerplate, Go 1.26 module, pinned tools, config and logger refactor
-- [ ] 01-02-PLAN.md — Compose stack, topic-init, Makefile, .env.example, stack and pin check scripts
-- [ ] 01-05-PLAN.md — Six ADRs, ADR check, architecture doc, readme, placeholders
+- [x] 01-01-PLAN.md — Remove boilerplate, Go 1.26 module, pinned tools, config and logger refactor
+- [x] 01-02-PLAN.md — Compose stack, topic-init, Makefile, .env.example, stack and pin check scripts
+- [x] 01-05-PLAN.md — Six ADRs, ADR check, architecture doc, readme, placeholders
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -158,7 +158,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations & Contracts | 0/TBD | Not started | - |
+| 1. Foundations & Contracts | 3/13 | In Progress|  |
 | 2. Ingestion & Durable Event Storage | 0/TBD | Not started | - |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
