@@ -1,0 +1,222 @@
+package logger
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"time"
+
+	"github.com/6sLOGAN78/sentinel/internal/config"
+	"github.com/newrelic/go-agent/v3/newrelic"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/pkgerrors"
+)
+
+// LoggerService manages New Relic integration and logger creation
+type LoggerService struct {
+	nrApp *newrelic.Application
+}
+
+// NewLoggerService creates a new logger service
+func NewLoggerService(cfg *config.ObservabilityConfig) *LoggerService {
+
+	service := &LoggerService{}
+
+	if cfg.NewRelic.LicenseKey == "" {
+		return service
+	}
+
+	var configOptions []newrelic.ConfigOption
+
+	configOptions = append(
+		configOptions,
+		newrelic.ConfigAppName(cfg.ServiceName),
+		newrelic.ConfigLicense(cfg.NewRelic.LicenseKey),
+		newrelic.ConfigDistributedTracerEnabled(
+			cfg.NewRelic.DistributedTracingEnabled,
+		),
+	)
+
+	// Optional debug logging
+	if cfg.NewRelic.DebugLogging {
+		configOptions = append(
+			configOptions,
+			newrelic.ConfigDebugLogger(os.Stdout),
+		)
+	}
+
+	app, err := newrelic.NewApplication(configOptions...)
+	if err != nil {
+		return service
+	}
+
+	service.nrApp = app
+
+	return service
+}
+
+// Shutdown shuts down New Relic
+func (ls *LoggerService) Shutdown() {
+	if ls.nrApp != nil {
+		ls.nrApp.Shutdown(10 * time.Second)
+	}
+}
+
+// GetApplication returns New Relic app instance
+func (ls *LoggerService) GetApplication() *newrelic.Application {
+	return ls.nrApp
+}
+
+// NewLoggerWithService creates configured zerolog logger
+func NewLoggerWithService(
+	cfg *config.ObservabilityConfig,
+	loggerService *LoggerService,
+) zerolog.Logger {
+
+	var logLevel zerolog.Level
+
+	switch cfg.GetLogLevel() {
+	case "debug":
+		logLevel = zerolog.DebugLevel
+
+	case "info":
+		logLevel = zerolog.InfoLevel
+
+	case "warn":
+		logLevel = zerolog.WarnLevel
+
+	case "error":
+		logLevel = zerolog.ErrorLevel
+
+	default:
+		logLevel = zerolog.InfoLevel
+	}
+
+	zerolog.TimeFieldFormat = "2006-01-02 15:04:05"
+	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
+
+	var writer io.Writer
+
+	// Production JSON logs
+	if cfg.IsProduction() &&
+		cfg.Logging.Format == "json" {
+
+		writer = os.Stdout
+
+	} else {
+
+		// Development pretty console logs
+		writer = zerolog.ConsoleWriter{
+			Out:        os.Stdout,
+			TimeFormat: "2006-01-02 15:04:05",
+		}
+	}
+
+	logger := zerolog.New(writer).
+		Level(logLevel).
+		With().
+		Timestamp().
+		Str("service", cfg.ServiceName).
+		Str("environment", cfg.Environment).
+		Logger()
+
+	// Add stack traces in development
+	if !cfg.IsProduction() {
+		logger = logger.With().
+			Stack().
+			Logger()
+	}
+
+	return logger
+}
+
+// WithTraceContext adds trace metadata to logs
+func WithTraceContext(
+	logger zerolog.Logger,
+	txn *newrelic.Transaction,
+) zerolog.Logger {
+
+	if txn == nil {
+		return logger
+	}
+
+	metadata := txn.GetTraceMetadata()
+
+	return logger.With().
+		Str("trace.id", metadata.TraceID).
+		Str("span.id", metadata.SpanID).
+		Logger()
+}
+
+// NewPgxLogger creates pgx SQL logger
+func NewPgxLogger(level zerolog.Level) zerolog.Logger {
+
+	writer := zerolog.ConsoleWriter{
+		Out:        os.Stdout,
+		TimeFormat: "2006-01-02 15:04:05",
+
+		FormatFieldValue: func(i any) string {
+
+			switch v := i.(type) {
+
+			case string:
+
+				if len(v) > 200 {
+					return v[:200] + "..."
+				}
+
+				return v
+
+			case []byte:
+
+				var obj interface{}
+
+				if err := json.Unmarshal(v, &obj); err == nil {
+
+					pretty, _ := json.MarshalIndent(
+						obj,
+						"",
+						"    ",
+					)
+
+					return "\n" + string(pretty)
+				}
+
+				return string(v)
+
+			default:
+				return fmt.Sprintf("%v", v)
+			}
+		},
+	}
+
+	return zerolog.New(writer).
+		Level(level).
+		With().
+		Timestamp().
+		Str("component", "database").
+		Logger()
+}
+
+// GetPgxTraceLogLevel converts zerolog level to pgx log level
+func GetPgxTraceLogLevel(level zerolog.Level) int {
+
+	switch level {
+
+	case zerolog.DebugLevel:
+		return 6
+
+	case zerolog.InfoLevel:
+		return 4
+
+	case zerolog.WarnLevel:
+		return 3
+
+	case zerolog.ErrorLevel:
+		return 2
+
+	default:
+		return 0
+	}
+}
