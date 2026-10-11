@@ -41,11 +41,11 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-03-PLAN.md — Python generator scaffold with seeded deterministic event builder
-- [ ] 01-04-PLAN.md — Web scaffold (Vite 8, React 19.3, TS 6) with vitest legitimacy checkpoint
-- [ ] 01-06-PLAN.md — errs envelope, validation, sqlerr, Recover-first middleware, httpx
-- [ ] 01-07-PLAN.md — database/tern, migrations embed, redisx, ClickHouse runner and chmigrate tool
-- [ ] 01-08-PLAN.md — Event JSON Schema, Go type, fixtures, skew and attribute validation
+- [x] 01-03-PLAN.md — Python generator scaffold with seeded deterministic event builder
+- [x] 01-04-PLAN.md — Web scaffold (Vite 8, React 19.3, TS 6) with vitest legitimacy checkpoint
+- [x] 01-06-PLAN.md — errs envelope, validation, sqlerr, Recover-first middleware, httpx
+- [x] 01-07-PLAN.md — database/tern, migrations embed, redisx, ClickHouse runner and chmigrate tool
+- [x] 01-08-PLAN.md — Event JSON Schema, Go type, fixtures, skew and attribute validation
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -158,7 +158,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations & Contracts | 3/13 | In Progress|  |
+| 1. Foundations & Contracts | 8/13 | In Progress|  |
 | 2. Ingestion & Durable Event Storage | 0/TBD | Not started | - |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
