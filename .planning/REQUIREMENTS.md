@@ -9,13 +9,13 @@
 
 ### Foundations (FND)
 
-- [ ] **FND-01**: A developer can run `make dev-up` from a clean checkout and get healthy Kafka (KRaft), ClickHouse, PostgreSQL and Redis via Docker Compose, with topics created explicitly (auto-create off, defined partition counts) [FR-13]
-- [ ] **FND-02**: A developer can run `make migrate`, `make test`, `make lint`, `make dev-down` and `make reset` with documented, idempotent behavior [FR-13, §16]
-- [ ] **FND-03**: The repo is restructured as one Go module (`backend/`, Go 1.26.x) with five binaries (`ingest`, `detector`, `event-writer`, `alert-writer`, `query-api`). Non-spec boilerplate (Clerk, asynq, Resend/emails, New Relic, Turborepo/zod/ts-rest packages, Taskfile) is removed, and the known boilerplate defects are fixed (Recover order, Shutdown nil pointer, ignored Redis ping failure, DSN escaping) [§2, §13]
-- [ ] **FND-04**: Event (`security.events.v1`) and alert (`security.alerts.v1`) schemas exist as versioned JSON Schema plus Go types, with one canonical `dedupe_key` → SHA-256 `alert_id` function, and contract tests prove valid and invalid fixtures (including IPv4/IPv6 and timestamp skew) [§6, §15]
-- [ ] **FND-05**: An OpenAPI 3.1 document (`api/openapi.yaml`) describes every v1 endpoint, the error envelope and the pagination shape, and is validated in CI [§8]
-- [ ] **FND-06**: All dependency and container image versions are pinned (go.sum, web lockfile, generator lockfile, image tags), and `.env.example` contains only safe placeholders with no committed secrets [§2, §10]
-- [ ] **FND-07**: Architecture decisions are recorded in `docs/decisions/`: repo layout, event_id policy, atomic-batch semantics, metrics-label policy and Redis fail-closed/open policy [§19]
+- [x] **FND-01**: A developer can run `make dev-up` from a clean checkout and get healthy Kafka (KRaft), ClickHouse, PostgreSQL and Redis via Docker Compose, with topics created explicitly (auto-create off, defined partition counts) [FR-13]
+- [x] **FND-02**: A developer can run `make migrate`, `make test`, `make lint`, `make dev-down` and `make reset` with documented, idempotent behavior [FR-13, §16]
+- [x] **FND-03**: The repo is restructured as one Go module (`backend/`, Go 1.26.x) with five binaries (`ingest`, `detector`, `event-writer`, `alert-writer`, `query-api`). Non-spec boilerplate (Clerk, asynq, Resend/emails, New Relic, Turborepo/zod/ts-rest packages, Taskfile) is removed, and the known boilerplate defects are fixed (Recover order, Shutdown nil pointer, ignored Redis ping failure, DSN escaping) [§2, §13]
+- [x] **FND-04**: Event (`security.events.v1`) and alert (`security.alerts.v1`) schemas exist as versioned JSON Schema plus Go types, with one canonical `dedupe_key` → SHA-256 `alert_id` function, and contract tests prove valid and invalid fixtures (including IPv4/IPv6 and timestamp skew) [§6, §15]
+- [x] **FND-05**: An OpenAPI 3.1 document (`api/openapi.yaml`) describes every v1 endpoint, the error envelope and the pagination shape, and is validated in CI [§8]
+- [x] **FND-06**: All dependency and container image versions are pinned (go.sum, web lockfile, generator lockfile, image tags), and `.env.example` contains only safe placeholders with no committed secrets [§2, §10]
+- [x] **FND-07**: Architecture decisions are recorded in `docs/decisions/`: repo layout, event_id policy, atomic-batch semantics, metrics-label policy and Redis fail-closed/open policy [§19]
 
 ### Ingestion (ING)
 
@@ -159,13 +159,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FND-01 | Phase 1 | Pending |
-| FND-02 | Phase 1 | Pending |
-| FND-03 | Phase 1 | Pending |
-| FND-04 | Phase 1 | Pending |
-| FND-05 | Phase 1 | Pending |
-| FND-06 | Phase 1 | Pending |
-| FND-07 | Phase 1 | Pending |
+| FND-01 | Phase 1 | Complete |
+| FND-02 | Phase 1 | Complete |
+| FND-03 | Phase 1 | Complete |
+| FND-04 | Phase 1 | Complete |
+| FND-05 | Phase 1 | Complete |
+| FND-06 | Phase 1 | Complete |
+| FND-07 | Phase 1 | Complete |
 | ING-01 | Phase 2 | Pending |
 | ING-02 | Phase 2 | Pending |
 | ING-03 | Phase 2 | Pending |

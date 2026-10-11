@@ -158,7 +158,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations & Contracts | 13/13 | Complete   | 2026-10-11 |
+| 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 0/TBD | Not started | - |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
