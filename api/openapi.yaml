@@ -1,0 +1,898 @@
+openapi: 3.1.0
+info:
+  title: Sentinel API
+  version: 1.0.0
+  description: |
+    Hand-authored OpenAPI 3.1 contract for the Sentinel v1 HTTP API (spec section 8).
+    The Event and Alert component schemas mirror backend/internal/contracts/schema/*.json,
+    which are canonical; a drift test keeps them in sync.
+
+    Authentication: ingestion uses a scoped API key in the X-API-Key header; dashboard
+    and query routes use a bearer JWT. The tenant is always resolved from the verified
+    identity, never only from the request. Credentials are never accepted in URL query
+    parameters, including for the SSE stream.
+servers:
+  - url: http://localhost:8080
+    description: Local development (TLS terminates at the edge in production)
+tags:
+  - name: ingest
+  - name: events
+  - name: alerts
+  - name: rules
+  - name: metrics
+  - name: ops
+
+paths:
+  "/api/v1/events:batch":
+    post:
+      tags: [ingest]
+      operationId: ingestEventsBatch
+      summary: Validate and publish a batch of events
+      description: |
+        Publishes up to 500 events (maximum payload 1 MiB). Semantics are all-or-nothing
+        (ADR 0003). The whole batch is validated before anything is published; any invalid
+        event returns 400 with zero publishes. 202 is returned only after Kafka has
+        acknowledged every record. 202 means Kafka acknowledged every record, not
+        persisted into ClickHouse or detected. If Kafka fails mid-batch the response is
+        503; between 0 and N records may already be published, and clients retry the
+        identical batch because downstream consumers deduplicate on event_id.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventBatchRequest"
+      responses:
+        "202":
+          description: Kafka acknowledged every record in the batch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventBatchAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/events:
+    get:
+      tags: [events]
+      operationId: listEvents
+      summary: Search event history
+      description: Cursor pagination ordered by (occurred_at, event_id). Scoped to the caller tenant.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/SourceIP"
+        - $ref: "#/components/parameters/EventType"
+        - $ref: "#/components/parameters/Outcome"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  "/api/v1/events/{event_id}":
+    get:
+      tags: [events]
+      operationId: getEvent
+      summary: Retrieve one event scoped to the tenant
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EventID"
+      responses:
+        "200":
+          description: The event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/alerts:
+    get:
+      tags: [alerts]
+      operationId: listAlerts
+      summary: Search alerts
+      description: Cursor pagination ordered by (created_at, alert_id). Scoped to the caller tenant.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Severity"
+        - $ref: "#/components/parameters/Status"
+        - $ref: "#/components/parameters/RuleID"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of alerts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/alerts/stream:
+    get:
+      tags: [alerts]
+      operationId: streamAlerts
+      summary: Server-sent events for new alerts
+      description: |
+        Authenticates with the bearer header. Tokens are never accepted in URL query
+        parameters. Supports reconnection with the Last-Event-ID header; clients may also
+        backfill through GET /api/v1/alerts. The server sends keep-alive comments, uses a
+        bounded per-client buffer, and drops slow clients so they reconnect.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: Resume after this event id on reconnect.
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          description: Stream of alert events (text/event-stream), each data field is an Alert JSON document.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  "/api/v1/alerts/{alert_id}":
+    get:
+      tags: [alerts]
+      operationId: getAlert
+      summary: Alert details, evidence and history
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AlertID"
+      responses:
+        "200":
+          description: Alert with evidence, rule explanation and status history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [alerts]
+      operationId: updateAlertStatus
+      summary: Change alert status with an optimistic version check
+      description: Requires the analyst or admin role. A stale version returns 409.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AlertID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertPatchRequest"
+      responses:
+        "200":
+          description: The updated alert.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/rules:
+    get:
+      tags: [rules]
+      operationId: listRules
+      summary: Read-only active rule definitions
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Active rules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/metrics/summary:
+    get:
+      tags: [metrics]
+      operationId: getMetricsSummary
+      summary: Rollup statistics for the dashboard
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+      responses:
+        "200":
+          description: Summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /healthz:
+    get:
+      tags: [ops]
+      operationId: healthz
+      summary: Liveness
+      security: []
+      responses:
+        "200":
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /readyz:
+    get:
+      tags: [ops]
+      operationId: readyz
+      summary: Readiness, required dependencies reachable
+      security: []
+      responses:
+        "200":
+          description: Ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /metrics:
+    get:
+      tags: [ops]
+      operationId: prometheusMetrics
+      summary: Prometheus metrics (internal network only, never exposed publicly)
+      security: []
+      responses:
+        "200":
+          description: Prometheus text exposition format.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Scoped producer API key. Stored hashed at rest. Tenant is derived from the key.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Dashboard JWT. Roles viewer, analyst and admin are enforced server-side.
+
+  parameters:
+    From:
+      name: from
+      in: query
+      required: false
+      description: Inclusive range start, UTC RFC 3339. The range is capped by server configuration.
+      schema:
+        $ref: "#/components/schemas/UTCTimestamp"
+    To:
+      name: to
+      in: query
+      required: false
+      description: Exclusive range end, UTC RFC 3339.
+      schema:
+        $ref: "#/components/schemas/UTCTimestamp"
+    SourceIP:
+      name: source_ip
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 45
+    EventType:
+      name: event_type
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/EventType"
+    Outcome:
+      name: outcome
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/Outcome"
+    Severity:
+      name: severity
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/Severity"
+    Status:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/AlertStatus"
+    RuleID:
+      name: rule_id
+      in: query
+      required: false
+      schema:
+        type: string
+        pattern: "^[A-Z][A-Z0-9_]{0,63}$"
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor returned as next_cursor by the previous page.
+      schema:
+        type: string
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    EventID:
+      name: event_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/UUID"
+    AlertID:
+      name: alert_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{64}$"
+
+  headers:
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema:
+        type: integer
+        minimum: 0
+
+  responses:
+    BadRequest:
+      description: Invalid request. For ingestion, nothing was published.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Authenticated but not permitted (role or tenant).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Not found within the caller tenant.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Version check failed; reload and retry.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PayloadTooLarge:
+      description: Payload exceeds 1 MiB or the batch exceeds 500 events.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Rate limited.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServiceUnavailable:
+      description: A required dependency is unavailable or load is being shed. Retry the identical request.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
+
+    UUID:
+      type: string
+      format: uuid
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+
+    UTCTimestamp:
+      type: string
+      format: date-time
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+
+    NullableUTCTimestamp:
+      oneOf:
+        - type: "null"
+        - $ref: "#/components/schemas/UTCTimestamp"
+
+    IPAddress:
+      description: IPv4 or IPv6 address without zone; IPv4-mapped IPv6 is rejected; null when absent.
+      oneOf:
+        - type: "null"
+        - type: string
+          format: ipv4
+        - type: string
+          format: ipv6
+          pattern: "^[0-9a-fA-F:]+$"
+          not:
+            pattern: "^(?i:::ffff:)"
+
+    EventType:
+      enum: [auth.success, auth.failure, net.connection, net.request, policy.decision]
+
+    Outcome:
+      enum: [success, failure, null]
+
+    Severity:
+      enum: [low, medium, high, critical]
+
+    AlertStatus:
+      enum: [open, acknowledged, resolved]
+
+    Event:
+      type: object
+      additionalProperties: false
+      required: [schema_version, event_id, tenant_id, occurred_at, source, event_type]
+      properties:
+        schema_version:
+          const: 1
+        event_id:
+          $ref: "#/components/schemas/UUID"
+        tenant_id:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,62}$"
+        occurred_at:
+          $ref: "#/components/schemas/UTCTimestamp"
+        received_at:
+          $ref: "#/components/schemas/NullableUTCTimestamp"
+        source:
+          type: string
+          minLength: 1
+          maxLength: 64
+        event_type:
+          enum: [auth.success, auth.failure, net.connection, net.request, policy.decision]
+        source_ip:
+          $ref: "#/components/schemas/IPAddress"
+        destination_ip:
+          $ref: "#/components/schemas/IPAddress"
+        destination_port:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 65535
+        protocol:
+          enum: [tcp, udp, icmp, other, null]
+        principal:
+          type: [string, "null"]
+          maxLength: 128
+        action:
+          enum: [allow, deny, null]
+        outcome:
+          enum: [success, failure, null]
+        attributes:
+          type: [object, "null"]
+          maxProperties: 32
+          additionalProperties:
+            type: [string, number, boolean]
+
+    Alert:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - alert_id
+        - tenant_id
+        - rule_id
+        - rule_version
+        - severity
+        - status
+        - created_at
+        - window_start
+        - window_end
+        - entity_key
+        - summary
+        - event_count
+        - sample_event_ids
+        - dedupe_key
+      properties:
+        schema_version:
+          const: 1
+        alert_id:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        tenant_id:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,62}$"
+        rule_id:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{0,63}$"
+        rule_version:
+          type: integer
+          minimum: 1
+        severity:
+          enum: [low, medium, high, critical]
+        status:
+          enum: [open, acknowledged, resolved]
+        created_at:
+          $ref: "#/components/schemas/UTCTimestamp"
+        window_start:
+          $ref: "#/components/schemas/UTCTimestamp"
+        window_end:
+          $ref: "#/components/schemas/UTCTimestamp"
+        detected_at:
+          $ref: "#/components/schemas/NullableUTCTimestamp"
+        entity_key:
+          type: string
+          minLength: 1
+          maxLength: 512
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 512
+        event_count:
+          type: integer
+          minimum: 1
+        sample_event_ids:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/UUID"
+        dedupe_key:
+          type: string
+          minLength: 1
+          maxLength: 1024
+
+    EventBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/Event"
+
+    EventBatchAccepted:
+      type: object
+      additionalProperties: false
+      required: [accepted_count, rejected_count, event_ids, request_id]
+      properties:
+        accepted_count:
+          type: integer
+          minimum: 0
+        rejected_count:
+          type: integer
+          minimum: 0
+          description: Always 0 on 202 because batches are all-or-nothing.
+        event_ids:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/UUID"
+        request_id:
+          type: string
+
+    EventList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor, has_more]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/Event"
+        next_cursor:
+          type: [string, "null"]
+        has_more:
+          type: boolean
+
+    AlertList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor, has_more]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/Alert"
+        next_cursor:
+          type: [string, "null"]
+        has_more:
+          type: boolean
+
+    AlertStatusChange:
+      type: object
+      additionalProperties: false
+      required: [from_status, to_status, changed_at, actor]
+      properties:
+        from_status:
+          $ref: "#/components/schemas/AlertStatus"
+        to_status:
+          $ref: "#/components/schemas/AlertStatus"
+        changed_at:
+          $ref: "#/components/schemas/UTCTimestamp"
+        actor:
+          type: string
+
+    AlertDetail:
+      type: object
+      additionalProperties: false
+      required: [alert, version, evidence, rule_explanation, history]
+      properties:
+        alert:
+          $ref: "#/components/schemas/Alert"
+        version:
+          type: integer
+          minimum: 1
+          description: Optimistic concurrency version used by PATCH.
+        evidence:
+          type: array
+          maxItems: 20
+          description: Sample events backing the alert.
+          items:
+            $ref: "#/components/schemas/Event"
+        rule_explanation:
+          type: string
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertStatusChange"
+
+    AlertPatchRequest:
+      type: object
+      additionalProperties: false
+      required: [status, version]
+      properties:
+        status:
+          enum: [open, acknowledged, resolved]
+        version:
+          type: integer
+          minimum: 1
+
+    Rule:
+      type: object
+      additionalProperties: false
+      required: [rule_id, version, name, description, severity, enabled, parameters]
+      properties:
+        rule_id:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{0,63}$"
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        description:
+          type: string
+        severity:
+          $ref: "#/components/schemas/Severity"
+        enabled:
+          type: boolean
+        parameters:
+          type: object
+          description: Thresholds and window sizes.
+          additionalProperties:
+            type: [string, number, boolean]
+
+    RulesResponse:
+      type: object
+      additionalProperties: false
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/Rule"
+
+    SeverityCount:
+      type: object
+      additionalProperties: false
+      required: [severity, count]
+      properties:
+        severity:
+          $ref: "#/components/schemas/Severity"
+        count:
+          type: integer
+          minimum: 0
+
+    RuleCount:
+      type: object
+      additionalProperties: false
+      required: [rule_id, count]
+      properties:
+        rule_id:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+
+    TrendPoint:
+      type: object
+      additionalProperties: false
+      required: [bucket_start, event_count, alert_count]
+      properties:
+        bucket_start:
+          $ref: "#/components/schemas/UTCTimestamp"
+        event_count:
+          type: integer
+          minimum: 0
+        alert_count:
+          type: integer
+          minimum: 0
+
+    MetricsSummary:
+      type: object
+      additionalProperties: false
+      required: [event_rate_per_sec, open_alerts, alerts_by_severity, top_rules, trend_24h]
+      properties:
+        event_rate_per_sec:
+          type: number
+          minimum: 0
+        open_alerts:
+          type: integer
+          minimum: 0
+        alerts_by_severity:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeverityCount"
+        top_rules:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/RuleCount"
+        trend_24h:
+          type: array
+          maxItems: 288
+          items:
+            $ref: "#/components/schemas/TrendPoint"
+
+    HealthStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          enum: [ok, degraded, unavailable]
+        checks:
+          type: object
+          additionalProperties:
+            enum: [ok, failed]
