@@ -8,7 +8,7 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 
 ## Phases
 
-- [ ] **Phase 1: Foundations & Contracts** - Clean Go module with five binaries, Compose stack, schemas, OpenAPI skeleton, ADRs, CI skeleton
+- [x] **Phase 1: Foundations & Contracts** - Clean Go module with five binaries, Compose stack, schemas, OpenAPI skeleton, ADRs, CI skeleton (completed 2026-10-11)
 - [ ] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ
 - [ ] **Phase 3: Detection & Alert Pipeline** - Four event-time rules, deterministic alerts, crash-safe recovery, alert persistence
 - [ ] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
@@ -59,7 +59,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01-12-PLAN.md — CI skeleton, gitleaks, strict go mod tidy, full phase gate
+- [x] 01-12-PLAN.md — CI skeleton, gitleaks, strict go mod tidy, full phase gate
 
 **Research flag**: Needs research. OpenAPI 3.1 Go toolchain (oapi-codegen v2.8.0 / kin-openapi, libopenapi fallback), exact ClickHouse 26.3 image tag and digest, Vite 8 / Vitest 5 / MSW 3 / TypeScript peer compatibility. Compose, Makefile and CI skeleton are standard patterns.
 **Note**: DEP-03 (hardened CI) is assigned to Phase 6. The Phase 1 CI skeleton is covered by FND-02 and FND-05.
@@ -158,7 +158,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations & Contracts | 12/13 | In Progress|  |
+| 1. Foundations & Contracts | 13/13 | Complete   | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 0/TBD | Not started | - |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
