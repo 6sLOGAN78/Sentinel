@@ -71,5 +71,20 @@ func TestWithMessageAndIsAs(t *testing.T) {
 
 	var target *errs.HTTPError
 	require.ErrorAs(t, wrapped, &target)
-	require.ErrorIs(t, cp, &errs.HTTPError{})
+	require.ErrorIs(t, cp, orig)
+	require.ErrorIs(t, wrapped, errs.NewTooManyRequestsError("other", 1))
+}
+
+func TestIsComparesCodeAndStatus(t *testing.T) {
+	t.Parallel()
+
+	notFound := errs.NewNotFoundError("missing", false, nil)
+
+	require.NotErrorIs(t, notFound, errs.NewUnauthorizedError("nope", false))
+	require.NotErrorIs(t, notFound, &errs.HTTPError{})
+	require.NotErrorIs(t, notFound, (*errs.HTTPError)(nil))
+	require.ErrorIs(t, notFound, errs.NewNotFoundError("other message", true, nil))
+
+	code := "ALERT_NOT_FOUND"
+	require.NotErrorIs(t, notFound, errs.NewNotFoundError("missing", false, &code))
 }

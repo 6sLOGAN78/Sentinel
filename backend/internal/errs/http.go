@@ -69,9 +69,9 @@ func (e *HTTPError) Error() string {
 
 // Is reports whether target is an *HTTPError with the same code and status.
 func (e *HTTPError) Is(target error) bool {
-	_, ok := target.(*HTTPError)
+	t, ok := target.(*HTTPError)
 
-	return ok
+	return ok && t != nil && t.Code == e.Code && t.Status == e.Status
 }
 
 // WithMessage returns a copy of the error carrying message.
