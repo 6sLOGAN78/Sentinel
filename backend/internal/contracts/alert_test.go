@@ -217,6 +217,16 @@ func TestAlertDecodeRejectsCaseVariantKeyAndTrailingData(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestAlertDecodeRejectsDuplicateKeys(t *testing.T) {
+	t.Parallel()
+
+	raw := specExampleAlert(t)
+	dup := bytes.Replace(raw, []byte("{"), []byte(`{"tenant_id":"other",`), 1)
+
+	_, err := contracts.DecodeAlert(bytes.NewReader(dup))
+	require.ErrorContains(t, err, "duplicate field")
+}
+
 func TestAlertDecodeRejectsOversizeInput(t *testing.T) {
 	t.Parallel()
 

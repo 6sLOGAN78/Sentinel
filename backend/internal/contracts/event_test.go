@@ -326,6 +326,46 @@ func TestFixtureDecodeStrictness(t *testing.T) {
 	require.ErrorIs(t, err, contracts.ErrEventTooLarge)
 }
 
+func TestFixtureDecodeRejectsDuplicateKeys(t *testing.T) {
+	t.Parallel()
+
+	good := string(mustRead(t, filepath.Join("testdata", "event", "valid", "minimal.json")))
+
+	ev, err := contracts.DecodeEvent(strings.NewReader(good))
+	require.NoError(t, err)
+	require.Equal(t, "demo", ev.TenantID)
+
+	dupTenant := strings.Replace(good, "{", `{"tenant_id":"other",`, 1)
+	_, err = contracts.DecodeEvent(strings.NewReader(dupTenant))
+	require.ErrorContains(t, err, "tenant_id")
+	require.ErrorContains(t, err, "duplicate field")
+
+	dupEventID := strings.Replace(good, `"source"`, `"event_id":"018ff000-0000-7000-8000-000000000002","source"`, 1)
+	_, err = contracts.DecodeEvent(strings.NewReader(dupEventID))
+	require.ErrorContains(t, err, "duplicate field")
+
+	dupAttr := strings.Replace(good, `"source"`, `"attributes":{"a":"x","a":"y"},"source"`, 1)
+	_, err = contracts.DecodeEvent(strings.NewReader(dupAttr))
+	require.ErrorContains(t, err, "attributes.a")
+
+	sameAttrKeyInSiblings := strings.Replace(good, `"source"`, `"attributes":{"a":"x","b":"a"},"source"`, 1)
+	_, err = contracts.DecodeEvent(strings.NewReader(sameAttrKeyInSiblings))
+	require.NoError(t, err)
+}
+
+func TestFixtureDecodeRejectsNonObjectAndDeepNesting(t *testing.T) {
+	t.Parallel()
+
+	for _, doc := range []string{`null`, `"x"`, `1`, ``} {
+		_, err := contracts.DecodeEvent(strings.NewReader(doc))
+		require.Error(t, err, "%q", doc)
+	}
+
+	deep := `{"attributes":` + strings.Repeat(`[`, 64) + strings.Repeat(`]`, 64) + `}`
+	_, err := contracts.DecodeEvent(strings.NewReader(deep))
+	require.ErrorContains(t, err, "nesting")
+}
+
 func TestFixtureMarshalMillisecondUTC(t *testing.T) {
 	t.Parallel()
 

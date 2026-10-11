@@ -181,8 +181,13 @@ func strictDecode[T any](r io.Reader, what string, allowed map[string]struct{}) 
 		return nil, ErrEventTooLarge
 	}
 
-	var keys map[string]json.RawMessage
-	if err = json.Unmarshal(raw, &keys); err != nil {
+	keys, err := rootKeys(raw)
+	if err != nil {
+		var fe *FieldError
+		if errors.As(err, &fe) {
+			return nil, err
+		}
+
 		return nil, fmt.Errorf("decode %s: %w", what, err)
 	}
 
