@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "alert_id": "687ae716032ed9a62e426faf0f42aa90f4a81204aa8fcb17c5354a2a6cbe877",
+  "tenant_id": "demo",
+  "rule_id": "AUTH_BRUTE_FORCE",
+  "rule_version": 1,
+  "severity": "high",
+  "status": "open",
+  "created_at": "2026-10-09T10:05:00.000Z",
+  "window_start": "2026-10-09T10:00:00.000Z",
+  "window_end": "2026-10-09T10:05:00.000Z",
+  "entity_key": "192.0.2.10|example-user",
+  "summary": "Repeated failed logins against one user",
+  "event_count": 12,
+  "sample_event_ids": [
+    "018ff000-0000-7000-8000-000000000001"
+  ],
+  "dedupe_key": "demo|AUTH_BRUTE_FORCE|192.0.2.10|example-user|2026-10-09T10:00:00Z"
+}
