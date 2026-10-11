@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinel.local/schema/event.v1.json",
+  "title": "Sentinel security event v1",
+  "description": "Canonical event for topic security.events.v1. Rules that JSON Schema cannot express are enforced in Go (contracts.Event.Validate): total attributes size of at most 4096 bytes when encoded, and occurred_at skew bounds (at most 5m in the future and 7d in the past relative to the validation clock). Both limits are configurable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "tenant_id", "occurred_at", "source", "event_type"],
+  "$defs": {
+    "ip": {
+      "description": "IPv4 or IPv6 address without zone; IPv4-mapped IPv6 is rejected; null when absent.",
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "format": "ipv4" },
+        {
+          "type": "string",
+          "format": "ipv6",
+          "pattern": "^[0-9a-fA-F:]+$",
+          "not": { "pattern": "^(?i:::ffff:)" }
+        }
+      ]
+    },
+    "utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    }
+  },
+  "properties": {
+    "schema_version": { "const": 1 },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$" },
+    "occurred_at": { "$ref": "#/$defs/utc" },
+    "received_at": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/utc" }]
+    },
+    "source": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "event_type": {
+      "enum": ["auth.success", "auth.failure", "net.connection", "net.request", "policy.decision"]
+    },
+    "source_ip": { "$ref": "#/$defs/ip" },
+    "destination_ip": { "$ref": "#/$defs/ip" },
+    "destination_port": { "type": ["integer", "null"], "minimum": 0, "maximum": 65535 },
+    "protocol": { "enum": ["tcp", "udp", "icmp", "other", null] },
+    "principal": { "type": ["string", "null"], "maxLength": 128 },
+    "action": { "enum": ["allow", "deny", null] },
+    "outcome": { "enum": ["success", "failure", null] },
+    "attributes": {
+      "type": ["object", "null"],
+      "maxProperties": 32,
+      "additionalProperties": { "type": ["string", "number", "boolean"] }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "event_id": "018ff000-0000-7000-8000-000000000001",
+  "tenant_id": "demo",
+  "occurred_at": "2026-10-10T11:59:00Z",
+  "source": "generator",
+  "event_type": "auth.failure"
+}
