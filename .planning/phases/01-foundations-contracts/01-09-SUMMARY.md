@@ -18,7 +18,7 @@ key-files:
     - backend/internal/contracts/alert.go
     - backend/internal/contracts/alert_test.go
     - backend/internal/contracts/schema/alert.v1.json
-    - backend/internal/contracts/testdata/alert/ (20 valid, 36 invalid_schema, 4 invalid_go_only)
+    - backend/internal/contracts/testdata/alert/ (13 valid, 36 invalid_schema, 4 invalid_go_only)
 decisions:
   - "Golden vectors computed with an independent Python implementation of the encoding, then frozen"
   - "entity_key and dedupe_key require minLength 1 so Go can detect missing fields without pointers"
@@ -40,7 +40,7 @@ Frozen length-prefixed SHA-256 DedupeKey (domain `sentinel.alert.v1`, uint32 len
 - `go test -race ./internal/contracts/...` and `go test ./...` pass.
 - `go-test-nonempty.sh` with TestAlert passes; TestDedupeKey tests pass.
 - `go test -fuzz=FuzzDedupeKey -fuzztime=10s`: about 940k execs, no violation.
-- Fixtures: 20 valid, 36 invalid_schema (includes spec label, 63-char id, 21 samples), 4 invalid_go_only. gofmt and go vet clean.
+- Fixtures: 13 valid, 36 invalid_schema (includes spec label, 63-char id, 21 samples), 4 invalid_go_only. gofmt and go vet clean.
 - Only dedupe.go uses sha256.Sum256 in non-test code.
 
 ## Deviations from Plan
