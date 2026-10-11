@@ -172,15 +172,16 @@ func DialTCP(ctx context.Context, addr string, timeout time.Duration) error {
 	return conn.Close()
 }
 
-// DialBrokers dials every address in the comma-separated brokers list.
+// DialBrokers dials every address in the comma-separated brokers list. A
+// list without any usable host:port entry is an error, never a silent pass.
 func DialBrokers(ctx context.Context, brokers string, timeout time.Duration) error {
-	for _, addr := range strings.Split(brokers, ",") {
-		addr = strings.TrimSpace(addr)
-		if addr == "" {
-			continue
-		}
+	addrs, err := config.ParseBrokers(brokers)
+	if err != nil {
+		return fmt.Errorf("kafka brokers: %w", err)
+	}
 
-		if err := DialTCP(ctx, addr, timeout); err != nil {
+	for _, addr := range addrs {
+		if err = DialTCP(ctx, addr, timeout); err != nil {
 			return fmt.Errorf("kafka broker unreachable: %w", err)
 		}
 	}

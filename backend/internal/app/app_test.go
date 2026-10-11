@@ -258,3 +258,13 @@ func TestDialBrokersChecksEvery(t *testing.T) {
 		t.Fatal("expected error when one broker is unreachable")
 	}
 }
+
+func TestDialBrokersRejectsEmptyList(t *testing.T) {
+	t.Parallel()
+
+	for _, brokers := range []string{"", ",", " , ", "kafka"} {
+		if err := app.DialBrokers(context.Background(), brokers, time.Second); err == nil {
+			t.Fatalf("brokers %q: expected error, got nil", brokers)
+		}
+	}
+}

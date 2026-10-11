@@ -272,3 +272,24 @@ func TestLoadCORSAllowedOriginsList(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"https://only.example.test"}, cfg.Server.CORSAllowedOrigins)
 }
+
+func TestLoadKafkaBrokersMustBeHostPort(t *testing.T) {
+	setCompleteEnv(t)
+
+	for _, bad := range []string{",", " , ", "kafka", ":9092", "kafka:", "kafka:abc", "kafka:0", "kafka:70000", "a:1,,b"} {
+		t.Setenv("SENTINEL_KAFKA.BROKERS", bad)
+
+		_, err := config.Load("detector")
+		require.Error(t, err, bad)
+		require.Contains(t, err.Error(), "kafka", bad)
+	}
+
+	t.Setenv("SENTINEL_KAFKA.BROKERS", " kafka-1:9092, [2001:db8::1]:9092 ,")
+
+	cfg, err := config.Load("detector")
+	require.NoError(t, err)
+
+	brokers, err := config.ParseBrokers(cfg.Kafka.Brokers)
+	require.NoError(t, err)
+	require.Equal(t, []string{"kafka-1:9092", "[2001:db8::1]:9092"}, brokers)
+}

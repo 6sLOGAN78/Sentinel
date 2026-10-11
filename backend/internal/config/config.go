@@ -5,7 +5,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -280,14 +282,48 @@ func validateFor(cfg *Config, sections []string) error {
 			return fmt.Errorf("validate %s config: %w", section, err)
 		}
 
-		if section == sectionDatabase {
-			if err := validateSSLMode(cfg.Primary.Env, cfg.Database.SSLMode); err != nil {
-				return err
-			}
+		if err := validateSection(cfg, section); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+// validateSection applies the checks a struct tag cannot express.
+func validateSection(cfg *Config, section string) error {
+	switch section {
+	case sectionDatabase:
+		return validateSSLMode(cfg.Primary.Env, cfg.Database.SSLMode)
+	case sectionKafka:
+		_, err := ParseBrokers(cfg.Kafka.Brokers)
+
+		return err
+	default:
+		return nil
+	}
+}
+
+// ParseBrokers splits a comma-separated broker list, trimming blanks, and
+// requires at least one entry with every entry in host:port form.
+func ParseBrokers(brokers string) ([]string, error) {
+	list := splitList(brokers)
+	if len(list) == 0 {
+		return nil, errors.New("validate kafka config: brokers has no address")
+	}
+
+	for _, addr := range list {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil || host == "" {
+			return nil, fmt.Errorf("validate kafka config: broker %q is not host:port", addr)
+		}
+
+		if n, perr := strconv.ParseUint(port, 10, 16); perr != nil || n == 0 {
+			return nil, fmt.Errorf("validate kafka config: broker %q has an invalid port", addr)
+		}
+	}
+
+	return list, nil
 }
 
 // validateSSLMode rejects Postgres sslmodes that allow plaintext or skip
