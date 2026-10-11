@@ -12,14 +12,15 @@ The end-to-end flow must work and be provably correct under failure: generator �
 
 ### Validated
 
-<!-- Inferred from existing go-boilerplate scaffold (see .planning/codebase/). Infrastructure only, no Sentinel domain features yet. -->
+<!-- Phase 1 (Foundations & Contracts) replaced the go-boilerplate scaffold; see .planning/phases/01-foundations-contracts/01-VERIFICATION.md -->
 
-- ✓ Go HTTP server skeleton (Echo v4) with middleware chain, request IDs and graceful shutdown: existing (`backend/`)
-- ✓ Env-based config loading and validation (koanf + validator): existing
-- ✓ PostgreSQL connection pool (pgx v5) and migration runner (tern): existing, no Sentinel tables yet
-- ✓ Redis client wiring (go-redis v9): existing
-- ✓ Structured JSON logging (zerolog): existing
-- ✓ Test helpers for a Postgres testcontainer: existing, no tests written
+- ✓ One-command local stack: `make dev-up` brings up pinned Kafka (KRaft), ClickHouse, PostgreSQL and Redis with explicitly created topics (6/3/1 partitions, auto-create off); verified from empty volumes: Phase 1 (FND-01)
+- ✓ Idempotent make targets (`migrate`, `test`, `test-integ`, `lint`, `run`, `dev-down`, CONFIRM-gated `reset`; honest non-zero `seed`/`bench` placeholders): Phase 1 (FND-02)
+- ✓ Single Go 1.26 module at `backend/` with five binaries (ingest, detector, event-writer, alert-writer, query-api); non-spec boilerplate removed; boilerplate defects fixed and tested: Phase 1 (FND-03)
+- ✓ Versioned event/alert JSON Schemas plus Go types with strict decoding, and one canonical length-prefixed SHA-256 `alert_id` function (golden vectors and fuzzing): Phase 1 (FND-04)
+- ✓ OpenAPI 3.1 contract for every spec §8 endpoint, validated in tests with drift checks against the JSON Schemas; TS types generated for `web/`: Phase 1 (FND-05)
+- ✓ Pinned versions (image digests, lockfiles, tools.mod), placeholder-only `.env.example`, gitleaks secret scanning: Phase 1 (FND-06)
+- ✓ Six ADRs in `docs/decisions/` (layout, event_id, atomic batch, metrics labels, Redis fail-closed, alert storage split): Phase 1 (FND-07)
 
 ### Active
 
@@ -55,13 +56,22 @@ The end-to-end flow must work and be provably correct under failure: generator �
 
 ## Context
 
-- **Brownfield starting point:** the repo was initialized from a go-boilerplate (commit `9f63dce`). It is a Turborepo/bun monorepo with a Go module at `backend/` (`github.com/6sLOGAN78/sentinel`, Go 1.25), plus TS packages (`packages/zod`, `packages/openapi`, `packages/emails`). The boilerplate includes Clerk auth, Resend email, asynq jobs and New Relic APM. None of these are in the spec's mandated stack. The `/api/v1` group is empty, the repositories are scaffolds, and there are no tests and no CI. See `.planning/codebase/CONCERNS.md`.
-- **Known boilerplate defects** (from the codebase map) to fix or replace:
-  - The Recover middleware is registered last.
-  - `Shutdown` can hit a nil pointer.
-  - Startup continues when the Redis ping fails.
-  - The DB connection string is built without escaping the password.
-  - Rate limiting is in-memory and hardcoded.
+- **Current state (after Phase 1, 2026-10-11):** the go-boilerplate (commit `9f63dce`) has been replaced:
+  - One Go module at `backend/` (Go 1.26) builds five binaries. They load config, connect to their dependencies and shut down cleanly, but have no HTTP routes or business logic yet.
+  - `web/` is a Vite + React 19 + TS 6 shell with no data. `generator/` is a uv-managed Python 3.13 project with a seeded event builder.
+  - Contracts, migrations, OpenAPI, ADRs and a CI skeleton exist.
+  - Clerk, asynq, Resend, New Relic, Turborepo/bun and the TS packages are gone.
+  - The GitHub Actions CI has not yet run on GitHub (tracked in `01-HUMAN-UAT.md`).
+- **Phase 2 hand-offs** (from `01-SECURITY.md` W-02..W-07 and `01-REVIEW.md`):
+  - Set `IPExtractor` before any IP-keyed rate limiting.
+  - Fix the empty-CORS-list allow-all default and the comma-separated origins parsing.
+  - Stop logging the full request URI.
+  - Call `AssertFormat` when compiling schemas in production.
+  - Reject duplicate JSON keys in strict decoding.
+  - Make chmigrate atomic and database-aware.
+  - Add a CI job for the integration tests.
+  - Add Redis AUTH/TLS settings.
+- **Codebase map is stale:** `.planning/codebase/` describes the pre-Phase-1 boilerplate. Refresh it with `/gsd:map-codebase` before relying on it.
 - **Source of truth:** `spec.md` (v1.0) defines the contracts (event/alert schemas, Kafka topics, HTTP API, ClickHouse/Postgres storage, metrics names), the phase plan (§14), the testing strategy (§15) and the Definition of Done (§18).
 - **Claim discipline:** "Millions of events" means synthetic load volume, not a guaranteed rate. Never invent throughput, latency, test results or security guarantees.
 - **Synthetic data:** use reserved documentation IP ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`) and pseudonymous principals only.
@@ -90,12 +100,12 @@ The end-to-end flow must work and be provably correct under failure: generator �
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Alert storage: immutable detections in ClickHouse, mutable workflow state and audit in PostgreSQL (unique `alert_id`) | Required v1 choice in spec §7.3; uses analytic search plus transactional triage | — Pending |
+| Alert storage: immutable detections in ClickHouse, mutable workflow state and audit in PostgreSQL (unique `alert_id`) | Required v1 choice in spec §7.3; uses analytic search plus transactional triage | ✓ Good: recorded as ADR 0006 in Phase 1; details finalized in Phase 3 |
 | At-least-once delivery with deterministic IDs (event_id, SHA-256 alert_id) and idempotent writes | Kafka+ClickHouse can't give end-to-end exactly-once (spec §3, §7.2) | — Pending |
-| Atomic all-or-nothing batch ingestion | Spec §8 recommends it for v1, so there is no ambiguous partial acceptance | — Pending |
-| Single Go module, multiple binaries (ingest, detector, event-writer, alert-writer, query-api) | Spec §2: avoid premature microservices | — Pending |
-| Reuse the existing `backend/` Go module and boilerplate infra (Echo, koanf, pgx, zerolog) where it fits; place binaries under `backend/cmd/*` instead of the spec's root-level `cmd/` | Simplest consistent path from the current repo (spec §19.4); record in `docs/decisions/` during Phase 1 | — Pending (confirm in Phase 1 discuss) |
-| Replace or remove non-spec boilerplate (Clerk, Resend email, asynq jobs, New Relic) in favor of spec-mandated API-key/JWT auth and Prometheus/OTEL | Spec §19.8: no unrelated services without a documented reason | — Pending (confirm in Phase 1 discuss) |
+| Atomic all-or-nothing batch ingestion | Spec §8 recommends it for v1, so there is no ambiguous partial acceptance | ✓ Recorded as ADR 0003: atomic at the response level; mid-batch Kafka failure gives 503 plus identical-batch retry with client-supplied event_id |
+| Single Go module, multiple binaries (ingest, detector, event-writer, alert-writer, query-api) | Spec §2: avoid premature microservices | ✓ Good: five binaries under `backend/cmd/*` in Phase 1 |
+| Reuse the existing `backend/` Go module and boilerplate infra (Echo, koanf, pgx, zerolog) where it fits; place binaries under `backend/cmd/*` instead of the spec's root-level `cmd/` | Simplest consistent path from the current repo (spec §19.4); record in `docs/decisions/` during Phase 1 | ✓ Good: ADR 0001; old HTTP layer deleted (D-28), retained infra refactored |
+| Replace or remove non-spec boilerplate (Clerk, Resend email, asynq jobs, New Relic) in favor of spec-mandated API-key/JWT auth and Prometheus/OTEL | Spec §19.8: no unrelated services without a documented reason | ✓ Good: all removed in Phase 1; `go list -deps` banned-module check passes |
 | Rules are versioned YAML loaded at startup; changes need a restart in v1 | Spec §5.1 explicitly allows it; keeps the rule engine simple | — Pending |
 | Vertical MVP phases following spec §14 order | Spec §14: each phase leaves the repo runnable; vertical slices before broad abstractions | — Pending |
 
@@ -117,4 +127,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-10 after initialization*
+*Last updated: 2026-10-11 after Phase 1 (Foundations & Contracts)*
