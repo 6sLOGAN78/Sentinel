@@ -130,6 +130,23 @@ jobs:
       - name: scan full history
         run: ./gitleaks git --redact --no-banner -v
 
+  # Integration tests (Testcontainers: Kafka, ClickHouse, PostgreSQL, Redis) run on
+  # every push. They hold the binary lifecycle, migration and Redis evidence cited in
+  # 01-SECURITY.md. ubuntu-24.04 runners ship Docker; the job is bounded by the
+  # job timeout and by `go test -timeout` inside `make test-integ`.
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: [go]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: integration tests
+        run: make test-integ
+
   # Optional until Phase 6 (deployment): a real Compose smoke test of the dev stack.
   compose-smoke:
     runs-on: ubuntu-24.04
