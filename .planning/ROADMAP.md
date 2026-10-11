@@ -49,8 +49,8 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-09-PLAN.md — DedupeKey (golden and fuzz), alert schema and Go type
-- [ ] 01-10-PLAN.md — Container test helpers, app lifecycle, five binaries, lifecycle integration tests
+- [x] 01-09-PLAN.md — DedupeKey (golden and fuzz), alert schema and Go type
+- [x] 01-10-PLAN.md — Container test helpers, app lifecycle, five binaries, lifecycle integration tests
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -158,7 +158,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations & Contracts | 8/13 | In Progress|  |
+| 1. Foundations & Contracts | 10/13 | In Progress|  |
 | 2. Ingestion & Durable Event Storage | 0/TBD | Not started | - |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
