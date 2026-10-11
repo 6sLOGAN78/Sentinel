@@ -2,7 +2,9 @@ import ipaddress
 import json
 import random
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
+
+import pytest
 
 from sentinel_generator.events import build_event, build_event_id
 
@@ -70,3 +72,27 @@ def test_required_fields_and_pseudonymous_principal() -> None:
     port = event["destination_port"]
     assert isinstance(port, int)
     assert 0 <= port <= 65535
+
+
+def test_naive_base_time_is_rejected() -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        build_event(random.Random(1), tenant_id="demo", index=0, base_time=datetime(2026, 1, 1))
+
+
+def test_non_utc_base_time_is_normalised_to_utc() -> None:
+    ist = timezone(timedelta(hours=5, minutes=30))
+    local_base = datetime(2026, 1, 1, 5, 30, tzinfo=ist)
+    utc_base = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+    from_local = build_event(random.Random(11), tenant_id="demo", index=2, base_time=local_base)
+    from_utc = build_event(random.Random(11), tenant_id="demo", index=2, base_time=utc_base)
+    assert from_local["occurred_at"] == "2026-01-01T00:00:02.000Z"
+    assert json.dumps(from_local, sort_keys=True) == json.dumps(from_utc, sort_keys=True)
+
+
+def test_event_id_timestamp_matches_occurred_at() -> None:
+    base = datetime(2026, 10, 10, 12, 0, 0, 123_456, tzinfo=UTC)
+    event = build_event(random.Random(4), tenant_id="demo", index=1, base_time=base)
+    ts_ms = int(str(event["event_id"]).replace("-", "")[:12], 16)
+    occurred = datetime.strptime(str(event["occurred_at"]), "%Y-%m-%dT%H:%M:%S.%fZ")
+    assert occurred.replace(tzinfo=UTC) == datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
+    assert str(event["occurred_at"]).endswith(".123Z")
