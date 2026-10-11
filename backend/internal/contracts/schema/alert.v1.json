@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinel.local/schema/alert.v1.json",
+  "title": "Sentinel security alert v1",
+  "description": "Canonical alert for topic security.alerts.v1. alert_id is the lowercase SHA-256 hex produced by contracts.DedupeKey; entity_key and dedupe_key are display only. created_at is event-time derived (window end or triggering event time); detected_at is wall clock, reserved for the detection delay metric, and is part of no key. Rules JSON Schema cannot express are enforced in Go (contracts.Alert.Validate): window_end after window_start and both windows within years 2000..2100.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "alert_id",
+    "tenant_id",
+    "rule_id",
+    "rule_version",
+    "severity",
+    "status",
+    "created_at",
+    "window_start",
+    "window_end",
+    "entity_key",
+    "summary",
+    "event_count",
+    "sample_event_ids",
+    "dedupe_key"
+  ],
+  "$defs": {
+    "utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    }
+  },
+  "properties": {
+    "schema_version": { "const": 1 },
+    "alert_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "tenant_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$" },
+    "rule_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+    "rule_version": { "type": "integer", "minimum": 1 },
+    "severity": { "enum": ["low", "medium", "high", "critical"] },
+    "status": { "enum": ["open", "acknowledged", "resolved"] },
+    "created_at": { "$ref": "#/$defs/utc" },
+    "window_start": { "$ref": "#/$defs/utc" },
+    "window_end": { "$ref": "#/$defs/utc" },
+    "detected_at": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/utc" }]
+    },
+    "entity_key": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "event_count": { "type": "integer", "minimum": 1 },
+    "sample_event_ids": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+      }
+    },
+    "dedupe_key": { "type": "string", "minLength": 1, "maxLength": 1024 }
+  }
+}
