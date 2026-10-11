@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -149,13 +150,13 @@ func TestMigrateClickHouseIdempotent(t *testing.T) {
 
 	assert.Equal(t, dbName, chQuery(ctx, t, cfg,
 		fmt.Sprintf("SELECT name FROM system.databases WHERE name = '%s' FORMAT TabSeparated", dbName)))
-	assert.Equal(t, fmt.Sprint(len(applied)), chQuery(ctx, t, cfg,
+	assert.Equal(t, strconv.Itoa(len(applied)), chQuery(ctx, t, cfg,
 		"SELECT count() FROM "+dbName+".schema_migrations FORMAT TabSeparated"))
 
 	again, err := runner.Run(ctx, fsys)
 	require.NoError(t, err)
 	assert.Empty(t, again)
-	assert.Equal(t, fmt.Sprint(len(applied)), chQuery(ctx, t, cfg,
+	assert.Equal(t, strconv.Itoa(len(applied)), chQuery(ctx, t, cfg,
 		"SELECT count() FROM "+dbName+".schema_migrations FORMAT TabSeparated"))
 }
 

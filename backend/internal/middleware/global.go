@@ -13,20 +13,24 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/sqlerr"
 )
 
+// GlobalMiddlewares builds the middleware shared by every HTTP service.
 type GlobalMiddlewares struct {
 	allowedOrigins []string
 }
 
+// NewGlobalMiddlewares returns the shared middleware for the given server.
 func NewGlobalMiddlewares(allowedOrigins []string) *GlobalMiddlewares {
 	return &GlobalMiddlewares{allowedOrigins: allowedOrigins}
 }
 
+// CORS returns the CORS middleware.
 func (global *GlobalMiddlewares) CORS() echo.MiddlewareFunc {
 	return middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: global.allowedOrigins,
 	})
 }
 
+// RequestLogger returns the structured request logging middleware.
 func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 	return middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogURI:     true,
@@ -88,10 +92,12 @@ func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 	})
 }
 
+// Recover returns the panic recovery middleware.
 func (global *GlobalMiddlewares) Recover() echo.MiddlewareFunc {
 	return middleware.Recover()
 }
 
+// Secure returns the security headers middleware.
 func (global *GlobalMiddlewares) Secure() echo.MiddlewareFunc {
 	return middleware.Secure()
 }

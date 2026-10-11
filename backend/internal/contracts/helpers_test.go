@@ -28,7 +28,7 @@ func CompileSchema(name string) (*jsonschema.Schema, error) {
 	c.AssertFormat()
 
 	url := schemaBase + name
-	if err := c.AddResource(url, doc); err != nil {
+	if err = c.AddResource(url, doc); err != nil {
 		return nil, fmt.Errorf("add schema resource %q: %w", name, err)
 	}
 

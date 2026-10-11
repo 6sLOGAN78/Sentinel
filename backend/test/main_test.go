@@ -26,6 +26,7 @@ var (
 	binDir   string
 )
 
+//nolint:gochecknoglobals // read-only service list shared by the integration tests
 var services = []string{"ingest", "detector", "event-writer", "alert-writer", "query-api"}
 
 func TestMain(m *testing.M) {
@@ -45,7 +46,7 @@ func run(m *testing.M) int {
 
 	binDir = dir
 
-	if err := buildBinaries(ctx, dir); err != nil {
+	if err = buildBinaries(ctx, dir); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 
 		return 1
@@ -76,30 +77,30 @@ func run(m *testing.M) int {
 	go func() {
 		defer wg.Done()
 
-		cfg, stop, err := sentineltesting.StartPostgres(ctx)
+		cfg, stop, serr := sentineltesting.StartPostgres(ctx)
 		pgCfg = cfg
-		record(stop, err)
+		record(stop, serr)
 	}()
 	go func() {
 		defer wg.Done()
 
-		cfg, stop, err := sentineltesting.StartRedis(ctx)
+		cfg, stop, serr := sentineltesting.StartRedis(ctx)
 		redisCfg = cfg
-		record(stop, err)
+		record(stop, serr)
 	}()
 	go func() {
 		defer wg.Done()
 
-		cfg, stop, err := sentineltesting.StartKafka(ctx)
+		cfg, stop, serr := sentineltesting.StartKafka(ctx)
 		kafkaCfg = cfg
-		record(stop, err)
+		record(stop, serr)
 	}()
 	go func() {
 		defer wg.Done()
 
-		cfg, stop, err := sentineltesting.StartClickHouse(ctx)
+		cfg, stop, serr := sentineltesting.StartClickHouse(ctx)
 		chCfg = cfg
-		record(stop, err)
+		record(stop, serr)
 	}()
 
 	wg.Wait()

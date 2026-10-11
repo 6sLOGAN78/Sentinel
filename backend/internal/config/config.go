@@ -16,6 +16,11 @@ import (
 )
 
 const (
+	sectionRedis       = "redis"
+	sectionKafka       = "kafka"
+	sectionClickHouse  = "clickhouse"
+	sectionDatabase    = "database"
+	levelInfo          = "info"
 	envPrefix          = "SENTINEL_"
 	envKeyPrimaryEnv   = "SENTINEL_PRIMARY.ENV"
 	envKeyEnvFile      = "SENTINEL_ENV_FILE"
@@ -122,11 +127,11 @@ type ContractsConfig struct {
 // requiredSections lists, per binary, the optional sections that must validate.
 func requiredSections() map[string][]string {
 	return map[string][]string{
-		ServiceIngest:      {"redis", "kafka"},
-		ServiceDetector:    {"kafka"},
-		ServiceEventWriter: {"kafka", "clickhouse"},
-		ServiceAlertWriter: {"kafka", "database", "clickhouse"},
-		ServiceQueryAPI:    {"database", "clickhouse", "redis"},
+		ServiceIngest:      {sectionRedis, sectionKafka},
+		ServiceDetector:    {sectionKafka},
+		ServiceEventWriter: {sectionKafka, sectionClickHouse},
+		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse},
+		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis},
 	}
 }
 
@@ -166,14 +171,14 @@ func Load(service string) (*Config, error) {
 	}
 
 	cfg := &Config{}
-	if err := k.Unmarshal("", cfg); err != nil {
+	if err = k.Unmarshal("", cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
 	cfg.Observability.ServiceName = service
 	cfg.Observability.Environment = cfg.Primary.Env
 
-	if err := validateFor(cfg, sections); err != nil {
+	if err = validateFor(cfg, sections); err != nil {
 		return nil, err
 	}
 
@@ -182,7 +187,7 @@ func Load(service string) (*Config, error) {
 
 func setDefaults(k *koanf.Koanf) {
 	defaults := map[string]any{
-		"observability.logging.level":                "info",
+		"observability.logging.level":                levelInfo,
 		"observability.logging.format":               "json",
 		"observability.logging.slow_query_threshold": defaultSlowQuery,
 		"database.port":                              defaultDBPort,
@@ -229,13 +234,13 @@ func validateFor(cfg *Config, sections []string) error {
 		var target any
 
 		switch section {
-		case "database":
+		case sectionDatabase:
 			target = cfg.Database
-		case "redis":
+		case sectionRedis:
 			target = cfg.Redis
-		case "kafka":
+		case sectionKafka:
 			target = cfg.Kafka
-		case "clickhouse":
+		case sectionClickHouse:
 			target = cfg.ClickHouse
 		default:
 			return fmt.Errorf("unknown config section %q", section)
@@ -245,7 +250,7 @@ func validateFor(cfg *Config, sections []string) error {
 			return fmt.Errorf("validate %s config: %w", section, err)
 		}
 
-		if section == "database" {
+		if section == sectionDatabase {
 			if err := validateSSLMode(cfg.Primary.Env, cfg.Database.SSLMode); err != nil {
 				return err
 			}

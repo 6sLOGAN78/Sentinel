@@ -40,12 +40,12 @@ func run() error {
 	}
 
 	if len(applied) == 0 {
-		fmt.Println("clickhouse schema up to date")
+		_, _ = fmt.Fprintln(os.Stdout, "clickhouse schema up to date")
 
 		return nil
 	}
 
-	fmt.Printf("clickhouse migrations applied: %d\n", len(applied))
+	_, _ = fmt.Fprintf(os.Stdout, "clickhouse migrations applied: %d\n", len(applied))
 
 	return nil
 }

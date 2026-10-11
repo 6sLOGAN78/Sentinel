@@ -6,7 +6,6 @@ import (
 	"io/fs"
 )
 
-//nolint:gochecknoglobals // go:embed requires a package-level variable
 //go:embed postgres/*.sql clickhouse/*.sql
 var files embed.FS
 

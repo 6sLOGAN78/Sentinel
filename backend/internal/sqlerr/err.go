@@ -1,3 +1,4 @@
+// Package sqlerr converts PostgreSQL driver errors into typed domain errors.
 package sqlerr
 
 // Code describes a specific type of database error.
@@ -65,6 +66,7 @@ func MapCode(code string) Code {
 // Severity defines the severity of a database error.
 type Severity string
 
+// Severity levels as reported by PostgreSQL.
 const (
 	SeverityError   Severity = "ERROR"
 	SeverityFatal   Severity = "FATAL"

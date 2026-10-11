@@ -116,7 +116,7 @@ func RunContext(ctx context.Context, service string, setup SetupFunc) int {
 	log := logger.New(cfg.Observability, service)
 	lc := NewLifecycle(log)
 
-	if err := runSetup(ctx, setup, cfg, log, lc); err != nil {
+	if err = runSetup(ctx, setup, cfg, log, lc); err != nil {
 		log.Error().Err(err).Msg("startup failed")
 
 		if cerr := closeWithTimeout(lc); cerr != nil {
@@ -132,7 +132,7 @@ func RunContext(ctx context.Context, service string, setup SetupFunc) int {
 
 	log.Info().Msg("shutdown signal received")
 
-	if err := closeWithTimeout(lc); err != nil {
+	if err = closeWithTimeout(lc); err != nil {
 		log.Error().Err(err).Msg("shutdown incomplete")
 
 		return exitError

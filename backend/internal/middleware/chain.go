@@ -1,3 +1,5 @@
+// Package middleware holds the Echo middleware used by Sentinel HTTP services:
+// request IDs, context-scoped logging, CORS, recovery and security headers.
 package middleware
 
 import (

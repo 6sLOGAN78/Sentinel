@@ -127,7 +127,7 @@ func goAccepts(raw []byte) (bool, error) {
 		return false, err
 	}
 
-	if err := ev.Validate(fixedNow, contracts.DefaultLimits()); err != nil {
+	if err = ev.Validate(fixedNow, contracts.DefaultLimits()); err != nil {
 		return false, err
 	}
 

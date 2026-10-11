@@ -68,7 +68,7 @@ func TestOpenAPIDriftFixtures(t *testing.T) {
 
 		for _, f := range fixtureFiles(t, tc.fixtures+"/valid") {
 			err := schema.VisitJSON(readJSON(t, f), visitOptions()...)
-			assert.NoError(t, err, "%s should be accepted: %s", tc.component, f)
+			require.NoError(t, err, "%s should be accepted: %s", tc.component, f)
 		}
 
 		for _, f := range fixtureFiles(t, tc.fixtures+"/invalid_schema") {

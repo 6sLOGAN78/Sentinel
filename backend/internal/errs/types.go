@@ -4,6 +4,7 @@ import (
 	"net/http"
 )
 
+// NewUnauthorizedError builds a 401 error.
 func NewUnauthorizedError(message string, override bool) *HTTPError {
 	return &HTTPError{
 		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusUnauthorized)),
@@ -13,6 +14,7 @@ func NewUnauthorizedError(message string, override bool) *HTTPError {
 	}
 }
 
+// NewForbiddenError builds a 403 error.
 func NewForbiddenError(message string, override bool) *HTTPError {
 	return &HTTPError{
 		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusForbidden)),
@@ -22,6 +24,7 @@ func NewForbiddenError(message string, override bool) *HTTPError {
 	}
 }
 
+// NewBadRequestError builds a 400 error with an optional code, field errors and action.
 func NewBadRequestError(message string, override bool, code *string, errors []FieldError, action *Action) *HTTPError {
 	formattedCode := MakeUpperCaseWithUnderscores(http.StatusText(http.StatusBadRequest))
 
@@ -39,6 +42,7 @@ func NewBadRequestError(message string, override bool, code *string, errors []Fi
 	}
 }
 
+// NewNotFoundError builds a 404 error.
 func NewNotFoundError(message string, override bool, code *string) *HTTPError {
 	formattedCode := MakeUpperCaseWithUnderscores(http.StatusText(http.StatusNotFound))
 
@@ -54,6 +58,7 @@ func NewNotFoundError(message string, override bool, code *string) *HTTPError {
 	}
 }
 
+// NewInternalServerError builds a 500 error.
 func NewInternalServerError() *HTTPError {
 	return &HTTPError{
 		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusInternalServerError)),
@@ -63,10 +68,12 @@ func NewInternalServerError() *HTTPError {
 	}
 }
 
+// ValidationError builds a 400 error for failed request validation.
 func ValidationError(err error) *HTTPError {
 	return NewBadRequestError("Validation failed: "+err.Error(), false, nil, nil, nil)
 }
 
+// NewConflictError builds a 409 error.
 func NewConflictError(message string, override bool) *HTTPError {
 	return &HTTPError{
 		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusConflict)),
@@ -76,6 +83,7 @@ func NewConflictError(message string, override bool) *HTTPError {
 	}
 }
 
+// NewPayloadTooLargeError builds a 413 error.
 func NewPayloadTooLargeError(message string, override bool) *HTTPError {
 	return &HTTPError{
 		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusRequestEntityTooLarge)),

@@ -54,7 +54,7 @@ func generateErrorCode(tableName string, errType Code) string {
 	}
 
 	action := "ERROR"
-	switch errType {
+	switch errType { //nolint:exhaustive // other codes keep the generic action
 	case ForeignKeyViolation:
 		action = "NOT_FOUND"
 	case UniqueViolation:
@@ -72,7 +72,7 @@ func generateErrorCode(tableName string, errType Code) string {
 func formatUserFriendlyMessage(sqlErr *Error) string {
 	entityName := getEntityName(sqlErr.TableName, sqlErr.ColumnName)
 
-	switch sqlErr.Code {
+	switch sqlErr.Code { //nolint:exhaustive // other codes use the generic message below
 	case ForeignKeyViolation:
 		return fmt.Sprintf("The referenced %s does not exist", entityName)
 	case UniqueViolation:
@@ -95,6 +95,9 @@ func formatUserFriendlyMessage(sqlErr *Error) string {
 }
 
 // getEntityName extracts entity name from database information with consistent rules
+// minUniqueParts is the part count of a unique_<table>_<column> constraint name.
+const minUniqueParts = 3
+
 func getEntityName(tableName, columnName string) string {
 	// First priority: column name logic (most reliable for FK relationships)
 	if columnName != "" && strings.HasSuffix(strings.ToLower(columnName), "_id") {
@@ -133,7 +136,7 @@ func extractColumnForUniqueViolation(constraintName string) string {
 	// Try standard naming convention first (unique_table_column)
 	if strings.HasPrefix(constraintName, "unique_") {
 		parts := strings.Split(constraintName, "_")
-		if len(parts) >= 3 {
+		if len(parts) >= minUniqueParts {
 			return parts[len(parts)-1]
 		}
 	}
@@ -165,7 +168,7 @@ func HandleError(err error) error {
 		errorCode := generateErrorCode(sqlErr.TableName, sqlErr.Code)
 		userMessage := formatUserFriendlyMessage(sqlErr)
 
-		switch sqlErr.Code {
+		switch sqlErr.Code { //nolint:exhaustive // other codes fall through to generic handling
 		case ForeignKeyViolation:
 			return errs.NewBadRequestError(userMessage, false, &errorCode, nil, nil)
 

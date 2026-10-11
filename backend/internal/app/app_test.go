@@ -121,6 +121,7 @@ func TestShutdownAfterCancel(t *testing.T) {
 	closed := false
 	started := make(chan struct{})
 
+	//nolint:unparam // must match the app.SetupFunc signature
 	setup := func(_ context.Context, _ *config.Config, _ zerolog.Logger, lc *app.Lifecycle) error {
 		lc.Add("res", func(context.Context) error { closed = true; return nil })
 		close(started)
@@ -223,13 +224,13 @@ func TestDialTCP(t *testing.T) {
 	}
 	defer func() { _ = ln.Close() }()
 
-	if err := app.DialTCP(context.Background(), ln.Addr().String(), time.Second); err != nil {
+	if err = app.DialTCP(context.Background(), ln.Addr().String(), time.Second); err != nil {
 		t.Fatalf("dial listening port: %v", err)
 	}
 
 	start := time.Now()
 
-	if err := app.DialTCP(context.Background(), "127.0.0.1:1", time.Second); err == nil {
+	if err = app.DialTCP(context.Background(), "127.0.0.1:1", time.Second); err == nil {
 		t.Fatal("expected error dialing closed port")
 	}
 
@@ -249,11 +250,11 @@ func TestDialBrokersChecksEvery(t *testing.T) {
 
 	good := ln.Addr().String()
 
-	if err := app.DialBrokers(context.Background(), good+", "+good, time.Second); err != nil {
+	if err = app.DialBrokers(context.Background(), good+", "+good, time.Second); err != nil {
 		t.Fatalf("all reachable: %v", err)
 	}
 
-	if err := app.DialBrokers(context.Background(), good+",127.0.0.1:1", time.Second); err == nil {
+	if err = app.DialBrokers(context.Background(), good+",127.0.0.1:1", time.Second); err == nil {
 		t.Fatal("expected error when one broker is unreachable")
 	}
 }

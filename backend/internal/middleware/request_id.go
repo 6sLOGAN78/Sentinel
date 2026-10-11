@@ -27,10 +27,13 @@ func validRequestID(id string) bool {
 }
 
 const (
+	// RequestIDHeader is the HTTP header carrying the request ID.
 	RequestIDHeader = "X-Request-ID"
-	RequestIDKey    = "request_id"
+	// RequestIDKey is the Echo context key the request ID is stored under.
+	RequestIDKey = "request_id"
 )
 
+// RequestID returns the middleware that assigns or propagates a request ID.
 func RequestID() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -47,6 +50,7 @@ func RequestID() echo.MiddlewareFunc {
 	}
 }
 
+// GetRequestID returns the request ID stored in the Echo context, or "".
 func GetRequestID(c echo.Context) string {
 	if requestID, ok := c.Get(RequestIDKey).(string); ok {
 		return requestID

@@ -87,7 +87,8 @@ func TestChmigrateRunOrderAndIdempotent(t *testing.T) {
 
 	want := []string{
 		"CREATE DATABASE IF NOT EXISTS db1",
-		"CREATE TABLE IF NOT EXISTS db1.schema_migrations (version String, applied_at DateTime DEFAULT now()) ENGINE = MergeTree ORDER BY version",
+		"CREATE TABLE IF NOT EXISTS db1.schema_migrations (version String, " +
+			"applied_at DateTime DEFAULT now()) ENGINE = MergeTree ORDER BY version",
 		"SELECT version FROM db1.schema_migrations FORMAT TabSeparated",
 		"CREATE TABLE a (x Int8) ENGINE = Memory",
 		"CREATE TABLE c (x Int8) ENGINE = Memory",

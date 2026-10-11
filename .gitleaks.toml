@@ -1,0 +1,6 @@
+# Extends the default gitleaks ruleset. No path allowlist: .env and
+# backend/.env must never be committed, so they are deliberately not exempted.
+title = "sentinel gitleaks config"
+
+[extend]
+useDefault = true

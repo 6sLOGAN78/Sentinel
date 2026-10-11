@@ -77,8 +77,8 @@ func formatFieldValue(i any) string {
 		return v
 	case []byte:
 		var obj any
-		if err := json.Unmarshal(v, &obj); err == nil {
-			if pretty, err := json.MarshalIndent(obj, "", jsonIndent); err == nil {
+		if json.Unmarshal(v, &obj) == nil {
+			if pretty, merr := json.MarshalIndent(obj, "", jsonIndent); merr == nil {
 				return "\n" + string(pretty)
 			}
 		}
@@ -91,7 +91,7 @@ func formatFieldValue(i any) string {
 
 // GetPgxTraceLogLevel converts a zerolog level to a pgx log level.
 func GetPgxTraceLogLevel(level zerolog.Level) int {
-	switch level {
+	switch level { //nolint:exhaustive // every other level maps to the default pgx level
 	case zerolog.DebugLevel:
 		return pgxLevelDebug
 	case zerolog.InfoLevel:

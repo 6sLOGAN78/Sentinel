@@ -25,7 +25,7 @@ func setup(ctx context.Context, cfg *config.Config, _ zerolog.Logger, lc *app.Li
 
 	lc.Add("redis", app.CloseRedis(client))
 
-	if err := app.DialBrokers(ctx, cfg.Kafka.Brokers, app.DialTimeout); err != nil {
+	if err = app.DialBrokers(ctx, cfg.Kafka.Brokers, app.DialTimeout); err != nil {
 		return err
 	}
 

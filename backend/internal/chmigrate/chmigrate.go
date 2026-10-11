@@ -20,10 +20,10 @@ const (
 	table         = "schema_migrations"
 )
 
-var identRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`) //nolint:gochecknoglobals // compiled constant pattern
+var identRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // ErrInvalidDatabase is returned when the database name is not a safe identifier.
-var ErrInvalidDatabase = errors.New("invalid database identifier") //nolint:gochecknoglobals // sentinel error
+var ErrInvalidDatabase = errors.New("invalid database identifier")
 
 // Runner applies migrations to one ClickHouse database.
 type Runner struct {
@@ -99,7 +99,7 @@ func (r *Runner) Run(ctx context.Context, fsys fs.FS) ([]string, error) {
 			continue
 		}
 
-		if err := r.apply(ctx, fsys, name); err != nil {
+		if err = r.apply(ctx, fsys, name); err != nil {
 			return applied, err
 		}
 
@@ -116,13 +116,13 @@ func (r *Runner) apply(ctx context.Context, fsys fs.FS, name string) error {
 	}
 
 	for _, stmt := range splitStatements(string(raw)) {
-		if _, err := r.exec(ctx, stmt); err != nil {
+		if _, err = r.exec(ctx, stmt); err != nil {
 			return fmt.Errorf("applying %s: %w", name, err)
 		}
 	}
 
 	rec := "INSERT INTO " + r.database + "." + table + " (version) VALUES ('" + name + "')"
-	if _, err := r.exec(ctx, rec); err != nil {
+	if _, err = r.exec(ctx, rec); err != nil {
 		return fmt.Errorf("recording %s: %w", name, err)
 	}
 
@@ -172,7 +172,7 @@ func (r *Runner) exec(ctx context.Context, stmt string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("clickhouse request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxErrBody*maxErrBody))
 	if err != nil {
