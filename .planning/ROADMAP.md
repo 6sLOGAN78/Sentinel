@@ -54,8 +54,8 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-11-PLAN.md — OpenAPI 3.1 document, validation and drift tests, TS type generation
-- [ ] 01-13-PLAN.md — Migration, DSN and Redis integration tests against real containers
+- [x] 01-11-PLAN.md — OpenAPI 3.1 document, validation and drift tests, TS type generation
+- [x] 01-13-PLAN.md — Migration, DSN and Redis integration tests against real containers
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -158,7 +158,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations & Contracts | 10/13 | In Progress|  |
+| 1. Foundations & Contracts | 12/13 | In Progress|  |
 | 2. Ingestion & Durable Event Storage | 0/TBD | Not started | - |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
