@@ -813,22 +813,26 @@ func TestDedupeDoubleInsertNoOptimize(t *testing.T) {
 | A7 | `LowCardinality(Nullable(String))` is acceptable for protocol/action/outcome in Phase 3/4 queries | Pattern 6 | Verified to create and accept NULLs; query-shape implications for Phase 4 are unproven (LOW) |
 | A8 | Compose builds three services from the same `build:` block fast enough thanks to the BuildKit cache | Pattern 11 | Slower `make dev-up`; fallback `docker compose build ingest` once and `pull_policy: never` for the others |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **How should a permanently failing ClickHouse insert (non-transient error) behave?**
    - Known: D-16 bounds retries; DLQ is for undecodable records only.
    - Unclear: whether to crash-loop (recommended, loud, nothing committed) or park the batch.
    - Recommendation: exit non-zero after `MAX_ATTEMPTS`; Compose restarts; Phase 5 adds alerts on restart loops.
+   - **RESOLVED:** D-26 in CONTEXT. Exit non-zero after MAX_ATTEMPTS with nothing committed; Compose restarts; never DLQ an insert failure.
 
 2. **Ingest 403-versus-400 precedence and exact `error.details` shape.**
    - Known: `errs.FieldError` and `NewBadRequestError(message, override, code, []FieldError, action)` exist.
    - Recommendation: field path `events[<i>].<field>`; keep messages from `contracts.FieldError`; cap the number of reported errors (e.g. 50) to bound response size.
+   - **RESOLVED:** D-27. Tenant mismatch (403) takes precedence over field errors (400); details use `events[<i>].<field>`, capped at 50.
 
 3. **OpenAPI doc says `GET /api/v1/events/{event_id}` uses `BearerAuth` only.**
    - Known: D-13 uses the API key. `backend/test/openapi_drift_test.go` and CI validate the document.
    - Recommendation: edit `api/openapi.yaml` so `getEvent` accepts `ApiKeyAuth` (and keep `BearerAuth` as the Phase 4 alternative), regenerate `web` types, and let `TestOpenAPI*` confirm. Update ADR 0003's `:batch` note.
+   - **RESOLVED:** D-28. `getEvent` accepts ApiKeyAuth or BearerAuth; regenerate web types; update the ADR 0003 `:batch` note.
 
 4. **Should `server.bind` be added to `httpx` for `make run`?** It listens on all interfaces today. Optional hardening; Compose is already loopback-published.
+   - **RESOLVED:** D-29. Add an optional bind address (default all interfaces in containers; `make run` binds 127.0.0.1).
 
 ## Environment Availability
 

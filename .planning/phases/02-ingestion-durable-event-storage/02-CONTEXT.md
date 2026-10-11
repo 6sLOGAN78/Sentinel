@@ -147,6 +147,28 @@ Requirements: ING-01..07, STOR-01..04, GEN-01, GEN-03, OBS-01.
   - Ingest validation is Go-typed (D-12 of Phase 1), so W-05's `AssertFormat` applies only if production code ever compiles JSON Schema. It must not.
 - **D-25:** Add the banned-module `go list -deps` check to the CI go job (W-03), since Phase 2 adds dependencies (franz-go, clickhouse-go).
 
+### Resolved after research (auto mode, 2026-10-12)
+- **D-26:** A non-transient ClickHouse insert failure is never sent to the DLQ.
+  - After the bounded retries (D-16) are exhausted, the event-writer logs the error and exits non-zero without committing.
+  - Compose restarts it, and the batch is reprocessed from the last committed offset.
+  - The DLQ is only for records that can't be decoded or validated (D-18).
+- **D-27:** Error precedence on ingest is: `401` (key), then `413` (size or count), then `400` (malformed JSON envelope), then `429` (rate limit), then `403` (any event's `tenant_id` differs from the key's tenant, or the scope is missing), then `400` (field validation).
+  - The scope check happens with authentication, before rate limiting.
+  - Field errors use the path `events[<i>].<field>` and are capped at 50 per response.
+  - D-19's ordering is refined: read the bounded body, shallow-parse to `[]json.RawMessage` to get the event count N, rate-limit with cost N, then do the full per-event validation.
+- **D-28:** In `api/openapi.yaml`, `getEvent` accepts `ApiKeyAuth` or `BearerAuth`.
+  - Regenerate the web types and let `TestOpenAPI*` validate.
+  - Record in ADR 0003 (or a new ADR) that the batch route is registered with an escaped colon (`events\:batch`), and that a percent-encoded `%3A` path returns 404.
+- **D-29:** `httpx` gains an optional bind address, `SENTINEL_SERVER.BIND_ADDRESS`.
+  - Containers listen on all interfaces, and Compose publishes on `127.0.0.1` only.
+  - `make run` sets it to `127.0.0.1`. Ops listeners take the same option.
+- **D-30:** From research:
+  - Never set `non_replicated_deduplication_window` on the events table. The double-insert test asserts a raw `count()` of 2N and `uniqExact(event_id)` of N.
+  - Configure the producer with `kgo.AllowIdempotentProduceCancellation()` plus `RecordDeliveryTimeout`/`RecordRetries` so the produce timeout is honored.
+  - Image healthchecks use a static `backend/tools/healthprobe` binary, because distroless has no curl.
+  - Compose app services use `build:` only, with no `image:` line, so `check-pins.sh` keeps passing.
+  - Add `.local/` to `.gitignore`.
+
 ### Claude's Discretion
 - Internal package layout under `backend/internal/` (for example `ingest`, `kafkax`, `storage/clickhouse`, `apikeys`, `ratelimit`, `opshttp`), and handler and middleware structure.
 - Exact config key names (following the existing `SENTINEL_<SECTION>.<KEY>` convention), default timeouts, and retry/backoff constants within the stated bounds.
