@@ -1,10 +1,13 @@
 package middleware_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -114,4 +117,83 @@ func TestRequestIDSanitized(t *testing.T) {
 		assert.NotEqual(t, bad, got)
 		assert.Len(t, got, 36)
 	}
+}
+
+// syncBuffer is a goroutine-safe log sink for request-logger assertions.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
+}
+
+// apiLogLine returns the request-logger ("API") line written to sink.
+func apiLogLine(t *testing.T, sink *syncBuffer) map[string]any {
+	t.Helper()
+
+	for line := range strings.SplitSeq(strings.TrimSpace(sink.String()), "\n") {
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &entry))
+
+		if entry["message"] == "API" {
+			return entry
+		}
+	}
+
+	require.FailNow(t, "no API log line", sink.String())
+
+	return nil
+}
+
+func newLoggedEcho(t *testing.T, sink *syncBuffer) *echo.Echo {
+	t.Helper()
+
+	e := echo.New()
+	logger := zerolog.New(sink)
+	middleware.Apply(e, &logger, []string{"https://example.test"})
+
+	return e
+}
+
+func TestRequestLoggerStatusMatchesResponseForPlainError(t *testing.T) {
+	t.Parallel()
+
+	sink := &syncBuffer{}
+	e := newLoggedEcho(t, sink)
+	e.GET("/plain", func(echo.Context) error { return errors.New("boom") })
+
+	rec, env := do(t, e, "/plain", nil)
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, "INTERNAL_SERVER_ERROR", env.Error["code"])
+
+	entry := apiLogLine(t, sink)
+	assert.InDelta(t, float64(http.StatusInternalServerError), entry["status"], 0)
+	assert.Equal(t, "error", entry["level"])
+}
+
+func TestRequestLoggerStatusForHTTPError(t *testing.T) {
+	t.Parallel()
+
+	sink := &syncBuffer{}
+	e := newLoggedEcho(t, sink)
+	e.GET("/slow", func(echo.Context) error { return errs.NewTooManyRequestsError("slow", 1) })
+
+	rec, _ := do(t, e, "/slow", nil)
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+
+	entry := apiLogLine(t, sink)
+	assert.InDelta(t, float64(http.StatusTooManyRequests), entry["status"], 0)
+	assert.Equal(t, "warn", entry["level"])
 }

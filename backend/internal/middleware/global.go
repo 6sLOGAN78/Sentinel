@@ -45,15 +45,10 @@ func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 
 			// the status code is not set yet as it gets picked up by the global err handler
 			// see here: https://github.com/labstack/echo/issues/2310#issuecomment-1288196898
+			// Use the same mapping as GlobalErrorHandler so the logged status
+			// always matches the status the client receives.
 			if v.Error != nil {
-				var httpErr *errs.HTTPError
-				var echoErr *echo.HTTPError
-
-				if errors.As(v.Error, &httpErr) {
-					statusCode = httpErr.Status
-				} else if errors.As(v.Error, &echoErr) {
-					statusCode = echoErr.Code
-				}
+				statusCode = toHTTPError(v.Error).Status
 			}
 
 			logger := GetLogger(c)
