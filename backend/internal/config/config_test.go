@@ -293,3 +293,42 @@ func TestLoadKafkaBrokersMustBeHostPort(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"kafka-1:9092", "[2001:db8::1]:9092"}, brokers)
 }
+
+func TestLoadRedisSecurity(t *testing.T) {
+	setCompleteEnv(t)
+
+	// Plaintext without AUTH is accepted only for local development and tests.
+	cfg, err := config.Load("ingest")
+	require.NoError(t, err)
+	require.False(t, cfg.Redis.TLS)
+
+	t.Setenv("SENTINEL_REDIS.CA_CERT_FILE", "/etc/ssl/redis-ca.pem")
+
+	_, err = config.Load("ingest")
+	require.ErrorContains(t, err, "ca_cert_file requires tls")
+
+	t.Setenv("SENTINEL_REDIS.CA_CERT_FILE", "")
+	t.Setenv("SENTINEL_PRIMARY.ENV", "production")
+
+	_, err = config.Load("ingest")
+	require.ErrorContains(t, err, "validate redis config")
+
+	t.Setenv("SENTINEL_REDIS.TLS", "true")
+
+	_, err = config.Load("ingest")
+	require.ErrorContains(t, err, "password")
+
+	t.Setenv("SENTINEL_REDIS.PASSWORD", "change-me")
+	t.Setenv("SENTINEL_REDIS.USERNAME", "ingest")
+
+	cfg, err = config.Load("ingest")
+	require.NoError(t, err)
+	require.True(t, cfg.Redis.TLS)
+	require.Equal(t, "ingest", cfg.Redis.Username)
+
+	// Services without Redis are not affected.
+	t.Setenv("SENTINEL_REDIS.TLS", "false")
+
+	_, err = config.Load("detector")
+	require.NoError(t, err)
+}

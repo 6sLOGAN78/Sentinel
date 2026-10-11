@@ -93,9 +93,16 @@ type DatabaseConfig struct {
 	ConnMaxIdleTime int    `koanf:"conn_max_idle_time" validate:"required"`
 }
 
-// RedisConfig holds the Redis address as host:port without a URL scheme.
+// RedisConfig holds Redis connection settings. Address is host:port without
+// a URL scheme. Outside local and test environments TLS and a password are
+// required (see validateRedisSecurity).
 type RedisConfig struct {
-	Address string `koanf:"address" validate:"required,hostname_port"`
+	Address  string `koanf:"address" validate:"required,hostname_port"`
+	Username string `koanf:"username"`
+	Password string `koanf:"password"`
+	TLS      bool   `koanf:"tls"`
+	// CACertFile is an optional PEM bundle used instead of the system roots.
+	CACertFile string `koanf:"ca_cert_file"`
 }
 
 // KafkaConfig holds comma-separated host:port broker addresses.
@@ -299,6 +306,8 @@ func validateSection(cfg *Config, section string) error {
 		_, err := ParseBrokers(cfg.Kafka.Brokers)
 
 		return err
+	case sectionRedis:
+		return validateRedisSecurity(cfg.Primary.Env, cfg.Redis)
 	default:
 		return nil
 	}
@@ -324,6 +333,25 @@ func ParseBrokers(brokers string) ([]string, error) {
 	}
 
 	return list, nil
+}
+
+// validateRedisSecurity requires TLS and a password for Redis outside local
+// development and tests, mirroring validateSSLMode for Postgres: Redis backs
+// rate limiting, a security control.
+func validateRedisSecurity(environment string, cfg RedisConfig) error {
+	if cfg.CACertFile != "" && !cfg.TLS {
+		return errors.New("validate redis config: ca_cert_file requires tls=true")
+	}
+
+	if environment == localEnvironment || environment == testEnvironment {
+		return nil
+	}
+
+	if !cfg.TLS || cfg.Password == "" {
+		return fmt.Errorf("validate redis config: tls and password are required in environment %q", environment)
+	}
+
+	return nil
 }
 
 // validateSSLMode rejects Postgres sslmodes that allow plaintext or skip
