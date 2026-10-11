@@ -5,11 +5,12 @@ COMPOSE := docker compose -f deployments/compose/docker-compose.yml --env-file .
 SERVICES := ingest detector event-writer alert-writer query-api
 
 # Compose and migration passwords come from the root .env (plain names only).
-ifneq ($(wildcard .env),)
-include .env
-export SENTINEL_POSTGRES_PASSWORD
-export SENTINEL_CLICKHOUSE_PASSWORD
-endif
+# The file is not `include`d: Make would expand `$` and treat `#` as a comment,
+# so a password such as pa$$w0rd#1 would differ from what Compose reads. Values
+# are read literally (everything after the first `=`, last assignment wins),
+# falling back to the environment when the key is absent.
+ENV_FILE ?= $(CURDIR)/.env
+dotenv_or_env = $$(v=$$(grep -E '^$(1)=' '$(ENV_FILE)' 2>/dev/null | tail -n 1 | cut -d= -f2-); printf '%s' "$${v:-$${$(1):-}}")
 
 PG_HOST ?= 127.0.0.1
 PG_PORT ?= 15432
@@ -36,8 +37,8 @@ reset: ## Destroy the stack and its volumes (requires CONFIRM=1)
 	$(COMPOSE) down -v --remove-orphans
 
 migrate: ## Apply PostgreSQL (tern) and ClickHouse migrations
-	cd backend && PGPASSWORD="$$SENTINEL_POSTGRES_PASSWORD" go tool -modfile=tools.mod tern migrate --migrations migrations/postgres --host $(PG_HOST) --port $(PG_PORT) --user sentinel --database sentinel --sslmode disable
-	cd backend && go run ./tools/chmigrate --addr $(CH_ADDR) --user sentinel --database sentinel
+	cd backend && PGPASSWORD="$(call dotenv_or_env,SENTINEL_POSTGRES_PASSWORD)" go tool -modfile=tools.mod tern migrate --migrations migrations/postgres --host $(PG_HOST) --port $(PG_PORT) --user sentinel --database sentinel --sslmode disable
+	cd backend && SENTINEL_CLICKHOUSE_PASSWORD="$(call dotenv_or_env,SENTINEL_CLICKHOUSE_PASSWORD)" go run ./tools/chmigrate --addr $(CH_ADDR) --user sentinel --database sentinel
 
 web/node_modules: web/package-lock.json
 	cd web && npm ci && touch node_modules
