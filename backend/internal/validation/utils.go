@@ -1,14 +1,16 @@
 package validation
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"regexp"
 	"strings"
 
+	"github.com/6sLOGAN78/sentinel/internal/errs"
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"github.com/6sLOGAN78/sentinel/internal/errs"
 )
 
 type Validatable interface {
@@ -28,8 +30,7 @@ func (c CustomValidationErrors) Error() string {
 
 func BindAndValidate(c echo.Context, payload Validatable) error {
 	if err := c.Bind(payload); err != nil {
-		message := strings.Split(strings.Split(err.Error(), ",")[1], "message=")[1]
-		return errs.NewBadRequestError(message, false, nil, nil, nil)
+		return errs.NewBadRequestError(bindMessage(err), false, nil, nil, nil)
 	}
 
 	if msg, fieldErrors := validateStruct(payload); fieldErrors != nil {
@@ -37,6 +38,19 @@ func BindAndValidate(c echo.Context, payload Validatable) error {
 	}
 
 	return nil
+}
+
+// bindMessage derives a client-safe message from a bind error without
+// assuming any particular error string layout.
+func bindMessage(err error) string {
+	var echoErr *echo.HTTPError
+	if errors.As(err, &echoErr) {
+		if msg, ok := echoErr.Message.(string); ok && msg != "" {
+			return msg
+		}
+	}
+
+	return http.StatusText(http.StatusBadRequest)
 }
 
 func validateStruct(v Validatable) (string, []errs.FieldError) {
@@ -48,14 +62,18 @@ func validateStruct(v Validatable) (string, []errs.FieldError) {
 
 func extractValidationErrors(err error) (string, []errs.FieldError) {
 	var fieldErrors []errs.FieldError
-	validationErrors, ok := err.(validator.ValidationErrors)
-	if !ok {
-		customValidationErrors := err.(CustomValidationErrors)
-		for _, err := range customValidationErrors {
-			fieldErrors = append(fieldErrors, errs.FieldError{
-				Field: err.Field,
-				Error: err.Message,
-			})
+	var validationErrors validator.ValidationErrors
+	if !errors.As(err, &validationErrors) {
+		var customValidationErrors CustomValidationErrors
+		if errors.As(err, &customValidationErrors) {
+			for _, cerr := range customValidationErrors {
+				fieldErrors = append(fieldErrors, errs.FieldError{
+					Field: cerr.Field,
+					Error: cerr.Message,
+				})
+			}
+		} else {
+			fieldErrors = append(fieldErrors, errs.FieldError{Field: "", Error: err.Error()})
 		}
 	}
 
