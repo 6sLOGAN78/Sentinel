@@ -1,1 +1,5 @@
-CREATE DATABASE IF NOT EXISTS sentinel;
+-- The database itself is created by the chmigrate bootstrap from its
+-- -database flag, and every migration runs with that database as the session
+-- default. Write later migrations with unqualified table names so they always
+-- target the configured database. This file is kept so the applied-version
+-- history stays stable.

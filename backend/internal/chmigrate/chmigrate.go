@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -69,13 +70,15 @@ func (r *Runner) Run(ctx context.Context, fsys fs.FS) ([]string, error) {
 			" (version String, applied_at DateTime DEFAULT now()) ENGINE = MergeTree ORDER BY version",
 	}
 
+	// Bootstrap statements are fully qualified and run before the database
+	// exists, so they are sent without a default database.
 	for _, stmt := range bootstrap {
-		if _, err := r.exec(ctx, stmt); err != nil {
+		if _, err := r.exec(ctx, stmt, ""); err != nil {
 			return nil, fmt.Errorf("bootstrap: %w", err)
 		}
 	}
 
-	body, err := r.exec(ctx, "SELECT version FROM "+db+"."+table+" FORMAT TabSeparated")
+	body, err := r.exec(ctx, "SELECT version FROM "+db+"."+table+" FORMAT TabSeparated", db)
 	if err != nil {
 		return nil, fmt.Errorf("listing applied migrations: %w", err)
 	}
@@ -116,14 +119,16 @@ func (r *Runner) apply(ctx context.Context, fsys fs.FS, name string) error {
 		return fmt.Errorf("reading %s: %w", name, err)
 	}
 
+	// Migration statements run with the configured database as the session
+	// default, so unqualified names land there rather than in "default".
 	for _, stmt := range splitStatements(string(raw)) {
-		if _, err = r.exec(ctx, stmt); err != nil {
+		if _, err = r.exec(ctx, stmt, r.database); err != nil {
 			return fmt.Errorf("applying %s: %w", name, err)
 		}
 	}
 
 	rec := "INSERT INTO " + r.database + "." + table + " (version) VALUES ('" + name + "')"
-	if _, err = r.exec(ctx, rec); err != nil {
+	if _, err = r.exec(ctx, rec, r.database); err != nil {
 		return fmt.Errorf("recording %s: %w", name, err)
 	}
 
@@ -224,8 +229,16 @@ func (s *splitter) flush() {
 	s.hasCode = false
 }
 
-func (r *Runner) exec(ctx context.Context, stmt string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.baseURL+"/", strings.NewReader(stmt))
+// exec posts stmt to ClickHouse. A non-empty database is sent as the
+// session default via the database query parameter; credentials are only
+// ever sent in the Authorization header.
+func (r *Runner) exec(ctx context.Context, stmt, database string) (string, error) {
+	target := r.baseURL + "/"
+	if database != "" {
+		target += "?" + url.Values{"database": {database}}.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(stmt))
 	if err != nil {
 		return "", fmt.Errorf("building request: %w", err)
 	}

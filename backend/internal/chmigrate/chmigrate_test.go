@@ -16,6 +16,7 @@ import (
 type fakeCH struct {
 	mu      sync.Mutex
 	stmts   []string
+	dbs     []string
 	applied []string
 	failOn  string
 	badAuth bool
@@ -34,11 +35,16 @@ func (f *fakeCH) handler(w http.ResponseWriter, r *http.Request) {
 		f.badAuth = true
 	}
 
-	if r.URL.User != nil || r.URL.RawQuery != "" {
+	// Only the session database may travel in the URL; never credentials.
+	q := r.URL.Query()
+	q.Del("database")
+
+	if r.URL.User != nil || len(q) != 0 {
 		f.badURL = true
 	}
 
 	f.stmts = append(f.stmts, stmt)
+	f.dbs = append(f.dbs, r.URL.Query().Get("database"))
 
 	if f.failOn != "" && strings.Contains(stmt, f.failOn) {
 		http.Error(w, "boom pw", http.StatusInternalServerError)
@@ -102,6 +108,13 @@ func TestChmigrateRunOrderAndIdempotent(t *testing.T) {
 
 	if f.badAuth || f.badURL {
 		t.Fatalf("auth header missing or credentials in URL: auth=%v url=%v", f.badAuth, f.badURL)
+	}
+
+	// Bootstrap runs before the database exists; everything after it uses
+	// the configured database as the session default.
+	wantDBs := []string{"", "", "db1", "db1", "db1", "db1", "db1", "db1"}
+	if strings.Join(f.dbs, ",") != strings.Join(wantDBs, ",") {
+		t.Fatalf("session databases = %q, want %q", f.dbs, wantDBs)
 	}
 
 	n := len(f.stmts)

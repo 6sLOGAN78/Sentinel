@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -158,6 +159,30 @@ func TestMigrateClickHouseIdempotent(t *testing.T) {
 	assert.Empty(t, again)
 	assert.Equal(t, strconv.Itoa(len(applied)), chQuery(ctx, t, cfg,
 		"SELECT count() FROM "+dbName+".schema_migrations FORMAT TabSeparated"))
+}
+
+// TestMigrateClickHouseUsesConfiguredDatabase proves unqualified names in a
+// migration land in the runner's database rather than in "default" (WR-09).
+func TestMigrateClickHouseUsesConfiguredDatabase(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	cfg := sentineltesting.RequireClickHouse(t)
+
+	const dbName = "sentinel_dbparam"
+
+	fsys := fstest.MapFS{
+		"001_probe.sql": {Data: []byte("CREATE TABLE IF NOT EXISTS probe (x Int8) ENGINE = MergeTree ORDER BY x;\n")},
+	}
+
+	applied, err := chmigrate.New(cfg.HTTPAddress, cfg.User, cfg.Password, dbName, nil).Run(ctx, fsys)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"001_probe.sql"}, applied)
+
+	assert.Equal(t, dbName, chQuery(ctx, t, cfg,
+		"SELECT database FROM system.tables WHERE name = 'probe' FORMAT TabSeparated"))
 }
 
 func TestRedisIntegration(t *testing.T) {
