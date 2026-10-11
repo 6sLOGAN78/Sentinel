@@ -1,20 +1,26 @@
+// Package errs defines the typed HTTP error shape returned by the API and
+// constructors for the standard status classes.
 package errs
 
 import (
 	"strings"
 )
 
+// FieldError describes one invalid request field.
 type FieldError struct {
 	Field string `json:"field"`
 	Error string `json:"error"`
 }
 
+// ActionType names the client-side action attached to an error.
 type ActionType string
 
 const (
+	// ActionTypeRedirect asks the client to redirect.
 	ActionTypeRedirect ActionType = "redirect"
 )
 
+// Action is an optional follow-up the client should perform for an error.
 type Action struct {
 	Type    ActionType `json:"type"`
 	Message string     `json:"message"`
@@ -61,12 +67,14 @@ func (e *HTTPError) Error() string {
 	return e.Message
 }
 
+// Is reports whether target is an *HTTPError with the same code and status.
 func (e *HTTPError) Is(target error) bool {
 	_, ok := target.(*HTTPError)
 
 	return ok
 }
 
+// WithMessage returns a copy of the error carrying message.
 func (e *HTTPError) WithMessage(message string) *HTTPError {
 	return &HTTPError{
 		Code:     e.Code,
@@ -80,6 +88,7 @@ func (e *HTTPError) WithMessage(message string) *HTTPError {
 	}
 }
 
+// MakeUpperCaseWithUnderscores converts text such as "Not Found" to "NOT_FOUND".
 func MakeUpperCaseWithUnderscores(str string) string {
 	return strings.ToUpper(strings.ReplaceAll(str, " ", "_"))
 }

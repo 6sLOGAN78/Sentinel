@@ -32,7 +32,7 @@ func alertGoAccepts(raw []byte) (bool, error) {
 		return false, err
 	}
 
-	if err := a.Validate(); err != nil {
+	if err = a.Validate(); err != nil {
 		return false, err
 	}
 
@@ -154,7 +154,7 @@ func TestAlertValidAlertIDsAreHex(t *testing.T) {
 func TestAlertFixtureIDsMatchDedupeKey(t *testing.T) {
 	t.Parallel()
 
-	a, err := contracts.DecodeAlert(bytes.NewReader(mustRead(t, filepath.Join("testdata", "alert", "valid", "spec_example.json"))))
+	a, err := contracts.DecodeAlert(bytes.NewReader(specExampleAlert(t)))
 	require.NoError(t, err)
 	require.Equal(t,
 		contracts.DedupeKey("demo", "AUTH_BRUTE_FORCE", []string{"192.0.2.10", "example-user"}, a.WindowStart.Time),
@@ -164,7 +164,7 @@ func TestAlertFixtureIDsMatchDedupeKey(t *testing.T) {
 func TestAlertTimestampsMarshalMillisecondZ(t *testing.T) {
 	t.Parallel()
 
-	a, err := contracts.DecodeAlert(bytes.NewReader(mustRead(t, filepath.Join("testdata", "alert", "valid", "spec_example.json"))))
+	a, err := contracts.DecodeAlert(bytes.NewReader(specExampleAlert(t)))
 	require.NoError(t, err)
 
 	out, err := json.Marshal(a)
@@ -176,7 +176,8 @@ func TestAlertTimestampsMarshalMillisecondZ(t *testing.T) {
 	require.Contains(t, s, `"window_end":"2026-10-09T10:05:00.000Z"`)
 	require.NotContains(t, s, "detected_at")
 
-	full, err := contracts.DecodeAlert(bytes.NewReader(mustRead(t, filepath.Join("testdata", "alert", "valid", "full_detected_at.json"))))
+	fullRaw := mustRead(t, filepath.Join("testdata", "alert", "valid", "full_detected_at.json"))
+	full, err := contracts.DecodeAlert(bytes.NewReader(fullRaw))
 	require.NoError(t, err)
 
 	out, err = json.Marshal(full)
@@ -187,7 +188,7 @@ func TestAlertTimestampsMarshalMillisecondZ(t *testing.T) {
 func TestAlertRoundTripSpecExample(t *testing.T) {
 	t.Parallel()
 
-	a, err := contracts.DecodeAlert(bytes.NewReader(mustRead(t, filepath.Join("testdata", "alert", "valid", "spec_example.json"))))
+	a, err := contracts.DecodeAlert(bytes.NewReader(specExampleAlert(t)))
 	require.NoError(t, err)
 	require.NoError(t, a.Validate())
 
@@ -221,4 +222,11 @@ func TestAlertDecodeRejectsOversizeInput(t *testing.T) {
 
 	_, err := contracts.DecodeAlert(strings.NewReader(`{"summary":"` + strings.Repeat("x", 1<<20) + `"}`))
 	require.ErrorIs(t, err, contracts.ErrEventTooLarge)
+}
+
+// specExampleAlert returns the bytes of the valid spec example alert fixture.
+func specExampleAlert(t *testing.T) []byte {
+	t.Helper()
+
+	return mustRead(t, filepath.Join("testdata", "alert", "valid", "spec_example.json"))
 }

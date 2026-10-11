@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
-	"strings"
 	"testing"
 	"time"
 
@@ -45,7 +44,7 @@ func TestShutdownStopsServe(t *testing.T) {
 
 	go func() { done <- s.Serve(l) }()
 
-	resp, err := http.Get("http://" + l.Addr().String()) //nolint:noctx // test against a local listener
+	resp, err := http.Get("http://" + l.Addr().String())
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
@@ -84,6 +83,6 @@ func TestHTTPXImportsNothingHeavy(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, banned := range []string{"internal/database", "internal/middleware", "go-redis", "kafka", "clickhouse"} {
-		assert.False(t, strings.Contains(string(out), banned), "httpx must not depend on %s", banned)
+		assert.NotContains(t, string(out), banned, "httpx must not depend on %s", banned)
 	}
 }

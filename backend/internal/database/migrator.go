@@ -20,14 +20,14 @@ func Migrate(ctx context.Context, c config.DatabaseConfig, log zerolog.Logger) e
 	if err != nil {
 		return fmt.Errorf("connecting for migrations: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	m, err := tern.NewMigrator(ctx, conn, versionTable)
 	if err != nil {
 		return fmt.Errorf("constructing database migrator: %w", err)
 	}
 
-	if err := m.LoadMigrations(migrations.Postgres()); err != nil {
+	if err = m.LoadMigrations(migrations.Postgres()); err != nil {
 		return fmt.Errorf("loading database migrations: %w", err)
 	}
 
@@ -36,7 +36,7 @@ func Migrate(ctx context.Context, c config.DatabaseConfig, log zerolog.Logger) e
 		return fmt.Errorf("retrieving current database migration version: %w", err)
 	}
 
-	if err := m.Migrate(ctx); err != nil {
+	if err = m.Migrate(ctx); err != nil {
 		return fmt.Errorf("applying database migrations: %w", err)
 	}
 

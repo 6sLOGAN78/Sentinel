@@ -74,7 +74,7 @@ func (s *Server) Start() error {
 		return errors.New("httpx: nil server")
 	}
 
-	l, err := net.Listen("tcp", s.srv.Addr)
+	l, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", s.srv.Addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}

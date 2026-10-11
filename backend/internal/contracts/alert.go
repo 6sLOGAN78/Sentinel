@@ -1,10 +1,6 @@
 package contracts
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"unicode/utf8"
 )
@@ -62,40 +58,7 @@ func alertFields() map[string]struct{} {
 // case-sensitively), type mismatches and trailing data are rejected. Input
 // beyond 1 MiB is refused with ErrEventTooLarge.
 func DecodeAlert(r io.Reader) (*Alert, error) {
-	raw, err := io.ReadAll(io.LimitReader(r, maxEventBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read alert: %w", err)
-	}
-
-	if len(raw) > maxEventBytes {
-		return nil, ErrEventTooLarge
-	}
-
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &keys); err != nil {
-		return nil, fmt.Errorf("decode alert: %w", err)
-	}
-
-	allowed := alertFields()
-	for k := range keys {
-		if _, ok := allowed[k]; !ok {
-			return nil, fieldErr(k, "unknown field")
-		}
-	}
-
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-
-	var a Alert
-	if err := dec.Decode(&a); err != nil {
-		return nil, fmt.Errorf("decode alert: %w", err)
-	}
-
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, errors.New("decode alert: trailing data after JSON object")
-	}
-
-	return &a, nil
+	return strictDecode[Alert](r, "alert", alertFields())
 }
 
 // Validate checks every alert contract rule.

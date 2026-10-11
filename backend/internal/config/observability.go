@@ -26,7 +26,7 @@ func DefaultObservabilityConfig() *ObservabilityConfig {
 		ServiceName: "sentinel",
 		Environment: "development",
 		Logging: LoggingConfig{
-			Level:              "info",
+			Level:              levelInfo,
 			Format:             "json",
 			SlowQueryThreshold: defaultSlowQuery,
 		},
@@ -40,7 +40,7 @@ func (c *ObservabilityConfig) Validate() error {
 	}
 
 	switch c.Logging.Level {
-	case "debug", "info", "warn", "error":
+	case "debug", levelInfo, "warn", "error":
 	default:
 		return fmt.Errorf("invalid logging level: %s (must be one of: debug, info, warn, error)", c.Logging.Level)
 	}
@@ -59,7 +59,7 @@ func (c *ObservabilityConfig) GetLogLevel() string {
 	}
 
 	if c.Environment == "production" {
-		return "info"
+		return levelInfo
 	}
 
 	return "debug"

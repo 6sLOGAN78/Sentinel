@@ -30,7 +30,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return nil
 	})
 
-	if err := app.DialTCP(ctx, cfg.ClickHouse.HTTPAddress, app.DialTimeout); err != nil {
+	if err = app.DialTCP(ctx, cfg.ClickHouse.HTTPAddress, app.DialTimeout); err != nil {
 		return err
 	}
 

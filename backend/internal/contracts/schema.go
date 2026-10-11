@@ -9,7 +9,7 @@ import (
 // schemaFS holds the JSON Schema documents.
 //
 //go:embed schema/*.json
-var schemaFS embed.FS //nolint:gochecknoglobals // go:embed requires a package-level variable
+var schemaFS embed.FS
 
 // Schema returns the raw bytes of the named schema file, for example "event.v1.json".
 func Schema(name string) ([]byte, error) {

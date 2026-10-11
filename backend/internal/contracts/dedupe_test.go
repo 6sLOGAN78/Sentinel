@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var hex64 = regexp.MustCompile(`^[0-9a-f]{64}$`) //nolint:gochecknoglobals // immutable test regexp
+var hex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 var goldenWindow = time.Date(2026, 10, 9, 10, 0, 0, 0, time.UTC) //nolint:gochecknoglobals // immutable test clock
 

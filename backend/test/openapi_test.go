@@ -138,12 +138,12 @@ func TestOpenAPISecurity(t *testing.T) {
 	for key, op := range operations(doc) {
 		names := securityNames(doc, op)
 
-		switch {
-		case key == "POST "+pathBatch:
+		switch key {
+		case "POST " + pathBatch:
 			assert.Equal(t, []string{"ApiKeyAuth"}, names, key)
-		case key == "GET /healthz", key == "GET /readyz":
+		case "GET /healthz", "GET /readyz":
 			assert.Empty(t, names, key)
-		case key == "GET /metrics":
+		case "GET /metrics":
 			// internal only, documented without public auth
 		default:
 			assert.Equal(t, []string{"BearerAuth"}, names, key)

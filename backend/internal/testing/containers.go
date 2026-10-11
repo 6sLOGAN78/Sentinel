@@ -33,10 +33,11 @@ const (
 	// ClickHousePassword is the password of the throwaway ClickHouse container.
 	ClickHousePassword = "testpassword"
 
-	postgresUser    = "sentinel"
-	postgresDB      = "sentinel"
-	defaultMaxConns = 5
-	defaultConnSecs = 300
+	postgresReadyLogs = 2 // initdb restarts the server once
+	postgresUser      = "sentinel"
+	postgresDB        = "sentinel"
+	defaultMaxConns   = 5
+	defaultConnSecs   = 300
 )
 
 func start(ctx context.Context, req testcontainers.ContainerRequest) (testcontainers.Container, error) {
@@ -94,7 +95,7 @@ func StartPostgres(ctx context.Context) (config.DatabaseConfig, func(), error) {
 			"POSTGRES_PASSWORD": PostgresPassword,
 		},
 		WaitingFor: wait.ForAll(
-			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+			wait.ForLog("database system is ready to accept connections").WithOccurrence(postgresReadyLogs),
 			wait.ForListeningPort("5432/tcp"),
 		).WithDeadline(startupTimeout),
 	})
@@ -152,8 +153,8 @@ func StartClickHouse(ctx context.Context) (config.ClickHouseConfig, func(), erro
 		Image:        clickHouseImage,
 		ExposedPorts: []string{"8123/tcp", "9000/tcp"},
 		Env: map[string]string{
-			"CLICKHOUSE_DB":                        "sentinel",
-			"CLICKHOUSE_USER":                      "sentinel",
+			"CLICKHOUSE_DB":                        postgresDB,
+			"CLICKHOUSE_USER":                      postgresUser,
 			"CLICKHOUSE_PASSWORD":                  ClickHousePassword,
 			"CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT": "1",
 		},
@@ -180,9 +181,9 @@ func StartClickHouse(ctx context.Context) (config.ClickHouseConfig, func(), erro
 	return config.ClickHouseConfig{
 		HTTPAddress:   net.JoinHostPort(host, strconv.Itoa(httpPort)),
 		NativeAddress: net.JoinHostPort(host, strconv.Itoa(nativePort)),
-		User:          "sentinel",
+		User:          postgresUser,
 		Password:      ClickHousePassword,
-		Database:      "sentinel",
+		Database:      postgresDB,
 	}, terminator(c), nil
 }
 
@@ -213,13 +214,15 @@ func StartKafka(ctx context.Context) (config.KafkaConfig, func(), error) {
 		Image:        kafkaImage,
 		ExposedPorts: []string{kafkaPort + "/tcp"},
 		Env: map[string]string{
-			"CLUSTER_ID":                                             "MkU3OEVBNTcwNTJENDM2Qk",
-			"KAFKA_NODE_ID":                                          "1",
-			"KAFKA_PROCESS_ROLES":                                    "broker,controller",
-			"KAFKA_CONTROLLER_QUORUM_VOTERS":                         "1@localhost:9093",
-			"KAFKA_LISTENERS":                                        "INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093",
-			"KAFKA_ADVERTISED_LISTENERS":                             "INTERNAL://localhost:9092,EXTERNAL://localhost:" + port,
-			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":                   "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT",
+			"CLUSTER_ID":                     "MkU3OEVBNTcwNTJENDM2Qk",
+			"KAFKA_NODE_ID":                  "1",
+			"KAFKA_PROCESS_ROLES":            "broker,controller",
+			"KAFKA_CONTROLLER_QUORUM_VOTERS": "1@localhost:9093",
+			"KAFKA_LISTENERS":                "INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093",
+			"KAFKA_ADVERTISED_LISTENERS":     "INTERNAL://localhost:9092,EXTERNAL://localhost:" + port,
+
+			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT",
+
 			"KAFKA_INTER_BROKER_LISTENER_NAME":                       "INTERNAL",
 			"KAFKA_CONTROLLER_LISTENER_NAMES":                        "CONTROLLER",
 			"KAFKA_AUTO_CREATE_TOPICS_ENABLE":                        "false",

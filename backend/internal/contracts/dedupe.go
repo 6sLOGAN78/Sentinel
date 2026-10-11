@@ -40,7 +40,9 @@ func DedupeKey(tenant, ruleID string, entity []string, windowStart time.Time) st
 		b = appendLP(b, e)
 	}
 
-	b = binary.BigEndian.AppendUint64(b, uint64(windowStart.UTC().UnixMilli())) //nolint:gosec // two's-complement of ms is intended and injective
+	ms := windowStart.UTC().UnixMilli()
+	// Two's-complement of the millisecond value is intended and injective.
+	b = binary.BigEndian.AppendUint64(b, uint64(ms))
 
 	sum := sha256.Sum256(b)
 

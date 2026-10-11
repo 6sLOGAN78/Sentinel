@@ -165,9 +165,16 @@ func eventFields() map[string]struct{} {
 // case-sensitively), type mismatches and trailing data are all rejected.
 // Input beyond 1 MiB is refused with ErrEventTooLarge.
 func DecodeEvent(r io.Reader) (*Event, error) {
+	return strictDecode[Event](r, "event", eventFields())
+}
+
+// strictDecode reads at most maxEventBytes of JSON from r and decodes exactly
+// one object into T, rejecting unknown root fields, type mismatches and
+// trailing data. what names the contract in error messages.
+func strictDecode[T any](r io.Reader, what string, allowed map[string]struct{}) (*T, error) {
 	raw, err := io.ReadAll(io.LimitReader(r, maxEventBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read event: %w", err)
+		return nil, fmt.Errorf("read %s: %w", what, err)
 	}
 
 	if len(raw) > maxEventBytes {
@@ -175,11 +182,10 @@ func DecodeEvent(r io.Reader) (*Event, error) {
 	}
 
 	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &keys); err != nil {
-		return nil, fmt.Errorf("decode event: %w", err)
+	if err = json.Unmarshal(raw, &keys); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", what, err)
 	}
 
-	allowed := eventFields()
 	for k := range keys {
 		if _, ok := allowed[k]; !ok {
 			return nil, fieldErr(k, "unknown field")
@@ -189,16 +195,16 @@ func DecodeEvent(r io.Reader) (*Event, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 
-	var ev Event
-	if err := dec.Decode(&ev); err != nil {
-		return nil, fmt.Errorf("decode event: %w", err)
+	var v T
+	if err = dec.Decode(&v); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", what, err)
 	}
 
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, errors.New("decode event: trailing data after JSON object")
+	if _, err = dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("decode %s: trailing data after JSON object", what)
 	}
 
-	return &ev, nil
+	return &v, nil
 }
 
 // Validate checks every contract rule against the clock now and limits l.

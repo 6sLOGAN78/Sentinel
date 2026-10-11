@@ -27,7 +27,9 @@ const pingTimeout = 10 * time.Second
 var errInvalidConfig = errors.New("invalid database configuration")
 
 // redactedKeys are removed from pgx trace data before logging.
-var redactedKeys = []string{"args", "password", "connstring", "conn_string", "dsn"} //nolint:gochecknoglobals // constant lookup list
+//
+//nolint:gochecknoglobals // constant lookup list
+var redactedKeys = []string{"args", "password", "connstring", "conn_string", "dsn"}
 
 type redactingLogger struct{ inner tracelog.Logger }
 
@@ -78,7 +80,7 @@ func PoolConfig(c config.DatabaseConfig, log zerolog.Logger) (*pgxpool.Config, e
 		return nil, errInvalidConfig
 	}
 
-	pc.MaxConns = int32(min(max(c.MaxOpenConns, 1), math.MaxInt32)) //nolint:gosec // clamped to the int32 range
+	pc.MaxConns = int32(min(max(c.MaxOpenConns, 1), math.MaxInt32))
 	pc.MaxConnLifetime = time.Duration(c.ConnMaxLifetime) * time.Second
 	pc.MaxConnIdleTime = time.Duration(c.ConnMaxIdleTime) * time.Second
 
@@ -109,7 +111,7 @@ func New(ctx context.Context, c config.DatabaseConfig, log zerolog.Logger) (*Dat
 	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
 
-	if err := pool.Ping(pingCtx); err != nil {
+	if err = pool.Ping(pingCtx); err != nil {
 		pool.Close()
 
 		return nil, fmt.Errorf("pinging database: %w", err)

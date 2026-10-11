@@ -7,12 +7,22 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// Echo context keys set by upstream middleware and read by this package.
 const (
-	UserIDKey   = "user_id"
+	// UserIDKey holds the authenticated user ID.
+	UserIDKey = "user_id"
+	// UserRoleKey holds the authenticated user role.
 	UserRoleKey = "user_role"
-	LoggerKey   = "logger"
+	// LoggerKey holds the request-scoped logger.
+	LoggerKey = "logger"
 )
 
+// contextKey is the type of keys this package stores in context.Context.
+type contextKey string
+
+const loggerContextKey contextKey = "logger"
+
+// ContextEnhancer attaches a request-scoped logger to every request.
 type ContextEnhancer struct {
 	logger *zerolog.Logger
 }
@@ -28,6 +38,7 @@ func NewContextEnhancer(logger *zerolog.Logger) *ContextEnhancer {
 	return &ContextEnhancer{logger: logger}
 }
 
+// EnhanceContext returns the middleware that stores the request logger.
 func (ce *ContextEnhancer) EnhanceContext() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -49,7 +60,7 @@ func (ce *ContextEnhancer) EnhanceContext() echo.MiddlewareFunc {
 
 			c.Set(LoggerKey, &contextLogger)
 
-			ctx := context.WithValue(c.Request().Context(), LoggerKey, &contextLogger)
+			ctx := context.WithValue(c.Request().Context(), loggerContextKey, &contextLogger)
 			c.SetRequest(c.Request().WithContext(ctx))
 
 			return next(c)
@@ -57,6 +68,7 @@ func (ce *ContextEnhancer) EnhanceContext() echo.MiddlewareFunc {
 	}
 }
 
+// GetUserID returns the authenticated user ID from the Echo context, or "".
 func GetUserID(c echo.Context) string {
 	if userID, ok := c.Get(UserIDKey).(string); ok {
 		return userID
@@ -65,6 +77,7 @@ func GetUserID(c echo.Context) string {
 	return ""
 }
 
+// GetLogger returns the request-scoped logger, or a no-op logger when unset.
 func GetLogger(c echo.Context) *zerolog.Logger {
 	if logger, ok := c.Get(LoggerKey).(*zerolog.Logger); ok {
 		return logger
