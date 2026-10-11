@@ -257,3 +257,18 @@ func TestLoadDatabaseSSLMode(t *testing.T) {
 	_, err = config.Load("alert-writer")
 	require.NoError(t, err)
 }
+
+func TestLoadCORSAllowedOriginsList(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_SERVER.CORS_ALLOWED_ORIGINS", "https://a.example.test, https://b.example.test,,")
+
+	cfg, err := config.Load("query-api")
+	require.NoError(t, err)
+	require.Equal(t, []string{"https://a.example.test", "https://b.example.test"}, cfg.Server.CORSAllowedOrigins)
+
+	t.Setenv("SENTINEL_SERVER.CORS_ALLOWED_ORIGINS", "https://only.example.test")
+
+	cfg, err = config.Load("query-api")
+	require.NoError(t, err)
+	require.Equal(t, []string{"https://only.example.test"}, cfg.Server.CORSAllowedOrigins)
+}

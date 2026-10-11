@@ -163,9 +163,7 @@ func Load(service string) (*Config, error) {
 	k := koanf.New(".")
 	setDefaults(k)
 
-	err := k.Load(env.Provider("SENTINEL_", ".", func(s string) string {
-		return strings.ToLower(strings.TrimPrefix(s, envPrefix))
-	}), nil)
+	err := k.Load(env.ProviderWithValue(envPrefix, ".", envKeyValue), nil)
 	if err != nil {
 		return nil, fmt.Errorf("load environment variables: %w", err)
 	}
@@ -183,6 +181,38 @@ func Load(service string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// listKeys are config keys whose env value is a comma-separated list.
+func listKeys() map[string]struct{} {
+	return map[string]struct{}{
+		"server.cors_allowed_origins": {},
+	}
+}
+
+// envKeyValue maps SENTINEL_SECTION.KEY to section.key and splits list values
+// on commas, trimming blanks, so one env var can carry several entries.
+func envKeyValue(rawKey, value string) (string, any) {
+	key := strings.ToLower(strings.TrimPrefix(rawKey, envPrefix))
+
+	if _, ok := listKeys()[key]; ok {
+		return key, splitList(value)
+	}
+
+	return key, value
+}
+
+// splitList splits a comma-separated value and drops blank entries.
+func splitList(value string) []string {
+	items := []string{}
+
+	for item := range strings.SplitSeq(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+
+	return items
 }
 
 func setDefaults(k *koanf.Koanf) {
