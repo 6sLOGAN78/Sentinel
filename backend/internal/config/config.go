@@ -268,7 +268,7 @@ func validateSSLMode(environment, mode string) error {
 	}
 
 	switch mode {
-	case "require", "verify-ca", "verify-full":
+	case "verify-ca", "verify-full":
 		return nil
 	default:
 		return fmt.Errorf("database ssl_mode %q is not allowed in environment %q", mode, environment)

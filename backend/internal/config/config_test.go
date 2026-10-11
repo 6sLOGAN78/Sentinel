@@ -237,7 +237,7 @@ func TestLoadDatabaseSSLMode(t *testing.T) {
 
 	t.Setenv("SENTINEL_PRIMARY.ENV", "production")
 
-	for _, mode := range []string{"disable", "allow", "prefer"} {
+	for _, mode := range []string{"disable", "allow", "prefer", "require"} {
 		t.Setenv("SENTINEL_DATABASE.SSL_MODE", mode)
 
 		_, err = config.Load("alert-writer")
@@ -245,7 +245,7 @@ func TestLoadDatabaseSSLMode(t *testing.T) {
 		require.Contains(t, err.Error(), "ssl_mode")
 	}
 
-	t.Setenv("SENTINEL_DATABASE.SSL_MODE", "require")
+	t.Setenv("SENTINEL_DATABASE.SSL_MODE", "verify-ca")
 
 	_, err = config.Load("alert-writer")
 	require.NoError(t, err)
