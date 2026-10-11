@@ -9,6 +9,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "gen:api": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
+    "pretypecheck": "npm run gen:api",
+    "prebuild": "npm run gen:api",
+    "pretest": "npm run gen:api",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format:check": "prettier --check .",
