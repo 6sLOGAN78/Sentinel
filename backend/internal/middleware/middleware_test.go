@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -196,4 +197,51 @@ func TestRequestLoggerStatusForHTTPError(t *testing.T) {
 	entry := apiLogLine(t, sink)
 	assert.InDelta(t, float64(http.StatusTooManyRequests), entry["status"], 0)
 	assert.Equal(t, "warn", entry["level"])
+}
+
+func TestRealIPIgnoresClientForwardingHeaders(t *testing.T) {
+	t.Parallel()
+
+	sink := &syncBuffer{}
+	e := newLoggedEcho(t, sink)
+	e.GET("/ok", func(c echo.Context) error { return c.NoContent(http.StatusNoContent) })
+
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.RemoteAddr = "192.0.2.10:4321"
+	req.Header.Set("X-Forwarded-For", "198.51.100.7")
+	req.Header.Set("X-Real-IP", "198.51.100.8")
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	entry := apiLogLine(t, sink)
+	assert.Equal(t, "192.0.2.10", entry["ip"])
+	assert.NotContains(t, sink.String(), "198.51.100.")
+}
+
+func TestApplyKeepsConfiguredIPExtractor(t *testing.T) {
+	t.Parallel()
+
+	_, proxies, err := net.ParseCIDR("192.0.2.0/24")
+	require.NoError(t, err)
+
+	e := echo.New()
+	e.IPExtractor = echo.ExtractIPFromXFFHeader(echo.TrustIPRange(proxies))
+	logger := zerolog.Nop()
+	middleware.Apply(e, &logger, nil)
+
+	var got string
+	e.GET("/ip", func(c echo.Context) error {
+		got = c.RealIP()
+
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ip", nil)
+	req.RemoteAddr = "192.0.2.10:4321"
+	req.Header.Set("X-Forwarded-For", "198.51.100.7")
+	e.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, "198.51.100.7", got)
 }

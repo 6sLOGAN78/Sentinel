@@ -29,7 +29,15 @@ func Chain(logger *zerolog.Logger, allowedOrigins []string) []Named {
 }
 
 // Apply installs the envelope error handler and the global middleware chain.
+// Unless the caller already configured e.IPExtractor (for example with
+// echo.ExtractIPFromXFFHeader and explicit trusted proxy ranges), the client
+// IP is taken from the TCP peer address so X-Forwarded-For and X-Real-IP
+// sent by clients cannot spoof it.
 func Apply(e *echo.Echo, logger *zerolog.Logger, allowedOrigins []string) {
+	if e.IPExtractor == nil {
+		e.IPExtractor = echo.ExtractIPDirect()
+	}
+
 	e.HTTPErrorHandler = NewGlobalMiddlewares(allowedOrigins).GlobalErrorHandler
 
 	for _, m := range Chain(logger, allowedOrigins) {
