@@ -73,10 +73,16 @@ func ValidationError(err error) *HTTPError {
 	return NewBadRequestError("Validation failed: "+err.Error(), false, nil, nil, nil)
 }
 
-// NewConflictError builds a 409 error.
-func NewConflictError(message string, override bool) *HTTPError {
+// NewConflictError builds a 409 error with an optional code.
+func NewConflictError(message string, override bool, code *string) *HTTPError {
+	formattedCode := MakeUpperCaseWithUnderscores(http.StatusText(http.StatusConflict))
+
+	if code != nil {
+		formattedCode = *code
+	}
+
 	return &HTTPError{
-		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusConflict)),
+		Code:     formattedCode,
 		Message:  message,
 		Status:   http.StatusConflict,
 		Override: override,

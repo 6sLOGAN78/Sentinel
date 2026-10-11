@@ -43,7 +43,7 @@ func TestConstructors(t *testing.T) {
 		{errs.NewUnauthorizedError("m", false), "UNAUTHORIZED", http.StatusUnauthorized},
 		{errs.NewForbiddenError("m", false), "FORBIDDEN", http.StatusForbidden},
 		{errs.NewNotFoundError("m", false, nil), "NOT_FOUND", http.StatusNotFound},
-		{errs.NewConflictError("m", false), "CONFLICT", http.StatusConflict},
+		{errs.NewConflictError("m", false, nil), "CONFLICT", http.StatusConflict},
 		{errs.NewPayloadTooLargeError("m", false), "REQUEST_ENTITY_TOO_LARGE", http.StatusRequestEntityTooLarge},
 		{errs.NewTooManyRequestsError("m", 7), "TOO_MANY_REQUESTS", http.StatusTooManyRequests},
 		{errs.NewInternalServerError(), "INTERNAL_SERVER_ERROR", http.StatusInternalServerError},

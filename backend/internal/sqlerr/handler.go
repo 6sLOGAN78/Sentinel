@@ -177,7 +177,7 @@ func HandleError(err error) error {
 			if columnName != "" {
 				userMessage = strings.ReplaceAll(userMessage, "identifier", humanizeText(columnName))
 			}
-			return errs.NewBadRequestError(userMessage, true, &errorCode, nil, nil)
+			return errs.NewConflictError(userMessage, true, &errorCode)
 
 		case NotNullViolation:
 			fieldErrors := []errs.FieldError{
