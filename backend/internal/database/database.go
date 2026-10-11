@@ -1,125 +1,127 @@
+// Package database provides the Postgres connection pool and migrations.
 package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	pgxzero "github.com/jackc/pgx-zerolog"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/tracelog"
-	"github.com/newrelic/go-agent/v3/integrations/nrpgx5"
 	"github.com/rs/zerolog"
+
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	loggerConfig "github.com/6sLOGAN78/sentinel/internal/logger"
 )
 
+const pingTimeout = 10 * time.Second
+
+var errInvalidConfig = errors.New("invalid database configuration")
+
+// redactedKeys are removed from pgx trace data before logging.
+var redactedKeys = []string{"args", "password", "connstring", "conn_string", "dsn"} //nolint:gochecknoglobals // constant lookup list
+
+type redactingLogger struct{ inner tracelog.Logger }
+
+// RedactingLogger wraps a tracelog.Logger and strips bound query arguments and
+// credential-like keys from the data before delegating.
+func RedactingLogger(inner tracelog.Logger) tracelog.Logger {
+	return redactingLogger{inner: inner}
+}
+
+func (r redactingLogger) Log(ctx context.Context, level tracelog.LogLevel, msg string, data map[string]any) {
+	clean := make(map[string]any, len(data))
+
+	for k, v := range data {
+		if !slices.Contains(redactedKeys, strings.ToLower(k)) {
+			clean[k] = v
+		}
+	}
+
+	r.inner.Log(ctx, level, msg, clean)
+}
+
+// Database wraps the pgx connection pool.
 type Database struct {
 	Pool *pgxpool.Pool
-	log  *zerolog.Logger
+	log  zerolog.Logger
 }
 
-// multiTracer allows chaining multiple tracers
-type multiTracer struct {
-	tracers []any
-}
-
-// TraceQueryStart implements pgx tracer interface
-func (mt *multiTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
-	for _, tracer := range mt.tracers {
-		if t, ok := tracer.(interface {
-			TraceQueryStart(context.Context, *pgx.Conn, pgx.TraceQueryStartData) context.Context
-		}); ok {
-			ctx = t.TraceQueryStart(ctx, conn, data)
-		}
+// ConnString builds a Postgres URL from the config. userinfo is escaped by
+// url.UserPassword so passwords with reserved characters round-trip.
+func ConnString(c config.DatabaseConfig) string {
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(c.User, c.Password),
+		Host:     net.JoinHostPort(c.Host, strconv.Itoa(c.Port)),
+		Path:     "/" + c.Name,
+		RawQuery: url.Values{"sslmode": {c.SSLMode}}.Encode(),
 	}
-	return ctx
+
+	return u.String()
 }
 
-// TraceQueryEnd implements pgx tracer interface
-func (mt *multiTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
-	for _, tracer := range mt.tracers {
-		if t, ok := tracer.(interface {
-			TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData)
-		}); ok {
-			t.TraceQueryEnd(ctx, conn, data)
-		}
-	}
-}
-
-const DatabasePingTimeout = 10
-
-func New(cfg *config.Config, logger *zerolog.Logger, loggerService *loggerConfig.LoggerService) (*Database, error) {
-	hostPort := net.JoinHostPort(cfg.Database.Host, strconv.Itoa(cfg.Database.Port))
-
-	// URL-encode the password
-	encodedPassword := url.QueryEscape(cfg.Database.Password)
-	dsn := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s",
-		cfg.Database.User,
-		encodedPassword,
-		hostPort,
-		cfg.Database.Name,
-		cfg.Database.SSLMode,
-	)
-
-	pgxPoolConfig, err := pgxpool.ParseConfig(dsn)
+// PoolConfig returns the pgxpool configuration for the given settings.
+func PoolConfig(c config.DatabaseConfig, log zerolog.Logger) (*pgxpool.Config, error) {
+	pc, err := pgxpool.ParseConfig(ConnString(c))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse pgx pool config: %w", err)
+		// The cause is deliberately dropped: it may echo the DSN, which holds
+		// the password.
+		return nil, errInvalidConfig
 	}
 
-	// Add New Relic PostgreSQL instrumentation
-	if loggerService != nil && loggerService.GetApplication() != nil {
-		pgxPoolConfig.ConnConfig.Tracer = nrpgx5.NewTracer()
-	}
+	pc.MaxConns = int32(min(max(c.MaxOpenConns, 1), math.MaxInt32)) //nolint:gosec // clamped to the int32 range
+	pc.MaxConnLifetime = time.Duration(c.ConnMaxLifetime) * time.Second
+	pc.MaxConnIdleTime = time.Duration(c.ConnMaxIdleTime) * time.Second
 
-	if cfg.Primary.Env == "local" {
-		globalLevel := logger.GetLevel()
-		pgxLogger := loggerConfig.NewPgxLogger(globalLevel)
-		// Chain tracers - New Relic first, then local logging
-		if pgxPoolConfig.ConnConfig.Tracer != nil {
-			// If New Relic tracer exists, create a multi-tracer
-			localTracer := &tracelog.TraceLog{
-				Logger:   pgxzero.NewLogger(pgxLogger),
-				LogLevel: tracelog.LogLevel(loggerConfig.GetPgxTraceLogLevel(globalLevel)),
-			}
-			pgxPoolConfig.ConnConfig.Tracer = &multiTracer{
-				tracers: []any{pgxPoolConfig.ConnConfig.Tracer, localTracer},
-			}
-		} else {
-			pgxPoolConfig.ConnConfig.Tracer = &tracelog.TraceLog{
-				Logger:   pgxzero.NewLogger(pgxLogger),
-				LogLevel: tracelog.LogLevel(loggerConfig.GetPgxTraceLogLevel(globalLevel)),
-			}
+	// SQL tracing is for local debugging only.
+	if level := log.GetLevel(); level <= zerolog.DebugLevel {
+		pc.ConnConfig.Tracer = &tracelog.TraceLog{
+			Logger:   RedactingLogger(pgxzero.NewLogger(loggerConfig.NewPgxLogger(level))),
+			LogLevel: tracelog.LogLevel(loggerConfig.GetPgxTraceLogLevel(level)),
 		}
 	}
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), pgxPoolConfig)
+	return pc, nil
+}
+
+// New creates the pool and verifies connectivity. The pool is closed when the
+// ping fails.
+func New(ctx context.Context, c config.DatabaseConfig, log zerolog.Logger) (*Database, error) {
+	pc, err := PoolConfig(c, log)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pgx pool: %w", err)
+		return nil, err
 	}
 
-	database := &Database{
-		Pool: pool,
-		log:  logger,
+	pool, err := pgxpool.NewWithConfig(ctx, pc)
+	if err != nil {
+		return nil, fmt.Errorf("creating pgx pool: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), DatabasePingTimeout*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
-	if err = pool.Ping(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+
+	if err := pool.Ping(pingCtx); err != nil {
+		pool.Close()
+
+		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
-	logger.Info().Msg("connected to the database")
+	log.Info().Msg("connected to the database")
 
-	return database, nil
+	return &Database{Pool: pool, log: log}, nil
 }
 
-func (db *Database) Close() error {
+// Close releases the connection pool.
+func (db *Database) Close() {
 	db.log.Info().Msg("closing database connection pool")
 	db.Pool.Close()
-	return nil
 }
