@@ -174,3 +174,41 @@ func TestChmigrateInvalidDatabase(t *testing.T) {
 		t.Fatal("statements sent for invalid identifier")
 	}
 }
+
+func TestChmigrateSplitsOutsideCommentsAndStrings(t *testing.T) {
+	t.Parallel()
+
+	f, srv := newFake(t)
+	r := chmigrate.New(srv.URL, "usr", "pw", "db1", srv.Client())
+
+	fsys := fstest.MapFS{
+		"001_x.sql": {Data: []byte("-- header; with semicolon;\n" +
+			"CREATE TABLE a (s String DEFAULT 'x;\\';y', t String DEFAULT 'it''s;') ENGINE = Memory; -- trailing;\n" +
+			"/* block;\n comment; */\n" +
+			"CREATE TABLE `b;` (x Int8) ENGINE = Memory;\n" +
+			"-- trailing note\n")},
+		"002_note.sql": {Data: []byte("-- comment only;\n/* nothing; */\n\n")},
+	}
+
+	got, err := r.Run(context.Background(), fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Join(got, ",") != "001_x.sql,002_note.sql" {
+		t.Fatalf("applied = %v", got)
+	}
+
+	want := []string{
+		"-- header; with semicolon;\n" +
+			"CREATE TABLE a (s String DEFAULT 'x;\\';y', t String DEFAULT 'it''s;') ENGINE = Memory",
+		"-- trailing;\n/* block;\n comment; */\nCREATE TABLE `b;` (x Int8) ENGINE = Memory",
+		"INSERT INTO db1.schema_migrations (version) VALUES ('001_x.sql')",
+		"INSERT INTO db1.schema_migrations (version) VALUES ('002_note.sql')",
+	}
+
+	sent := f.stmts[3:] // after bootstrap (2) and the version listing (1)
+	if strings.Join(sent, "|") != strings.Join(want, "|") {
+		t.Fatalf("statements:\n%q\nwant\n%q", sent, want)
+	}
+}

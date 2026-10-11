@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -129,35 +130,98 @@ func (r *Runner) apply(ctx context.Context, fsys fs.FS, name string) error {
 	return nil
 }
 
-// splitStatements splits on a semicolon at end of line and drops empty parts.
+// splitStatements splits sql on semicolons that are outside string literals,
+// quoted identifiers and comments. Chunks that hold only whitespace and
+// comments (for example a trailing note after the last statement) are
+// dropped, because ClickHouse rejects them as empty queries.
 func splitStatements(sql string) []string {
-	var out []string
+	var s splitter
 
-	var cur []string
-
-	flush := func() {
-		if s := strings.TrimSpace(strings.Join(cur, "\n")); s != "" {
-			out = append(out, s)
-		}
-
-		cur = nil
+	for i := 0; i < len(sql); {
+		i = s.step(sql, i)
 	}
 
-	for _, line := range strings.Split(sql, "\n") {
-		t := strings.TrimRight(line, " \t\r")
-		if strings.HasSuffix(t, ";") {
-			cur = append(cur, strings.TrimSuffix(t, ";"))
-			flush()
+	s.flush()
 
-			continue
+	return s.out
+}
+
+// splitter accumulates the statement being scanned.
+type splitter struct {
+	out     []string
+	cur     strings.Builder
+	hasCode bool
+}
+
+// step consumes one token starting at sql[i] and returns the next index.
+func (s *splitter) step(sql string, i int) int {
+	rest := sql[i:]
+
+	switch {
+	case rest[0] == ';':
+		s.flush()
+
+		return i + 1
+	case strings.HasPrefix(rest, "--"):
+		return i + s.comment(rest, "\n", 0)
+	case strings.HasPrefix(rest, "/*"):
+		return i + s.comment(rest, "*/", len("*/"))
+	case rest[0] == '\'' || rest[0] == '"' || rest[0] == '`':
+		end := quotedEnd(rest)
+		s.cur.WriteString(rest[:end])
+		s.hasCode = true
+
+		return i + end
+	default:
+		s.cur.WriteByte(rest[0])
+
+		if !unicode.IsSpace(rune(rest[0])) {
+			s.hasCode = true
 		}
 
-		cur = append(cur, line)
+		return i + 1
+	}
+}
+
+// comment copies a comment that ends at term (keeping keep bytes of the
+// terminator) or at end of input, and returns its length.
+func (s *splitter) comment(rest, term string, keep int) int {
+	const opener = len("--") // "--" and "/*" are both two bytes
+
+	end := len(rest)
+	if j := strings.Index(rest[opener:], term); j >= 0 {
+		end = opener + j + keep
 	}
 
-	flush()
+	s.cur.WriteString(rest[:end])
 
-	return out
+	return end
+}
+
+// quotedEnd returns the index just past the literal that opens rest[0],
+// honouring backslash escapes; doubled quotes scan as two adjacent literals.
+func quotedEnd(rest string) int {
+	quote := rest[0]
+
+	for j := 1; j < len(rest); j++ {
+		switch rest[j] {
+		case '\\':
+			j++
+		case quote:
+			return j + 1
+		}
+	}
+
+	return len(rest)
+}
+
+func (s *splitter) flush() {
+	if s.hasCode {
+		s.out = append(s.out, strings.TrimSpace(s.cur.String()))
+	}
+
+	s.cur.Reset()
+	s.hasCode = false
 }
 
 func (r *Runner) exec(ctx context.Context, stmt string) (string, error) {
