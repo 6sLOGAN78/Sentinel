@@ -2,9 +2,11 @@ package migrations_test
 
 import (
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/6sLOGAN78/sentinel/internal/chmigrate"
 	"github.com/6sLOGAN78/sentinel/migrations"
 )
 
@@ -49,6 +51,33 @@ func TestClickHouseMigrationsTargetConfiguredDatabase(t *testing.T) {
 		code := strings.ToLower(stripLineComments(string(b)))
 		if strings.Contains(code, "create database") || strings.Contains(code, "sentinel.") {
 			t.Errorf("%s hardcodes a database", name)
+		}
+	}
+}
+
+// TestClickHouseMigrationsAreIdempotent guards WR-10: ClickHouse DDL is not
+// transactional and the version row is written last, so an interrupted run
+// replays earlier statements. Each one must be safe to repeat.
+func TestClickHouseMigrationsAreIdempotent(t *testing.T) {
+	t.Parallel()
+
+	guard := regexp.MustCompile(`(?i)\bIF\s+(NOT\s+)?EXISTS\b`)
+
+	names, err := fs.Glob(migrations.ClickHouse(), "*.sql")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+
+	for _, name := range names {
+		b, rerr := fs.ReadFile(migrations.ClickHouse(), name)
+		if rerr != nil {
+			t.Fatalf("read %s: %v", name, rerr)
+		}
+
+		for _, stmt := range chmigrate.SplitStatements(string(b)) {
+			if !guard.MatchString(stripLineComments(stmt)) {
+				t.Errorf("%s: statement is not idempotent (needs IF [NOT] EXISTS): %q", name, stmt)
+			}
 		}
 	}
 }

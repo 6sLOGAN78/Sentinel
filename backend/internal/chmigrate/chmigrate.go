@@ -1,4 +1,12 @@
 // Package chmigrate applies ordered .sql migrations to ClickHouse over HTTP.
+//
+// ClickHouse has no transactional DDL and no advisory locks, so a migration
+// is applied statement by statement and its version is recorded last. Every
+// statement must therefore be idempotent (CREATE ... IF NOT EXISTS, DROP ...
+// IF EXISTS, ALTER ... ADD COLUMN IF NOT EXISTS) so that a run interrupted
+// after statement N can simply be repeated; migrations_test enforces this.
+// Run one migrator at a time (make migrate locally, a single Job in a
+// cluster): concurrent runners are not coordinated.
 package chmigrate
 
 import (
@@ -67,7 +75,7 @@ func (r *Runner) Run(ctx context.Context, fsys fs.FS) ([]string, error) {
 	bootstrap := []string{
 		"CREATE DATABASE IF NOT EXISTS " + db,
 		"CREATE TABLE IF NOT EXISTS " + db + "." + table +
-			" (version String, applied_at DateTime DEFAULT now()) ENGINE = MergeTree ORDER BY version",
+			" (version String, applied_at DateTime DEFAULT now()) ENGINE = ReplacingMergeTree ORDER BY version",
 	}
 
 	// Bootstrap statements are fully qualified and run before the database
@@ -78,7 +86,7 @@ func (r *Runner) Run(ctx context.Context, fsys fs.FS) ([]string, error) {
 		}
 	}
 
-	body, err := r.exec(ctx, "SELECT version FROM "+db+"."+table+" FORMAT TabSeparated", db)
+	body, err := r.exec(ctx, "SELECT DISTINCT version FROM "+db+"."+table+" FORMAT TabSeparated", db)
 	if err != nil {
 		return nil, fmt.Errorf("listing applied migrations: %w", err)
 	}
@@ -121,7 +129,7 @@ func (r *Runner) apply(ctx context.Context, fsys fs.FS, name string) error {
 
 	// Migration statements run with the configured database as the session
 	// default, so unqualified names land there rather than in "default".
-	for _, stmt := range splitStatements(string(raw)) {
+	for _, stmt := range SplitStatements(string(raw)) {
 		if _, err = r.exec(ctx, stmt, r.database); err != nil {
 			return fmt.Errorf("applying %s: %w", name, err)
 		}
@@ -135,11 +143,11 @@ func (r *Runner) apply(ctx context.Context, fsys fs.FS, name string) error {
 	return nil
 }
 
-// splitStatements splits sql on semicolons that are outside string literals,
+// SplitStatements splits sql on semicolons that are outside string literals,
 // quoted identifiers and comments. Chunks that hold only whitespace and
 // comments (for example a trailing note after the last statement) are
 // dropped, because ClickHouse rejects them as empty queries.
-func splitStatements(sql string) []string {
+func SplitStatements(sql string) []string {
 	var s splitter
 
 	for i := 0; i < len(sql); {

@@ -53,7 +53,7 @@ func (f *fakeCH) handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	case strings.HasPrefix(stmt, "SELECT version"):
+	case strings.HasPrefix(stmt, "SELECT DISTINCT version"):
 		_, _ = io.WriteString(w, strings.Join(f.applied, "\n"))
 	case strings.HasPrefix(stmt, "INSERT INTO"):
 		name := stmt[strings.Index(stmt, "('")+2 : strings.LastIndex(stmt, "')")]
@@ -94,8 +94,8 @@ func TestChmigrateRunOrderAndIdempotent(t *testing.T) {
 	want := []string{
 		"CREATE DATABASE IF NOT EXISTS db1",
 		"CREATE TABLE IF NOT EXISTS db1.schema_migrations (version String, " +
-			"applied_at DateTime DEFAULT now()) ENGINE = MergeTree ORDER BY version",
-		"SELECT version FROM db1.schema_migrations FORMAT TabSeparated",
+			"applied_at DateTime DEFAULT now()) ENGINE = ReplacingMergeTree ORDER BY version",
+		"SELECT DISTINCT version FROM db1.schema_migrations FORMAT TabSeparated",
 		"CREATE TABLE a (x Int8) ENGINE = Memory",
 		"CREATE TABLE c (x Int8) ENGINE = Memory",
 		"INSERT INTO db1.schema_migrations (version) VALUES ('001_a.sql')",
@@ -223,5 +223,47 @@ func TestChmigrateSplitsOutsideCommentsAndStrings(t *testing.T) {
 	sent := f.stmts[3:] // after bootstrap (2) and the version listing (1)
 	if strings.Join(sent, "|") != strings.Join(want, "|") {
 		t.Fatalf("statements:\n%q\nwant\n%q", sent, want)
+	}
+}
+
+func TestChmigrateReplaysInterruptedMigration(t *testing.T) {
+	t.Parallel()
+
+	f, srv := newFake(t)
+	f.failOn = "CREATE TABLE IF NOT EXISTS y"
+	r := chmigrate.New(srv.URL, "usr", "pw", "db1", srv.Client())
+
+	fsys := fstest.MapFS{"001_xy.sql": {Data: []byte(
+		"CREATE TABLE IF NOT EXISTS x (a Int8) ENGINE = Memory;\n" +
+			"CREATE TABLE IF NOT EXISTS y (a Int8) ENGINE = Memory;\n")}}
+
+	if _, err := r.Run(context.Background(), fsys); err == nil {
+		t.Fatal("expected failure on the second statement")
+	}
+
+	f.mu.Lock()
+	recorded := len(f.applied)
+	f.failOn = ""
+	f.mu.Unlock()
+
+	if recorded != 0 {
+		t.Fatal("version recorded although the migration failed")
+	}
+
+	got, err := r.Run(context.Background(), fsys)
+	if err != nil || strings.Join(got, ",") != "001_xy.sql" {
+		t.Fatalf("rerun: %v %v", got, err)
+	}
+
+	creates := 0
+
+	for _, s := range f.stmts {
+		if strings.HasPrefix(s, "CREATE TABLE IF NOT EXISTS x") {
+			creates++
+		}
+	}
+
+	if creates != 2 {
+		t.Fatalf("first statement sent %d times, want 2 (replayed idempotently)", creates)
 	}
 }

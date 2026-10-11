@@ -15,7 +15,7 @@ Sentinel is a multi-service platform (ingest, detector, two writers, query API) 
 - Assets that Go code needs at runtime are embedded with `go:embed` inside the module: JSON Schemas in `backend/internal/contracts/schema/`, and migrations in `backend/migrations/postgres/` and `backend/migrations/clickhouse/`.
 - Go integration tests live in `backend/test/` behind the build tag `integration`.
 - PostgreSQL migrations use tern, invoked as a Go tool via `go tool -modfile=tools.mod` so the version is pinned without polluting the main module.
-- The ClickHouse migration runner is a tooling `main` at `backend/tools/chmigrate`. It is deliberately not under `cmd/`, so it is not a sixth service binary.
+- The ClickHouse migration runner is a tooling `main` at `backend/tools/chmigrate`. It is deliberately not under `cmd/`, so it is not a sixth service binary. ClickHouse has no transactional DDL, so every ClickHouse migration statement must be idempotent (`IF NOT EXISTS` / `IF EXISTS`, enforced by a test), migrations use unqualified names and run in the database given to the runner, and only one runner executes at a time (`make migrate` locally, a single Job in a cluster).
 - The boilerplate `handler/`, `router/`, `model/`, `service/` and `repository/` packages are deleted. The shared HTTP helper (`httpx`) is used only by `ingest` and `query-api`; the other three binaries expose only metrics and health.
 
 ## Consequences
