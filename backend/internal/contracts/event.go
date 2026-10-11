@@ -387,14 +387,50 @@ func (e *Event) checkAttributes(l Limits) error {
 		return nil
 	}
 
-	b, err := json.Marshal(e.Attributes)
+	size, err := attributesSize(e.Attributes)
 	if err != nil {
 		return fieldErr("attributes", "cannot be encoded: %v", err)
 	}
 
-	if len(b) > l.MaxAttrBytes {
+	if size > l.MaxAttrBytes {
 		return fieldErr("attributes", "encoded size exceeds %d bytes", l.MaxAttrBytes)
 	}
 
 	return nil
+}
+
+// attributesSize returns the byte length of attrs as compact UTF-8 JSON with
+// sorted keys and no HTML escaping (the rule documented in event.v1.json).
+// json.Marshal would expand <, >, & and U+2028/U+2029 to six-byte \uXXXX
+// escapes that no other producer counts; SetEscapeHTML(false) covers the
+// first three and the line separators are corrected to their raw size.
+func attributesSize(attrs map[string]any) (int, error) {
+	var buf bytes.Buffer
+
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+
+	if err := enc.Encode(attrs); err != nil {
+		return 0, fmt.Errorf("encode attributes: %w", err)
+	}
+
+	size := len(bytes.TrimSuffix(buf.Bytes(), []byte("\n")))
+
+	for k, v := range attrs {
+		size -= escapedSeparatorOverhead(k)
+
+		if str, ok := v.(string); ok {
+			size -= escapedSeparatorOverhead(str)
+		}
+	}
+
+	return size, nil
+}
+
+// escapedSeparatorOverhead is the extra bytes encoding/json spends on U+2028
+// and U+2029, which it always writes as \u2028/\u2029 (6 bytes, 3 raw).
+func escapedSeparatorOverhead(s string) int {
+	const overhead = len(`\u2028`) - len("\u2028")
+
+	return overhead * (strings.Count(s, "\u2028") + strings.Count(s, "\u2029"))
 }

@@ -605,6 +605,11 @@ components:
         outcome:
           enum: [success, failure, null]
         attributes:
+          description: >-
+            String-to-scalar map. Encoded size is the byte length of the object
+            serialized as compact UTF-8 JSON (no insignificant whitespace;
+            characters such as <, > and & written raw, not as \u escapes) and
+            must not exceed the configured limit (default 4096 bytes).
           type: [object, "null"]
           maxProperties: 32
           additionalProperties:
