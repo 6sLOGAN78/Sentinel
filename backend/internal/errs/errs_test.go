@@ -19,16 +19,29 @@ func TestEnvelopeShape(t *testing.T) {
 	raw, err := json.Marshal(e.Response("req-1"))
 	require.NoError(t, err)
 
-	var got map[string]map[string]string
-	require.NoError(t, json.Unmarshal(raw, &got))
-	assert.Equal(t, map[string]map[string]string{
-		"error": {"code": "BAD_REQUEST", "message": "bad", "request_id": "req-1"},
-	}, got)
+	assert.JSONEq(t, `{
+		"error": {
+			"code": "BAD_REQUEST",
+			"message": "bad",
+			"request_id": "req-1",
+			"details": [{"field": "a", "error": "b"}]
+		}
+	}`, string(raw))
 
 	// the Go error type itself must not leak internal fields either
 	raw, err = json.Marshal(e)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{}`, string(raw))
+}
+
+func TestEnvelopeOmitsEmptyDetails(t *testing.T) {
+	t.Parallel()
+
+	raw, err := json.Marshal(errs.NewUnauthorizedError("no", false).Response("req-2"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"error": {"code": "UNAUTHORIZED", "message": "no", "request_id": "req-2"}
+	}`, string(raw))
 }
 
 func TestConstructors(t *testing.T) {

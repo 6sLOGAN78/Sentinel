@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -131,6 +132,32 @@ func doPostIngest(
 	return client.Do(req)
 }
 
+func doPostIngestRaw(
+	ctx context.Context, fixture *ingestFixture, key string, body []byte,
+) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, fixture.server.URL+"/api/v1/events:batch", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	if key != "" {
+		req.Header.Set("X-Api-Key", key)
+	}
+
+	return (&http.Client{Timeout: 15 * time.Second}).Do(req)
+}
+
+func postIngestRaw(t *testing.T, fixture *ingestFixture, key string, body []byte) *http.Response {
+	t.Helper()
+	response, err := doPostIngestRaw(t.Context(), fixture, key, body)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = response.Body.Close() })
+
+	return response
+}
+
 func postIngest(t *testing.T, fixture *ingestFixture, key string, events ...map[string]any) *http.Response {
 	t.Helper()
 	response, err := doPostIngest(t.Context(), fixture, key, events...)
@@ -228,6 +255,109 @@ func TestIngestAuth(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, response.StatusCode)
 		requireNoRecord(t, fixture.consumer)
 	})
+}
+
+func TestIngestStatusCodes(t *testing.T) {
+	oversized := []byte(`{"events":["` + strings.Repeat("x", (1<<20)+1) + `"]}`)
+	malformed := []byte(`{"events":`)
+
+	t.Run("invalid key precedes oversized body", func(t *testing.T) {
+		fixture := newIngestFixture(t, []string{apikeys.ScopeWrite}, nil)
+		response := postIngestRaw(t, fixture, "invalid", oversized)
+		require.Equal(t, http.StatusUnauthorized, response.StatusCode)
+		requireNoRecord(t, fixture.consumer)
+	})
+
+	for _, tc := range []struct {
+		name string
+		body []byte
+	}{
+		{name: "oversized body", body: oversized},
+		{name: "malformed body", body: malformed},
+	} {
+		t.Run("missing scope precedes "+tc.name, func(t *testing.T) {
+			fixture := newIngestFixture(t, []string{apikeys.ScopeRead}, nil)
+			response := postIngestRaw(t, fixture, fixture.key, tc.body)
+			require.Equal(t, http.StatusForbidden, response.StatusCode)
+			requireNoRecord(t, fixture.consumer)
+		})
+	}
+
+	t.Run("valid scope reports oversized body", func(t *testing.T) {
+		fixture := newIngestFixture(t, []string{apikeys.ScopeWrite}, nil)
+		response := postIngestRaw(t, fixture, fixture.key, oversized)
+		require.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode)
+		requireNoRecord(t, fixture.consumer)
+	})
+}
+
+func TestIngestInvalidBatch(t *testing.T) {
+	valid := integrationEvent("demo", nil)
+	invalid := integrationEvent("demo", nil)
+	invalid["event_id"] = "not-a-uuid"
+	mismatch := integrationEvent("other", nil)
+
+	tooMany := make([]map[string]any, 501)
+	for i := range tooMany {
+		tooMany[i] = integrationEvent("demo", nil)
+	}
+	tooManyBody, err := json.Marshal(map[string]any{"events": tooMany})
+	require.NoError(t, err)
+
+	cases := []struct {
+		name    string
+		body    []byte
+		status  int
+		details bool
+	}{
+		{name: "malformed envelope", body: []byte(`{"events":`), status: http.StatusBadRequest},
+		{name: "duplicate envelope field", body: []byte(`{"events":[],"events":[` + string(mustJSON(t, valid)) + `]}`), status: http.StatusBadRequest},
+		{name: "case wrong envelope", body: []byte(`{"Events":[]}`), status: http.StatusBadRequest},
+		{name: "unknown envelope field", body: []byte(`{"events":[],"extra":true}`), status: http.StatusBadRequest},
+		{name: "trailing envelope", body: []byte(`{"events":[]} true`), status: http.StatusBadRequest},
+		{name: "empty events", body: []byte(`{"events":[]}`), status: http.StatusBadRequest},
+		{name: "null events", body: []byte(`{"events":null}`), status: http.StatusBadRequest},
+		{name: "too many events", body: tooManyBody, status: http.StatusRequestEntityTooLarge},
+		{name: "tenant mismatch beats field error", body: mustBatchJSON(t, invalid, mismatch), status: http.StatusForbidden},
+		{name: "indexed validation detail", body: mustBatchJSON(t, valid, invalid), status: http.StatusBadRequest, details: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newIngestFixture(t, []string{apikeys.ScopeWrite}, nil)
+			response := postIngestRaw(t, fixture, fixture.key, tc.body)
+			require.Equal(t, tc.status, response.StatusCode)
+			if tc.details {
+				var envelope struct {
+					Error struct {
+						Details []struct {
+							Field string `json:"field"`
+							Error string `json:"error"`
+						} `json:"details"`
+					} `json:"error"`
+				}
+				require.NoError(t, json.NewDecoder(response.Body).Decode(&envelope))
+				require.NotEmpty(t, envelope.Error.Details)
+				require.LessOrEqual(t, len(envelope.Error.Details), 50)
+				require.Equal(t, "events[1].event_id", envelope.Error.Details[0].Field)
+			}
+			requireNoRecord(t, fixture.consumer)
+		})
+	}
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	require.NoError(t, err)
+
+	return raw
+}
+
+func mustBatchJSON(t *testing.T, events ...map[string]any) []byte {
+	t.Helper()
+
+	return mustJSON(t, map[string]any{"events": events})
 }
 
 type blockedPublisher struct {

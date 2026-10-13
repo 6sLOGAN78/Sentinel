@@ -212,6 +212,59 @@ func TestPostBatchBoundsAndLiteralColonRoute(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
+func TestRouteLiteralColon(t *testing.T) {
+	t.Parallel()
+
+	e := newHandlerEcho(t, apikeys.Principal{
+		TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
+	}, nil, func(context.Context, []*contracts.Event, string) error { return nil }, handlerConfig())
+	body := batchBody(t, validEvent(nil))
+
+	tests := []struct {
+		name   string
+		method string
+		target string
+		status int
+	}{
+		{name: "literal colon", method: http.MethodPost, target: "/api/v1/events:batch", status: http.StatusAccepted},
+		{name: "unrelated suffix", method: http.MethodPost, target: "/api/v1/events:xyz", status: http.StatusNotFound},
+		{name: "encoded colon", method: http.MethodPost, target: "/api/v1/events%3Abatch", status: http.StatusNotFound},
+		{name: "wrong method", method: http.MethodGet, target: "/api/v1/events:batch", status: http.StatusMethodNotAllowed},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.target, bytes.NewReader(body))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			req.Header.Set("X-Api-Key", testCredential)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			require.Equal(t, tc.status, rec.Code, rec.Body.String())
+		})
+	}
+}
+
+func TestPostBatchTenantMismatchBeatsFieldErrors(t *testing.T) {
+	t.Parallel()
+
+	invalid := validEvent(nil)
+	invalid["event_id"] = "not-a-uuid"
+	mismatch := validEvent(nil)
+	mismatch["tenant_id"] = "other"
+	var calls atomic.Int32
+	e := newHandlerEcho(t, apikeys.Principal{
+		TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
+	}, nil, func(context.Context, []*contracts.Event, string) error {
+		calls.Add(1)
+
+		return nil
+	}, handlerConfig())
+
+	rec := postBatch(t, e, batchBody(t, invalid, mismatch), testCredential)
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	require.Zero(t, calls.Load())
+}
+
 func TestInFlightShed(t *testing.T) {
 	cfg := handlerConfig()
 	cfg.Ingest.MaxInFlight = 1
