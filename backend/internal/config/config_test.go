@@ -69,7 +69,7 @@ func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
 	require.Equal(t, 30, ingestCfg.Server.WriteTimeout)
 	require.Equal(t, 30, ingestCfg.Server.IdleTimeout)
 	require.Equal(t, 500, ingestCfg.Ingest.MaxBatchSize)
-	require.Equal(t, 1<<20, ingestCfg.Ingest.MaxBodyBytes)
+	require.Equal(t, int64(1<<20), ingestCfg.Ingest.MaxBodyBytes)
 	require.Equal(t, 64, ingestCfg.Ingest.MaxInFlight)
 	require.Equal(t, 1024, ingestCfg.Ingest.APIKeyCacheCapacity)
 	require.Equal(t, 30*time.Second, ingestCfg.Ingest.APIKeyCacheTTL)

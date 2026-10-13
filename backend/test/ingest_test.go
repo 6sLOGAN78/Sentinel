@@ -109,18 +109,31 @@ func integrationEvent(tenant string, sourceIP *string) map[string]any {
 	}
 }
 
-func postIngest(t *testing.T, fixture *ingestFixture, key string, events ...map[string]any) *http.Response {
-	t.Helper()
+func doPostIngest(
+	ctx context.Context, fixture *ingestFixture, key string, events ...map[string]any,
+) (*http.Response, error) {
 	body, err := json.Marshal(map[string]any{"events": events})
-	require.NoError(t, err)
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, fixture.server.URL+"/api/v1/events:batch", bytes.NewReader(body))
-	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, fixture.server.URL+"/api/v1/events:batch", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	if key != "" {
-		req.Header.Set("X-API-Key", key)
+		req.Header.Set("X-Api-Key", key)
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
-	response, err := client.Do(req)
+
+	return client.Do(req)
+}
+
+func postIngest(t *testing.T, fixture *ingestFixture, key string, events ...map[string]any) *http.Response {
+	t.Helper()
+	response, err := doPostIngest(t.Context(), fixture, key, events...)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = response.Body.Close() })
 
@@ -242,8 +255,16 @@ func TestIngestShedsUnderLoad(t *testing.T) {
 		return gate
 	})
 
-	firstDone := make(chan *http.Response, 1)
-	go func() { firstDone <- postIngest(t, fixture, fixture.key, integrationEvent("demo", nil)) }()
+	type postResult struct {
+		response *http.Response
+		err      error
+	}
+	firstEvent := integrationEvent("demo", nil)
+	firstDone := make(chan postResult, 1)
+	go func() {
+		response, err := doPostIngest(t.Context(), fixture, fixture.key, firstEvent)
+		firstDone <- postResult{response: response, err: err}
+	}()
 	select {
 	case <-gate.entered:
 	case <-time.After(10 * time.Second):
@@ -254,7 +275,10 @@ func TestIngestShedsUnderLoad(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
 	require.Equal(t, "1", response.Header.Get(echo.HeaderRetryAfter))
 	close(gate.release)
-	require.Equal(t, http.StatusAccepted, (<-firstDone).StatusCode)
+	first := <-firstDone
+	require.NoError(t, first.err)
+	t.Cleanup(func() { _ = first.response.Body.Close() })
+	require.Equal(t, http.StatusAccepted, first.response.StatusCode)
 
 	records := fetchRecords(t, fixture.consumer, 1)
 	require.Len(t, records, 1)

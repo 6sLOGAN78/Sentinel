@@ -28,9 +28,10 @@ const (
 	clickHouseImage = "clickhouse/clickhouse-server:26.3.47.6"
 	kafkaImage      = "apache/kafka:4.3.1"
 
-	startupTimeout = 120 * time.Second
-	kafkaPort      = "29092"
-	loopback       = "127.0.0.1"
+	startupTimeout     = 120 * time.Second
+	topicCreateTimeout = 30 * time.Second
+	kafkaPort          = "29092"
+	loopback           = "127.0.0.1"
 
 	// PostgresPassword is the password of the throwaway Postgres container.
 	PostgresPassword = "testpassword"
@@ -296,7 +297,7 @@ func CreateUniqueTopic(ctx context.Context, cfg config.KafkaConfig, prefix strin
 func RequireUniqueTopic(t *testing.T, cfg config.KafkaConfig, prefix string) string {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), topicCreateTimeout)
 	t.Cleanup(cancel)
 	topic, err := CreateUniqueTopic(ctx, cfg, prefix)
 	if err != nil {

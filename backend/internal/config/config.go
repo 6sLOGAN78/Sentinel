@@ -22,6 +22,7 @@ const (
 	sectionKafka       = "kafka"
 	sectionClickHouse  = "clickhouse"
 	sectionDatabase    = "database"
+	sectionIngest      = "ingest"
 	levelInfo          = "info"
 	envPrefix          = "SENTINEL_"
 	envKeyPrimaryEnv   = "SENTINEL_PRIMARY.ENV"
@@ -41,6 +42,18 @@ const (
 	defaultSlowQuery   = 100 * time.Millisecond
 	defaultCHDatabase  = "sentinel"
 	defaultCHUser      = "default"
+	defaultHTTPSeconds = 30
+	defaultBatchSize   = 500
+	defaultBodyBytes   = 1 << 20
+	defaultInFlight    = 64
+	defaultCacheSize   = 1024
+	defaultCacheTTL    = 30 * time.Second
+	defaultEventTopic  = "security.events.v1"
+	defaultWriterGroup = "event-writer-v1"
+	defaultProduceWait = 10 * time.Second
+	defaultRetries     = 5
+	defaultRecordCap   = 50_000
+	defaultByteCap     = 64 << 20
 )
 
 // Service names accepted by Load.
@@ -63,6 +76,7 @@ type Config struct {
 	ClickHouse    ClickHouseConfig     `koanf:"clickhouse"`
 	RateLimit     RateLimitConfig      `koanf:"ratelimit"`
 	Contracts     ContractsConfig      `koanf:"contracts"`
+	Ingest        IngestConfig         `koanf:"ingest"`
 }
 
 // Primary holds settings that every binary needs.
@@ -108,7 +122,22 @@ type RedisConfig struct {
 
 // KafkaConfig holds comma-separated host:port broker addresses.
 type KafkaConfig struct {
-	Brokers string `koanf:"brokers" validate:"required"`
+	Brokers            string        `koanf:"brokers" validate:"required"`
+	EventsTopic        string        `koanf:"events_topic" validate:"required"`
+	EventWriterGroup   string        `koanf:"event_writer_group" validate:"required"`
+	ProduceTimeout     time.Duration `koanf:"produce_timeout" validate:"gt=0"`
+	RecordRetries      int           `koanf:"record_retries" validate:"min=0"`
+	MaxBufferedRecords int           `koanf:"max_buffered_records" validate:"min=1"`
+	MaxBufferedBytes   int           `koanf:"max_buffered_bytes" validate:"min=1"`
+}
+
+// IngestConfig bounds public request work and API-key verification caching.
+type IngestConfig struct {
+	MaxBatchSize        int           `koanf:"max_batch_size" validate:"min=1,max=500"`
+	MaxBodyBytes        int64         `koanf:"max_body_bytes" validate:"min=1,max=1048576"`
+	MaxInFlight         int           `koanf:"max_in_flight" validate:"min=1"`
+	APIKeyCacheCapacity int           `koanf:"api_key_cache_capacity" validate:"min=1"`
+	APIKeyCacheTTL      time.Duration `koanf:"api_key_cache_ttl" validate:"gt=0,lte=30s"`
 }
 
 // ClickHouseConfig holds ClickHouse connection settings. Addresses are
@@ -137,7 +166,7 @@ type ContractsConfig struct {
 // requiredSections lists, per binary, the optional sections that must validate.
 func requiredSections() map[string][]string {
 	return map[string][]string{
-		ServiceIngest:      {sectionRedis, sectionKafka},
+		ServiceIngest:      {sectionRedis, sectionKafka, sectionDatabase, sectionIngest},
 		ServiceDetector:    {sectionKafka},
 		ServiceEventWriter: {sectionKafka, sectionClickHouse},
 		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse},
@@ -181,6 +210,12 @@ func Load(service string) (*Config, error) {
 	cfg := &Config{}
 	if err = k.Unmarshal("", cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+	if cfg.Server.Port == "" {
+		cfg.Server.Port = "8080"
+		if service == ServiceQueryAPI {
+			cfg.Server.Port = "8081"
+		}
 	}
 
 	cfg.Observability.ServiceName = service
@@ -228,6 +263,9 @@ func splitList(value string) []string {
 func setDefaults(k *koanf.Koanf) {
 	defaults := map[string]any{
 		"server.bind_address":                        "",
+		"server.read_timeout":                        defaultHTTPSeconds,
+		"server.write_timeout":                       defaultHTTPSeconds,
+		"server.idle_timeout":                        defaultHTTPSeconds,
 		"observability.logging.level":                levelInfo,
 		"observability.logging.format":               "json",
 		"observability.logging.slow_query_threshold": defaultSlowQuery,
@@ -244,6 +282,17 @@ func setDefaults(k *koanf.Koanf) {
 		"contracts.max_attr_bytes":                   defaultAttrBytes,
 		"contracts.future_skew":                      defaultFutureSkew,
 		"contracts.past_skew":                        defaultPastSkew,
+		"kafka.events_topic":                         defaultEventTopic,
+		"kafka.event_writer_group":                   defaultWriterGroup,
+		"kafka.produce_timeout":                      defaultProduceWait,
+		"kafka.record_retries":                       defaultRetries,
+		"kafka.max_buffered_records":                 defaultRecordCap,
+		"kafka.max_buffered_bytes":                   defaultByteCap,
+		"ingest.max_batch_size":                      defaultBatchSize,
+		"ingest.max_body_bytes":                      defaultBodyBytes,
+		"ingest.max_in_flight":                       defaultInFlight,
+		"ingest.api_key_cache_capacity":              defaultCacheSize,
+		"ingest.api_key_cache_ttl":                   defaultCacheTTL,
 	}
 
 	for key, val := range defaults {
@@ -287,6 +336,8 @@ func validateFor(cfg *Config, sections []string) error {
 			target = cfg.Kafka
 		case sectionClickHouse:
 			target = cfg.ClickHouse
+		case sectionIngest:
+			target = cfg.Ingest
 		default:
 			return fmt.Errorf("unknown config section %q", section)
 		}
@@ -312,6 +363,16 @@ func validateSection(cfg *Config, section string) error {
 		_, err := ParseBrokers(cfg.Kafka.Brokers)
 
 		return err
+	case sectionIngest:
+		writeTimeout := time.Duration(cfg.Server.WriteTimeout) * time.Second
+		if cfg.Kafka.ProduceTimeout >= writeTimeout {
+			return errors.New("validate ingest config: produce timeout must be below HTTP write timeout")
+		}
+		if cfg.Kafka.MaxBufferedRecords < cfg.Ingest.MaxBatchSize {
+			return errors.New("validate ingest config: buffered records must cover the maximum batch size")
+		}
+
+		return nil
 	case sectionRedis:
 		return validateRedisSecurity(cfg.Primary.Env, cfg.Redis)
 	default:

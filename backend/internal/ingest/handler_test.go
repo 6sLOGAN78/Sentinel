@@ -54,11 +54,11 @@ func handlerConfig() *config.Config {
 	}
 }
 
-func validEvent(tenant string, sourceIP *string) map[string]any {
+func validEvent(sourceIP *string) map[string]any {
 	return map[string]any{
 		"schema_version": 1,
 		"event_id":       uuid.NewString(),
-		"tenant_id":      tenant,
+		"tenant_id":      "demo",
 		"occurred_at":    time.Now().UTC().Add(-time.Second).Format("2006-01-02T15:04:05.000Z"),
 		"source":         "test",
 		"event_type":     "net.connection",
@@ -98,7 +98,7 @@ func postBatch(t *testing.T, e *echo.Echo, body []byte, key string) *httptest.Re
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events:batch", bytes.NewReader(body))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	if key != "" {
-		req.Header.Set("X-API-Key", key)
+		req.Header.Set("X-Api-Key", key)
 	}
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -108,8 +108,8 @@ func postBatch(t *testing.T, e *echo.Echo, body []byte, key string) *httptest.Re
 
 func TestPostBatchWaitsForPublisherAndPreservesOrder(t *testing.T) {
 	source := "192.0.2.8"
-	first := validEvent("demo", &source)
-	second := validEvent("demo", nil)
+	first := validEvent(&source)
+	second := validEvent(nil)
 	published := make(chan []*contracts.Event, 1)
 	publisher := publisherFunc(func(_ context.Context, events []*contracts.Event, requestID string) error {
 		require.NotEmpty(t, requestID)
@@ -143,7 +143,7 @@ func TestPostBatchWaitsForPublisherAndPreservesOrder(t *testing.T) {
 }
 
 func TestPostBatchAuthAndTenantGatesPrecedePublish(t *testing.T) {
-	event := validEvent("demo", nil)
+	event := validEvent(nil)
 	cases := []struct {
 		name      string
 		principal apikeys.Principal
@@ -153,7 +153,11 @@ func TestPostBatchAuthAndTenantGatesPrecedePublish(t *testing.T) {
 		{name: "missing key", verifyErr: apikeys.ErrUnauthorized, status: http.StatusUnauthorized},
 		{name: "dependency failure", verifyErr: apikeys.ErrUnavailable, status: http.StatusServiceUnavailable},
 		{name: "missing scope", principal: apikeys.Principal{TenantID: "demo"}, status: http.StatusForbidden},
-		{name: "wrong tenant", principal: apikeys.Principal{TenantID: "other", Scopes: []string{apikeys.ScopeWrite}}, status: http.StatusForbidden},
+		{
+			name: "wrong tenant", principal: apikeys.Principal{
+				TenantID: "other", Scopes: []string{apikeys.ScopeWrite},
+			}, status: http.StatusForbidden,
+		},
 	}
 
 	for _, tc := range cases {
@@ -191,7 +195,7 @@ func TestPostBatchBoundsAndLiteralColonRoute(t *testing.T) {
 
 	events := make([]map[string]any, 501)
 	for index := range events {
-		events[index] = validEvent("demo", nil)
+		events[index] = validEvent(nil)
 	}
 	rec = postBatch(t, e, batchBody(t, events...), testCredential)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
@@ -200,7 +204,9 @@ func TestPostBatchBoundsAndLiteralColonRoute(t *testing.T) {
 	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 	require.Zero(t, calls.Load())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/eventsXbatch", bytes.NewReader(batchBody(t, validEvent("demo", nil))))
+	req := httptest.NewRequest(
+		http.MethodPost, "/api/v1/eventsXbatch", bytes.NewReader(batchBody(t, validEvent(nil))),
+	)
 	rec = httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)
@@ -223,7 +229,7 @@ func TestInFlightShed(t *testing.T) {
 	e := newHandlerEcho(t, apikeys.Principal{
 		TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
 	}, nil, publisher, cfg)
-	body := batchBody(t, validEvent("demo", nil))
+	body := batchBody(t, validEvent(nil))
 	firstDone := make(chan *httptest.ResponseRecorder, 1)
 	go func() { firstDone <- postBatch(t, e, body, testCredential) }()
 	<-entered
@@ -245,7 +251,7 @@ func TestPostBatchPublishFailureIsSanitized(t *testing.T) {
 		return errors.New("broker leaked " + testCredential)
 	}, handlerConfig())
 
-	rec := postBatch(t, e, batchBody(t, validEvent("demo", nil)), testCredential)
+	rec := postBatch(t, e, batchBody(t, validEvent(nil)), testCredential)
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Equal(t, "1", rec.Header().Get(echo.HeaderRetryAfter))
 	require.NotContains(t, rec.Body.String(), testCredential)

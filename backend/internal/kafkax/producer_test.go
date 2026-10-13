@@ -1,4 +1,4 @@
-package kafkax
+package kafkax //nolint:testpackage // recordsFor verifies the exact wire contract.
 
 import (
 	"encoding/json"
