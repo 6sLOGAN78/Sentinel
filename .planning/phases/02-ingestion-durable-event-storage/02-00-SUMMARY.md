@@ -80,6 +80,7 @@ completed: 2026-10-13
 
 - The sandbox denied writes to the Go build cache and `.git/index.lock`. Commands were rerun with standard approval escalation and succeeded. No authentication gate occurred.
 - One test invocation used the repository root instead of `backend/`; it was corrected to the module directory before validation.
+- SDK tracking required repairing the existing nonnumeric plan position and using the installed handlers' named arguments instead of the workflow's stale positional examples. Plan advancement, metrics, decisions, session and roadmap updates then succeeded; the metric row was moved into its matching table after the handler selected the older phase table.
 
 ## Known Stubs
 
