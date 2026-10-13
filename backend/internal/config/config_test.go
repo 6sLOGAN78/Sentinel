@@ -3,7 +3,6 @@ package config_test
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"testing"
 	"time"
@@ -19,9 +18,7 @@ func TestLoadServerBindAddress(t *testing.T) {
 			t.Setenv("SENTINEL_SERVER.BIND_ADDRESS", address)
 			cfg, err := config.Load(config.ServiceDetector)
 			require.NoError(t, err)
-			field := reflect.ValueOf(cfg.Server).FieldByName("BindAddress")
-			require.True(t, field.IsValid(), "ServerConfig.BindAddress must exist")
-			require.Equal(t, address, field.String())
+			require.Equal(t, address, cfg.Server.BindAddress)
 		})
 	}
 }

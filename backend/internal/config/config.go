@@ -72,6 +72,7 @@ type Primary struct {
 
 // ServerConfig holds optional HTTP server settings.
 type ServerConfig struct {
+	BindAddress        string   `koanf:"bind_address" validate:"omitempty,ip"`
 	Port               string   `koanf:"port"`
 	ReadTimeout        int      `koanf:"read_timeout"`
 	WriteTimeout       int      `koanf:"write_timeout"`
@@ -226,6 +227,7 @@ func splitList(value string) []string {
 
 func setDefaults(k *koanf.Koanf) {
 	defaults := map[string]any{
+		"server.bind_address":                        "",
 		"observability.logging.level":                levelInfo,
 		"observability.logging.format":               "json",
 		"observability.logging.slow_query_threshold": defaultSlowQuery,
@@ -252,6 +254,10 @@ func setDefaults(k *koanf.Koanf) {
 
 func validateFor(cfg *Config, sections []string) error {
 	v := validator.New()
+
+	if err := v.Struct(cfg.Server); err != nil {
+		return fmt.Errorf("validate server config: %w", err)
+	}
 
 	if err := v.Struct(cfg.Primary); err != nil {
 		return fmt.Errorf("validate primary config: %w", err)

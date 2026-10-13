@@ -33,7 +33,7 @@ func New(cfg config.ServerConfig, handler http.Handler) *Server {
 	}
 
 	return &Server{srv: &http.Server{
-		Addr:              ":" + port,
+		Addr:              net.JoinHostPort(cfg.BindAddress, port),
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       secondsOrDefault(cfg.ReadTimeout),
