@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 	"time"
@@ -10,6 +11,31 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/stretchr/testify/require"
 )
+
+func TestLoadServerBindAddress(t *testing.T) {
+	for _, address := range []string{"", "127.0.0.1", "::1", "0.0.0.0", "::"} {
+		t.Run(address, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv("SENTINEL_SERVER.BIND_ADDRESS", address)
+			cfg, err := config.Load(config.ServiceDetector)
+			require.NoError(t, err)
+			field := reflect.ValueOf(cfg.Server).FieldByName("BindAddress")
+			require.True(t, field.IsValid(), "ServerConfig.BindAddress must exist")
+			require.Equal(t, address, field.String())
+		})
+	}
+}
+
+func TestLoadRejectsMalformedBindAddress(t *testing.T) {
+	for _, address := range []string{"127.0.0.1:8080", "[::1]", "http://127.0.0.1", "bad address", "999.1.1.1"} {
+		t.Run(address, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv("SENTINEL_SERVER.BIND_ADDRESS", address)
+			_, err := config.Load(config.ServiceDetector)
+			require.ErrorContains(t, err, "server")
+		})
+	}
+}
 
 // setCompleteEnv sets every variable any binary needs.
 func setCompleteEnv(t *testing.T) {

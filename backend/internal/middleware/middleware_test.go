@@ -245,3 +245,92 @@ func TestApplyKeepsConfiguredIPExtractor(t *testing.T) {
 
 	assert.Equal(t, "198.51.100.7", got)
 }
+
+func TestCORSEmptyDenies(t *testing.T) {
+	t.Parallel()
+
+	for _, origins := range [][]string{nil, {}} {
+		e := echo.New()
+		logger := zerolog.Nop()
+		middleware.Apply(e, &logger, origins)
+		e.GET("/ok", func(c echo.Context) error { return c.NoContent(http.StatusNoContent) })
+		for _, method := range []string{http.MethodGet, http.MethodOptions} {
+			req := httptest.NewRequest(method, "/ok", nil)
+			req.Header.Set("Origin", "https://evil.example")
+			req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
+		}
+	}
+}
+
+func TestCORSConfiguredOrigin(t *testing.T) {
+	t.Parallel()
+
+	e := newEcho(t)
+	rec, _ := do(t, e, "/slow", map[string]string{"Origin": "https://example.test"})
+	assert.Equal(t, "https://example.test", rec.Header().Get("Access-Control-Allow-Origin"))
+	rec, _ = do(t, e, "/slow", map[string]string{"Origin": "https://evil.example"})
+	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
+}
+
+func TestRequestLoggerNoQuery(t *testing.T) {
+	t.Parallel()
+
+	sink := &syncBuffer{}
+	e := newLoggedEcho(t, sink)
+	e.GET("/ok", func(c echo.Context) error { return c.NoContent(http.StatusNoContent) })
+	do(t, e, "/ok?secret=query-sentinel", nil)
+	assert.NotContains(t, sink.String(), "query-sentinel")
+	assert.Equal(t, "/ok", apiLogLine(t, sink)["uri"])
+}
+
+func TestNoKeyInLogs(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []string{"success", "plain", "typed", "echo", "client", "panic"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &syncBuffer{}
+			e := newLoggedEcho(t, sink)
+			e.Logger.SetOutput(sink)
+			e.POST("/sensitive", func(c echo.Context) error {
+				message := "key-sentinel query-sentinel body-sentinel"
+				switch kind {
+				case "plain":
+					return errors.New(message)
+				case "typed":
+					return errs.NewInternalServerError().WithMessage(message)
+				case "echo":
+					return echo.NewHTTPError(http.StatusInternalServerError, message)
+				case "client":
+					return errs.NewBadRequestError(message, false, nil, nil, nil)
+				case "panic":
+					panic(message)
+				default:
+					return c.NoContent(http.StatusNoContent)
+				}
+			})
+
+			req := httptest.NewRequest(http.MethodPost, "/sensitive?secret=query-sentinel", strings.NewReader("body-sentinel"))
+			req.Header.Set("X-API-Key", "key-sentinel")
+			req.Header.Set("Authorization", "Bearer authorization-sentinel")
+			req.Header.Set("User-Agent", "agent-sentinel")
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			for _, secret := range []string{"key-sentinel", "query-sentinel", "body-sentinel", "authorization-sentinel", "agent-sentinel"} {
+				assert.NotContains(t, sink.String(), secret)
+			}
+			if kind == "client" {
+				for line := range strings.SplitSeq(strings.TrimSpace(sink.String()), "\n") {
+					var entry map[string]any
+					require.NoError(t, json.Unmarshal([]byte(line), &entry))
+					assert.Equal(t, "warn", entry["level"])
+					assert.NotContains(t, entry, "stack")
+				}
+			}
+		})
+	}
+}

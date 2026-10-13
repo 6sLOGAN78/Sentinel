@@ -31,6 +31,74 @@ func TestShutdownBeforeStart(t *testing.T) {
 
 	var nilServer *httpx.Server
 	require.NoError(t, nilServer.Shutdown(context.Background()))
+	var zeroServer httpx.Server
+	require.NoError(t, zeroServer.Shutdown(context.Background()))
+}
+
+func TestHTTPXBindAddress(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "::1", ""} {
+		t.Run(host, func(t *testing.T) {
+			t.Setenv("SENTINEL_PRIMARY.ENV", "test")
+			t.Setenv("SENTINEL_KAFKA.BROKERS", "127.0.0.1:9092")
+			t.Setenv("SENTINEL_SERVER.BIND_ADDRESS", host)
+			t.Setenv("SENTINEL_SERVER.PORT", "0")
+			cfg, err := config.Load(config.ServiceDetector)
+			require.NoError(t, err)
+			s := httpx.New(cfg.Server, okHandler())
+			require.Equal(t, net.JoinHostPort(host, "0"), s.HTTPServer().Addr)
+
+			listening := make(chan net.Addr, 1)
+			s.HTTPServer().BaseContext = func(l net.Listener) context.Context {
+				listening <- l.Addr()
+				return context.Background()
+			}
+			done := make(chan error, 1)
+			go func() { done <- s.Start() }()
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				require.NoError(t, s.Shutdown(ctx))
+				select {
+				case err := <-done:
+					require.NoError(t, err)
+				case <-ctx.Done():
+					t.Error("server did not stop")
+				}
+			})
+			select {
+			case addr := <-listening:
+				actualHost, port, err := net.SplitHostPort(addr.String())
+				require.NoError(t, err)
+				requestHost := host
+				if host == "" {
+					assert.True(t, net.ParseIP(actualHost).IsUnspecified())
+					requestHost = "127.0.0.1"
+				} else {
+					assert.Equal(t, host, actualHost)
+				}
+				client := &http.Client{Timeout: 5 * time.Second}
+				resp, err := client.Get("http://" + net.JoinHostPort(requestHost, port))
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+			case err := <-done:
+				t.Fatalf("listener failed: %v", err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("listener did not start")
+			}
+		})
+	}
+}
+
+func TestHTTPXStartReportsBindError(t *testing.T) {
+	t.Parallel()
+	l, err := net.Listen("tcp", ":0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+	_, port, err := net.SplitHostPort(l.Addr().String())
+	require.NoError(t, err)
+	s := httpx.New(config.ServerConfig{Port: port}, okHandler())
+	require.ErrorContains(t, s.Start(), "listen:")
 }
 
 func TestShutdownStopsServe(t *testing.T) {
