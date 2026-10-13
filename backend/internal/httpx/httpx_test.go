@@ -42,8 +42,8 @@ func TestHTTPXBindAddress(t *testing.T) {
 			t.Setenv("SENTINEL_KAFKA.BROKERS", "127.0.0.1:9092")
 			t.Setenv("SENTINEL_SERVER.BIND_ADDRESS", host)
 			t.Setenv("SENTINEL_SERVER.PORT", "0")
-			cfg, err := config.Load(config.ServiceDetector)
-			require.NoError(t, err)
+			cfg, loadErr := config.Load(config.ServiceDetector)
+			require.NoError(t, loadErr)
 			s := httpx.New(cfg.Server, okHandler())
 			require.Equal(t, net.JoinHostPort(host, "0"), s.HTTPServer().Addr)
 

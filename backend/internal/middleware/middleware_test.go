@@ -315,12 +315,16 @@ func TestNoKeyInLogs(t *testing.T) {
 			})
 
 			req := httptest.NewRequest(http.MethodPost, "/sensitive?secret=query-sentinel", strings.NewReader("body-sentinel"))
-			req.Header.Set("X-API-Key", "key-sentinel")
+			req.Header.Set("X-Api-Key", "key-sentinel")
 			req.Header.Set("Authorization", "Bearer authorization-sentinel")
 			req.Header.Set("User-Agent", "agent-sentinel")
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
-			for _, secret := range []string{"key-sentinel", "query-sentinel", "body-sentinel", "authorization-sentinel", "agent-sentinel"} {
+			secrets := []string{
+				"key-sentinel", "query-sentinel", "body-sentinel",
+				"authorization-sentinel", "agent-sentinel",
+			}
+			for _, secret := range secrets {
 				assert.NotContains(t, sink.String(), secret)
 			}
 			if kind == "client" {
