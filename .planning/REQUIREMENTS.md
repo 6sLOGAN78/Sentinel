@@ -20,7 +20,7 @@
 ### Ingestion (ING)
 
 - [x] **ING-01**: A producer authenticated with a scoped API key (hashed at rest) can POST up to 500 events / 1 MiB to `/api/v1/events:batch`. The tenant is resolved from the key, never from the body alone [FR-01, §10]
-- [ ] **ING-02**: Invalid batches are rejected all-or-nothing with 400 and a structured error. Checks cover required fields, unknown root fields, enums, IPs, attribute size and occurred_at skew [FR-01, §6.1]
+- [x] **ING-02**: Invalid batches are rejected all-or-nothing with 400 and a structured error. Checks cover required fields, unknown root fields, enums, IPs, attribute size and occurred_at skew [FR-01, §6.1]
 - [x] **ING-03**: The producer receives `202 Accepted` with `accepted_count`, `rejected_count`, `event_ids` and `request_id` only after Kafka acknowledges every record (acks=all, idempotent producer, key `tenant_id|source_ip`) [FR-02, §8]
 - [ ] **ING-04**: Retrying a batch after a 5xx does not create duplicate stored events, because the event_id is client-supplied or derived deterministically [FR-02, §7.2]
 - [x] **ING-05**: Unauthenticated requests get 401, cross-tenant requests 403, oversized payloads 413, and an unavailable Kafka gets 503, all in the JSON error envelope [§8]
@@ -167,7 +167,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FND-06 | Phase 1 | Complete |
 | FND-07 | Phase 1 | Complete |
 | ING-01 | Phase 2 | Complete |
-| ING-02 | Phase 2 | Pending |
+| ING-02 | Phase 2 | Complete |
 | ING-03 | Phase 2 | Complete |
 | ING-04 | Phase 2 | Pending |
 | ING-05 | Phase 2 | Complete |
