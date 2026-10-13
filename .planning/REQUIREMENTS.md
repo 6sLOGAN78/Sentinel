@@ -88,7 +88,7 @@
 
 ### Generator (GEN)
 
-- [ ] **GEN-01**: A tester can run a seeded Python generator that produces reproducible benign traffic using only reserved documentation IP ranges and pseudonymous principals [FR-09, §10]
+- [x] **GEN-01**: A tester can run a seeded Python generator that produces reproducible benign traffic using only reserved documentation IP ranges and pseudonymous principals [FR-09, §10]
 - [ ] **GEN-02**: A tester can inject scenarios (auth brute force, port scan, request flood, deny spike) via generator flags, with expected rule hits recorded [FR-09, §17]
 - [ ] **GEN-03**: `make seed` publishes deterministic benign plus threat demo fixtures through the ingest API [§16]
 
@@ -177,7 +177,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STOR-02 | Phase 2 | Pending |
 | STOR-03 | Phase 2 | Pending |
 | STOR-04 | Phase 2 | Pending |
-| GEN-01 | Phase 2 | Pending |
+| GEN-01 | Phase 2 | Complete |
 | GEN-03 | Phase 2 | Pending |
 | OBS-01 | Phase 2 | Pending |
 | DET-01 | Phase 3 | Pending |
