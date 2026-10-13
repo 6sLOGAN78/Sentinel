@@ -29,9 +29,10 @@ type Action struct {
 
 // ErrorBody is the spec section 8 error payload.
 type ErrorBody struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestID string `json:"request_id"`
+	Code      string       `json:"code"`
+	Message   string       `json:"message"`
+	RequestID string       `json:"request_id"`
+	Details   []FieldError `json:"details,omitempty"`
 }
 
 // ErrorResponse is the only error shape written to the wire.
@@ -60,6 +61,7 @@ func (e *HTTPError) Response(requestID string) ErrorResponse {
 		Code:      e.Code,
 		Message:   e.Message,
 		RequestID: requestID,
+		Details:   e.Errors,
 	}}
 }
 

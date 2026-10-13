@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
+	"github.com/6sLOGAN78/sentinel/internal/errs"
 	"github.com/6sLOGAN78/sentinel/internal/ingest"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
 )
@@ -198,7 +200,7 @@ func TestPostBatchBoundsAndLiteralColonRoute(t *testing.T) {
 		events[index] = validEvent(nil)
 	}
 	rec = postBatch(t, e, batchBody(t, events...), testCredential)
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 
 	rec = postBatch(t, e, []byte(`{"events":["`+strings.Repeat("x", 1<<20)+`"]}`), testCredential)
 	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
@@ -263,6 +265,57 @@ func TestPostBatchTenantMismatchBeatsFieldErrors(t *testing.T) {
 	rec := postBatch(t, e, batchBody(t, invalid, mismatch), testCredential)
 	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
 	require.Zero(t, calls.Load())
+}
+
+func TestPostBatchReturnsBoundedIndexedDetails(t *testing.T) {
+	t.Parallel()
+
+	e := newHandlerEcho(t, apikeys.Principal{
+		TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
+	}, nil, func(context.Context, []*contracts.Event, string) error {
+		t.Fatal("invalid batch must not publish")
+
+		return nil
+	}, handlerConfig())
+	events := make([]map[string]any, 51)
+	for index := range events {
+		events[index] = validEvent(nil)
+		events[index]["event_id"] = "invalid"
+	}
+
+	rec := postBatch(t, e, batchBody(t, events...), testCredential)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	var response struct {
+		Error struct {
+			Details []errs.FieldError `json:"details"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	require.Len(t, response.Error.Details, 50)
+	for index, detail := range response.Error.Details {
+		require.Equal(t, "events["+strconv.Itoa(index)+"].event_id", detail.Field)
+		require.NotEmpty(t, detail.Error)
+	}
+}
+
+func TestPostBatchOverwritesMalformedReceivedAt(t *testing.T) {
+	t.Parallel()
+
+	event := validEvent(nil)
+	event["received_at"] = map[string]any{"client": "value"}
+	var receivedAt *contracts.Timestamp
+	e := newHandlerEcho(t, apikeys.Principal{
+		TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
+	}, nil, func(_ context.Context, events []*contracts.Event, _ string) error {
+		require.Len(t, events, 1)
+		receivedAt = events[0].ReceivedAt
+
+		return nil
+	}, handlerConfig())
+
+	rec := postBatch(t, e, batchBody(t, event), testCredential)
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+	require.NotNil(t, receivedAt)
 }
 
 func TestInFlightShed(t *testing.T) {
