@@ -84,7 +84,7 @@ Plans:
 **Wave 1**
 
 - [x] 02-00-PLAN.md — Harden public HTTP defaults and configure listener binds
-- [ ] 02-01-PLAN.md — Provision scoped producer keys and private reusable demo credentials
+- [x] 02-01-PLAN.md — Provision scoped producer keys and private reusable demo credentials
 - [ ] 02-10-PLAN.md — Send deterministic seeded batches with bounded identical-byte retries
 
 **Wave 2** *(blocked on prior dependency waves)*
@@ -205,7 +205,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 1/14 | In Progress|  |
+| 2. Ingestion & Durable Event Storage | 2/14 | In Progress|  |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |

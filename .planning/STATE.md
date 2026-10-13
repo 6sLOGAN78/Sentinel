@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-00-PLAN.md; continue Phase 2 with 02-01
-last_updated: "2026-10-13T13:12:57.117Z"
+stopped_at: Completed 02-01-PLAN.md; continue Phase 2 with 02-10
+last_updated: "2026-10-13T13:40:04.000Z"
 last_activity: 2026-10-13
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 27
-  completed_plans: 14
-  percent: 17
+  completed_plans: 15
+  percent: 56
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-10)
 ## Current Position
 
 Phase: 2
-Plan: 2 of 14
+Plan: 3 of 14
 Status: Ready to execute
 Last activity: 2026-10-13
 
-Progress: [█████░░░░░] 52%
+Progress: [██████░░░░] 56%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 14
+- Total plans completed: 15
 - Average duration: -
 - Total execution time: -
 
@@ -45,13 +45,14 @@ Progress: [█████░░░░░] 52%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 02 P00 | 16 min | 3 tasks | 6 files |
+| Phase 02 P01 | 16 min | 3 tasks | 11 files |
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 13 | - | - |
-| 2 | 1 | 16 min | 16 min |
+| 2 | 2 | 32 min | 16 min |
 
 ## Accumulated Context
 
@@ -65,6 +66,8 @@ Progress: [█████░░░░░] 52%
 - Epoch-aligned tumbling windows with state-pin replay recovery (ADR first in Phase 3).
 - [Phase 02]: 02-00: Optional BindAddress accepts IPv4/IPv6 literals; unset retains all-interface container binding.
 - [Phase 02]: 02-00: Request logs use paths only; error and panic logs exclude raw messages, headers and bodies.
+- [Phase 02]: 02-01: Credential cache stores copied positive records only, verifies every presented secret and expires within 30 seconds.
+- [Phase 02]: 02-01: Demo credentials are atomically written at mode 0600 beneath a mode 0700 directory and symlink files are refused.
 
 ### Pending Todos
 
@@ -73,10 +76,10 @@ None yet.
 ### Planning Continuation
 
 - Latest user authorization supersedes the earlier stop-after-planning instruction: after verifying plans, run `$gsd-execute-phase 2 --auto`. Scope remains Phase 2.
-- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plan 02-00 is implemented and committed; 13 Phase 2 plans remain.
+- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00 and 02-01 are implemented and committed; 12 Phase 2 plans remain.
 - Initial checker found two blockers and one warning: missing fail-open counter, oversized intake plan, and bind-field compile ordering. Revisions add prerequisite 02-00 and the atomic bypass counter, reducing intake scope and resolving declaration order. Independent recheck passed with no remaining issues.
 - Structural gates pass; all 14 requirements and 30 decisions covered; no same-wave modified-file conflicts. Validation task bindings and roadmap updated.
-- Next: continue Phase 2 automatically with 02-01. Public HTTP safety/bind prerequisites passed targeted race tests and vet. ING-05/ING-07 remain pending until downstream authentication and bounded intake/producer behavior are implemented. Preserve unrelated configuration/.serena edits and existing user volumes.
+- Next: continue Phase 2 automatically with 02-10. Producer credentials pass race, lint and real PostgreSQL acceptance checks. ING-01/ING-05/GEN-03 remain pending until downstream intake and seed wiring are implemented. Preserve unrelated configuration/.serena edits and existing user volumes.
 
 ### Blockers/Concerns
 
@@ -85,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-13T13:12:56.888Z
-Stopped at: Completed 02-00-PLAN.md; continue Phase 2 with 02-01
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-01-PLAN.md
+Last session: 2026-10-13T13:40:04.000Z
+Stopped at: Completed 02-01-PLAN.md; continue Phase 2 with 02-10
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-10-PLAN.md
