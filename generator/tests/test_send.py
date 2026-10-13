@@ -352,3 +352,39 @@ def test_success_manifest_has_all_intended_ids_and_no_credential(
     assert API_KEY not in captured.out
     assert API_KEY not in captured.err
     assert manifest_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_send_help_exposes_safe_installed_arguments(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main(["send", "--help"])
+
+    help_text = capsys.readouterr().out
+    assert stopped.value.code == 0
+    assert "--seed" in help_text
+    assert "--run-start" in help_text
+    assert "--key-file" in help_text
+    assert "--api-key" not in help_text
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["send", "--tenant", "demo", "--count", "0"],
+        ["send", "--tenant", "demo", "--count", "1000001"],
+        ["send", "--tenant", "demo", "--batch-size", "0"],
+        ["send", "--tenant", "demo", "--batch-size", "501"],
+        ["send", "--tenant", "Demo"],
+        ["send", "--tenant", "demo", "--url", "http://user:secret@sentinel.test"],
+        ["send", "--tenant", "demo", "--run-start", "2026-10-13T12:00:00"],
+    ],
+)
+def test_send_rejects_invalid_arguments(
+    arguments: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as stopped:
+        main(arguments)
+
+    captured = capsys.readouterr()
+    assert stopped.value.code == 2
+    assert "secret" not in captured.out
+    assert "secret" not in captured.err

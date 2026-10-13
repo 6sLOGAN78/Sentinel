@@ -153,7 +153,7 @@ def _parser() -> argparse.ArgumentParser:
     send.add_argument("--url", type=_base_url, default="http://127.0.0.1:8080")
     send.add_argument("--tenant", type=_tenant, required=True)
     send.add_argument("--key-file", type=Path)
-    send.add_argument("--run-start")
+    send.add_argument("--run-start", type=_parse_run_start)
     send.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser
 
@@ -167,8 +167,8 @@ def _run_send(
     utc_now: Callable[[], datetime],
 ) -> int:
     tenant = cast(str, args.tenant)
-    run_start_arg = cast(str | None, args.run_start)
-    run_start = _parse_run_start(run_start_arg) if run_start_arg else _utc_milliseconds(utc_now())
+    run_start_arg = cast(datetime | None, args.run_start)
+    run_start = run_start_arg if run_start_arg else _utc_milliseconds(utc_now())
     events = generate_events(
         seed=cast(int, args.seed),
         count=cast(int, args.count),
