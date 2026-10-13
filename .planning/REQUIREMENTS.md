@@ -19,13 +19,13 @@
 
 ### Ingestion (ING)
 
-- [ ] **ING-01**: A producer authenticated with a scoped API key (hashed at rest) can POST up to 500 events / 1 MiB to `/api/v1/events:batch`. The tenant is resolved from the key, never from the body alone [FR-01, §10]
+- [x] **ING-01**: A producer authenticated with a scoped API key (hashed at rest) can POST up to 500 events / 1 MiB to `/api/v1/events:batch`. The tenant is resolved from the key, never from the body alone [FR-01, §10]
 - [ ] **ING-02**: Invalid batches are rejected all-or-nothing with 400 and a structured error. Checks cover required fields, unknown root fields, enums, IPs, attribute size and occurred_at skew [FR-01, §6.1]
-- [ ] **ING-03**: The producer receives `202 Accepted` with `accepted_count`, `rejected_count`, `event_ids` and `request_id` only after Kafka acknowledges every record (acks=all, idempotent producer, key `tenant_id|source_ip`) [FR-02, §8]
+- [x] **ING-03**: The producer receives `202 Accepted` with `accepted_count`, `rejected_count`, `event_ids` and `request_id` only after Kafka acknowledges every record (acks=all, idempotent producer, key `tenant_id|source_ip`) [FR-02, §8]
 - [ ] **ING-04**: Retrying a batch after a 5xx does not create duplicate stored events, because the event_id is client-supplied or derived deterministically [FR-02, §7.2]
-- [ ] **ING-05**: Unauthenticated requests get 401, cross-tenant requests 403, oversized payloads 413, and an unavailable Kafka gets 503, all in the JSON error envelope [§8]
+- [x] **ING-05**: Unauthenticated requests get 401, cross-tenant requests 403, oversized payloads 413, and an unavailable Kafka gets 503, all in the JSON error envelope [§8]
 - [ ] **ING-06**: A producer exceeding its quota gets 429 with `Retry-After` from a Redis token bucket. When Redis is down, intake follows the documented fail-closed (503) or fail-open policy and never silently bypasses limits [FR-12, §7.4]
-- [ ] **ING-07**: The HTTP layer sheds load (429/503) instead of buffering without bound, and the Kafka producer buffer is capped [§11.1]
+- [x] **ING-07**: The HTTP layer sheds load (429/503) instead of buffering without bound, and the Kafka producer buffer is capped [§11.1]
 
 ### Event Storage (STOR)
 
@@ -166,13 +166,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FND-05 | Phase 1 | Complete |
 | FND-06 | Phase 1 | Complete |
 | FND-07 | Phase 1 | Complete |
-| ING-01 | Phase 2 | Pending |
+| ING-01 | Phase 2 | Complete |
 | ING-02 | Phase 2 | Pending |
-| ING-03 | Phase 2 | Pending |
+| ING-03 | Phase 2 | Complete |
 | ING-04 | Phase 2 | Pending |
-| ING-05 | Phase 2 | Pending |
+| ING-05 | Phase 2 | Complete |
 | ING-06 | Phase 2 | Pending |
-| ING-07 | Phase 2 | Pending |
+| ING-07 | Phase 2 | Complete |
 | STOR-01 | Phase 2 | Pending |
 | STOR-02 | Phase 2 | Pending |
 | STOR-03 | Phase 2 | Pending |

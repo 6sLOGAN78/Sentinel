@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-10-PLAN.md
-last_updated: "2026-10-13T13:58:59.369Z"
-last_activity: 2026-10-13
+stopped_at: Completed 02-02-PLAN.md; continue Phase 2 with 02-03
+last_updated: "2026-10-13T19:13:47.000Z"
+last_activity: 2026-10-14
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 27
-  completed_plans: 16
-  percent: 59
+  completed_plans: 17
+  percent: 63
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-10)
 ## Current Position
 
 Phase: 2
-Plan: 4 of 14
+Plan: 5 of 14
 Status: Ready to execute
-Last activity: 2026-10-13
+Last activity: 2026-10-14
 
-Progress: [██████░░░░] 59%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: -
 - Total execution time: -
 
@@ -47,13 +47,14 @@ Progress: [██████░░░░] 59%
 | Phase 02 P00 | 16 min | 3 tasks | 6 files |
 | Phase 02 P01 | 16 min | 3 tasks | 11 files |
 | Phase 02 P10 | 15 min | 3 tasks | 7 files |
+| Phase 02 P02 | 5 h | 2 tasks | 14 files |
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 13 | - | - |
-| 2 | 3 | 47 min | 16 min |
+| 2 | 4 | 5 h 47 min | 1 h 27 min |
 
 ## Accumulated Context
 
@@ -71,6 +72,8 @@ Progress: [██████░░░░] 59%
 - [Phase 02]: 02-01: Demo credentials are atomically written at mode 0600 beneath a mode 0700 directory and symlink files are refused.
 - [Phase 02]: Retries preserve one serialized body per batch and stop after five attempts or 120 cumulative wait seconds. — This bounds remote backpressure while honoring positive Retry-After delays in full.
 - [Phase 02]: A 202 is accepted only when counts and ordered event IDs exactly match; credentials come only from environment or private files. — This prevents false success accounting and keeps secrets out of process arguments and artifacts.
+- [Phase 02]: 02-02: Reserve bounded request capacity before authentication and return 503 immediately when saturated.
+- [Phase 02]: 02-02: Kafka 202 responses require synchronous all-ISR acknowledgements for every ordered record.
 
 ### Pending Todos
 
@@ -79,10 +82,10 @@ None yet.
 ### Planning Continuation
 
 - Latest user authorization supersedes the earlier stop-after-planning instruction: after verifying plans, run `$gsd-execute-phase 2 --auto`. Scope remains Phase 2.
-- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00, 02-01 and 02-10 are implemented and committed; 11 Phase 2 plans remain.
+- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00, 02-01, 02-10 and 02-02 are implemented and committed; 10 Phase 2 plans remain.
 - Initial checker found two blockers and one warning: missing fail-open counter, oversized intake plan, and bind-field compile ordering. Revisions add prerequisite 02-00 and the atomic bypass counter, reducing intake scope and resolving declaration order. Independent recheck passed with no remaining issues.
 - Structural gates pass; all 14 requirements and 30 decisions covered; no same-wave modified-file conflicts. Validation task bindings and roadmap updated.
-- Next: continue Phase 2 automatically with 02-02. Producer credentials pass race, lint and real PostgreSQL acceptance checks; the generator passes locked tests, Ruff, mypy and installed entry-point validation. GEN-01 is complete; ING-01/ING-05/GEN-03 remain pending until downstream intake and seed wiring are implemented. Preserve unrelated configuration/.serena edits and existing user volumes.
+- Next: continue Phase 2 automatically with 02-03. Authenticated bounded intake passes race, integration, lifecycle, vet and lint gates against real PostgreSQL and Kafka. ING-01/ING-03/ING-05/ING-07 and GEN-01 are complete; ING-04 remains pending until duplicate-safe storage. Preserve unrelated configuration/.serena edits and existing user volumes.
 
 ### Blockers/Concerns
 
@@ -91,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-13T13:58:34.470Z
-Stopped at: Completed 02-10-PLAN.md
-Resume file: None
+Last session: 2026-10-13T19:13:47.000Z
+Stopped at: Completed 02-02-PLAN.md; continue Phase 2 with 02-03
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-03-PLAN.md
