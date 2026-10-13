@@ -25,13 +25,17 @@ func TestAPIKeyGenerateParse(t *testing.T) {
 	underscore := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("\xff", 32)))
 	_, parsed, err := apikeys.Parse("snt_abcdefghijkl_" + underscore)
 	require.NoError(t, err)
-	require.True(t, parsed == underscore, "SplitN preserves underscores in secret")
+	require.Equal(t, underscore, parsed, "SplitN preserves underscores in synthetic secret")
 }
 
 func TestAPIKeyRejectMalformed(t *testing.T) {
 	t.Parallel()
 	secret := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
-	for _, raw := range []string{"", "snt_bad_" + secret, "snt_ABCDEFGHIJKL_" + secret, "snt_abc0efghijkl_" + secret, "bad_abcdefghijkl_" + secret, "snt_abcdefghijkl_" + secret + "=", "snt_abcdefghijkl_" + strings.Repeat("!", 43), "snt_abcdefghijkl_" + strings.Repeat("a", 43)} {
+	for _, raw := range []string{
+		"", "snt_bad_" + secret, "snt_ABCDEFGHIJKL_" + secret, "snt_abc0efghijkl_" + secret,
+		"bad_abcdefghijkl_" + secret, "snt_abcdefghijkl_" + secret + "=",
+		"snt_abcdefghijkl_" + strings.Repeat("!", 43), "snt_abcdefghijkl_" + strings.Repeat("a", 43),
+	} {
 		_, _, err := apikeys.Parse(raw)
 		require.Error(t, err)
 	}

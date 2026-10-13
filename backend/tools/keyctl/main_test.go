@@ -17,9 +17,11 @@ func TestKeyctlHelpAndInvalidCommands(t *testing.T) {
 	out, err := help.CombinedOutput()
 	require.NoError(t, err)
 	require.Contains(t, string(out), "30 seconds")
-	for _, args := range [][]string{{}, {"unknown"}, {"create", "--tenant", "invalid tenant"}, {"revoke", "--key-id", "bad"}} {
+	for _, args := range [][]string{
+		{}, {"unknown"}, {"create", "--tenant", "invalid tenant"}, {"revoke", "--key-id", "bad"},
+	} {
 		cmd := exec.CommandContext(t.Context(), path, args...)
-		out, err := cmd.CombinedOutput()
+		out, err = cmd.CombinedOutput()
 		require.Error(t, err)
 		require.NotContains(t, string(out), "invalid tenant")
 	}
