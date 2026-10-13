@@ -88,17 +88,9 @@ func (h *Handler) PostBatch(c echo.Context) error {
 		return err
 	}
 
-	normalized := make([][]byte, len(envelope.Events))
-	details := make([]errs.FieldError, 0, min(len(envelope.Events), maxErrorDetails))
-	for index, raw := range envelope.Events {
-		clean, tenant, tenantKnown, normalizeErr := normalizeEvent(raw)
-		normalized[index] = clean
-		if tenantKnown && tenant != principal.TenantID {
-			return errs.NewForbiddenError(http.StatusText(http.StatusForbidden), false)
-		}
-		if normalizeErr != nil {
-			details = appendDetail(details, index, normalizeErr)
-		}
+	normalized, details, tenantMismatch := normalizeBatch(envelope.Events, principal.TenantID)
+	if tenantMismatch {
+		return errs.NewForbiddenError(http.StatusText(http.StatusForbidden), false)
 	}
 
 	events := make([]*contracts.Event, 0, len(envelope.Events))
@@ -211,6 +203,67 @@ type eventDecodeError struct {
 
 func (e *eventDecodeError) Error() string { return e.message }
 
+func normalizeBatch(rawEvents []json.RawMessage, expectedTenant string) ([][]byte, []errs.FieldError, bool) {
+	normalized := make([][]byte, len(rawEvents))
+	details := make([]errs.FieldError, 0, min(len(rawEvents), maxErrorDetails))
+	for index, raw := range rawEvents {
+		clean, tenant, tenantKnown, normalizeErr := normalizeEvent(raw)
+		normalized[index] = clean
+		if tenantKnown && tenant != expectedTenant {
+			return normalized, details, true
+		}
+		if normalizeErr != nil {
+			details = appendDetail(details, index, normalizeErr)
+		}
+	}
+
+	return normalized, details, false
+}
+
+type normalizedEventBuilder struct {
+	seen            map[string]struct{}
+	out             bytes.Buffer
+	first           bool
+	tenant          string
+	tenantKnown     bool
+	tenantAmbiguous bool
+	firstErr        error
+}
+
+func newNormalizedEventBuilder() *normalizedEventBuilder {
+	b := &normalizedEventBuilder{seen: make(map[string]struct{}), first: true}
+	b.out.WriteByte('{')
+
+	return b
+}
+
+func (b *normalizedEventBuilder) add(key string, value json.RawMessage) {
+	if _, duplicate := b.seen[key]; duplicate {
+		if key == "tenant_id" {
+			b.tenantAmbiguous = true
+		}
+		if b.firstErr == nil {
+			b.firstErr = &eventDecodeError{field: key, message: "duplicate field"}
+		}
+	}
+	b.seen[key] = struct{}{}
+
+	if key == "tenant_id" && !b.tenantAmbiguous && json.Unmarshal(value, &b.tenant) == nil {
+		b.tenantKnown = true
+	}
+	if b.firstErr != nil || key == "received_at" {
+		return
+	}
+	if !b.first {
+		b.out.WriteByte(',')
+	}
+	encodedKey, _ := json.Marshal(key)
+	b.out.Write(encodedKey)
+	b.out.WriteByte(':')
+	b.out.Write(value)
+	b.first = false
+}
+
 // normalizeEvent removes the server-owned received_at value while preserving a
 // duplicate-safe object for the canonical decoder. It also extracts tenant_id
 // for the batch-wide authorization pass before field validation.
@@ -222,70 +275,35 @@ func normalizeEvent(raw []byte) ([]byte, string, bool, error) {
 		return nil, "", false, &eventDecodeError{field: "$", message: "must be a JSON object"}
 	}
 
-	seen := make(map[string]struct{})
-	var out bytes.Buffer
-	out.WriteByte('{')
-	first := true
-	tenant := ""
-	tenantKnown := false
-	tenantAmbiguous := false
-	var firstErr error
+	b := newNormalizedEventBuilder()
 	for decoder.More() {
 		keyToken, keyErr := decoder.Token()
 		if keyErr != nil {
-			return nil, tenant, tenantKnown, &eventDecodeError{field: "$", message: "invalid JSON object"}
+			return nil, b.tenant, b.tenantKnown, &eventDecodeError{field: "$", message: "invalid JSON object"}
 		}
 		key, ok := keyToken.(string)
 		if !ok {
-			return nil, tenant, tenantKnown, &eventDecodeError{field: "$", message: "invalid object key"}
+			return nil, b.tenant, b.tenantKnown, &eventDecodeError{field: "$", message: "invalid object key"}
 		}
-		if _, duplicate := seen[key]; duplicate {
-			if key == "tenant_id" {
-				tenantAmbiguous = true
-			}
-			if firstErr == nil {
-				firstErr = &eventDecodeError{field: key, message: "duplicate field"}
-			}
-		}
-		seen[key] = struct{}{}
 
 		var value json.RawMessage
 		if err = decoder.Decode(&value); err != nil {
-			return nil, tenant, tenantKnown, &eventDecodeError{field: key, message: "invalid JSON value"}
+			return nil, b.tenant, b.tenantKnown, &eventDecodeError{field: key, message: "invalid JSON value"}
 		}
-		if key == "tenant_id" && !tenantAmbiguous {
-			if json.Unmarshal(value, &tenant) == nil {
-				tenantKnown = true
-			}
-		}
-		if firstErr != nil {
-			continue
-		}
-		if key == "received_at" {
-			continue
-		}
-
-		if !first {
-			out.WriteByte(',')
-		}
-		encodedKey, _ := json.Marshal(key)
-		out.Write(encodedKey)
-		out.WriteByte(':')
-		out.Write(value)
-		first = false
+		b.add(key, value)
 	}
 	if _, err = decoder.Token(); err != nil {
-		return nil, tenant, tenantKnown, &eventDecodeError{field: "$", message: "unterminated JSON object"}
+		return nil, b.tenant, b.tenantKnown, &eventDecodeError{field: "$", message: "unterminated JSON object"}
 	}
 	if _, err = decoder.Token(); !errors.Is(err, io.EOF) {
-		return nil, tenant, tenantKnown, &eventDecodeError{field: "$", message: "trailing JSON data"}
+		return nil, b.tenant, b.tenantKnown, &eventDecodeError{field: "$", message: "trailing JSON data"}
 	}
-	out.WriteByte('}')
-	if firstErr != nil {
-		return nil, tenant, tenantKnown && !tenantAmbiguous, firstErr
+	b.out.WriteByte('}')
+	if b.firstErr != nil {
+		return nil, b.tenant, b.tenantKnown && !b.tenantAmbiguous, b.firstErr
 	}
 
-	return out.Bytes(), tenant, tenantKnown, nil
+	return b.out.Bytes(), b.tenant, b.tenantKnown, nil
 }
 
 func appendDetail(details []errs.FieldError, index int, err error) []errs.FieldError {

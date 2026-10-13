@@ -311,7 +311,11 @@ func TestIngestInvalidBatch(t *testing.T) {
 		details bool
 	}{
 		{name: "malformed envelope", body: []byte(`{"events":`), status: http.StatusBadRequest},
-		{name: "duplicate envelope field", body: []byte(`{"events":[],"events":[` + string(mustJSON(t, valid)) + `]}`), status: http.StatusBadRequest},
+		{
+			name:   "duplicate envelope field",
+			body:   []byte(`{"events":[],"events":[` + string(mustJSON(t, valid)) + `]}`),
+			status: http.StatusBadRequest,
+		},
 		{name: "case wrong envelope", body: []byte(`{"Events":[]}`), status: http.StatusBadRequest},
 		{name: "unknown envelope field", body: []byte(`{"events":[],"extra":true}`), status: http.StatusBadRequest},
 		{name: "trailing envelope", body: []byte(`{"events":[]} true`), status: http.StatusBadRequest},
@@ -319,7 +323,10 @@ func TestIngestInvalidBatch(t *testing.T) {
 		{name: "null events", body: []byte(`{"events":null}`), status: http.StatusBadRequest},
 		{name: "too many events", body: tooManyBody, status: http.StatusRequestEntityTooLarge},
 		{name: "tenant mismatch beats field error", body: mustBatchJSON(t, invalid, mismatch), status: http.StatusForbidden},
-		{name: "indexed validation detail", body: mustBatchJSON(t, valid, invalid), status: http.StatusBadRequest, details: true},
+		{
+			name: "indexed validation detail", body: mustBatchJSON(t, valid, invalid),
+			status: http.StatusBadRequest, details: true,
+		},
 	}
 
 	for _, tc := range cases {
