@@ -19,6 +19,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/6sLOGAN78/sentinel/internal/apikeys"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/database"
 	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
@@ -87,11 +88,27 @@ func TestKeyctlCreateListRevoke(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(listed), &metadata))
 	require.Len(t, metadata, 1)
 	require.Equal(t, id, metadata[0]["key_id"])
+	store := apikeys.NewStore(db.Pool)
+	now := time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC)
+	verifier := apikeys.NewVerifier(store, 2, 30*time.Second, func() time.Time { return now })
+	principal, err := verifier.Authenticate(ctx, strings.TrimSpace(output))
+	require.NoError(t, err)
+	require.Equal(t, "demo", principal.TenantID)
+	require.True(t, principal.HasScope(apikeys.ScopeRead))
+	require.True(t, principal.HasScope(apikeys.ScopeWrite))
 	_, err = run("revoke", "--key-id", id)
 	require.NoError(t, err)
 	var revoked bool
 	require.NoError(t, db.Pool.QueryRow(ctx, "SELECT revoked_at IS NOT NULL FROM producer_keys WHERE key_id=$1", id).Scan(&revoked))
 	require.True(t, revoked)
+	_, err = apikeys.NewVerifier(store, 2, 30*time.Second, time.Now).Authenticate(ctx, strings.TrimSpace(output))
+	require.ErrorIs(t, err, apikeys.ErrUnauthorized, "fresh verification rejects the persisted revocation")
+	now = now.Add(29 * time.Second)
+	_, err = verifier.Authenticate(ctx, strings.TrimSpace(output))
+	require.NoError(t, err, "documented cache delay can retain a recently revoked key")
+	now = now.Add(time.Second)
+	_, err = verifier.Authenticate(ctx, strings.TrimSpace(output))
+	require.ErrorIs(t, err, apikeys.ErrUnauthorized, "revocation is effective at 30-second expiry")
 	for _, args := range [][]string{
 		{"create", "--tenant", "Bad Tenant", "--scopes", "events:read", "--name", "invalid"},
 		{"create", "--tenant", "demo", "--scopes", "admin", "--name", "invalid"},
@@ -159,4 +176,23 @@ func TestKeyctlEnsurePrivateFile(t *testing.T) {
 	var scopes []string
 	require.NoError(t, db.Pool.QueryRow(ctx, "SELECT scopes FROM producer_keys WHERE key_id=$1", currentID).Scan(&scopes))
 	require.Equal(t, []string{"events:read"}, scopes)
+	// Stale malformed files are repaired; broad file modes are secured on reuse.
+	require.NoError(t, os.WriteFile(path, []byte("stale-invalid-key"), 0o600))
+	output, err = run(changed...)
+	require.NoError(t, err)
+	require.Empty(t, output)
+	require.NoError(t, os.Chmod(path, 0o644))
+	output, err = run(changed...)
+	require.NoError(t, err)
+	require.Empty(t, output)
+	file, err = os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), file.Mode().Perm())
+	// A symlink must never cause ensure to read or replace another file.
+	link := filepath.Join(dir, "link.key")
+	require.NoError(t, os.Symlink(path, link))
+	unsafeArgs := append([]string(nil), changed...)
+	unsafeArgs[len(unsafeArgs)-1] = link
+	_, err = run(unsafeArgs...)
+	require.Error(t, err)
 }
