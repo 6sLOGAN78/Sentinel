@@ -25,6 +25,12 @@ func NewGlobalMiddlewares(allowedOrigins []string) *GlobalMiddlewares {
 
 // CORS returns the CORS middleware.
 func (global *GlobalMiddlewares) CORS() echo.MiddlewareFunc {
+	// Echo treats an empty origin list as "*". An unconfigured service must
+	// emit no cross-origin permissions.
+	if len(global.allowedOrigins) == 0 {
+		return func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	}
+
 	return middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: global.allowedOrigins,
 	})
@@ -33,11 +39,9 @@ func (global *GlobalMiddlewares) CORS() echo.MiddlewareFunc {
 // RequestLogger returns the structured request logging middleware.
 func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 	return middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogURI:     true,
 		LogStatus:  true,
 		LogError:   true,
 		LogLatency: true,
-		LogHost:    true,
 		LogMethod:  true,
 		LogURIPath: true,
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
@@ -57,7 +61,7 @@ func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 
 			switch {
 			case statusCode >= http.StatusInternalServerError:
-				e = logger.Error().Err(v.Error)
+				e = logger.Error()
 			case statusCode >= http.StatusBadRequest:
 				e = logger.Warn()
 			default:
@@ -76,10 +80,8 @@ func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 				Dur("latency", v.Latency).
 				Int("status", statusCode).
 				Str("method", v.Method).
-				Str("uri", v.URI).
-				Str("host", v.Host).
+				Str("uri", v.URIPath).
 				Str("ip", c.RealIP()).
-				Str("user_agent", c.Request().UserAgent()).
 				Msg("API")
 
 			return nil
@@ -89,7 +91,9 @@ func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 
 // Recover returns the panic recovery middleware.
 func (global *GlobalMiddlewares) Recover() echo.MiddlewareFunc {
-	return middleware.Recover()
+	// The shared error handler records a sanitized failure. Echo's default
+	// panic output includes the panic value and could disclose request data.
+	return middleware.RecoverWithConfig(middleware.RecoverConfig{DisablePrintStack: true})
 }
 
 // Secure returns the security headers middleware.
@@ -101,13 +105,17 @@ func (global *GlobalMiddlewares) Secure() echo.MiddlewareFunc {
 func toHTTPError(err error) *errs.HTTPError {
 	var httpErr *errs.HTTPError
 	if errors.As(err, &httpErr) {
+		if httpErr.Status >= http.StatusInternalServerError {
+			return httpErr.WithMessage(http.StatusText(httpErr.Status))
+		}
+
 		return httpErr
 	}
 
 	var echoErr *echo.HTTPError
 	if errors.As(err, &echoErr) {
 		message := http.StatusText(echoErr.Code)
-		if msg, ok := echoErr.Message.(string); ok && msg != "" {
+		if msg, ok := echoErr.Message.(string); ok && msg != "" && echoErr.Code < http.StatusInternalServerError {
 			message = msg
 		}
 
@@ -132,15 +140,20 @@ func toHTTPError(err error) *errs.HTTPError {
 }
 
 // GlobalErrorHandler writes the spec section 8 envelope for every error and
-// logs the original error while returning only the sanitized one.
+// records only status metadata; errors may contain credentials or request data.
 func (global *GlobalMiddlewares) GlobalErrorHandler(err error, c echo.Context) {
 	httpErr := toHTTPError(err)
 
-	GetLogger(c).Error().Stack().
-		Err(err).
+	logger := GetLogger(c)
+	event := logger.Warn()
+	if httpErr.Status >= http.StatusInternalServerError {
+		event = logger.Error()
+	}
+
+	event.
 		Int("status", httpErr.Status).
 		Str("error_code", httpErr.Code).
-		Msg(httpErr.Message)
+		Msg(http.StatusText(httpErr.Status))
 
 	if c.Response().Committed {
 		return
