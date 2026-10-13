@@ -104,6 +104,7 @@ paths:
       operationId: getEvent
       summary: Retrieve one event scoped to the tenant
       security:
+        - ApiKeyAuth: []
         - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/EventID"
@@ -525,6 +526,18 @@ components:
               type: string
             request_id:
               type: string
+            details:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [field, error]
+                properties:
+                  field:
+                    type: string
+                  error:
+                    type: string
 
     UUID:
       type: string

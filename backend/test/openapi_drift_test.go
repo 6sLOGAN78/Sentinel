@@ -127,7 +127,7 @@ func TestOpenAPIErrorDetailsAreBoundedAndStrict(t *testing.T) {
 	require.NotNil(t, details.Items)
 	require.NotNil(t, details.Items.Value.AdditionalProperties.Has)
 	assert.False(t, *details.Items.Value.AdditionalProperties.Has)
-	assert.Equal(t, []string{"error", "field"}, sortedStrings(details.Items.Value.Required))
+	assert.ElementsMatch(t, []string{"error", "field"}, details.Items.Value.Required)
 	assert.Contains(t, details.Items.Value.Properties, "field")
 	assert.Contains(t, details.Items.Value.Properties, "error")
 	assert.Len(t, details.Items.Value.Properties, 2)
