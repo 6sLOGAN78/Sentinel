@@ -144,7 +144,7 @@ type IngestConfig struct {
 // host:port without a URL scheme.
 type ClickHouseConfig struct {
 	HTTPAddress   string `koanf:"http_address" validate:"required,hostname_port"`
-	NativeAddress string `koanf:"native_address" validate:"omitempty,hostname_port"`
+	NativeAddress string `koanf:"native_address" validate:"required,hostname_port"`
 	User          string `koanf:"user" validate:"required"`
 	Password      string `koanf:"password"`
 	Database      string `koanf:"database" validate:"required"`

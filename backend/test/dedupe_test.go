@@ -48,13 +48,13 @@ func newDedupeStore(t *testing.T) (*storageclickhouse.EventStore, storageclickho
 	return storageclickhouse.NewEventStore(conn), conn
 }
 
-func storedEvent(id, tenant string, occurredAt, receivedAt time.Time) *contracts.Event {
+func storedEvent(id string, occurredAt, receivedAt time.Time) *contracts.Event {
 	port := 443
 	protocol := "tcp"
 	return &contracts.Event{
 		SchemaVersion:   1,
 		EventID:         id,
-		TenantID:        tenant,
+		TenantID:        "demo",
 		OccurredAt:      contracts.NewTimestamp(occurredAt),
 		ReceivedAt:      ptr(contracts.NewTimestamp(receivedAt)),
 		Source:          "integration-test",
@@ -73,9 +73,9 @@ func TestDedupeDoubleInsertNoOptimize(t *testing.T) {
 	store, conn := newDedupeStore(t)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	events := []*contracts.Event{
-		storedEvent(uuid.NewString(), "demo", now.Add(-3*time.Minute), now),
-		storedEvent(uuid.NewString(), "demo", now.Add(-2*time.Minute), now),
-		storedEvent(uuid.NewString(), "demo", now.Add(-time.Minute), now),
+		storedEvent(uuid.NewString(), now.Add(-3*time.Minute), now),
+		storedEvent(uuid.NewString(), now.Add(-2*time.Minute), now),
+		storedEvent(uuid.NewString(), now.Add(-time.Minute), now),
 	}
 
 	require.NoError(t, store.InsertBatch(t.Context(), events))
@@ -92,12 +92,28 @@ func TestDedupeDoubleInsertNoOptimize(t *testing.T) {
 	require.Equal(t, events[0], got)
 }
 
+func TestEventsSchema(t *testing.T) {
+	_, conn := newDedupeStore(t)
+	var ddl string
+	require.NoError(t, conn.QueryRow(t.Context(), "SHOW CREATE TABLE events").Scan(&ddl))
+	for _, clause := range []string{
+		"ENGINE = ReplacingMergeTree",
+		"PARTITION BY toYYYYMM(occurred_at)",
+		"ORDER BY (tenant_id, occurred_at, event_id)",
+		"TTL toDateTime(occurred_at) + toIntervalDay(7)",
+		"INDEX idx_event_id event_id TYPE bloom_filter(0.01) GRANULARITY 4",
+	} {
+		require.Contains(t, ddl, clause)
+	}
+	require.NotContains(t, ddl, "non_replicated_deduplication_window")
+}
+
 func TestDedupeDifferentOccurredAt(t *testing.T) {
 	store, conn := newDedupeStore(t)
 	id := uuid.NewString()
 	received := time.Now().UTC().Truncate(time.Millisecond)
-	first := storedEvent(id, "demo", time.Date(2026, time.January, 31, 23, 59, 0, 0, time.UTC), received)
-	second := storedEvent(id, "demo", time.Date(2026, time.February, 1, 0, 1, 0, 0, time.UTC), received)
+	first := storedEvent(id, time.Date(2026, time.January, 31, 23, 59, 0, 0, time.UTC), received)
+	second := storedEvent(id, time.Date(2026, time.February, 1, 0, 1, 0, 0, time.UTC), received)
 	second.Source = "conflicting-content"
 	require.NoError(t, store.InsertBatch(t.Context(), []*contracts.Event{first, second}))
 
@@ -116,7 +132,7 @@ func TestDedupeDifferentOccurredAt(t *testing.T) {
 func TestEventLookupTenantScope(t *testing.T) {
 	store, _ := newDedupeStore(t)
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	event := storedEvent(uuid.NewString(), "demo", now.Add(-time.Minute), now)
+	event := storedEvent(uuid.NewString(), now.Add(-time.Minute), now)
 	require.NoError(t, store.InsertBatch(t.Context(), []*contracts.Event{event}))
 
 	db, err := database.New(t.Context(), pgCfg, zerolog.Nop())

@@ -1,32 +1,27 @@
-package clickhouse
+package clickhouse_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestAttributesJSONRoundTrip(t *testing.T) {
+func TestEventsMigrationHasReadDedupeSchema(t *testing.T) {
 	t.Parallel()
 
-	for _, attributes := range []map[string]any{
-		nil,
-		{"count": float64(2), "nested": map[string]any{"enabled": true}},
+	raw, err := os.ReadFile("../../../migrations/clickhouse/002_events.sql")
+	require.NoError(t, err)
+	ddl := string(raw)
+	for _, clause := range []string{
+		"ENGINE = ReplacingMergeTree",
+		"PARTITION BY toYYYYMM(occurred_at)",
+		"ORDER BY (tenant_id, occurred_at, event_id)",
+		"TTL toDateTime(occurred_at) + INTERVAL 7 DAY",
+		"INDEX idx_event_id event_id TYPE bloom_filter(0.01) GRANULARITY 4",
 	} {
-		raw, err := marshalAttributes(attributes)
-		require.NoError(t, err)
-		got, err := unmarshalAttributes(raw)
-		require.NoError(t, err)
-		require.Equal(t, attributes, got)
+		require.Contains(t, ddl, clause)
 	}
-}
-
-func TestNullablePortConversion(t *testing.T) {
-	t.Parallel()
-
-	require.Nil(t, nullablePort(nil))
-	port := 443
-	got := nullablePort(&port)
-	require.NotNil(t, got)
-	require.Equal(t, uint16(443), *got)
+	require.NotContains(t, ddl, "non_replicated_deduplication_window")
+	require.NotContains(t, ddl, "OPTIMIZE")
 }

@@ -95,9 +95,21 @@ func TestEventLookupRejections(t *testing.T) {
 	}{
 		{name: "invalid key", id: id, verifyErr: apikeys.ErrUnauthorized, status: http.StatusUnauthorized},
 		{name: "missing scope", id: id, principal: apikeys.Principal{TenantID: "demo"}, status: http.StatusForbidden},
-		{name: "invalid uuid", id: "not-a-uuid", principal: apikeys.Principal{TenantID: "demo", Scopes: []string{apikeys.ScopeRead}}, status: http.StatusBadRequest},
-		{name: "other tenant hidden", id: id, principal: apikeys.Principal{TenantID: "demo", Scopes: []string{apikeys.ScopeRead}}, storeErr: storageclickhouse.ErrNotFound, status: http.StatusNotFound},
-		{name: "clickhouse failure", id: id, principal: apikeys.Principal{TenantID: "demo", Scopes: []string{apikeys.ScopeRead}}, storeErr: errors.New("secret backend detail"), status: http.StatusServiceUnavailable},
+		{
+			name: "invalid uuid", id: "not-a-uuid",
+			principal: apikeys.Principal{TenantID: "demo", Scopes: []string{apikeys.ScopeRead}},
+			status:    http.StatusBadRequest,
+		},
+		{
+			name: "other tenant hidden", id: id,
+			principal: apikeys.Principal{TenantID: "demo", Scopes: []string{apikeys.ScopeRead}},
+			storeErr:  storageclickhouse.ErrNotFound, status: http.StatusNotFound,
+		},
+		{
+			name: "clickhouse failure", id: id,
+			principal: apikeys.Principal{TenantID: "demo", Scopes: []string{apikeys.ScopeRead}},
+			storeErr:  errors.New("secret backend detail"), status: http.StatusServiceUnavailable,
+		},
 	}
 
 	for _, tc := range tests {

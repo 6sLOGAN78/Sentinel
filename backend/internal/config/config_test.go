@@ -42,6 +42,7 @@ func setCompleteEnv(t *testing.T) {
 	t.Setenv("SENTINEL_REDIS.ADDRESS", "127.0.0.1:6379")
 	t.Setenv("SENTINEL_KAFKA.BROKERS", "127.0.0.1:9092")
 	t.Setenv("SENTINEL_CLICKHOUSE.HTTP_ADDRESS", "127.0.0.1:18123")
+	t.Setenv("SENTINEL_CLICKHOUSE.NATIVE_ADDRESS", "127.0.0.1:19000")
 	t.Setenv("SENTINEL_DATABASE.HOST", "127.0.0.1")
 	t.Setenv("SENTINEL_DATABASE.USER", "sentinel")
 	t.Setenv("SENTINEL_DATABASE.NAME", "sentinel")
@@ -57,6 +58,21 @@ func TestLoadComplete(t *testing.T) {
 	require.Equal(t, "ingest", cfg.Observability.ServiceName)
 	require.Equal(t, "test", cfg.Observability.Environment)
 	require.Equal(t, 5432, cfg.Database.Port)
+}
+
+func TestLoadNativeClickHouseRequiredOnlyForConsumers(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_CLICKHOUSE.NATIVE_ADDRESS", "")
+
+	for _, service := range []string{config.ServiceEventWriter, config.ServiceAlertWriter, config.ServiceQueryAPI} {
+		_, err := config.Load(service)
+		require.ErrorContains(t, err, "clickhouse", service)
+	}
+
+	for _, service := range []string{config.ServiceIngest, config.ServiceDetector} {
+		_, err := config.Load(service)
+		require.NoError(t, err, service)
+	}
 }
 
 func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
