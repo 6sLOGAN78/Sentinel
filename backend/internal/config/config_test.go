@@ -59,6 +59,53 @@ func TestLoadComplete(t *testing.T) {
 	require.Equal(t, 5432, cfg.Database.Port)
 }
 
+func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
+	setCompleteEnv(t)
+
+	ingestCfg, err := config.Load(config.ServiceIngest)
+	require.NoError(t, err)
+	require.Equal(t, "8080", ingestCfg.Server.Port)
+	require.Equal(t, 30, ingestCfg.Server.ReadTimeout)
+	require.Equal(t, 30, ingestCfg.Server.WriteTimeout)
+	require.Equal(t, 30, ingestCfg.Server.IdleTimeout)
+	require.Equal(t, 500, ingestCfg.Ingest.MaxBatchSize)
+	require.Equal(t, 1<<20, ingestCfg.Ingest.MaxBodyBytes)
+	require.Equal(t, 64, ingestCfg.Ingest.MaxInFlight)
+	require.Equal(t, 1024, ingestCfg.Ingest.APIKeyCacheCapacity)
+	require.Equal(t, 30*time.Second, ingestCfg.Ingest.APIKeyCacheTTL)
+	require.Equal(t, "security.events.v1", ingestCfg.Kafka.EventsTopic)
+	require.Equal(t, "event-writer-v1", ingestCfg.Kafka.EventWriterGroup)
+	require.Equal(t, 10*time.Second, ingestCfg.Kafka.ProduceTimeout)
+	require.Equal(t, 5, ingestCfg.Kafka.RecordRetries)
+	require.Equal(t, 50_000, ingestCfg.Kafka.MaxBufferedRecords)
+	require.Equal(t, 64<<20, ingestCfg.Kafka.MaxBufferedBytes)
+
+	queryCfg, err := config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	require.Equal(t, "8081", queryCfg.Server.Port)
+}
+
+func TestLoadIngestRequiresDatabase(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_DATABASE.HOST", "")
+
+	_, err := config.Load(config.ServiceIngest)
+	require.ErrorContains(t, err, "database")
+}
+
+func TestLoadIngestRejectsUnsafeBounds(t *testing.T) {
+	setCompleteEnv(t)
+
+	t.Setenv("SENTINEL_KAFKA.PRODUCE_TIMEOUT", "30s")
+	_, err := config.Load(config.ServiceIngest)
+	require.ErrorContains(t, err, "produce timeout")
+
+	t.Setenv("SENTINEL_KAFKA.PRODUCE_TIMEOUT", "10s")
+	t.Setenv("SENTINEL_KAFKA.MAX_BUFFERED_RECORDS", "499")
+	_, err = config.Load(config.ServiceIngest)
+	require.ErrorContains(t, err, "buffered records")
+}
+
 func TestLoadMissingRedisPerService(t *testing.T) {
 	setCompleteEnv(t)
 	t.Setenv("SENTINEL_REDIS.ADDRESS", "")
