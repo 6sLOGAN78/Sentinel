@@ -38,13 +38,13 @@ func keyctlFixture(t *testing.T) (context.Context, *database.Database, func(...s
 	build := exec.CommandContext(ctx, "go", "build", "-o", path, "./tools/keyctl")
 	build.Dir = ".."
 	// Compiler diagnostics cannot contain runtime credentials.
-	out, err := build.CombinedOutput()
-	require.NoError(t, err, "keyctl build failed: %s", out)
+	buildOutput, err := build.CombinedOutput()
+	require.NoError(t, err, "keyctl build failed: %s", buildOutput)
 	return ctx, db, func(args ...string) (string, error) {
 		cmd := exec.CommandContext(ctx, path, args...)
 		cmd.Env = keyctlEnv(cfg)
-		out, err := cmd.CombinedOutput()
-		return string(out), err
+		commandOutput, commandErr := cmd.CombinedOutput()
+		return string(commandOutput), commandErr
 	}
 }
 
@@ -59,7 +59,8 @@ func keyctlEnv(cfg config.DatabaseConfig) []string {
 func keyParts(t *testing.T, output string) (string, string) {
 	t.Helper()
 	raw := strings.TrimSpace(output)
-	require.True(t, regexp.MustCompile(`^snt_[a-z2-7]{12}_[A-Za-z0-9_-]{43}$`).MatchString(raw), "key must match canonical format")
+	canonical := regexp.MustCompile(`^snt_[a-z2-7]{12}_[A-Za-z0-9_-]{43}$`)
+	require.True(t, canonical.MatchString(raw), "key must match canonical format")
 	parts := strings.SplitN(raw, "_", 3)
 	return parts[1], parts[2]
 }
@@ -72,17 +73,19 @@ func TestKeyctlCreateListRevoke(t *testing.T) {
 	var hash []byte
 	var tenant string
 	var scopes []string
-	require.NoError(t, db.Pool.QueryRow(ctx, "SELECT tenant_id, secret_hash, scopes FROM producer_keys WHERE key_id=$1", id).Scan(&tenant, &hash, &scopes))
-	require.True(t, tenant == "demo")
+	query := "SELECT tenant_id, secret_hash, scopes FROM producer_keys WHERE key_id=$1"
+	require.NoError(t, db.Pool.QueryRow(ctx, query, id).Scan(&tenant, &hash, &scopes))
+	require.Equal(t, "demo", tenant)
 	require.ElementsMatch(t, []string{"events:read", "events:write"}, scopes)
 	expected := sha256.Sum256([]byte(secret))
 	require.True(t, bytes.Equal(expected[:], hash), "database stores SHA-256 of the encoded secret only")
 	var row []byte
-	require.NoError(t, db.Pool.QueryRow(ctx, "SELECT row_to_json(p)::text FROM producer_keys p WHERE key_id=$1", id).Scan(&row))
+	query = "SELECT row_to_json(p)::text FROM producer_keys p WHERE key_id=$1"
+	require.NoError(t, db.Pool.QueryRow(ctx, query, id).Scan(&row))
 	require.False(t, bytes.Contains(row, []byte(secret)), "row must not contain secret")
 	listed, err := run("list", "--tenant", "demo")
 	require.NoError(t, err)
-	require.False(t, strings.Contains(listed, secret), "list must omit secret")
+	require.NotContains(t, listed, secret, "list must omit secret")
 	require.NotContains(t, listed, "secret_hash")
 	var metadata []map[string]any
 	require.NoError(t, json.Unmarshal([]byte(listed), &metadata))
@@ -99,7 +102,8 @@ func TestKeyctlCreateListRevoke(t *testing.T) {
 	_, err = run("revoke", "--key-id", id)
 	require.NoError(t, err)
 	var revoked bool
-	require.NoError(t, db.Pool.QueryRow(ctx, "SELECT revoked_at IS NOT NULL FROM producer_keys WHERE key_id=$1", id).Scan(&revoked))
+	query = "SELECT revoked_at IS NOT NULL FROM producer_keys WHERE key_id=$1"
+	require.NoError(t, db.Pool.QueryRow(ctx, query, id).Scan(&revoked))
 	require.True(t, revoked)
 	_, err = apikeys.NewVerifier(store, 2, 30*time.Second, time.Now).Authenticate(ctx, strings.TrimSpace(output))
 	require.ErrorIs(t, err, apikeys.ErrUnauthorized, "fresh verification rejects the persisted revocation")
@@ -114,8 +118,8 @@ func TestKeyctlCreateListRevoke(t *testing.T) {
 		{"create", "--tenant", "demo", "--scopes", "admin", "--name", "invalid"},
 		{"create", "--tenant", "demo", "--scopes", "", "--name", "invalid"},
 	} {
-		_, err := run(args...)
-		require.Error(t, err)
+		_, runErr := run(args...)
+		require.Error(t, runErr)
 	}
 }
 
@@ -159,10 +163,13 @@ func TestKeyctlEnsurePrivateFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, output)
 	var active bool
-	require.NoError(t, db.Pool.QueryRow(ctx, "SELECT revoked_at IS NULL FROM producer_keys WHERE key_id=$1", foreignID).Scan(&active))
+	query := "SELECT revoked_at IS NULL FROM producer_keys WHERE key_id=$1"
+	require.NoError(t, db.Pool.QueryRow(ctx, query, foreignID).Scan(&active))
 	require.True(t, active, "ensure must not revoke another tenant's credential")
 	var count int
-	require.NoError(t, db.Pool.QueryRow(ctx, "SELECT count(*) FROM producer_keys WHERE tenant_id=$1 AND name=$2 AND revoked_at IS NULL", "demo", "seed").Scan(&count))
+	query = `SELECT count(*) FROM producer_keys
+		WHERE tenant_id=$1 AND name=$2 AND revoked_at IS NULL`
+	require.NoError(t, db.Pool.QueryRow(ctx, query, "demo", "seed").Scan(&count))
 	require.Equal(t, 1, count)
 	// Same tenant with different scopes must rotate as well.
 	changed := append([]string(nil), args...)

@@ -79,8 +79,8 @@ func latestPostgresVersion(t *testing.T) int {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
 		}
-		version, err := strconv.Atoi(strings.SplitN(entry.Name(), "_", 2)[0])
-		require.NoError(t, err)
+		version, parseErr := strconv.Atoi(strings.SplitN(entry.Name(), "_", 2)[0])
+		require.NoError(t, parseErr)
 		latest = max(latest, version)
 	}
 	require.Positive(t, latest)
