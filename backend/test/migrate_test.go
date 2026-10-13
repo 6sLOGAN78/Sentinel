@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -59,14 +60,31 @@ func TestMigratePostgresIdempotent(t *testing.T) {
 
 	require.NoError(t, database.Migrate(ctx, cfg, zerolog.New(&first)))
 	assert.Contains(t, first.String(), "migrated database schema from version 0")
-	assert.Equal(t, 1, schemaVersion(ctx, t, cfg))
+	assert.Equal(t, latestPostgresVersion(t), schemaVersion(ctx, t, cfg))
 
 	var second bytes.Buffer
 
 	require.NoError(t, database.Migrate(ctx, cfg, zerolog.New(&second)))
 	assert.Contains(t, second.String(), "database schema up to date")
 	assert.NotContains(t, second.String(), "migrated database schema from")
-	assert.Equal(t, 1, schemaVersion(ctx, t, cfg))
+	assert.Equal(t, latestPostgresVersion(t), schemaVersion(ctx, t, cfg))
+}
+
+func latestPostgresVersion(t *testing.T) int {
+	t.Helper()
+	entries, err := fs.ReadDir(migrations.Postgres(), ".")
+	require.NoError(t, err)
+	var latest int
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		version, err := strconv.Atoi(strings.SplitN(entry.Name(), "_", 2)[0])
+		require.NoError(t, err)
+		latest = max(latest, version)
+	}
+	require.Positive(t, latest)
+	return latest
 }
 
 func TestConnectSpecialPassword(t *testing.T) {
