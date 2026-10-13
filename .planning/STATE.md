@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-03-PLAN.md; continue Phase 2 with 02-04
-last_updated: "2026-10-13T19:24:32.442Z"
+stopped_at: Completed 02-04-PLAN.md; continue Phase 2 with 02-05
+last_updated: "2026-10-13T19:35:07.680Z"
 last_activity: 2026-10-14
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 27
-  completed_plans: 18
-  percent: 67
+  completed_plans: 19
+  percent: 70
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-10)
 ## Current Position
 
 Phase: 2
-Plan: 6 of 14
+Plan: 7 of 14
 Status: Ready to execute
 Last activity: 2026-10-14
 
-Progress: [███████░░░] 67%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 18
+- Total plans completed: 19
 - Average duration: -
 - Total execution time: -
 
@@ -49,13 +49,14 @@ Progress: [███████░░░] 67%
 | Phase 02 P10 | 15 min | 3 tasks | 7 files |
 | Phase 02 P02 | 5 h | 2 tasks | 14 files |
 | Phase 02 P03 | 8 min | 3 tasks | 10 files |
+| Phase 02 P04 | 9 min | 3 tasks | 13 files |
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 13 | - | - |
-| 2 | 5 | 5 h 55 min | 1 h 11 min |
+| 2 | 6 | 6 h 4 min | 1 h 1 min |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ Progress: [███████░░░] 67%
 - [Phase 02]: Resolve every reliably parsed tenant before field validation so cross-tenant writes return 403 without publishing. — Preserves tenant authorization precedence while keeping invalid batches atomic.
 - [Phase 02]: Strip client received_at through duplicate-safe normalization and apply one server UTC-millisecond timestamp. — Keeps received_at server-owned without weakening duplicate-key rejection.
 - [Phase 02]: Error details are optional and capped at 50, preserving ordinary three-field envelopes. — Provides indexed diagnostics while bounding response work and maintaining wire compatibility.
+- [Phase 02]: Store physical event duplicates but collapse every user-visible lookup and count immediately by event_id. — Keeps retries safe without depending on asynchronous ClickHouse merges.
+- [Phase 02]: Bind authenticated tenant and event ID as native ClickHouse named parameters. — Enforces tenant isolation and prevents untrusted values from entering SQL text.
+- [Phase 02]: Conflicting payloads sharing an event ID have one visible identity but no immutable content winner. — Matches ReplacingMergeTree behavior across merges and equal-millisecond ties.
 
 ### Pending Todos
 
@@ -86,10 +90,10 @@ None yet.
 ### Planning Continuation
 
 - Latest user authorization supersedes the earlier stop-after-planning instruction: after verifying plans, run `$gsd-execute-phase 2 --auto`. Scope remains Phase 2.
-- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00, 02-01, 02-02, 02-03 and 02-10 are implemented and committed; 9 Phase 2 plans remain.
+- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00 through 02-04 and 02-10 are implemented and committed; 8 Phase 2 plans remain.
 - Initial checker found two blockers and one warning: missing fail-open counter, oversized intake plan, and bind-field compile ordering. Revisions add prerequisite 02-00 and the atomic bypass counter, reducing intake scope and resolving declaration order. Independent recheck passed with no remaining issues.
 - Structural gates pass; all 14 requirements and 30 decisions covered; no same-wave modified-file conflicts. Validation task bindings and roadmap updated.
-- Next: continue Phase 2 automatically with 02-04. Atomic invalid-batch rejection and indexed error contracts pass race, integration, OpenAPI, web, vet and lint gates against real PostgreSQL and Kafka. ING-01/ING-02/ING-03/ING-05/ING-07 and GEN-01 are complete; ING-04 remains pending until duplicate-safe storage. Preserve unrelated configuration/.serena edits and existing user volumes.
+- Next: continue Phase 2 automatically with 02-05. Native ClickHouse storage and immediate tenant-scoped read dedupe pass race, real integration, migration, lifecycle, OpenAPI, web, vet and lint gates. ING-04/STOR-02/STOR-03 are complete; plan 02-05 makes retention configurable. Preserve unrelated configuration/.serena edits and existing user volumes.
 
 ### Blockers/Concerns
 
@@ -98,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-13T19:24:32.428Z
-Stopped at: Completed 02-03-PLAN.md; continue Phase 2 with 02-04
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-04-PLAN.md
+Last session: 2026-10-13T19:35:07.666Z
+Stopped at: Completed 02-04-PLAN.md; continue Phase 2 with 02-05
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-05-PLAN.md

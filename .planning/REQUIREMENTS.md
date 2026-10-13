@@ -22,7 +22,7 @@
 - [x] **ING-01**: A producer authenticated with a scoped API key (hashed at rest) can POST up to 500 events / 1 MiB to `/api/v1/events:batch`. The tenant is resolved from the key, never from the body alone [FR-01, §10]
 - [x] **ING-02**: Invalid batches are rejected all-or-nothing with 400 and a structured error. Checks cover required fields, unknown root fields, enums, IPs, attribute size and occurred_at skew [FR-01, §6.1]
 - [x] **ING-03**: The producer receives `202 Accepted` with `accepted_count`, `rejected_count`, `event_ids` and `request_id` only after Kafka acknowledges every record (acks=all, idempotent producer, key `tenant_id|source_ip`) [FR-02, §8]
-- [ ] **ING-04**: Retrying a batch after a 5xx does not create duplicate stored events, because the event_id is client-supplied or derived deterministically [FR-02, §7.2]
+- [x] **ING-04**: Retrying a batch after a 5xx does not create duplicate stored events, because the event_id is client-supplied or derived deterministically [FR-02, §7.2]
 - [x] **ING-05**: Unauthenticated requests get 401, cross-tenant requests 403, oversized payloads 413, and an unavailable Kafka gets 503, all in the JSON error envelope [§8]
 - [ ] **ING-06**: A producer exceeding its quota gets 429 with `Retry-After` from a Redis token bucket. When Redis is down, intake follows the documented fail-closed (503) or fail-open policy and never silently bypasses limits [FR-12, §7.4]
 - [x] **ING-07**: The HTTP layer sheds load (429/503) instead of buffering without bound, and the Kafka producer buffer is capped [§11.1]
@@ -30,8 +30,8 @@
 ### Event Storage (STOR)
 
 - [ ] **STOR-01**: An event-writer consumer batches events from Kafka into the ClickHouse events table and commits offsets only after a successful insert [FR-03, §3]
-- [ ] **STOR-02**: The ClickHouse events table is partitioned by month of occurred_at, ordered by `(tenant_id, occurred_at, event_id)` or a benchmark-justified order, and has a configurable TTL (local default 7 days) [§7.1]
-- [ ] **STOR-03**: Replaying the same events never yields duplicate rows in user-visible queries or counts. Dedup is enforced at read time and tested immediately after a double insert, with no reliance on background merges [FR-03, §7.2]
+- [x] **STOR-02**: The ClickHouse events table is partitioned by month of occurred_at, ordered by `(tenant_id, occurred_at, event_id)` or a benchmark-justified order, and has a configurable TTL (local default 7 days) [§7.1]
+- [x] **STOR-03**: Replaying the same events never yields duplicate rows in user-visible queries or counts. Dedup is enforced at read time and tested immediately after a double insert, with no reliance on background merges [FR-03, §7.2]
 - [ ] **STOR-04**: Permanently invalid or poison messages go to `security.events.dlq.v1` with reason, redacted context and original topic/partition/offset, and the source offset is committed only after the DLQ publish succeeds [§6.3, §11.1]
 
 ### Detection (DET)
@@ -169,13 +169,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ING-01 | Phase 2 | Complete |
 | ING-02 | Phase 2 | Complete |
 | ING-03 | Phase 2 | Complete |
-| ING-04 | Phase 2 | Pending |
+| ING-04 | Phase 2 | Complete |
 | ING-05 | Phase 2 | Complete |
 | ING-06 | Phase 2 | Pending |
 | ING-07 | Phase 2 | Complete |
 | STOR-01 | Phase 2 | Pending |
-| STOR-02 | Phase 2 | Pending |
-| STOR-03 | Phase 2 | Pending |
+| STOR-02 | Phase 2 | Complete |
+| STOR-03 | Phase 2 | Complete |
 | STOR-04 | Phase 2 | Pending |
 | GEN-01 | Phase 2 | Complete |
 | GEN-03 | Phase 2 | Pending |
