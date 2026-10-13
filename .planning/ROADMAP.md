@@ -78,8 +78,54 @@ Plans:
   4. A producer over quota gets 429 with `Retry-After`. With Redis down, intake follows the documented policy (503 by default) and never silently bypasses limits. Under excess load the HTTP layer sheds with 429/503 instead of buffering without bound
   5. A poison message lands in `security.events.dlq.v1` with reason and origin offset, and the source offset is committed only after the DLQ publish. Each service's `/readyz` reflects real dependency state
 
-**Plans**: TBD
-**Research flag**: Needs research. ClickHouse sort key and dedupe design, `event_id` lookup index, dedup window setting, franz-go API names.
+**Plans**: 14 plans across 10 dependency waves
+
+
+**Wave 1**
+
+- [ ] 02-00-PLAN.md — Harden public HTTP defaults and configure listener binds
+- [ ] 02-01-PLAN.md — Provision scoped producer keys and private reusable demo credentials
+- [ ] 02-10-PLAN.md — Send deterministic seeded batches with bounded identical-byte retries
+
+**Wave 2** *(blocked on prior dependency waves)*
+
+- [ ] 02-02-PLAN.md — Accept authenticated batches only after bounded Kafka acknowledgements
+
+**Wave 3** *(blocked on prior dependency waves)*
+
+- [ ] 02-03-PLAN.md — Return indexed atomic rejection details and exact public contracts
+
+**Wave 4** *(blocked on prior dependency waves)*
+
+- [ ] 02-04-PLAN.md — Retrieve tenant-scoped events with immediate read-time dedupe
+
+**Wave 5** *(blocked on prior dependency waves)*
+
+- [ ] 02-05-PLAN.md — Change event retention idempotently through migration tooling
+- [ ] 02-06-PLAN.md — Persist events before committing offsets and propagate worker failure
+
+**Wave 6** *(blocked on prior dependency waves)*
+
+- [ ] 02-07-PLAN.md — Quarantine poison with acknowledged DLQ effects and safe offsets
+- [ ] 02-08-PLAN.md — Enforce Redis event quotas and explicit outage policy
+
+**Wave 7** *(blocked on prior dependency waves)*
+
+- [ ] 02-09-PLAN.md — Expose real health/readiness and drain all five services
+
+**Wave 8** *(blocked on prior dependency waves)*
+
+- [ ] 02-11-PLAN.md — Prove timeout, partial-publish retry and writer crash recovery
+
+**Wave 9** *(blocked on prior dependency waves)*
+
+- [ ] 02-12-PLAN.md — Start the healthy local pipeline through pinned Compose apps
+
+**Wave 10** *(blocked on prior dependency waves)*
+
+- [ ] 02-13-PLAN.md — Verify 1000 current-run events and enforce CI coverage guards
+
+**Research**: Complete (02-RESEARCH.md, 2026-10-12); plan verification passed (02-PLAN-CHECK.md). Read-time dedupe, native ClickHouse, Kafka timeout/manual commits and Redis Lua behavior have implementation guidance.
 **Note**: GEN-02 (scenario injection) lands with detection fixtures in Phase 3.
 
 ### Phase 3: Detection & Alert Pipeline
