@@ -114,6 +114,25 @@ func TestOpenAPIDriftStructure(t *testing.T) {
 	}
 }
 
+func TestOpenAPIErrorDetailsAreBoundedAndStrict(t *testing.T) {
+	t.Parallel()
+
+	doc := loadOpenAPI(t)
+	errorBody := doc.Components.Schemas["Error"].Value.Properties["error"].Value
+	detailsRef := errorBody.Properties["details"]
+	require.NotNil(t, detailsRef, "Error.error.details must be documented")
+	details := detailsRef.Value
+	require.NotNil(t, details.MaxItems)
+	assert.Equal(t, uint64(50), *details.MaxItems)
+	require.NotNil(t, details.Items)
+	require.NotNil(t, details.Items.Value.AdditionalProperties.Has)
+	assert.False(t, *details.Items.Value.AdditionalProperties.Has)
+	assert.Equal(t, []string{"error", "field"}, sortedStrings(details.Items.Value.Required))
+	assert.Contains(t, details.Items.Value.Properties, "field")
+	assert.Contains(t, details.Items.Value.Properties, "error")
+	assert.Len(t, details.Items.Value.Properties, 2)
+}
+
 // visitOptions enables JSON Schema 2020-12 validation plus strict IP format checks,
 // which kin-openapi does not register by default.
 func visitOptions() []openapi3.SchemaValidationOption {

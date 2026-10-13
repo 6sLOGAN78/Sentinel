@@ -141,6 +141,13 @@ func TestOpenAPISecurity(t *testing.T) {
 		switch key {
 		case "POST " + pathBatch:
 			assert.Equal(t, []string{"ApiKeyAuth"}, names, key)
+		case "GET /api/v1/events/{event_id}":
+			assert.Equal(t, []string{"ApiKeyAuth", "BearerAuth"}, names, key)
+			require.NotNil(t, op.Security)
+			require.Len(t, *op.Security, 2, "credentials must be alternatives")
+			for _, alternative := range *op.Security {
+				assert.Len(t, alternative, 1, "each security alternative must require one scheme")
+			}
 		case "GET /healthz", "GET /readyz":
 			assert.Empty(t, names, key)
 		case "GET /metrics":
@@ -177,8 +184,16 @@ func TestOpenAPIEnvelopeAndLists(t *testing.T) {
 
 	errSchema := doc.Components.Schemas["Error"].Value
 	assert.Equal(t, []string{"error"}, errSchema.Required)
-	assert.ElementsMatch(t,
-		[]string{"code", "message", "request_id"}, errSchema.Properties["error"].Value.Required)
+	errorBody := errSchema.Properties["error"].Value
+	assert.ElementsMatch(t, []string{"code", "message", "request_id"}, errorBody.Required)
+	detailsRef := errorBody.Properties["details"]
+	require.NotNil(t, detailsRef)
+	details := detailsRef.Value
+	require.NotNil(t, details.MaxItems)
+	assert.Equal(t, uint64(50), *details.MaxItems)
+	assert.ElementsMatch(t, []string{"field", "error"}, details.Items.Value.Required)
+	require.NotNil(t, details.Items.Value.AdditionalProperties.Has)
+	assert.False(t, *details.Items.Value.AdditionalProperties.Has)
 
 	for _, name := range []string{"EventList", "AlertList"} {
 		s := doc.Components.Schemas[name].Value

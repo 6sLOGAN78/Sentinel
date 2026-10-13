@@ -23,9 +23,15 @@ describe("generated API types", () => {
 
   it("models the error envelope with request_id", () => {
     const err: ErrorEnvelope = {
-      error: { code: "BAD_REQUEST", message: "invalid", request_id: "req-1" },
+      error: {
+        code: "BAD_REQUEST",
+        message: "invalid",
+        request_id: "req-1",
+        details: [{ field: "events[0].event_id", error: "must be a UUID" }],
+      },
     };
     expect(err.error.request_id).toBe("req-1");
+    expect(err.error.details?.[0]?.field).toBe("events[0].event_id");
   });
 
   it("models paginated lists", () => {
