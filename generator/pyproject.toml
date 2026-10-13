@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Seeded synthetic security event generator for Sentinel"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
-dependencies = []
+dependencies = [
+    "httpx==0.28.1",
+]
+
+[project.scripts]
+sentinel-generator = "sentinel_generator.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]

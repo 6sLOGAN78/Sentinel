@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+
 from sentinel_generator.cli import main
 from sentinel_generator.send import (
     MAX_BODY_BYTES,
@@ -147,7 +148,8 @@ def test_retry_reuses_the_exact_serialized_request_bytes(status: int) -> None:
 def test_http_date_retry_after_uses_injected_utc_clock() -> None:
     calls = 0
     sleeps: list[float] = []
-    retry_at = format_datetime(RUN_START + timedelta(seconds=8), usegmt=True)
+    clock_now = RUN_START.replace(microsecond=0)
+    retry_at = format_datetime(clock_now + timedelta(seconds=8), usegmt=True)
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
@@ -163,7 +165,7 @@ def test_http_date_retry_after_uses_injected_utc_clock() -> None:
             api_key=API_KEY,
             batch_size=1,
             client=client,
-            utc_now=lambda: RUN_START,
+            utc_now=lambda: clock_now,
             sleeper=sleeps.append,
         )
 
