@@ -6,13 +6,17 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 )
@@ -187,7 +191,8 @@ func StartClickHouse(ctx context.Context) (config.ClickHouseConfig, func(), erro
 	}, terminator(c), nil
 }
 
-func freePort() (string, error) {
+// FreePort returns a currently unused loopback TCP port for isolated process tests.
+func FreePort() (string, error) {
 	l, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", loopback+":0")
 	if err != nil {
 		return "", fmt.Errorf("find free port: %w", err)
@@ -202,10 +207,30 @@ func freePort() (string, error) {
 	return port, nil
 }
 
+// FaultContainer retains a dedicated container handle for pause/unpause fault tests.
+// Call Close as soon as the handle is acquired, normally through t.Cleanup.
+type FaultContainer struct {
+	testcontainers.Container
+}
+
+// Close terminates the dedicated container with a bounded background context.
+func (c *FaultContainer) Close() { terminator(c.Container)() }
+
 // StartKafka starts a single-node KRaft apache/kafka container whose external
 // listener is advertised on a fixed free host port.
 func StartKafka(ctx context.Context) (config.KafkaConfig, func(), error) {
-	port, err := freePort()
+	cfg, handle, err := StartKafkaFaultContainer(ctx)
+	if err != nil {
+		return config.KafkaConfig{}, nil, err
+	}
+
+	return cfg, handle.Close, nil
+}
+
+// StartKafkaFaultContainer starts an isolated broker and returns its handle.
+// Fault tests must use this instead of pausing the package-wide TestMain broker.
+func StartKafkaFaultContainer(ctx context.Context) (config.KafkaConfig, *FaultContainer, error) {
+	port, err := FreePort()
 	if err != nil {
 		return config.KafkaConfig{}, nil, err
 	}
@@ -246,7 +271,39 @@ func StartKafka(ctx context.Context) (config.KafkaConfig, func(), error) {
 		return config.KafkaConfig{}, nil, err
 	}
 
-	return config.KafkaConfig{Brokers: net.JoinHostPort("localhost", port)}, terminator(c), nil
+	return config.KafkaConfig{Brokers: net.JoinHostPort("localhost", port)}, &FaultContainer{Container: c}, nil
+}
+
+// CreateUniqueTopic creates an explicitly named one-partition topic. Kafka
+// auto-creation stays disabled, so tests cannot silently share topic state.
+func CreateUniqueTopic(ctx context.Context, cfg config.KafkaConfig, prefix string) (string, error) {
+	brokers := strings.Split(cfg.Brokers, ",")
+	client, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
+	if err != nil {
+		return "", fmt.Errorf("create kafka admin client: %w", err)
+	}
+	defer client.Close()
+
+	topic := prefix + "-" + uuid.NewString()
+	if _, err = kadm.NewClient(client).CreateTopic(ctx, 1, 1, nil, topic); err != nil {
+		return "", fmt.Errorf("create topic %s: %w", topic, err)
+	}
+
+	return topic, nil
+}
+
+// RequireUniqueTopic creates a unique topic or fails the current test.
+func RequireUniqueTopic(t *testing.T, cfg config.KafkaConfig, prefix string) string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	t.Cleanup(cancel)
+	topic, err := CreateUniqueTopic(ctx, cfg, prefix)
+	if err != nil {
+		t.Fatalf("create unique Kafka topic: %v", err)
+	}
+
+	return topic
 }
 
 func mustStart(t *testing.T, err error) {

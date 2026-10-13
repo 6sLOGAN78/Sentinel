@@ -10,20 +10,29 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
+
+	"github.com/6sLOGAN78/sentinel/internal/chmigrate"
 	"github.com/6sLOGAN78/sentinel/internal/config"
+	"github.com/6sLOGAN78/sentinel/internal/database"
 	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
+	"github.com/6sLOGAN78/sentinel/migrations"
 )
 
 // Shared fixtures started once per package in TestMain and read-only afterwards.
 //
 //nolint:gochecknoglobals // TestMain fixtures are shared by every test in the package
 var (
-	pgCfg    config.DatabaseConfig
-	redisCfg config.RedisConfig
-	kafkaCfg config.KafkaConfig
-	chCfg    config.ClickHouseConfig
-	binDir   string
+	pgCfg          config.DatabaseConfig
+	redisCfg       config.RedisConfig
+	kafkaCfg       config.KafkaConfig
+	chCfg          config.ClickHouseConfig
+	binDir         string
+	lifecycleTopic string
+	lifecycleGroup string
 )
 
 //nolint:gochecknoglobals // read-only service list shared by the integration tests
@@ -116,6 +125,28 @@ func run(m *testing.M) int {
 
 		return 1
 	}
+
+	migrateCtx, cancelMigrations := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelMigrations()
+	if err = database.Migrate(migrateCtx, pgCfg, zerolog.Nop()); err != nil {
+		fmt.Fprintln(os.Stderr, "migrate postgres:", err)
+
+		return 1
+	}
+	if _, err = chmigrate.New(
+		chCfg.HTTPAddress, chCfg.User, chCfg.Password, chCfg.Database, nil,
+	).Run(migrateCtx, migrations.ClickHouse()); err != nil {
+		fmt.Fprintln(os.Stderr, "migrate clickhouse:", err)
+
+		return 1
+	}
+	lifecycleTopic, err = sentineltesting.CreateUniqueTopic(migrateCtx, kafkaCfg, "lifecycle")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "create lifecycle topic:", err)
+
+		return 1
+	}
+	lifecycleGroup = "lifecycle-" + uuid.NewString()
 
 	return m.Run()
 }

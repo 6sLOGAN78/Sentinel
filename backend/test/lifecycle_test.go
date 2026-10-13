@@ -10,9 +10,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
 )
 
 const (
@@ -24,11 +27,27 @@ const (
 // serviceEnv returns the dotted SENTINEL_* variables a service needs. Every
 // case other than TestBinaryLifecycleEnvFile uses a non-local environment, so
 // no dotenv file is ever loaded.
-func serviceEnv(service string) []string {
+func serviceEnv(t *testing.T, service string) []string {
+	t.Helper()
+
+	serverPort, err := sentineltesting.FreePort()
+	if err != nil {
+		t.Fatalf("allocate server port: %v", err)
+	}
+	opsPort, err := sentineltesting.FreePort()
+	if err != nil {
+		t.Fatalf("allocate ops port: %v", err)
+	}
+
 	redis := []string{"SENTINEL_REDIS.ADDRESS=" + redisCfg.Address}
-	kafka := []string{"SENTINEL_KAFKA.BROKERS=" + kafkaCfg.Brokers}
+	kafka := []string{
+		"SENTINEL_KAFKA.BROKERS=" + kafkaCfg.Brokers,
+		"SENTINEL_KAFKA.EVENTS_TOPIC=" + lifecycleTopic,
+		"SENTINEL_KAFKA.EVENT_WRITER_GROUP=" + lifecycleGroup,
+	}
 	ch := []string{
 		"SENTINEL_CLICKHOUSE.HTTP_ADDRESS=" + chCfg.HTTPAddress,
+		"SENTINEL_CLICKHOUSE.NATIVE_ADDRESS=" + chCfg.NativeAddress,
 		"SENTINEL_CLICKHOUSE.USER=" + chCfg.User,
 		"SENTINEL_CLICKHOUSE.PASSWORD=" + chCfg.Password,
 		"SENTINEL_CLICKHOUSE.DATABASE=" + chCfg.Database,
@@ -42,12 +61,18 @@ func serviceEnv(service string) []string {
 		"SENTINEL_DATABASE.SSL_MODE=disable",
 	}
 
-	env := []string{"SENTINEL_PRIMARY.ENV=test"}
+	env := []string{
+		"SENTINEL_PRIMARY.ENV=test",
+		"SENTINEL_SERVER.BIND_ADDRESS=127.0.0.1",
+		"SENTINEL_SERVER.PORT=" + serverPort,
+		"SENTINEL_OPS.PORT=" + opsPort,
+	}
 
 	switch service {
 	case "ingest":
 		env = append(env, redis...)
 		env = append(env, kafka...)
+		env = append(env, pg...)
 	case "detector":
 		env = append(env, kafka...)
 	case "event-writer":
@@ -82,7 +107,26 @@ func without(env []string, prefix string) []string {
 type proc struct {
 	cmd    *exec.Cmd
 	done   chan error
-	output *bytes.Buffer
+	output *syncBuffer
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
 }
 
 // startProc starts a service binary with exactly the given environment and a
@@ -94,7 +138,7 @@ func startProc(t *testing.T, service, dir string, env []string) *proc {
 		dir = t.TempDir()
 	}
 
-	out := &bytes.Buffer{}
+	out := &syncBuffer{}
 	cmd := exec.CommandContext(t.Context(), filepath.Join(binDir, service))
 	cmd.Dir = dir
 	cmd.Env = env
@@ -178,7 +222,7 @@ func TestBinaryLifecycle(t *testing.T) {
 		t.Run(service+"/graceful", func(t *testing.T) {
 			t.Parallel()
 
-			p := startProc(t, service, "", serviceEnv(service))
+			p := startProc(t, service, "", serviceEnv(t, service))
 			p.requireRunningFor(t, stayUpFor)
 
 			if code := p.terminate(t); code != 0 {
@@ -193,7 +237,7 @@ func TestBinaryLifecycle(t *testing.T) {
 		t.Run(service+"/sigint", func(t *testing.T) {
 			t.Parallel()
 
-			p := startProc(t, service, "", serviceEnv(service))
+			p := startProc(t, service, "", serviceEnv(t, service))
 			p.requireRunningFor(t, stayUpFor)
 
 			if err := p.cmd.Process.Signal(syscall.SIGINT); err != nil {
@@ -210,7 +254,7 @@ func TestBinaryLifecycle(t *testing.T) {
 func TestBinaryLifecycleRedisDown(t *testing.T) {
 	t.Parallel()
 
-	env := without(serviceEnv("ingest"), "SENTINEL_REDIS.ADDRESS=")
+	env := without(serviceEnv(t, "ingest"), "SENTINEL_REDIS.ADDRESS=")
 	env = append(env, "SENTINEL_REDIS.ADDRESS=127.0.0.1:1")
 
 	p := startProc(t, "ingest", "", env)
@@ -227,7 +271,7 @@ func TestBinaryLifecycleRedisDown(t *testing.T) {
 func TestBinaryLifecycleBadPostgresPassword(t *testing.T) {
 	t.Parallel()
 
-	env := without(serviceEnv("query-api"), "SENTINEL_DATABASE.PASSWORD=")
+	env := without(serviceEnv(t, "query-api"), "SENTINEL_DATABASE.PASSWORD=")
 	env = append(env, "SENTINEL_DATABASE.PASSWORD=definitely-wrong")
 
 	p := startProc(t, "query-api", "", env)
@@ -244,7 +288,7 @@ func TestBinaryLifecycleBadPostgresPassword(t *testing.T) {
 func TestBinaryLifecycleKafkaDown(t *testing.T) {
 	t.Parallel()
 
-	env := without(serviceEnv("detector"), "SENTINEL_KAFKA.BROKERS=")
+	env := without(serviceEnv(t, "detector"), "SENTINEL_KAFKA.BROKERS=")
 	env = append(env, "SENTINEL_KAFKA.BROKERS=127.0.0.1:1")
 
 	p := startProc(t, "detector", "", env)
@@ -257,7 +301,7 @@ func TestBinaryLifecycleKafkaDown(t *testing.T) {
 func TestBinaryLifecycleMissingConfig(t *testing.T) {
 	t.Parallel()
 
-	env := without(serviceEnv("ingest"), "SENTINEL_REDIS.ADDRESS=")
+	env := without(serviceEnv(t, "ingest"), "SENTINEL_REDIS.ADDRESS=")
 	p := startProc(t, "ingest", "", env)
 
 	if code := p.requireExit(t, failFastLimit); code == 0 {
@@ -273,7 +317,7 @@ func TestBinaryLifecycleEnvFile(t *testing.T) {
 	t.Parallel()
 
 	envFile := filepath.Join(t.TempDir(), "root.env")
-	content := strings.Join(serviceEnv("ingest")[1:], "\n") + "\n"
+	content := strings.Join(serviceEnv(t, "ingest")[1:], "\n") + "\n"
 
 	if err := os.WriteFile(envFile, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
