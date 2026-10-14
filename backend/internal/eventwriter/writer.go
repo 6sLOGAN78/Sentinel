@@ -182,9 +182,32 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 	if err != nil {
 		return err
 	}
+	classified, events := w.classifyPartitions(partitions, len(records))
+	if len(events) > 0 {
+		if err = w.insertWithRetry(ctx, events); err != nil {
+			return err
+		}
+	}
 
+	committable, effectErr := w.durablePrefixes(ctx, classified, sortedPartitionKeys(partitions))
+	if len(committable) == 0 {
+		return effectErr
+	}
+	commitCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
+	defer cancel()
+	if err = w.consumer.CommitRecords(commitCtx, committable...); err != nil {
+		return fmt.Errorf("commit durable event effects: %w", errors.Join(err, effectErr))
+	}
+
+	return effectErr
+}
+
+func (w *Writer) classifyPartitions(
+	partitions map[topicPartition][]*kgo.Record,
+	recordCount int,
+) (map[topicPartition][]recordEffect, []*contracts.Event) {
 	classified := make(map[topicPartition][]recordEffect, len(partitions))
-	events := make([]*contracts.Event, 0, len(records))
+	events := make([]*contracts.Event, 0, recordCount)
 	for key, partitionRecords := range partitions {
 		effects := make([]recordEffect, 0, len(partitionRecords))
 		for _, record := range partitionRecords {
@@ -196,20 +219,22 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 		}
 		classified[key] = effects
 	}
-	if len(events) > 0 {
-		if err = w.insertWithRetry(ctx, events); err != nil {
-			return err
-		}
-	}
 
-	keys := sortedPartitionKeys(partitions)
+	return classified, events
+}
+
+func (w *Writer) durablePrefixes(
+	ctx context.Context,
+	classified map[topicPartition][]recordEffect,
+	keys []topicPartition,
+) ([]*kgo.Record, error) {
 	committable := make([]*kgo.Record, 0, len(keys))
 	var effectErr error
 	for _, key := range keys {
 		var lastDurable *kgo.Record
 		for _, effect := range classified[key] {
 			if effect.reason != "" {
-				if err = w.publishWithRetry(ctx, effect.record, effect.reason); err != nil {
+				if err := w.publishWithRetry(ctx, effect.record, effect.reason); err != nil {
 					effectErr = errors.Join(effectErr, err)
 					break
 				}
@@ -221,16 +246,7 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 		}
 	}
 
-	if len(committable) == 0 {
-		return effectErr
-	}
-	commitCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
-	defer cancel()
-	if err = w.consumer.CommitRecords(commitCtx, committable...); err != nil {
-		return fmt.Errorf("commit durable event effects: %w", errors.Join(err, effectErr))
-	}
-
-	return effectErr
+	return committable, effectErr
 }
 
 type recordEffect struct {

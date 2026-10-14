@@ -2,6 +2,7 @@ package kafkax
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -25,8 +26,11 @@ const (
 type DLQReason string
 
 const (
-	DLQReasonDecode            DLQReason = "decode_error"
-	DLQReasonValidation        DLQReason = "validation_error"
+	// DLQReasonDecode identifies records that cannot be strictly decoded.
+	DLQReasonDecode DLQReason = "decode_error"
+	// DLQReasonValidation identifies decoded records that violate the event contract.
+	DLQReasonValidation DLQReason = "validation_error"
+	// DLQReasonMissingReceivedAt identifies a missing server-owned ingestion timestamp.
 	DLQReasonMissingReceivedAt DLQReason = "missing_received_at"
 )
 
@@ -52,7 +56,7 @@ func NewDLQPublisher(
 		return nil, err
 	}
 	if maxValueBytes < 1 {
-		return nil, fmt.Errorf("DLQ max value bytes must be positive")
+		return nil, errors.New("DLQ max value bytes must be positive")
 	}
 	if topic == "" {
 		topic = DefaultDLQTopic
@@ -117,13 +121,13 @@ func BuildDLQRecord(
 	maxValueBytes int,
 ) (*kgo.Record, error) {
 	if original == nil {
-		return nil, fmt.Errorf("build DLQ record: original record is nil")
+		return nil, errors.New("build DLQ record: original record is nil")
 	}
 	if !reason.valid() {
-		return nil, fmt.Errorf("build DLQ record: unsupported DLQ reason")
+		return nil, errors.New("build DLQ record: unsupported DLQ reason")
 	}
 	if maxValueBytes < 1 {
-		return nil, fmt.Errorf("build DLQ record: max value bytes must be positive")
+		return nil, errors.New("build DLQ record: max value bytes must be positive")
 	}
 
 	value := append([]byte(nil), original.Value...)

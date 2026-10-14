@@ -1,4 +1,4 @@
-package kafkax
+package kafkax_test
 
 import (
 	"strconv"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 )
 
 func TestBuildDLQRecordPreservesSmallOrigin(t *testing.T) {
@@ -21,9 +23,9 @@ func TestBuildDLQRecordPreservesSmallOrigin(t *testing.T) {
 	}
 	at := time.Date(2026, 10, 14, 18, 4, 5, 123_000_000, time.FixedZone("IST", 5*60*60+30*60))
 
-	record, err := BuildDLQRecord(original, DLQReasonDecode, at, 64<<10)
+	record, err := kafkax.BuildDLQRecord(original, kafkax.DLQReasonDecode, at, 64<<10)
 	require.NoError(t, err)
-	require.Equal(t, DefaultDLQTopic, record.Topic)
+	require.Equal(t, kafkax.DefaultDLQTopic, record.Topic)
 	require.Equal(t, original.Key, record.Key)
 	require.Equal(t, original.Value, record.Value)
 	require.Equal(t, "decode_error", headerValue(record.Headers, "dlq.reason"))
@@ -51,9 +53,9 @@ func TestBuildDLQRecordRedactsOversizeValueAndBoundsHeaderFlood(t *testing.T) {
 		})
 	}
 
-	record, err := BuildDLQRecord(
+	record, err := kafkax.BuildDLQRecord(
 		original,
-		DLQReasonValidation,
+		kafkax.DLQReasonValidation,
 		time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC),
 		valueCap,
 	)
@@ -61,7 +63,7 @@ func TestBuildDLQRecordRedactsOversizeValueAndBoundsHeaderFlood(t *testing.T) {
 	require.Empty(t, record.Value)
 	require.Equal(t, "true", headerValue(record.Headers, "dlq.value.redacted"))
 	require.Equal(t, strconv.Itoa(valueCap+1), headerValue(record.Headers, "dlq.value.original_bytes"))
-	require.LessOrEqual(t, dlqRecordBytes(record), valueCap+dlqMetadataBudget)
+	require.LessOrEqual(t, dlqRecordBytes(record), valueCap+(8<<10))
 	require.Less(t, len(record.Headers), len(original.Headers), "origin header flood must be truncated")
 	for _, header := range record.Headers {
 		require.NotContains(t, string(header.Value), strings.Repeat("s", valueCap+1))
@@ -69,13 +71,23 @@ func TestBuildDLQRecordRedactsOversizeValueAndBoundsHeaderFlood(t *testing.T) {
 }
 
 func TestBuildDLQRecordRejectsUnstableReason(t *testing.T) {
-	_, err := BuildDLQRecord(
+	_, err := kafkax.BuildDLQRecord(
 		&kgo.Record{Topic: "events"},
-		DLQReason("decoder leaked: secret"),
+		kafkax.DLQReason("decoder leaked: secret"),
 		time.Now(),
 		64<<10,
 	)
 	require.ErrorContains(t, err, "DLQ reason")
+}
+
+func headerValue(headers []kgo.RecordHeader, key string) string {
+	for _, header := range headers {
+		if header.Key == key {
+			return string(header.Value)
+		}
+	}
+
+	return ""
 }
 
 func dlqRecordBytes(record *kgo.Record) int {

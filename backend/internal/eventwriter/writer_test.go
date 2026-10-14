@@ -325,22 +325,7 @@ func TestWriterDLQFailureDoesNotCommitPastPoison(t *testing.T) {
 func TestWriterMixedPartitionsCommitIndependentDurablePrefixes(t *testing.T) {
 	for _, failedPartition := range []int32{0, 1} {
 		t.Run(fmt.Sprintf("partition_%d_fails", failedPartition), func(t *testing.T) {
-			now := time.Now().UTC()
-			records := make([]*kgo.Record, 0, 6)
-			for offset := range int64(3) {
-				for partition := range int32(2) {
-					var record *kgo.Record
-					if offset == 1 {
-						record = &kgo.Record{Topic: "events", Value: []byte(`{"broken":`)}
-					} else {
-						record = validRecord(t, offset, now, now)
-					}
-					record.Partition = partition
-					record.Offset = offset
-					records = append(records, record)
-				}
-			}
-
+			records := mixedPartitionRecords(t)
 			consumer := &scriptedConsumer{records: records}
 			dlqErr := errors.New("partition DLQ unavailable")
 			dlq := &recordingDLQ{failFor: func(record *kgo.Record) error {
@@ -357,12 +342,39 @@ func TestWriterMixedPartitionsCommitIndependentDurablePrefixes(t *testing.T) {
 			err := w.Run(context.Background())
 			require.ErrorIs(t, err, dlqErr)
 			require.Len(t, consumer.commits, 1)
-			committed := make(map[int32]int64)
-			for _, record := range consumer.commits[0] {
-				committed[record.Partition] = record.Offset
-			}
+			committed := offsetsByPartition(consumer.commits[0])
 			require.Equal(t, int64(0), committed[failedPartition])
 			require.Equal(t, int64(2), committed[1-failedPartition])
 		})
 	}
+}
+
+func mixedPartitionRecords(t *testing.T) []*kgo.Record {
+	t.Helper()
+	now := time.Now().UTC()
+	records := make([]*kgo.Record, 0, 6)
+	for offset := range int64(3) {
+		for partition := range int32(2) {
+			var record *kgo.Record
+			if offset == 1 {
+				record = &kgo.Record{Topic: "events", Value: []byte(`{"broken":`)}
+			} else {
+				record = validRecord(t, offset, now, now)
+			}
+			record.Partition = partition
+			record.Offset = offset
+			records = append(records, record)
+		}
+	}
+
+	return records
+}
+
+func offsetsByPartition(records []*kgo.Record) map[int32]int64 {
+	offsets := make(map[int32]int64, len(records))
+	for _, record := range records {
+		offsets[record.Partition] = record.Offset
+	}
+
+	return offsets
 }
