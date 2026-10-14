@@ -17,6 +17,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/eventwriter"
+	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 )
 
 type scriptedConsumer struct {
@@ -72,6 +73,22 @@ type recordingStore struct {
 	order    *[]string
 }
 
+type recordingDLQ struct {
+	mu      sync.Mutex
+	records []*kgo.Record
+	reasons []kafkax.DLQReason
+	fail    error
+}
+
+func (p *recordingDLQ) Publish(_ context.Context, record *kgo.Record, reason kafkax.DLQReason) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.records = append(p.records, record)
+	p.reasons = append(p.reasons, reason)
+
+	return p.fail
+}
+
 type shutdownStore struct {
 	mu       sync.Mutex
 	attempts int
@@ -119,6 +136,16 @@ func writerSettings(batchSize int, interval time.Duration) config.WriterConfig {
 	}
 }
 
+func newWriter(
+	consumer eventwriter.Consumer,
+	store eventwriter.EventStore,
+	dlq eventwriter.QuarantinePublisher,
+	settings config.WriterConfig,
+	limits contracts.Limits,
+) *eventwriter.Writer {
+	return eventwriter.New(consumer, store, dlq, settings, limits, zerolog.Nop())
+}
+
 func validRecord(t *testing.T, offset int64, occurredAt, receivedAt time.Time) *kgo.Record {
 	t.Helper()
 	received := contracts.NewTimestamp(receivedAt)
@@ -154,7 +181,7 @@ func TestWriterFlushesAtSizeBeforeCommitAndBoundsPolls(t *testing.T) {
 	}
 	limits := contracts.DefaultLimits()
 	limits.PastSkew = time.Hour
-	w := eventwriter.New(consumer, store, writerSettings(2, time.Hour), limits, zerolog.Nop())
+	w := newWriter(consumer, store, &recordingDLQ{}, writerSettings(2, time.Hour), limits)
 
 	require.NoError(t, w.Run(ctx))
 	require.Equal(t, []string{"insert", "commit"}, order)
@@ -173,9 +200,7 @@ func TestWriterFlushesOnWallClockInterval(t *testing.T) {
 	store := &recordingStore{}
 	ctx, cancel := context.WithCancel(context.Background())
 	consumer.onCommit = cancel
-	w := eventwriter.New(
-		consumer, store, writerSettings(5, 10*time.Millisecond), contracts.DefaultLimits(), zerolog.Nop(),
-	)
+	w := newWriter(consumer, store, &recordingDLQ{}, writerSettings(5, 10*time.Millisecond), contracts.DefaultLimits())
 
 	require.NoError(t, w.Run(ctx))
 	require.Len(t, store.events, 1)
@@ -188,9 +213,7 @@ func TestWriterRetryExhaustionDoesNotCommit(t *testing.T) {
 	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, now, now)}}
 	storeErr := errors.New("clickhouse unavailable")
 	store := &recordingStore{fail: storeErr}
-	w := eventwriter.New(
-		consumer, store, writerSettings(1, time.Second), contracts.DefaultLimits(), zerolog.Nop(),
-	)
+	w := newWriter(consumer, store, &recordingDLQ{}, writerSettings(1, time.Second), contracts.DefaultLimits())
 
 	err := w.Run(context.Background())
 	require.ErrorIs(t, err, storeErr)
@@ -205,7 +228,7 @@ func TestWriterCancellationMidInsertFlushesWithFreshContext(t *testing.T) {
 	store := &shutdownStore{entered: make(chan struct{})}
 	settings := writerSettings(1, time.Second)
 	settings.MaxAttempts = 1
-	w := eventwriter.New(consumer, store, settings, contracts.DefaultLimits(), zerolog.Nop())
+	w := newWriter(consumer, store, &recordingDLQ{}, settings, contracts.DefaultLimits())
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
@@ -234,8 +257,8 @@ func TestWriterValidationErrorRedactsUntrustedValue(t *testing.T) {
 	secret := "sentinel-secret-event-type"
 	record.Value = bytes.Replace(record.Value, []byte("net.connection"), []byte(secret), 1)
 	consumer := &scriptedConsumer{records: []*kgo.Record{record}}
-	w := eventwriter.New(
-		consumer, &recordingStore{}, writerSettings(1, time.Second), contracts.DefaultLimits(), zerolog.Nop(),
+	w := newWriter(
+		consumer, &recordingStore{}, &recordingDLQ{}, writerSettings(1, time.Second), contracts.DefaultLimits(),
 	)
 
 	err := w.Run(context.Background())
@@ -244,4 +267,51 @@ func TestWriterValidationErrorRedactsUntrustedValue(t *testing.T) {
 	require.Contains(t, err.Error(), "validation_error")
 	require.Contains(t, err.Error(), "event_type")
 	require.Empty(t, consumer.commits)
+}
+
+func TestWriterClassifiesOnlyPoisonWithStableReasons(t *testing.T) {
+	now := time.Now().UTC()
+	invalidJSON := &kgo.Record{Topic: "events", Partition: 0, Offset: 0, Value: []byte(`{"broken":`)}
+	invalidSchema := validRecord(t, 1, now, now)
+	invalidSchema.Value = bytes.Replace(invalidSchema.Value, []byte(`"schema_version":1`), []byte(`"schema_version":2`), 1)
+	missingReceivedAt := validRecord(t, 2, now, now)
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(missingReceivedAt.Value, &decoded))
+	delete(decoded, "received_at")
+	missingReceivedAt.Value, _ = json.Marshal(decoded)
+
+	consumer := &scriptedConsumer{records: []*kgo.Record{invalidJSON, invalidSchema, missingReceivedAt}}
+	dlq := &recordingDLQ{}
+	ctx, cancel := context.WithCancel(context.Background())
+	consumer.onCommit = cancel
+	w := newWriter(consumer, &recordingStore{}, dlq, writerSettings(3, time.Hour), contracts.DefaultLimits())
+
+	require.NoError(t, w.Run(ctx))
+	require.Equal(t, []kafkax.DLQReason{
+		kafkax.DLQReasonDecode,
+		kafkax.DLQReasonValidation,
+		kafkax.DLQReasonMissingReceivedAt,
+	}, dlq.reasons)
+	require.Len(t, consumer.commits, 1)
+	require.Equal(t, int64(2), consumer.commits[0][0].Offset)
+}
+
+func TestWriterDLQFailureDoesNotCommitPastPoison(t *testing.T) {
+	now := time.Now().UTC()
+	consumer := &scriptedConsumer{records: []*kgo.Record{
+		validRecord(t, 0, now, now),
+		{Topic: "events", Partition: 0, Offset: 1, Value: []byte(`{"broken":`)},
+		validRecord(t, 2, now, now),
+	}}
+	dlqErr := errors.New("DLQ unavailable")
+	dlq := &recordingDLQ{fail: dlqErr}
+	w := newWriter(consumer, &recordingStore{}, dlq, writerSettings(3, time.Hour), contracts.DefaultLimits())
+
+	err := w.Run(context.Background())
+	require.ErrorIs(t, err, dlqErr)
+	for _, commit := range consumer.commits {
+		for _, record := range commit {
+			require.Less(t, record.Offset, int64(1), "commit skipped failed poison offset")
+		}
+	}
 }

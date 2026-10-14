@@ -31,6 +31,12 @@ type gatedEventStore struct {
 	release  chan struct{}
 }
 
+type unusedDLQ struct{}
+
+func (unusedDLQ) Publish(context.Context, *kgo.Record, kafkax.DLQReason) error {
+	return fmt.Errorf("unexpected DLQ publish")
+}
+
 func (s *gatedEventStore) InsertBatch(ctx context.Context, events []*contracts.Event) error {
 	if err := s.inner.InsertBatch(ctx, events); err != nil {
 		return err
@@ -151,7 +157,9 @@ func TestWriterCommitAfterInsert(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	done := make(chan error, 1)
-	go func() { done <- eventwriter.New(consumer, gated, settings, limits, zerolog.Nop()).Run(ctx) }()
+	go func() {
+		done <- eventwriter.New(consumer, gated, unusedDLQ{}, settings, limits, zerolog.Nop()).Run(ctx)
+	}()
 
 	select {
 	case <-gated.inserted:
@@ -200,7 +208,7 @@ func TestWriterInsertFailureNoCommit(t *testing.T) {
 	settings.RetryMaxBackoff = 20 * time.Millisecond
 	started := time.Now()
 	runErr := eventwriter.New(
-		consumer, store, settings, contracts.DefaultLimits(), zerolog.Nop(),
+		consumer, store, unusedDLQ{}, settings, contracts.DefaultLimits(), zerolog.Nop(),
 	).Run(t.Context())
 	require.Error(t, runErr)
 	require.Less(t, time.Since(started), 10*time.Second)
@@ -217,7 +225,7 @@ func TestWriterInsertFailureNoCommit(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- eventwriter.New(
-			restart, store, settings, contracts.DefaultLimits(), zerolog.Nop(),
+			restart, store, unusedDLQ{}, settings, contracts.DefaultLimits(), zerolog.Nop(),
 		).Run(ctx)
 	}()
 	waitCommittedOffset(t, kafka, group, topic, int64(len(events)))
@@ -232,6 +240,174 @@ func TestWriterInsertFailureNoCommit(t *testing.T) {
 		require.NoError(t, getErr, fmt.Sprintf("event %s", event.EventID))
 		require.Equal(t, event.EventID, got.EventID)
 	}
+}
+
+func produceRawRecords(t *testing.T, kafka config.KafkaConfig, records ...*kgo.Record) {
+	t.Helper()
+	client, err := kgo.NewClient(
+		kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...),
+		kgo.RequiredAcks(kgo.AllISRAcks()),
+		kgo.RecordDeliveryTimeout(5*time.Second),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+	require.NoError(t, client.ProduceSync(t.Context(), records...).FirstErr())
+}
+
+func consumeOneRecord(t *testing.T, kafka config.KafkaConfig, topic string) *kgo.Record {
+	t.Helper()
+	client, err := kgo.NewClient(
+		kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...),
+		kgo.ConsumeTopics(topic),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	fetches := client.PollRecords(ctx, 1)
+	require.NoError(t, fetches.Err())
+	require.Equal(t, 1, fetches.NumRecords())
+
+	return fetches.Records()[0]
+}
+
+func integrationDLQPublisher(
+	t *testing.T,
+	kafka config.KafkaConfig,
+	topic string,
+	settings config.WriterConfig,
+) *kafkax.DLQPublisher {
+	t.Helper()
+	publisher, err := kafkax.NewDLQPublisher(t.Context(), kafka, topic, settings.DLQMaxBytes)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, publisher.Close(context.Background())) })
+
+	return publisher
+}
+
+func TestWriterPoisonToDLQ(t *testing.T) {
+	store, _ := newDedupeStore(t)
+	sourceTopic := sentineltesting.RequireUniqueTopic(t, kafkaCfg, "writer-poison-source")
+	dlqTopic := sentineltesting.RequireUniqueTopic(t, kafkaCfg, "writer-poison-dlq")
+	group := "writer-poison-" + uuid.NewString()
+	kafka := writerKafkaConfig(sourceTopic, group)
+	settings := integrationWriterSettings()
+	settings.BatchSize = 3
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	valid := canonicalWriterEvents(2, now.Add(-time.Minute))
+	producer := newWriterProducer(t, kafka)
+	require.NoError(t, producer.PublishBatch(t.Context(), valid[:1], uuid.NewString()))
+	poisonKey := []byte("demo|192.0.2.99")
+	poisonValue := []byte(`{"schema_version":1,"secret":"bounded-context"}`)
+	produceRawRecords(t, kafka, &kgo.Record{
+		Topic: sourceTopic, Key: poisonKey, Value: poisonValue,
+		Headers: []kgo.RecordHeader{{Key: "request_id", Value: []byte("poison-request")}},
+	})
+	require.NoError(t, producer.PublishBatch(t.Context(), valid[1:], uuid.NewString()))
+
+	consumer, err := kafkax.NewConsumer(t.Context(), kafka, settings)
+	require.NoError(t, err)
+	t.Cleanup(func() { closeWriterConsumer(t, consumer) })
+	dlq := integrationDLQPublisher(t, kafka, dlqTopic, settings)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- eventwriter.New(
+			consumer, store, dlq, settings, contracts.DefaultLimits(), zerolog.Nop(),
+		).Run(ctx)
+	}()
+
+	waitCommittedOffset(t, kafka, group, sourceTopic, 3)
+	cancel()
+	require.NoError(t, <-done)
+	dlqRecord := consumeOneRecord(t, kafka, dlqTopic)
+	require.Equal(t, poisonKey, dlqRecord.Key)
+	require.Equal(t, poisonValue, dlqRecord.Value)
+	require.Equal(t, "decode_error", testHeaderValue(dlqRecord.Headers, "dlq.reason"))
+	require.Equal(t, sourceTopic, testHeaderValue(dlqRecord.Headers, "dlq.origin.topic"))
+	require.Equal(t, "0", testHeaderValue(dlqRecord.Headers, "dlq.origin.partition"))
+	require.Equal(t, "1", testHeaderValue(dlqRecord.Headers, "dlq.origin.offset"))
+	require.NotEmpty(t, testHeaderValue(dlqRecord.Headers, "dlq.at"))
+	for _, event := range valid {
+		got, getErr := store.Get(t.Context(), "demo", event.EventID)
+		require.NoError(t, getErr)
+		require.Equal(t, event.EventID, got.EventID)
+	}
+}
+
+func TestWriterDLQFailureNoCommit(t *testing.T) {
+	kafka, handle, err := sentineltesting.StartKafkaFaultContainer(t.Context())
+	require.NoError(t, err)
+	t.Cleanup(handle.Close)
+	sourceTopic := sentineltesting.RequireUniqueTopic(t, kafka, "writer-dlq-failure-source")
+	absentDLQTopic := "writer-absent-dlq-" + uuid.NewString()
+	group := "writer-dlq-failure-" + uuid.NewString()
+	kafka.EventsTopic = sourceTopic
+	kafka.EventWriterGroup = group
+	kafka.ProduceTimeout = 500 * time.Millisecond
+	kafka.RecordRetries = 1
+	kafka.MaxBufferedRecords = 100
+	kafka.MaxBufferedBytes = 1 << 20
+	settings := integrationWriterSettings()
+	settings.BatchSize = 3
+	settings.MaxAttempts = 2
+	settings.OperationTimeout = 500 * time.Millisecond
+	settings.RetryMinBackoff = 10 * time.Millisecond
+	settings.RetryMaxBackoff = 20 * time.Millisecond
+	store, _ := newDedupeStore(t)
+	valid := canonicalWriterEvents(2, time.Now().UTC().Add(-time.Minute))
+	producer := newWriterProducer(t, kafka)
+	require.NoError(t, producer.PublishBatch(t.Context(), valid[:1], uuid.NewString()))
+	poison := &kgo.Record{Topic: sourceTopic, Key: []byte("poison"), Value: []byte(`{"broken":`)}
+	produceRawRecords(t, kafka, poison)
+	require.NoError(t, producer.PublishBatch(t.Context(), valid[1:], uuid.NewString()))
+
+	consumer, err := kafkax.NewConsumer(t.Context(), kafka, settings)
+	require.NoError(t, err)
+	failingDLQ := integrationDLQPublisher(t, kafka, absentDLQTopic, settings)
+	runErr := eventwriter.New(
+		consumer, store, failingDLQ, settings, contracts.DefaultLimits(), zerolog.Nop(),
+	).Run(t.Context())
+	require.Error(t, runErr)
+	closeWriterConsumer(t, consumer)
+	committed, ok := committedNextOffset(t, kafka, group, sourceTopic)
+	if ok {
+		require.LessOrEqual(t, committed, int64(1), "failed poison was skipped by a later commit")
+	}
+
+	dlqTopic := sentineltesting.RequireUniqueTopic(t, kafka, "writer-dlq-recovery")
+	restart, err := kafkax.NewConsumer(t.Context(), kafka, settings)
+	require.NoError(t, err)
+	t.Cleanup(func() { closeWriterConsumer(t, restart) })
+	recoveredDLQ := integrationDLQPublisher(t, kafka, dlqTopic, settings)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- eventwriter.New(
+			restart, store, recoveredDLQ, settings, contracts.DefaultLimits(), zerolog.Nop(),
+		).Run(ctx)
+	}()
+	waitCommittedOffset(t, kafka, group, sourceTopic, 3)
+	cancel()
+	require.NoError(t, <-done)
+	recovered := consumeOneRecord(t, kafka, dlqTopic)
+	require.Equal(t, poison.Value, recovered.Value)
+	for _, event := range valid {
+		got, getErr := store.Get(t.Context(), "demo", event.EventID)
+		require.NoError(t, getErr)
+		require.Equal(t, event.EventID, got.EventID)
+	}
+}
+
+func testHeaderValue(headers []kgo.RecordHeader, key string) string {
+	for _, header := range headers {
+		if header.Key == key {
+			return string(header.Value)
+		}
+	}
+
+	return ""
 }
 
 func TestWriterFailureExitsNonzero(t *testing.T) {
