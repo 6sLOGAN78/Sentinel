@@ -50,6 +50,7 @@ const (
 	defaultCacheSize   = 1024
 	defaultCacheTTL    = 30 * time.Second
 	defaultEventTopic  = "security.events.v1"
+	defaultDLQTopic    = "security.events.dlq.v1"
 	defaultWriterGroup = "sentinel-event-writer"
 	defaultProduceWait = 10 * time.Second
 	defaultRetries     = 5
@@ -142,6 +143,7 @@ type RedisConfig struct {
 type KafkaConfig struct {
 	Brokers            string        `koanf:"brokers" validate:"required"`
 	EventsTopic        string        `koanf:"events_topic" validate:"required"`
+	DLQTopic           string        `koanf:"dlq_topic" validate:"required"`
 	EventWriterGroup   string        `koanf:"event_writer_group" validate:"required"`
 	ProduceTimeout     time.Duration `koanf:"produce_timeout" validate:"gt=0"`
 	RecordRetries      int           `koanf:"record_retries" validate:"min=0"`
@@ -317,6 +319,7 @@ func setDefaults(k *koanf.Koanf) {
 		"contracts.future_skew":                      defaultFutureSkew,
 		"contracts.past_skew":                        defaultPastSkew,
 		"kafka.events_topic":                         defaultEventTopic,
+		"kafka.dlq_topic":                            defaultDLQTopic,
 		"kafka.event_writer_group":                   defaultWriterGroup,
 		"kafka.produce_timeout":                      defaultProduceWait,
 		"kafka.record_retries":                       defaultRetries,

@@ -35,7 +35,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err = consumer.Ping(ctx); err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
-	dlq, err := kafkax.NewDLQPublisher(ctx, cfg.Kafka, "", cfg.Writer.DLQMaxBytes)
+	dlq, err := kafkax.NewDLQPublisher(ctx, cfg.Kafka, cfg.Kafka.DLQTopic, cfg.Writer.DLQMaxBytes)
 	if err != nil {
 		return fmt.Errorf("kafka DLQ: %w", err)
 	}

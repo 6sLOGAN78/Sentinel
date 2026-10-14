@@ -107,6 +107,7 @@ func TestLoadEventWriterDefaults(t *testing.T) {
 	cfg, err := config.Load(config.ServiceEventWriter)
 	require.NoError(t, err)
 	require.Equal(t, "sentinel-event-writer", cfg.Kafka.EventWriterGroup)
+	require.Equal(t, "security.events.dlq.v1", cfg.Kafka.DLQTopic)
 	require.Equal(t, 5000, cfg.Writer.BatchSize)
 	require.Equal(t, time.Second, cfg.Writer.FlushInterval)
 	require.Equal(t, 5, cfg.Writer.MaxAttempts)
