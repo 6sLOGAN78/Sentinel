@@ -13,6 +13,12 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 )
 
+const (
+	scriptResultFields    = 3
+	millisecondsPerSecond = int64(1000)
+)
+
+//nolint:gosec // Embedded Redis source contains no credential or secret.
 const tokenBucketLua = `
 local t = redis.call('TIME')
 local now_ms = t[1] * 1000 + math.floor(t[2] / 1000)
@@ -63,7 +69,7 @@ func New(client redis.Scripter, cfg config.RateLimitConfig, log zerolog.Logger) 
 
 // Allow atomically charges cost events to the authenticated public key ID.
 // retryAfter is an integer number of seconds suitable for Retry-After.
-func (l *Limiter) Allow(ctx context.Context, keyID string, cost int) (allowed bool, retryAfter int, err error) {
+func (l *Limiter) Allow(ctx context.Context, keyID string, cost int) (bool, int, error) {
 	if keyID == "" || cost <= 0 || cost > l.cfg.Capacity {
 		return false, 0, errInvalidInput
 	}
@@ -83,7 +89,7 @@ func (l *Limiter) Allow(ctx context.Context, keyID string, cost int) (allowed bo
 
 		return false, 0, fmt.Errorf("rate limit dependency unavailable: %w", runErr)
 	}
-	if len(result) != 3 {
+	if len(result) != scriptResultFields {
 		return false, 0, errors.New("rate limit script returned an invalid result")
 	}
 	if result[0] == 1 {
@@ -94,7 +100,7 @@ func (l *Limiter) Allow(ctx context.Context, keyID string, cost int) (allowed bo
 	if retryMillis < 0 {
 		return false, 0, errors.New("rate limit cost exceeds bucket capacity")
 	}
-	retryAfter = int((retryMillis + 999) / 1000)
+	retryAfter := int((retryMillis + millisecondsPerSecond - 1) / millisecondsPerSecond)
 	if retryAfter < 1 {
 		retryAfter = 1
 	}

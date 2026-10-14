@@ -121,6 +121,9 @@ func TestPostBatchRateLimitOrdering(t *testing.T) {
 	invalid["event_id"] = "not-a-uuid"
 	mismatch := validEvent(nil)
 	mismatch["tenant_id"] = "other"
+	writePrincipal := apikeys.Principal{
+		KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
+	}
 
 	cases := []struct {
 		name      string
@@ -131,13 +134,35 @@ func TestPostBatchRateLimitOrdering(t *testing.T) {
 		status    int
 		calls     int32
 	}{
-		{name: "invalid key before body and quota", verifyErr: apikeys.ErrUnauthorized, body: oversized, allowed: true, status: http.StatusUnauthorized},
-		{name: "missing scope before body and quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo"}, body: malformed, allowed: true, status: http.StatusForbidden},
-		{name: "oversized body before quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: oversized, allowed: true, status: http.StatusRequestEntityTooLarge},
-		{name: "malformed envelope before quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: malformed, allowed: true, status: http.StatusBadRequest},
-		{name: "quota before tenant and fields", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: batchBody(t, invalid, mismatch), status: http.StatusTooManyRequests, calls: 1},
-		{name: "tenant before fields after quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: batchBody(t, invalid, mismatch), allowed: true, status: http.StatusForbidden, calls: 1},
-		{name: "fields after quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: batchBody(t, invalid), allowed: true, status: http.StatusBadRequest, calls: 1},
+		{
+			name: "invalid key before body and quota", verifyErr: apikeys.ErrUnauthorized,
+			body: oversized, allowed: true, status: http.StatusUnauthorized,
+		},
+		{
+			name:      "missing scope before body and quota",
+			principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo"},
+			body:      malformed, allowed: true, status: http.StatusForbidden,
+		},
+		{
+			name: "oversized body before quota", principal: writePrincipal,
+			body: oversized, allowed: true, status: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name: "malformed envelope before quota", principal: writePrincipal,
+			body: malformed, allowed: true, status: http.StatusBadRequest,
+		},
+		{
+			name: "quota before tenant and fields", principal: writePrincipal,
+			body: batchBody(t, invalid, mismatch), status: http.StatusTooManyRequests, calls: 1,
+		},
+		{
+			name: "tenant before fields after quota", principal: writePrincipal,
+			body: batchBody(t, invalid, mismatch), allowed: true, status: http.StatusForbidden, calls: 1,
+		},
+		{
+			name: "fields after quota", principal: writePrincipal,
+			body: batchBody(t, invalid), allowed: true, status: http.StatusBadRequest, calls: 1,
+		},
 	}
 
 	for _, tc := range cases {
@@ -150,11 +175,14 @@ func TestPostBatchRateLimitOrdering(t *testing.T) {
 
 				return tc.allowed, 2, nil
 			})
-			e := newHandlerEchoWithLimiter(t, tc.principal, tc.verifyErr, func(context.Context, []*contracts.Event, string) error {
+			rejectPublish := func(context.Context, []*contracts.Event, string) error {
 				t.Fatal("rejected batch must not publish")
 
 				return nil
-			}, limiter, handlerConfig())
+			}
+			e := newHandlerEchoWithLimiter(
+				t, tc.principal, tc.verifyErr, rejectPublish, limiter, handlerConfig(),
+			)
 
 			rec := postBatch(t, e, tc.body, testCredential)
 			require.Equal(t, tc.status, rec.Code, rec.Body.String())

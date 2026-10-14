@@ -100,7 +100,7 @@ func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
 	require.Equal(t, 100*time.Millisecond, ingestCfg.Redis.WriteTimeout)
 	require.Equal(t, 1, ingestCfg.Redis.MaxRetries)
 	require.Equal(t, 10_000, ingestCfg.RateLimit.Capacity)
-	require.Equal(t, 2_000.0, ingestCfg.RateLimit.RefillRate)
+	require.InDelta(t, 2_000.0, ingestCfg.RateLimit.RefillRate, 0.001)
 	require.Equal(t, 250*time.Millisecond, ingestCfg.RateLimit.Timeout)
 	require.Equal(t, "closed", ingestCfg.RateLimit.FailMode)
 
@@ -331,7 +331,7 @@ func TestLoadRateLimitBoundsAndOverrides(t *testing.T) {
 	cfg, err := config.Load(config.ServiceIngest)
 	require.NoError(t, err)
 	require.Equal(t, 750, cfg.RateLimit.Capacity)
-	require.Equal(t, 125.5, cfg.RateLimit.RefillRate)
+	require.InDelta(t, 125.5, cfg.RateLimit.RefillRate, 0.001)
 	require.Equal(t, 75*time.Millisecond, cfg.RateLimit.Timeout)
 	require.Equal(t, 50*time.Millisecond, cfg.Redis.DialTimeout)
 	require.Equal(t, 60*time.Millisecond, cfg.Redis.ReadTimeout)

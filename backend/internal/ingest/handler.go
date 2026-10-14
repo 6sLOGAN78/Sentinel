@@ -44,7 +44,9 @@ type Handler struct {
 }
 
 // NewHandler constructs a handler whose semaphore exists for the service lifetime.
-func NewHandler(v verifier, publisher kafkax.Publisher, rateLimiter limiter, cfg *config.Config, _ zerolog.Logger) *Handler {
+func NewHandler(
+	v verifier, publisher kafkax.Publisher, rateLimiter limiter, cfg *config.Config, _ zerolog.Logger,
+) *Handler {
 	return &Handler{
 		verifier: v, publisher: publisher, limiter: rateLimiter, cfg: cfg,
 		inFlight: make(chan struct{}, cfg.Ingest.MaxInFlight),
