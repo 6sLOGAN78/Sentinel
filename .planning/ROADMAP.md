@@ -106,7 +106,7 @@ Plans:
 
 **Wave 6** *(blocked on prior dependency waves)*
 
-- [ ] 02-07-PLAN.md — Quarantine poison with acknowledged DLQ effects and safe offsets
+- [x] 02-07-PLAN.md — Quarantine poison with acknowledged DLQ effects and safe offsets
 - [ ] 02-08-PLAN.md — Enforce Redis event quotas and explicit outage policy
 
 **Wave 7** *(blocked on prior dependency waves)*
@@ -205,7 +205,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 8/14 | In Progress|  |
+| 2. Ingestion & Durable Event Storage | 9/14 | In Progress|  |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |

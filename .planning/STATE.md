@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-06-PLAN.md; continue Phase 2 with 02-07
-last_updated: "2026-10-14T12:48:13.609Z"
+stopped_at: Completed 02-07-PLAN.md; continue Phase 2 with 02-08
+last_updated: "2026-10-14T13:17:54.354Z"
 last_activity: 2026-10-14
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 27
-  completed_plans: 21
-  percent: 78
+  completed_plans: 22
+  percent: 81
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-10)
 ## Current Position
 
 Phase: 02 (ingestion-durable-event-storage) — EXECUTING
-Plan: 9 of 14
+Plan: 10 of 14
 Status: Ready to execute
 Last activity: 2026-10-14
 
-Progress: [████████░░] 78%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 21
+- Total plans completed: 22
 - Average duration: -
 - Total execution time: -
 
@@ -52,13 +52,14 @@ Progress: [████████░░] 78%
 | Phase 02 P04 | 9 min | 3 tasks | 13 files |
 | Phase 02 P05 | 2 min | 3 tasks | 7 files |
 | Phase 02 P06 | 7 min | 3 tasks | 12 files |
+| Phase 02 P07 | 22 min | 3 tasks | 10 files |
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 13 | - | - |
-| 2 | 8 | 6 h 13 min | 47 min |
+| 2 | 9 | 6 h 35 min | 44 min |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ Progress: [████████░░] 78%
 - [Phase 02]: 02-06: Disable Kafka auto-commit and commit only partition-contiguous offsets after ClickHouse insertion succeeds.
 - [Phase 02]: 02-06: Validate replayed events relative to occurred_at while requiring nonzero occurred_at and received_at.
 - [Phase 02]: 02-06: Preserve first worker failure through bounded lifecycle cleanup and cap consumer fetch/rebalance resources.
+- [Phase 02]: 02-07: Insert valid events before publishing poison records so ClickHouse failures never create DLQ traffic.
+- [Phase 02]: 02-07: Commit each Kafka partition only through its own contiguous durable effect prefix.
+- [Phase 02]: 02-07: Bound DLQ records to the value cap plus an 8 KiB metadata allowance and reject source dlq.* overrides.
 
 ### Pending Todos
 
@@ -98,10 +102,10 @@ None yet.
 ### Planning Continuation
 
 - Latest user authorization supersedes the earlier stop-after-planning instruction: after verifying plans, run `$gsd-execute-phase 2 --auto`. Scope remains Phase 2.
-- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00 through 02-05 and 02-10 are implemented and committed; 7 Phase 2 plans remain.
+- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00 through 02-07 and 02-10 are implemented and committed; 5 Phase 2 plans remain.
 - Initial checker found two blockers and one warning: missing fail-open counter, oversized intake plan, and bind-field compile ordering. Revisions add prerequisite 02-00 and the atomic bypass counter, reducing intake scope and resolving declaration order. Independent recheck passed with no remaining issues.
 - Structural gates pass; all 14 requirements and 30 decisions covered; no same-wave modified-file conflicts. Validation task bindings and roadmap updated.
-- Next: continue Phase 2 automatically with 02-06. Configurable ClickHouse retention passes unit, race, real integration and full lint/test gates; the event writer can now build on the native store and unchanged migration baseline. Preserve unrelated configuration/.serena edits and existing user volumes.
+- Next: continue Phase 2 automatically with 02-08. Poison quarantine now passes unit, race, real Kafka/ClickHouse integration and full lint/test gates. Preserve unrelated configuration/.serena edits and existing user volumes.
 
 ### Blockers/Concerns
 
@@ -110,6 +114,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-14T12:48:13.594Z
-Stopped at: Completed 02-06-PLAN.md; continue Phase 2 with 02-07
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-07-PLAN.md
+Last session: 2026-10-14T13:17:54.342Z
+Stopped at: Completed 02-07-PLAN.md; continue Phase 2 with 02-08
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-08-PLAN.md
