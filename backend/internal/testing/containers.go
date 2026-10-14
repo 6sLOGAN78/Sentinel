@@ -93,6 +93,17 @@ func hostPort(ctx context.Context, c testcontainers.Container, port string) (str
 
 // StartPostgres starts a throwaway PostgreSQL container.
 func StartPostgres(ctx context.Context) (config.DatabaseConfig, func(), error) {
+	cfg, handle, err := StartPostgresFaultContainer(ctx)
+	if err != nil {
+		return config.DatabaseConfig{}, nil, err
+	}
+
+	return cfg, handle.Close, nil
+}
+
+// StartPostgresFaultContainer starts an isolated PostgreSQL instance and
+// retains its handle for pause/unpause failure tests.
+func StartPostgresFaultContainer(ctx context.Context) (config.DatabaseConfig, *FaultContainer, error) {
 	c, err := start(ctx, testcontainers.ContainerRequest{
 		Image:        postgresImage,
 		ExposedPorts: []string{"5432/tcp"},
@@ -109,10 +120,11 @@ func StartPostgres(ctx context.Context) (config.DatabaseConfig, func(), error) {
 	if err != nil {
 		return config.DatabaseConfig{}, nil, err
 	}
+	handle := &FaultContainer{Container: c}
 
 	host, port, err := hostPort(ctx, c, "5432")
 	if err != nil {
-		terminator(c)()
+		handle.Close()
 
 		return config.DatabaseConfig{}, nil, err
 	}
@@ -128,11 +140,22 @@ func StartPostgres(ctx context.Context) (config.DatabaseConfig, func(), error) {
 		MaxIdleConns:    defaultMaxConns,
 		ConnMaxLifetime: defaultConnSecs,
 		ConnMaxIdleTime: defaultConnSecs,
-	}, terminator(c), nil
+	}, handle, nil
 }
 
 // StartRedis starts a throwaway Redis container.
 func StartRedis(ctx context.Context) (config.RedisConfig, func(), error) {
+	cfg, handle, err := StartRedisFaultContainer(ctx)
+	if err != nil {
+		return config.RedisConfig{}, nil, err
+	}
+
+	return cfg, handle.Close, nil
+}
+
+// StartRedisFaultContainer starts an isolated Redis instance and retains its
+// handle for pause/unpause failure tests.
+func StartRedisFaultContainer(ctx context.Context) (config.RedisConfig, *FaultContainer, error) {
 	c, err := start(ctx, testcontainers.ContainerRequest{
 		Image:        redisImage,
 		ExposedPorts: []string{"6379/tcp"},
@@ -142,15 +165,16 @@ func StartRedis(ctx context.Context) (config.RedisConfig, func(), error) {
 	if err != nil {
 		return config.RedisConfig{}, nil, err
 	}
+	handle := &FaultContainer{Container: c}
 
 	host, port, err := hostPort(ctx, c, "6379")
 	if err != nil {
-		terminator(c)()
+		handle.Close()
 
 		return config.RedisConfig{}, nil, err
 	}
 
-	return config.RedisConfig{Address: net.JoinHostPort(host, strconv.Itoa(port))}, terminator(c), nil
+	return config.RedisConfig{Address: net.JoinHostPort(host, strconv.Itoa(port))}, handle, nil
 }
 
 // StartClickHouse starts a throwaway ClickHouse container. HTTPAddress is

@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	stayUpFor     = 3 * time.Second
-	shutdownLimit = 30 * time.Second
-	failFastLimit = 15 * time.Second
+	stayUpFor       = 3 * time.Second
+	shutdownLimit   = 30 * time.Second
+	failFastLimit   = 15 * time.Second
+	terminateSignal = syscall.SIGTERM
 )
 
 // serviceEnv returns the dotted SENTINEL_* variables a service needs. Every
