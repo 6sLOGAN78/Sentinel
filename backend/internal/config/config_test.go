@@ -95,6 +95,14 @@ func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
 	require.Equal(t, 5, ingestCfg.Kafka.RecordRetries)
 	require.Equal(t, 50_000, ingestCfg.Kafka.MaxBufferedRecords)
 	require.Equal(t, 64<<20, ingestCfg.Kafka.MaxBufferedBytes)
+	require.Equal(t, 100*time.Millisecond, ingestCfg.Redis.DialTimeout)
+	require.Equal(t, 100*time.Millisecond, ingestCfg.Redis.ReadTimeout)
+	require.Equal(t, 100*time.Millisecond, ingestCfg.Redis.WriteTimeout)
+	require.Equal(t, 1, ingestCfg.Redis.MaxRetries)
+	require.Equal(t, 10_000, ingestCfg.RateLimit.Capacity)
+	require.Equal(t, 2_000.0, ingestCfg.RateLimit.RefillRate)
+	require.Equal(t, 250*time.Millisecond, ingestCfg.RateLimit.Timeout)
+	require.Equal(t, "closed", ingestCfg.RateLimit.FailMode)
 
 	queryCfg, err := config.Load(config.ServiceQueryAPI)
 	require.NoError(t, err)
@@ -308,6 +316,47 @@ func TestLoadRateLimitFailMode(t *testing.T) {
 
 	_, err = config.Load("detector")
 	require.Error(t, err)
+}
+
+func TestLoadRateLimitBoundsAndOverrides(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_RATELIMIT.CAPACITY", "750")
+	t.Setenv("SENTINEL_RATELIMIT.REFILL_RATE", "125.5")
+	t.Setenv("SENTINEL_RATELIMIT.TIMEOUT", "75ms")
+	t.Setenv("SENTINEL_REDIS.DIAL_TIMEOUT", "50ms")
+	t.Setenv("SENTINEL_REDIS.READ_TIMEOUT", "60ms")
+	t.Setenv("SENTINEL_REDIS.WRITE_TIMEOUT", "70ms")
+	t.Setenv("SENTINEL_REDIS.MAX_RETRIES", "-1")
+
+	cfg, err := config.Load(config.ServiceIngest)
+	require.NoError(t, err)
+	require.Equal(t, 750, cfg.RateLimit.Capacity)
+	require.Equal(t, 125.5, cfg.RateLimit.RefillRate)
+	require.Equal(t, 75*time.Millisecond, cfg.RateLimit.Timeout)
+	require.Equal(t, 50*time.Millisecond, cfg.Redis.DialTimeout)
+	require.Equal(t, 60*time.Millisecond, cfg.Redis.ReadTimeout)
+	require.Equal(t, 70*time.Millisecond, cfg.Redis.WriteTimeout)
+	require.Equal(t, -1, cfg.Redis.MaxRetries)
+
+	for _, tc := range []struct {
+		key   string
+		value string
+	}{
+		{"SENTINEL_RATELIMIT.CAPACITY", "499"},
+		{"SENTINEL_RATELIMIT.REFILL_RATE", "0"},
+		{"SENTINEL_RATELIMIT.TIMEOUT", "0s"},
+		{"SENTINEL_REDIS.DIAL_TIMEOUT", "0s"},
+		{"SENTINEL_REDIS.READ_TIMEOUT", "2s"},
+		{"SENTINEL_REDIS.WRITE_TIMEOUT", "0s"},
+		{"SENTINEL_REDIS.MAX_RETRIES", "3"},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv(tc.key, tc.value)
+			_, loadErr := config.Load(config.ServiceIngest)
+			require.Error(t, loadErr)
+		})
+	}
 }
 
 func TestLoadContractsDefaultsAndOverrides(t *testing.T) {

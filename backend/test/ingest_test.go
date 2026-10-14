@@ -26,6 +26,8 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/ingest"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
+	"github.com/6sLOGAN78/sentinel/internal/ratelimit"
+	"github.com/6sLOGAN78/sentinel/internal/redisx"
 	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
 )
 
@@ -69,6 +71,9 @@ func newIngestFixture(t *testing.T, scopes []string, wrap func(kafkax.Publisher)
 			FutureSkew:   5 * time.Minute,
 			PastSkew:     168 * time.Hour,
 		},
+		RateLimit: config.RateLimitConfig{
+			Capacity: 10_000, RefillRate: 2_000, Timeout: 250 * time.Millisecond, FailMode: "closed",
+		},
 	}
 	if wrap != nil {
 		cfg.Ingest.MaxInFlight = 1
@@ -83,7 +88,10 @@ func newIngestFixture(t *testing.T, scopes []string, wrap func(kafkax.Publisher)
 	}
 	e := echo.New()
 	middleware.Apply(e, &logger, nil)
-	ingest.NewHandler(verifier, publisher, cfg, logger).Register(e)
+	redisClient, err := redisx.New(t.Context(), redisCfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, redisClient.Close()) })
+	ingest.NewHandler(verifier, publisher, ratelimit.New(redisClient, cfg.RateLimit, logger), cfg, logger).Register(e)
 	server := httptest.NewServer(e)
 	t.Cleanup(server.Close)
 

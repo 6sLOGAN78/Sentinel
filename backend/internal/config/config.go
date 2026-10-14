@@ -49,6 +49,13 @@ const (
 	defaultInFlight    = 64
 	defaultCacheSize   = 1024
 	defaultCacheTTL    = 30 * time.Second
+	defaultRedisDial   = 100 * time.Millisecond
+	defaultRedisRead   = 100 * time.Millisecond
+	defaultRedisWrite  = 100 * time.Millisecond
+	defaultRedisTries  = 1
+	defaultRateCap     = 10_000
+	defaultRateRefill  = 2_000.0
+	defaultRateTimeout = 250 * time.Millisecond
 	defaultEventTopic  = "security.events.v1"
 	defaultDLQTopic    = "security.events.dlq.v1"
 	defaultWriterGroup = "sentinel-event-writer"
@@ -131,10 +138,14 @@ type DatabaseConfig struct {
 // a URL scheme. Outside local and test environments TLS and a password are
 // required (see validateRedisSecurity).
 type RedisConfig struct {
-	Address  string `koanf:"address" validate:"required,hostname_port"`
-	Username string `koanf:"username"`
-	Password string `koanf:"password"`
-	TLS      bool   `koanf:"tls"`
+	Address      string        `koanf:"address" validate:"required,hostname_port"`
+	Username     string        `koanf:"username"`
+	Password     string        `koanf:"password"`
+	TLS          bool          `koanf:"tls"`
+	DialTimeout  time.Duration `koanf:"dial_timeout" validate:"gt=0,lte=1s"`
+	ReadTimeout  time.Duration `koanf:"read_timeout" validate:"gt=0,lte=1s"`
+	WriteTimeout time.Duration `koanf:"write_timeout" validate:"gt=0,lte=1s"`
+	MaxRetries   int           `koanf:"max_retries" validate:"min=-1,max=2"`
 	// CACertFile is an optional PEM bundle used instead of the system roots.
 	CACertFile string `koanf:"ca_cert_file"`
 }
@@ -188,7 +199,10 @@ type ClickHouseConfig struct {
 
 // RateLimitConfig controls rate limiter behaviour when Redis is unavailable.
 type RateLimitConfig struct {
-	FailMode string `koanf:"fail_mode" validate:"required,oneof=closed open"`
+	Capacity   int           `koanf:"capacity" validate:"min=1"`
+	RefillRate float64       `koanf:"refill_rate" validate:"gt=0"`
+	Timeout    time.Duration `koanf:"timeout" validate:"gt=0,lte=1s"`
+	FailMode   string        `koanf:"fail_mode" validate:"required,oneof=closed open"`
 }
 
 // ContractsConfig bounds event contract validation.
@@ -313,6 +327,13 @@ func setDefaults(k *koanf.Koanf) {
 		"database.conn_max_idle_time":                defaultConnSeconds,
 		"clickhouse.user":                            defaultCHUser,
 		"clickhouse.database":                        defaultCHDatabase,
+		"redis.dial_timeout":                         defaultRedisDial,
+		"redis.read_timeout":                         defaultRedisRead,
+		"redis.write_timeout":                        defaultRedisWrite,
+		"redis.max_retries":                          defaultRedisTries,
+		"ratelimit.capacity":                         defaultRateCap,
+		"ratelimit.refill_rate":                      defaultRateRefill,
+		"ratelimit.timeout":                          defaultRateTimeout,
 		"ratelimit.fail_mode":                        failModeClosed,
 		"contracts.max_attr_keys":                    defaultAttrKeys,
 		"contracts.max_attr_bytes":                   defaultAttrBytes,
@@ -420,6 +441,9 @@ func validateSection(cfg *Config, section string) error {
 		}
 		if cfg.Kafka.MaxBufferedRecords < cfg.Ingest.MaxBatchSize {
 			return errors.New("validate ingest config: buffered records must cover the maximum batch size")
+		}
+		if cfg.RateLimit.Capacity < cfg.Ingest.MaxBatchSize {
+			return errors.New("validate ingest config: rate-limit capacity must cover the maximum batch size")
 		}
 
 		return nil

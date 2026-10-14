@@ -25,7 +25,11 @@ var errNoCACerts = errors.New("redis ca_cert_file contains no PEM certificates")
 // when TLS is enabled, TLS 1.2+ verified against the system roots or the
 // configured CA bundle, with the server name taken from the address host.
 func Options(cfg config.RedisConfig) (*redis.Options, error) {
-	opts := &redis.Options{Addr: cfg.Address, Username: cfg.Username, Password: cfg.Password}
+	opts := &redis.Options{
+		Addr: cfg.Address, Username: cfg.Username, Password: cfg.Password,
+		DialTimeout: cfg.DialTimeout, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout,
+		MaxRetries: cfg.MaxRetries, ContextTimeoutEnabled: true,
+	}
 
 	if !cfg.TLS {
 		return opts, nil

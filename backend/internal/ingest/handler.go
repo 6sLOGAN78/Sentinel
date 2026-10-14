@@ -30,18 +30,23 @@ type verifier interface {
 	Authenticate(context.Context, string) (apikeys.Principal, error)
 }
 
+type limiter interface {
+	Allow(context.Context, string, int) (bool, int, error)
+}
+
 // Handler owns intake dependencies and the before-auth concurrency gate.
 type Handler struct {
 	verifier  verifier
 	publisher kafkax.Publisher
+	limiter   limiter
 	cfg       *config.Config
 	inFlight  chan struct{}
 }
 
 // NewHandler constructs a handler whose semaphore exists for the service lifetime.
-func NewHandler(v verifier, publisher kafkax.Publisher, cfg *config.Config, _ zerolog.Logger) *Handler {
+func NewHandler(v verifier, publisher kafkax.Publisher, rateLimiter limiter, cfg *config.Config, _ zerolog.Logger) *Handler {
 	return &Handler{
-		verifier: v, publisher: publisher, cfg: cfg,
+		verifier: v, publisher: publisher, limiter: rateLimiter, cfg: cfg,
 		inFlight: make(chan struct{}, cfg.Ingest.MaxInFlight),
 	}
 }
@@ -86,6 +91,15 @@ func (h *Handler) PostBatch(c echo.Context) error {
 	envelope, err := h.decodeEnvelope(c)
 	if err != nil {
 		return err
+	}
+	allowed, retryAfter, err := h.limiter.Allow(
+		c.Request().Context(), principal.KeyID, len(envelope.Events),
+	)
+	if err != nil {
+		return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
+	}
+	if !allowed {
+		return errs.NewTooManyRequestsError(http.StatusText(http.StatusTooManyRequests), retryAfter)
 	}
 
 	normalized, details, tenantMismatch := normalizeBatch(envelope.Events, principal.TenantID)

@@ -80,13 +80,21 @@ func writeCA(t *testing.T) string {
 func TestRedisOptionsPlainCarriesAuth(t *testing.T) {
 	t.Parallel()
 
-	opts, err := redisx.Options(config.RedisConfig{Address: "127.0.0.1:6379", Username: "svc", Password: "pw"})
+	opts, err := redisx.Options(config.RedisConfig{
+		Address: "127.0.0.1:6379", Username: "svc", Password: "pw",
+		DialTimeout: 50 * time.Millisecond, ReadTimeout: 60 * time.Millisecond,
+		WriteTimeout: 70 * time.Millisecond, MaxRetries: 1,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if opts.Addr != "127.0.0.1:6379" || opts.Username != "svc" || opts.Password != "pw" || opts.TLSConfig != nil {
 		t.Fatalf("unexpected options: addr=%q user=%q tls=%v", opts.Addr, opts.Username, opts.TLSConfig != nil)
+	}
+	if opts.DialTimeout != 50*time.Millisecond || opts.ReadTimeout != 60*time.Millisecond ||
+		opts.WriteTimeout != 70*time.Millisecond || opts.MaxRetries != 1 || !opts.ContextTimeoutEnabled {
+		t.Fatalf("timeout/retry bounds not preserved: %+v", opts)
 	}
 }
 

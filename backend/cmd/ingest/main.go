@@ -18,6 +18,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/ingest"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
+	"github.com/6sLOGAN78/sentinel/internal/ratelimit"
 	"github.com/6sLOGAN78/sentinel/internal/redisx"
 )
 
@@ -58,7 +59,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	)
 	e := echo.New()
 	middleware.Apply(e, &log, cfg.Server.CORSAllowedOrigins)
-	ingest.NewHandler(verifier, producer, cfg, log).Register(e)
+	ingest.NewHandler(verifier, producer, ratelimit.New(client, cfg.RateLimit, log), cfg, log).Register(e)
 
 	server := httpx.New(cfg.Server, e)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)

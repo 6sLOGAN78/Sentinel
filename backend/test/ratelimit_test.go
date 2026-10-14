@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -186,7 +185,10 @@ func startDedicatedRedis(t *testing.T) (config.RedisConfig, *sentineltesting.Fau
 	port, err := container.MappedPort(t.Context(), "6379/tcp")
 	require.NoError(t, err)
 
-	return config.RedisConfig{Address: net.JoinHostPort(host, strconv.Itoa(port.Int()))}, handle
+	return config.RedisConfig{
+		Address: net.JoinHostPort(host, port.Port()), DialTimeout: 100 * time.Millisecond,
+		ReadTimeout: 100 * time.Millisecond, WriteTimeout: 100 * time.Millisecond, MaxRetries: 1,
+	}, handle
 }
 
 func pauseRedis(t *testing.T, container *sentineltesting.FaultContainer) {
