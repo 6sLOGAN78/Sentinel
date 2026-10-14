@@ -10,6 +10,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 
 	"github.com/6sLOGAN78/sentinel/internal/app"
 	"github.com/6sLOGAN78/sentinel/internal/config"
@@ -173,6 +174,40 @@ func TestShutdownCloserFailureExitsNonZero(t *testing.T) {
 	if code := app.RunContext(ctx, config.ServiceDetector, setup); code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
+}
+
+func TestFatalBackgroundFailureExitsNonZeroAndClosesLIFO(t *testing.T) {
+	detectorEnv(t)
+
+	var order []string
+	started := make(chan struct{})
+	workerErr := errors.New("writer retries exhausted")
+	setup := func(_ context.Context, _ *config.Config, _ zerolog.Logger, lc *app.Lifecycle) error {
+		lc.Add("dependency", func(context.Context) error { order = append(order, "dependency"); return nil })
+		lc.Add("worker", func(context.Context) error { order = append(order, "worker"); return nil })
+		go func() {
+			close(started)
+			lc.Fail(workerErr)
+		}()
+
+		return nil
+	}
+
+	<-started
+	require.Equal(t, 1, app.RunContext(context.Background(), config.ServiceDetector, setup))
+	require.Equal(t, []string{"worker", "dependency"}, order)
+}
+
+func TestLifecycleFailKeepsFirstError(t *testing.T) {
+	lc := app.NewLifecycle(zerolog.Nop())
+	first := errors.New("first")
+	second := errors.New("second")
+
+	lc.Fail(first)
+	lc.Fail(second)
+
+	require.ErrorIs(t, lc.Err(), first)
+	require.NotErrorIs(t, lc.Err(), second)
 }
 
 func TestClosePanicInSetupIsRecovered(t *testing.T) {
