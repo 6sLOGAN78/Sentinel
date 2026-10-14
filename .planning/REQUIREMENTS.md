@@ -29,7 +29,7 @@
 
 ### Event Storage (STOR)
 
-- [ ] **STOR-01**: An event-writer consumer batches events from Kafka into the ClickHouse events table and commits offsets only after a successful insert [FR-03, §3]
+- [x] **STOR-01**: An event-writer consumer batches events from Kafka into the ClickHouse events table and commits offsets only after a successful insert [FR-03, §3]
 - [x] **STOR-02**: The ClickHouse events table is partitioned by month of occurred_at, ordered by `(tenant_id, occurred_at, event_id)` or a benchmark-justified order, and has a configurable TTL (local default 7 days) [§7.1]
 - [x] **STOR-03**: Replaying the same events never yields duplicate rows in user-visible queries or counts. Dedup is enforced at read time and tested immediately after a double insert, with no reliance on background merges [FR-03, §7.2]
 - [ ] **STOR-04**: Permanently invalid or poison messages go to `security.events.dlq.v1` with reason, redacted context and original topic/partition/offset, and the source offset is committed only after the DLQ publish succeeds [§6.3, §11.1]
@@ -173,7 +173,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ING-05 | Phase 2 | Complete |
 | ING-06 | Phase 2 | Pending |
 | ING-07 | Phase 2 | Complete |
-| STOR-01 | Phase 2 | Pending |
+| STOR-01 | Phase 2 | Complete |
 | STOR-02 | Phase 2 | Complete |
 | STOR-03 | Phase 2 | Complete |
 | STOR-04 | Phase 2 | Pending |

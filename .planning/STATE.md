@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-05-PLAN.md; continue Phase 2 with 02-06
-last_updated: "2026-10-14T08:38:39.812Z"
+stopped_at: Completed 02-06-PLAN.md; continue Phase 2 with 02-07
+last_updated: "2026-10-14T12:48:13.609Z"
 last_activity: 2026-10-14
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 27
-  completed_plans: 20
-  percent: 74
+  completed_plans: 21
+  percent: 78
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-10)
 ## Current Position
 
 Phase: 02 (ingestion-durable-event-storage) — EXECUTING
-Plan: 8 of 14
+Plan: 9 of 14
 Status: Ready to execute
-Last activity: 2026-10-14 -- Completed 02-05; next 02-06
+Last activity: 2026-10-14
 
-Progress: [███████░░░] 74%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
@@ -51,13 +51,14 @@ Progress: [███████░░░] 74%
 | Phase 02 P03 | 8 min | 3 tasks | 10 files |
 | Phase 02 P04 | 9 min | 3 tasks | 13 files |
 | Phase 02 P05 | 2 min | 3 tasks | 7 files |
+| Phase 02 P06 | 7 min | 3 tasks | 12 files |
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 13 | - | - |
-| 2 | 7 | 6 h 6 min | 52 min |
+| 2 | 8 | 6 h 13 min | 47 min |
 
 ## Accumulated Context
 
@@ -86,6 +87,9 @@ Progress: [███████░░░] 74%
 - [Phase 02]: 02-05: Keep the seven-day migration default immutable and apply configured retention after every successful migration run.
 - [Phase 02]: 02-05: Accept only validated 1..3650-day retention and a validated database identifier in fixed TTL DDL.
 - [Phase 02]: 02-05: Do not automatically MATERIALIZE TTL; existing-part deletion remains asynchronous.
+- [Phase 02]: 02-06: Disable Kafka auto-commit and commit only partition-contiguous offsets after ClickHouse insertion succeeds.
+- [Phase 02]: 02-06: Validate replayed events relative to occurred_at while requiring nonzero occurred_at and received_at.
+- [Phase 02]: 02-06: Preserve first worker failure through bounded lifecycle cleanup and cap consumer fetch/rebalance resources.
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-14T08:38:39.795Z
-Stopped at: Completed 02-05-PLAN.md; continue Phase 2 with 02-06
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-06-PLAN.md
+Last session: 2026-10-14T12:48:13.594Z
+Stopped at: Completed 02-06-PLAN.md; continue Phase 2 with 02-07
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-07-PLAN.md

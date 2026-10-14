@@ -102,7 +102,7 @@ Plans:
 **Wave 5** *(blocked on prior dependency waves)*
 
 - [x] 02-05-PLAN.md — Change event retention idempotently through migration tooling
-- [ ] 02-06-PLAN.md — Persist events before committing offsets and propagate worker failure
+- [x] 02-06-PLAN.md — Persist events before committing offsets and propagate worker failure
 
 **Wave 6** *(blocked on prior dependency waves)*
 
@@ -205,7 +205,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 7/14 | In Progress|  |
+| 2. Ingestion & Durable Event Storage | 8/14 | In Progress|  |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
