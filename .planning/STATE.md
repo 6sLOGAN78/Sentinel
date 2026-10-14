@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-07-PLAN.md; continue Phase 2 with 02-08
-last_updated: "2026-10-14T13:17:54.354Z"
+stopped_at: Completed 02-08-PLAN.md; continue Phase 2 with 02-09
+last_updated: "2026-10-14T22:02:26.481Z"
 last_activity: 2026-10-14
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 27
-  completed_plans: 22
-  percent: 81
+  completed_plans: 23
+  percent: 17
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-10)
 ## Current Position
 
 Phase: 02 (ingestion-durable-event-storage) — EXECUTING
-Plan: 10 of 14
+Plan: 11 of 14
 Status: Ready to execute
 Last activity: 2026-10-14
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [████████░░] 81%
 |-------|-------|-------|----------|
 | 1 | 13 | - | - |
 | 2 | 9 | 6 h 35 min | 44 min |
+| Phase 02 P08 | 14min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Progress: [████████░░] 81%
 - [Phase 02]: 02-07: Insert valid events before publishing poison records so ClickHouse failures never create DLQ traffic.
 - [Phase 02]: 02-07: Commit each Kafka partition only through its own contiguous durable effect prefix.
 - [Phase 02]: 02-07: Bound DLQ records to the value cap plus an 8 KiB metadata allowance and reject source dlq.* overrides.
+- [Phase 02]: 02-08: Keep fail-open handling inside each limiter so every admitted Redis bypass increments exactly one process-local atomic counter and emits one sanitized warning.
+- [Phase 02]: 02-08: Apply one 250 ms limiter deadline on top of bounded Redis dial/read/write timeouts and retries while preserving shared AUTH/TLS client construction.
 
 ### Pending Todos
 
@@ -114,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-14T13:17:54.342Z
-Stopped at: Completed 02-07-PLAN.md; continue Phase 2 with 02-08
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-08-PLAN.md
+Last session: 2026-10-14T22:02:26.470Z
+Stopped at: Completed 02-08-PLAN.md; continue Phase 2 with 02-09
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-09-PLAN.md
