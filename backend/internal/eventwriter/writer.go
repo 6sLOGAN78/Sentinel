@@ -34,10 +34,17 @@ type EventStore interface {
 	InsertBatch(context.Context, []*contracts.Event) error
 }
 
+// QuarantinePublisher durably acknowledges one poison record before its source
+// offset is eligible to advance.
+type QuarantinePublisher interface {
+	Publish(context.Context, *kgo.Record, kafkax.DLQReason) error
+}
+
 // Writer owns one bounded poll/decode/insert/commit loop.
 type Writer struct {
 	consumer Consumer
 	store    EventStore
+	dlq      QuarantinePublisher
 	settings config.WriterConfig
 	limits   contracts.Limits
 	log      zerolog.Logger
@@ -47,11 +54,12 @@ type Writer struct {
 func New(
 	consumer Consumer,
 	store EventStore,
+	dlq QuarantinePublisher,
 	settings config.WriterConfig,
 	limits contracts.Limits,
 	log zerolog.Logger,
 ) *Writer {
-	return &Writer{consumer: consumer, store: store, settings: settings, limits: limits, log: log}
+	return &Writer{consumer: consumer, store: store, dlq: dlq, settings: settings, limits: limits, log: log}
 }
 
 // Run polls no more than one in-memory batch, stops polling during storage
@@ -170,57 +178,171 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 		}
 	}()
 
-	events, err := w.decode(records)
+	partitions, err := groupContiguousRecords(records)
 	if err != nil {
-		return err
-	}
-	if err = w.insertWithRetry(ctx, events); err != nil {
 		return err
 	}
 
-	last, err := lastContiguousRecords(records)
-	if err != nil {
-		return err
+	classified := make(map[topicPartition][]recordEffect, len(partitions))
+	events := make([]*contracts.Event, 0, len(records))
+	for key, partitionRecords := range partitions {
+		effects := make([]recordEffect, 0, len(partitionRecords))
+		for _, record := range partitionRecords {
+			effect := w.classify(record)
+			effects = append(effects, effect)
+			if effect.event != nil {
+				events = append(events, effect.event)
+			}
+		}
+		classified[key] = effects
+	}
+	if len(events) > 0 {
+		if err = w.insertWithRetry(ctx, events); err != nil {
+			return err
+		}
+	}
+
+	keys := sortedPartitionKeys(partitions)
+	committable := make([]*kgo.Record, 0, len(keys))
+	var effectErr error
+	for _, key := range keys {
+		var lastDurable *kgo.Record
+		for _, effect := range classified[key] {
+			if effect.reason != "" {
+				if err = w.publishWithRetry(ctx, effect.record, effect.reason); err != nil {
+					effectErr = errors.Join(effectErr, err)
+					break
+				}
+			}
+			lastDurable = effect.record
+		}
+		if lastDurable != nil {
+			committable = append(committable, lastDurable)
+		}
+	}
+
+	if len(committable) == 0 {
+		return effectErr
 	}
 	commitCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
 	defer cancel()
-	if err = w.consumer.CommitRecords(commitCtx, last...); err != nil {
-		return err
+	if err = w.consumer.CommitRecords(commitCtx, committable...); err != nil {
+		return fmt.Errorf("commit durable event effects: %w", errors.Join(err, effectErr))
 	}
 
-	return nil
+	return effectErr
 }
 
-func (w *Writer) decode(records []*kgo.Record) ([]*contracts.Event, error) {
-	events := make([]*contracts.Event, 0, len(records))
-	for _, record := range records {
-		event, err := contracts.DecodeEvent(bytes.NewReader(record.Value))
-		if err != nil {
-			return nil, fmt.Errorf("decode persisted event at %s: decode_error", recordLocation(record))
-		}
-		if event.OccurredAt.IsZero() {
-			return nil, fmt.Errorf("validate persisted event at %s: occurred_at is required", recordLocation(record))
-		}
-		if event.ReceivedAt == nil || event.ReceivedAt.IsZero() {
-			return nil, fmt.Errorf("validate persisted event at %s: received_at is required", recordLocation(record))
-		}
-		// Ingest already checked wall-clock skew. Replay validates the same
-		// structure relative to the immutable event timestamp, not today's clock.
-		if err = event.Validate(event.OccurredAt.Time, w.limits); err != nil {
-			var fieldErr *contracts.FieldError
-			if errors.As(err, &fieldErr) {
-				return nil, fmt.Errorf(
-					"validate persisted event at %s: validation_error: %s",
-					recordLocation(record), fieldErr.Field,
-				)
-			}
+type recordEffect struct {
+	record *kgo.Record
+	event  *contracts.Event
+	reason kafkax.DLQReason
+}
 
-			return nil, fmt.Errorf("validate persisted event at %s: validation_error", recordLocation(record))
+func (w *Writer) classify(record *kgo.Record) recordEffect {
+	effect := recordEffect{record: record}
+	event, err := contracts.DecodeEvent(bytes.NewReader(record.Value))
+	if err != nil {
+		effect.reason = kafkax.DLQReasonDecode
+
+		return effect
+	}
+	if event.ReceivedAt == nil || event.ReceivedAt.IsZero() {
+		effect.reason = kafkax.DLQReasonMissingReceivedAt
+
+		return effect
+	}
+	if event.OccurredAt.IsZero() {
+		effect.reason = kafkax.DLQReasonValidation
+
+		return effect
+	}
+	// Ingest already checked wall-clock skew. Replay validates the same
+	// structure relative to the immutable event timestamp, not today's clock.
+	if err = event.Validate(event.OccurredAt.Time, w.limits); err != nil {
+		effect.reason = kafkax.DLQReasonValidation
+
+		return effect
+	}
+	effect.event = event
+
+	return effect
+}
+
+func (w *Writer) publishWithRetry(
+	ctx context.Context,
+	record *kgo.Record,
+	reason kafkax.DLQReason,
+) error {
+	var lastErr error
+	backoff := w.settings.RetryMinBackoff
+	for attempt := 1; attempt <= w.settings.MaxAttempts; attempt++ {
+		operationCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
+		lastErr = w.dlq.Publish(operationCtx, record, reason)
+		cancel()
+		if lastErr == nil {
+			return nil
 		}
-		events = append(events, event)
+		if attempt == w.settings.MaxAttempts || ctx.Err() != nil {
+			break
+		}
+
+		w.log.Warn().Int("attempt", attempt).Str("reason", string(reason)).
+			Msg("DLQ publish failed; retrying")
+		if err := waitForRetry(ctx, backoff); err != nil {
+			return fmt.Errorf("publish DLQ record at %s: %w", recordLocation(record), errors.Join(lastErr, err))
+		}
+		backoff = min(backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
 	}
 
-	return events, nil
+	return fmt.Errorf(
+		"publish DLQ record at %s after %d attempts: %w",
+		recordLocation(record), w.settings.MaxAttempts, lastErr,
+	)
+}
+
+func waitForRetry(ctx context.Context, maximum time.Duration) error {
+	timer := time.NewTimer(jitterDelay(maximum))
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func groupContiguousRecords(records []*kgo.Record) (map[topicPartition][]*kgo.Record, error) {
+	partitions := make(map[topicPartition][]*kgo.Record)
+	for _, record := range records {
+		key := topicPartition{topic: record.Topic, partition: record.Partition}
+		partitionRecords := partitions[key]
+		if len(partitionRecords) > 0 && record.Offset != partitionRecords[len(partitionRecords)-1].Offset+1 {
+			return nil, fmt.Errorf(
+				"non-contiguous Kafka batch at %s/%d: offset %d follows %d",
+				record.Topic, record.Partition, record.Offset, partitionRecords[len(partitionRecords)-1].Offset,
+			)
+		}
+		partitions[key] = append(partitionRecords, record)
+	}
+
+	return partitions, nil
+}
+
+func sortedPartitionKeys(partitions map[topicPartition][]*kgo.Record) []topicPartition {
+	keys := make([]topicPartition, 0, len(partitions))
+	for key := range partitions {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].topic == keys[j].topic {
+			return keys[i].partition < keys[j].partition
+		}
+
+		return keys[i].topic < keys[j].topic
+	})
+
+	return keys
 }
 
 func recordLocation(record *kgo.Record) string {
@@ -242,16 +364,8 @@ func (w *Writer) insertWithRetry(ctx context.Context, events []*contracts.Event)
 		}
 
 		w.log.Warn().Int("attempt", attempt).Msg("event insert failed; retrying")
-		wait := jitterDelay(backoff)
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-
-			return fmt.Errorf("insert event batch: %w", errors.Join(lastErr, ctx.Err()))
-		case <-timer.C:
+		if err := waitForRetry(ctx, backoff); err != nil {
+			return fmt.Errorf("insert event batch: %w", errors.Join(lastErr, err))
 		}
 		backoff = min(backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
 	}
@@ -271,36 +385,4 @@ func jitterDelay(maximum time.Duration) time.Duration {
 type topicPartition struct {
 	topic     string
 	partition int32
-}
-
-func lastContiguousRecords(records []*kgo.Record) ([]*kgo.Record, error) {
-	last := make(map[topicPartition]*kgo.Record)
-	for _, record := range records {
-		key := topicPartition{topic: record.Topic, partition: record.Partition}
-		if previous := last[key]; previous != nil && record.Offset != previous.Offset+1 {
-			return nil, fmt.Errorf(
-				"non-contiguous Kafka batch at %s/%d: offset %d follows %d",
-				record.Topic, record.Partition, record.Offset, previous.Offset,
-			)
-		}
-		last[key] = record
-	}
-
-	keys := make([]topicPartition, 0, len(last))
-	for key := range last {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].topic == keys[j].topic {
-			return keys[i].partition < keys[j].partition
-		}
-
-		return keys[i].topic < keys[j].topic
-	})
-	result := make([]*kgo.Record, 0, len(keys))
-	for _, key := range keys {
-		result = append(result, last[key])
-	}
-
-	return result, nil
 }

@@ -35,10 +35,16 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err = consumer.Ping(ctx); err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
+	dlq, err := kafkax.NewDLQPublisher(ctx, cfg.Kafka, "", cfg.Writer.DLQMaxBytes)
+	if err != nil {
+		return fmt.Errorf("kafka DLQ: %w", err)
+	}
+	lc.Add("kafka-dlq", dlq.Close)
 
 	worker := eventwriter.New(
 		consumer,
 		storageclickhouse.NewEventStore(conn),
+		dlq,
 		cfg.Writer,
 		contracts.LimitsFromConfig(cfg.Contracts),
 		log,

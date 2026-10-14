@@ -251,22 +251,23 @@ func TestWriterCancellationMidInsertFlushesWithFreshContext(t *testing.T) {
 	require.Equal(t, 1, consumer.allowRebalance)
 }
 
-func TestWriterValidationErrorRedactsUntrustedValue(t *testing.T) {
+func TestWriterValidationReasonDoesNotExposeUntrustedValue(t *testing.T) {
 	now := time.Now().UTC()
 	record := validRecord(t, 0, now, now)
 	secret := "sentinel-secret-event-type"
 	record.Value = bytes.Replace(record.Value, []byte("net.connection"), []byte(secret), 1)
 	consumer := &scriptedConsumer{records: []*kgo.Record{record}}
+	ctx, cancel := context.WithCancel(context.Background())
+	consumer.onCommit = cancel
+	dlq := &recordingDLQ{}
 	w := newWriter(
-		consumer, &recordingStore{}, &recordingDLQ{}, writerSettings(1, time.Second), contracts.DefaultLimits(),
+		consumer, &recordingStore{}, dlq, writerSettings(1, time.Second), contracts.DefaultLimits(),
 	)
 
-	err := w.Run(context.Background())
-	require.Error(t, err)
-	require.NotContains(t, err.Error(), secret)
-	require.Contains(t, err.Error(), "validation_error")
-	require.Contains(t, err.Error(), "event_type")
-	require.Empty(t, consumer.commits)
+	require.NoError(t, w.Run(ctx))
+	require.Equal(t, []kafkax.DLQReason{kafkax.DLQReasonValidation}, dlq.reasons)
+	require.NotContains(t, string(dlq.reasons[0]), secret)
+	require.Len(t, consumer.commits, 1)
 }
 
 func TestWriterClassifiesOnlyPoisonWithStableReasons(t *testing.T) {

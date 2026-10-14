@@ -279,6 +279,15 @@ func integrationDLQPublisher(
 	settings config.WriterConfig,
 ) *kafkax.DLQPublisher {
 	t.Helper()
+	if kafka.ProduceTimeout == 0 {
+		kafka.ProduceTimeout = 5 * time.Second
+	}
+	if kafka.MaxBufferedRecords == 0 {
+		kafka.MaxBufferedRecords = 100
+	}
+	if kafka.MaxBufferedBytes == 0 {
+		kafka.MaxBufferedBytes = 1 << 20
+	}
 	publisher, err := kafkax.NewDLQPublisher(t.Context(), kafka, topic, settings.DLQMaxBytes)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, publisher.Close(context.Background())) })
@@ -345,7 +354,9 @@ func TestWriterDLQFailureNoCommit(t *testing.T) {
 	group := "writer-dlq-failure-" + uuid.NewString()
 	kafka.EventsTopic = sourceTopic
 	kafka.EventWriterGroup = group
-	kafka.ProduceTimeout = 500 * time.Millisecond
+	// franz-go enforces a one-second minimum delivery timeout; the writer's
+	// shorter operation context still bounds each acceptance-test attempt.
+	kafka.ProduceTimeout = time.Second
 	kafka.RecordRetries = 1
 	kafka.MaxBufferedRecords = 100
 	kafka.MaxBufferedBytes = 1 << 20
