@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -78,6 +79,7 @@ type recordingDLQ struct {
 	records []*kgo.Record
 	reasons []kafkax.DLQReason
 	fail    error
+	failFor func(*kgo.Record) error
 }
 
 func (p *recordingDLQ) Publish(_ context.Context, record *kgo.Record, reason kafkax.DLQReason) error {
@@ -85,6 +87,9 @@ func (p *recordingDLQ) Publish(_ context.Context, record *kgo.Record, reason kaf
 	defer p.mu.Unlock()
 	p.records = append(p.records, record)
 	p.reasons = append(p.reasons, reason)
+	if p.failFor != nil {
+		return p.failFor(record)
+	}
 
 	return p.fail
 }
@@ -314,5 +319,50 @@ func TestWriterDLQFailureDoesNotCommitPastPoison(t *testing.T) {
 		for _, record := range commit {
 			require.Less(t, record.Offset, int64(1), "commit skipped failed poison offset")
 		}
+	}
+}
+
+func TestWriterMixedPartitionsCommitIndependentDurablePrefixes(t *testing.T) {
+	for _, failedPartition := range []int32{0, 1} {
+		t.Run(fmt.Sprintf("partition_%d_fails", failedPartition), func(t *testing.T) {
+			now := time.Now().UTC()
+			records := make([]*kgo.Record, 0, 6)
+			for offset := range int64(3) {
+				for partition := range int32(2) {
+					var record *kgo.Record
+					if offset == 1 {
+						record = &kgo.Record{Topic: "events", Value: []byte(`{"broken":`)}
+					} else {
+						record = validRecord(t, offset, now, now)
+					}
+					record.Partition = partition
+					record.Offset = offset
+					records = append(records, record)
+				}
+			}
+
+			consumer := &scriptedConsumer{records: records}
+			dlqErr := errors.New("partition DLQ unavailable")
+			dlq := &recordingDLQ{failFor: func(record *kgo.Record) error {
+				if record.Partition == failedPartition {
+					return dlqErr
+				}
+
+				return nil
+			}}
+			w := newWriter(
+				consumer, &recordingStore{}, dlq, writerSettings(len(records), time.Hour), contracts.DefaultLimits(),
+			)
+
+			err := w.Run(context.Background())
+			require.ErrorIs(t, err, dlqErr)
+			require.Len(t, consumer.commits, 1)
+			committed := make(map[int32]int64)
+			for _, record := range consumer.commits[0] {
+				committed[record.Partition] = record.Offset
+			}
+			require.Equal(t, int64(0), committed[failedPartition])
+			require.Equal(t, int64(2), committed[1-failedPartition])
+		})
 	}
 }

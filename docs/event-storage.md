@@ -68,3 +68,61 @@ one visible identity, not a permanent content winner. Background merges and
 equal-millisecond `received_at` values can change which conflicting row is
 retained. See [ADR 0002](decisions/0002-event-id-policy.md) for the complete
 identity contract.
+
+## Poison records and the event DLQ
+
+The event-writer quarantines only records that cannot become valid stored
+events. It publishes them to `security.events.dlq.v1` with one of these stable
+reasons:
+
+- `decode_error`: invalid JSON, unknown fields, type mismatches, trailing JSON,
+  or another failure to decode the versioned event contract
+- `validation_error`: decoded JSON that violates the event schema, including an
+  unsupported schema version or a missing/invalid field other than
+  `received_at`
+- `missing_received_at`: the server-owned ingestion timestamp is absent or zero
+
+The reason is always an enum. Decoder text, validation text, stack traces, and
+exception messages are not copied to Kafka headers.
+
+Each DLQ record keeps the source key and, by default, source value. It includes
+`dlq.reason`, `dlq.origin.topic`, `dlq.origin.partition`,
+`dlq.origin.offset`, and a UTC RFC 3339 `dlq.at`. Non-`dlq.*` source headers are
+copied only while the record remains within its bounded metadata allowance.
+Source headers cannot override trusted `dlq.*` fields.
+
+The default source-value cap is 64 KiB (`SENTINEL_WRITER.DLQ_MAX_BYTES`). A
+larger value is replaced by an empty value with
+`dlq.value.redacted=true` and `dlq.value.original_bytes=<size>`. An abnormally
+large key is similarly removed and described by `dlq.key.redacted` and
+`dlq.key.original_bytes`. The complete encoded record is bounded by the value
+cap plus an 8 KiB metadata allowance, so a source-header flood cannot create an
+unbounded quarantine message.
+
+DLQ values can contain the original event payload. Inspecting or exporting
+them requires the same data access and handling controls as inspecting stored
+events; the DLQ is not a lower-trust debugging channel.
+
+## Offset ordering and recovery
+
+Every source partition advances only through its contiguous durable prefix. A
+valid record is durable after ClickHouse acknowledges its insert; a poison
+record is durable after the all-ISR DLQ producer acknowledges it. A later
+record never causes an earlier failed insert or failed DLQ publish in the same
+partition to be committed. Other partitions in the same poll may independently
+commit their own durable prefixes.
+
+ClickHouse/network failures are infrastructure failures, not poison. They do
+not create DLQ records: the writer exhausts its bounded retry budget, exits,
+and leaves the source offsets replayable. Likewise, if the DLQ topic is missing
+or Kafka cannot acknowledge the quarantine record, the writer exits without
+committing past that poison record. Restore Kafka access or create the expected
+DLQ topic, then restart the writer with the same consumer group; it resumes at
+the earliest uncommitted offset.
+
+Delivery is at-least-once on both paths. A shutdown or ambiguous acknowledgement
+can cause a valid ClickHouse row or a DLQ record to be written again before its
+source offset is committed. Event reads collapse duplicate `event_id` values;
+operators inspecting the DLQ must tolerate duplicate quarantine records and
+use the origin topic, partition, and offset as their source identity. Sentinel
+does not expose an administrative replay endpoint in this phase.
