@@ -38,7 +38,8 @@ reset: ## Destroy the stack and its volumes (requires CONFIRM=1)
 
 migrate: ## Apply PostgreSQL (tern) and ClickHouse migrations
 	cd backend && PGPASSWORD="$(call dotenv_or_env,SENTINEL_POSTGRES_PASSWORD)" go tool -modfile=tools.mod tern migrate --migrations migrations/postgres --host $(PG_HOST) --port $(PG_PORT) --user sentinel --database sentinel --sslmode disable
-	cd backend && SENTINEL_CLICKHOUSE_PASSWORD="$(call dotenv_or_env,SENTINEL_CLICKHOUSE_PASSWORD)" go run ./tools/chmigrate --addr $(CH_ADDR) --user sentinel --database sentinel
+	# chmigrate exposes --events-ttl-days and resolves it from this forwarded plain env.
+	cd backend && SENTINEL_CLICKHOUSE_PASSWORD="$(call dotenv_or_env,SENTINEL_CLICKHOUSE_PASSWORD)" SENTINEL_CLICKHOUSE_EVENTS_TTL_DAYS="$(call dotenv_or_env,SENTINEL_CLICKHOUSE_EVENTS_TTL_DAYS)" go run ./tools/chmigrate --addr $(CH_ADDR) --user sentinel --database sentinel
 
 web/node_modules: web/package-lock.json
 	cd web && npm ci && touch node_modules

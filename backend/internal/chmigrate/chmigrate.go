@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -34,6 +35,10 @@ var identRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // ErrInvalidDatabase is returned when the database name is not a safe identifier.
 var ErrInvalidDatabase = errors.New("invalid database identifier")
+
+// ErrInvalidEventsTTL is returned when the requested retention is outside the
+// supported operational range.
+var ErrInvalidEventsTTL = errors.New("events TTL days must be between 1 and 3650")
 
 // Runner applies migrations to one ClickHouse database.
 type Runner struct {
@@ -63,6 +68,26 @@ func New(addr, user, password, database string, client *http.Client) *Runner {
 
 // URL returns the HTTP endpoint the runner targets.
 func (r *Runner) URL() string { return r.baseURL }
+
+// SetEventsTTL changes retention for the events table in this runner's
+// configured database. Only the validated database identifier and integer
+// number of days are inserted into the fixed DDL statement.
+func (r *Runner) SetEventsTTL(ctx context.Context, days int) error {
+	if !identRe.MatchString(r.database) {
+		return ErrInvalidDatabase
+	}
+	if days < 1 || days > 3650 {
+		return ErrInvalidEventsTTL
+	}
+
+	stmt := "ALTER TABLE " + r.database +
+		".events MODIFY TTL toDateTime(occurred_at) + INTERVAL " + strconv.Itoa(days) + " DAY"
+	if _, err := r.exec(ctx, stmt, r.database); err != nil {
+		return fmt.Errorf("setting events TTL: %w", err)
+	}
+
+	return nil
+}
 
 // Run applies every embedded migration not yet recorded and returns the names
 // applied in order.
