@@ -421,37 +421,38 @@ func validateSection(cfg *Config, section string) error {
 
 		return nil
 	case sectionWriter:
-		if cfg.Writer.FetchMaxBytes > maxFetchBytes {
-			return errors.New("validate writer config: fetch max bytes exceeds 64 MiB")
-		}
-		if cfg.Writer.FetchMaxPartitionBytes > maxPartBytes {
-			return errors.New("validate writer config: partition fetch bytes exceeds 16 MiB")
-		}
-		if cfg.Writer.MaxConcurrentFetches > maxFetches {
-			return errors.New("validate writer config: concurrent fetches exceeds 8")
-		}
-		if cfg.Writer.DLQMaxBytes > maxDLQBytes {
-			return errors.New("validate writer config: DLQ record cap exceeds 1 MiB")
-		}
-		if cfg.Writer.RetryMinBackoff > cfg.Writer.RetryMaxBackoff {
-			return errors.New("validate writer config: retry minimum exceeds retry maximum")
-		}
-		if cfg.Writer.OperationTimeout > cfg.Writer.ShutdownTimeout {
-			return errors.New("validate writer config: operation timeout exceeds shutdown timeout")
-		}
-		if cfg.Writer.FetchMaxPartitionBytes > cfg.Writer.FetchMaxBytes {
-			return errors.New("validate writer config: partition fetch bytes exceed total fetch bytes")
-		}
-		if int64(cfg.Writer.FetchMaxBytes)*int64(cfg.Writer.MaxConcurrentFetches) > maxAggregateFetch {
-			return errors.New("validate writer config: aggregate fetch memory exceeds 128 MiB")
-		}
-
-		return nil
+		return validateWriterConfig(cfg.Writer)
 	case sectionRedis:
 		return validateRedisSecurity(cfg.Primary.Env, cfg.Redis)
 	default:
 		return nil
 	}
+}
+
+func validateWriterConfig(writer WriterConfig) error {
+	checks := []struct {
+		invalid bool
+		message string
+	}{
+		{writer.FetchMaxBytes > maxFetchBytes, "fetch max bytes exceeds 64 MiB"},
+		{writer.FetchMaxPartitionBytes > maxPartBytes, "partition fetch bytes exceeds 16 MiB"},
+		{writer.MaxConcurrentFetches > maxFetches, "concurrent fetches exceeds 8"},
+		{writer.DLQMaxBytes > maxDLQBytes, "DLQ record cap exceeds 1 MiB"},
+		{writer.RetryMinBackoff > writer.RetryMaxBackoff, "retry minimum exceeds retry maximum"},
+		{writer.OperationTimeout > writer.ShutdownTimeout, "operation timeout exceeds shutdown timeout"},
+		{writer.FetchMaxPartitionBytes > writer.FetchMaxBytes, "partition fetch bytes exceed total fetch bytes"},
+		{
+			int64(writer.FetchMaxBytes)*int64(writer.MaxConcurrentFetches) > maxAggregateFetch,
+			"aggregate fetch memory exceeds 128 MiB",
+		},
+	}
+	for _, check := range checks {
+		if check.invalid {
+			return errors.New("validate writer config: " + check.message)
+		}
+	}
+
+	return nil
 }
 
 // ParseBrokers splits a comma-separated broker list, trimming blanks, and

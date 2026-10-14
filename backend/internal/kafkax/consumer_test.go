@@ -1,4 +1,4 @@
-package kafkax
+package kafkax //nolint:testpackage // bounded close and rebalance budgeting require white-box state injection
 
 import (
 	"context"
