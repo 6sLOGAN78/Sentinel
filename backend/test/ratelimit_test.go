@@ -152,7 +152,8 @@ func newRateLimitHTTPFixture(
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, producer.Close(context.Background())) })
 	publisher := &countingPublisher{inner: producer}
-	limiter, _ := newRateLimiter(t, redisConfig, limiterConfig, logger)
+	limiter, redisClient := newRateLimiter(t, redisConfig, limiterConfig, logger)
+	require.NoError(t, redisClient.Del(t.Context(), "rl:aaaaaaaaaaaa").Err())
 	e := echo.New()
 	middleware.Apply(e, &logger, nil)
 	ingest.NewHandler(rateLimitVerifier{}, publisher, limiter, cfg, logger).Register(e)
@@ -204,9 +205,8 @@ func pauseRedis(t *testing.T, container *sentineltesting.FaultContainer) {
 	})
 }
 
-func postRateLimited(t *testing.T, fixture *rateLimitHTTPFixture) *http.Response {
+func postRateLimitedRaw(t *testing.T, fixture *rateLimitHTTPFixture, body []byte) *http.Response {
 	t.Helper()
-	body := mustBatchJSON(t, integrationEvent("demo", nil))
 	req, err := http.NewRequestWithContext(
 		t.Context(), http.MethodPost, fixture.server.URL+"/api/v1/events:batch", bytes.NewReader(body),
 	)
@@ -218,6 +218,47 @@ func postRateLimited(t *testing.T, fixture *rateLimitHTTPFixture) *http.Response
 	t.Cleanup(func() { _ = response.Body.Close() })
 
 	return response
+}
+
+func postRateLimited(t *testing.T, fixture *rateLimitHTTPFixture) *http.Response {
+	t.Helper()
+
+	return postRateLimitedRaw(t, fixture, mustBatchJSON(t, integrationEvent("demo", nil)))
+}
+
+func TestRateLimitValidationConsumesQuota(t *testing.T) {
+	fixture := newRateLimitHTTPFixture(t, redisCfg, rateLimitConfig(2, 0.001, "closed"), zerolog.Nop())
+
+	malformed := postRateLimitedRaw(t, fixture, []byte(`{"events":`))
+	require.Equal(t, http.StatusBadRequest, malformed.StatusCode)
+
+	invalid := integrationEvent("demo", nil)
+	invalid["event_id"] = "not-a-uuid"
+	for range 2 {
+		response := postRateLimitedRaw(t, fixture, mustBatchJSON(t, invalid))
+		require.Equal(t, http.StatusBadRequest, response.StatusCode)
+	}
+
+	denied := postRateLimited(t, fixture)
+	require.Equal(t, http.StatusTooManyRequests, denied.StatusCode)
+	require.NotEmpty(t, denied.Header.Get(echo.HeaderRetryAfter))
+	require.Zero(t, fixture.publisher.calls.Load())
+	requireNoRecord(t, fixture.consumer)
+}
+
+func TestRateLimitQuotaPrecedesTenantAndFields(t *testing.T) {
+	fixture := newRateLimitHTTPFixture(t, redisCfg, rateLimitConfig(2, 0.001, "closed"), zerolog.Nop())
+	allowed, _, err := fixture.limiter.Allow(t.Context(), "aaaaaaaaaaaa", 2)
+	require.NoError(t, err)
+	require.True(t, allowed)
+
+	invalid := integrationEvent("demo", nil)
+	invalid["event_id"] = "not-a-uuid"
+	mismatch := integrationEvent("other", nil)
+	response := postRateLimitedRaw(t, fixture, mustBatchJSON(t, invalid, mismatch))
+	require.Equal(t, http.StatusTooManyRequests, response.StatusCode)
+	require.Zero(t, fixture.publisher.calls.Load())
+	requireNoRecord(t, fixture.consumer)
 }
 
 func TestRateLimitRedisDownClosed(t *testing.T) {

@@ -396,7 +396,11 @@ func TestInFlightShed(t *testing.T) {
 	cfg.Ingest.MaxInFlight = 1
 	entered := make(chan struct{})
 	release := make(chan struct{})
+	var authCalls atomic.Int32
+	var limiterCalls atomic.Int32
+	var publishCalls atomic.Int32
 	publisher := publisherFunc(func(ctx context.Context, _ []*contracts.Event, _ string) error {
+		publishCalls.Add(1)
 		close(entered)
 		select {
 		case <-release:
@@ -405,9 +409,22 @@ func TestInFlightShed(t *testing.T) {
 			return ctx.Err()
 		}
 	})
-	e := newHandlerEcho(t, apikeys.Principal{
-		TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
-	}, nil, publisher, cfg)
+	verifier := verifierFunc(func(context.Context, string) (apikeys.Principal, error) {
+		authCalls.Add(1)
+
+		return apikeys.Principal{
+			KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
+		}, nil
+	})
+	limiter := limiterFunc(func(context.Context, string, int) (bool, int, error) {
+		limiterCalls.Add(1)
+
+		return true, 0, nil
+	})
+	e := echo.New()
+	logger := zerolog.Nop()
+	middleware.Apply(e, &logger, nil)
+	ingest.NewHandler(verifier, publisher, limiter, cfg, logger).Register(e)
 	body := batchBody(t, validEvent(nil))
 	firstDone := make(chan *httptest.ResponseRecorder, 1)
 	go func() { firstDone <- postBatch(t, e, body, testCredential) }()
@@ -418,9 +435,49 @@ func TestInFlightShed(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, second.Code)
 	require.Less(t, time.Since(started), time.Second)
 	require.Equal(t, "1", second.Header().Get(echo.HeaderRetryAfter))
+	require.Equal(t, int32(1), authCalls.Load(), "shed request must not authenticate")
+	require.Equal(t, int32(1), limiterCalls.Load(), "shed request must not call Redis limiter")
+	require.Equal(t, int32(1), publishCalls.Load(), "shed request must not publish")
 
 	close(release)
 	require.Equal(t, http.StatusAccepted, (<-firstDone).Code)
+}
+
+func TestPostBatchQuotaAttemptsAreNotRefunded(t *testing.T) {
+	var remaining atomic.Int32
+	remaining.Store(2)
+	var limiterCalls atomic.Int32
+	limiter := limiterFunc(func(_ context.Context, _ string, cost int) (bool, int, error) {
+		limiterCalls.Add(1)
+		if remaining.Add(int32(-cost)) < 0 {
+			return false, 1, nil
+		}
+
+		return true, 0, nil
+	})
+	e := newHandlerEchoWithLimiter(t, apikeys.Principal{
+		KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite},
+	}, nil, func(context.Context, []*contracts.Event, string) error {
+		t.Fatal("invalid or quota-denied requests must not publish")
+
+		return nil
+	}, limiter, handlerConfig())
+
+	malformed := postBatch(t, e, []byte(`{"events":`), testCredential)
+	require.Equal(t, http.StatusBadRequest, malformed.Code)
+	require.Zero(t, limiterCalls.Load(), "malformed envelope is rejected before quota")
+
+	invalid := validEvent(nil)
+	invalid["event_id"] = "not-a-uuid"
+	for range 2 {
+		response := postBatch(t, e, batchBody(t, invalid), testCredential)
+		require.Equal(t, http.StatusBadRequest, response.Code)
+	}
+	require.Equal(t, int32(2), limiterCalls.Load(), "each rejected post-quota retry is a new debit")
+
+	response := postBatch(t, e, batchBody(t, validEvent(nil)), testCredential)
+	require.Equal(t, http.StatusTooManyRequests, response.Code)
+	require.Equal(t, int32(3), limiterCalls.Load())
 }
 
 func TestPostBatchPublishFailureIsSanitized(t *testing.T) {
