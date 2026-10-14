@@ -31,7 +31,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
-	lc.Add("kafka-consumer", func(context.Context) error { consumer.Close(); return nil })
+	lc.Add("kafka-consumer", consumer.Close)
 	if err = consumer.Ping(ctx); err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}

@@ -1,6 +1,7 @@
 package eventwriter_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -225,4 +226,22 @@ func TestWriterCancellationMidInsertFlushesWithFreshContext(t *testing.T) {
 	require.Equal(t, 2, store.attempts)
 	require.Len(t, consumer.commits, 1)
 	require.Equal(t, 1, consumer.allowRebalance)
+}
+
+func TestWriterValidationErrorRedactsUntrustedValue(t *testing.T) {
+	now := time.Now().UTC()
+	record := validRecord(t, 0, now, now)
+	secret := "sentinel-secret-event-type"
+	record.Value = bytes.Replace(record.Value, []byte("net.connection"), []byte(secret), 1)
+	consumer := &scriptedConsumer{records: []*kgo.Record{record}}
+	w := eventwriter.New(
+		consumer, &recordingStore{}, writerSettings(1, time.Second), contracts.DefaultLimits(), zerolog.Nop(),
+	)
+
+	err := w.Run(context.Background())
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), secret)
+	require.Contains(t, err.Error(), "validation_error")
+	require.Contains(t, err.Error(), "event_type")
+	require.Empty(t, consumer.commits)
 }

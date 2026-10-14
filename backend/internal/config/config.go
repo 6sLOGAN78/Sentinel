@@ -66,6 +66,11 @@ const (
 	defaultPartBytes   = 4 << 20
 	defaultFetches     = 2
 	defaultDLQBytes    = 64 << 10
+	maxFetchBytes      = 64 << 20
+	maxPartBytes       = 16 << 20
+	maxFetches         = 8
+	maxDLQBytes        = 1 << 20
+	maxAggregateFetch  = 128 << 20
 )
 
 // Service names accepted by Load.
@@ -416,6 +421,18 @@ func validateSection(cfg *Config, section string) error {
 
 		return nil
 	case sectionWriter:
+		if cfg.Writer.FetchMaxBytes > maxFetchBytes {
+			return errors.New("validate writer config: fetch max bytes exceeds 64 MiB")
+		}
+		if cfg.Writer.FetchMaxPartitionBytes > maxPartBytes {
+			return errors.New("validate writer config: partition fetch bytes exceeds 16 MiB")
+		}
+		if cfg.Writer.MaxConcurrentFetches > maxFetches {
+			return errors.New("validate writer config: concurrent fetches exceeds 8")
+		}
+		if cfg.Writer.DLQMaxBytes > maxDLQBytes {
+			return errors.New("validate writer config: DLQ record cap exceeds 1 MiB")
+		}
 		if cfg.Writer.RetryMinBackoff > cfg.Writer.RetryMaxBackoff {
 			return errors.New("validate writer config: retry minimum exceeds retry maximum")
 		}
@@ -424,6 +441,9 @@ func validateSection(cfg *Config, section string) error {
 		}
 		if cfg.Writer.FetchMaxPartitionBytes > cfg.Writer.FetchMaxBytes {
 			return errors.New("validate writer config: partition fetch bytes exceed total fetch bytes")
+		}
+		if int64(cfg.Writer.FetchMaxBytes)*int64(cfg.Writer.MaxConcurrentFetches) > maxAggregateFetch {
+			return errors.New("validate writer config: aggregate fetch memory exceeds 128 MiB")
 		}
 
 		return nil

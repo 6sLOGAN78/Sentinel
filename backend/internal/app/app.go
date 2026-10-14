@@ -187,7 +187,10 @@ func RunContext(ctx context.Context, service string, setup SetupFunc) int {
 
 		return exitError
 	}
-	if failureErr != nil {
+	// A worker can discover its fatal error while its closer is waiting for it
+	// to stop. Re-read the lifecycle cause after cleanup so that failure cannot
+	// be mistaken for a clean parent-initiated shutdown.
+	if failureErr != nil || lc.Err() != nil {
 		return exitError
 	}
 

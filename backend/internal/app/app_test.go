@@ -205,6 +205,24 @@ func TestLifecycleFailKeepsFirstError(t *testing.T) {
 	require.NotErrorIs(t, lc.Err(), second)
 }
 
+func TestFailureReportedDuringCleanupExitsNonZero(t *testing.T) {
+	detectorEnv(t)
+	workerErr := errors.New("worker failed during shutdown")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	setup := func(_ context.Context, _ *config.Config, _ zerolog.Logger, lc *app.Lifecycle) error {
+		lc.Add("worker", func(context.Context) error {
+			lc.Fail(workerErr)
+
+			return nil
+		})
+
+		return nil
+	}
+
+	require.Equal(t, 1, app.RunContext(ctx, config.ServiceDetector, setup))
+}
+
 func TestClosePanicInSetupIsRecovered(t *testing.T) {
 	detectorEnv(t)
 

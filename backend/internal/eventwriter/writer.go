@@ -196,7 +196,7 @@ func (w *Writer) decode(records []*kgo.Record) ([]*contracts.Event, error) {
 	for _, record := range records {
 		event, err := contracts.DecodeEvent(bytes.NewReader(record.Value))
 		if err != nil {
-			return nil, fmt.Errorf("decode persisted event at %s: %w", recordLocation(record), err)
+			return nil, fmt.Errorf("decode persisted event at %s: decode_error", recordLocation(record))
 		}
 		if event.OccurredAt.IsZero() {
 			return nil, fmt.Errorf("validate persisted event at %s: occurred_at is required", recordLocation(record))
@@ -207,7 +207,15 @@ func (w *Writer) decode(records []*kgo.Record) ([]*contracts.Event, error) {
 		// Ingest already checked wall-clock skew. Replay validates the same
 		// structure relative to the immutable event timestamp, not today's clock.
 		if err = event.Validate(event.OccurredAt.Time, w.limits); err != nil {
-			return nil, fmt.Errorf("validate persisted event at %s: %w", recordLocation(record), err)
+			var fieldErr *contracts.FieldError
+			if errors.As(err, &fieldErr) {
+				return nil, fmt.Errorf(
+					"validate persisted event at %s: validation_error: %s",
+					recordLocation(record), fieldErr.Field,
+				)
+			}
+
+			return nil, fmt.Errorf("validate persisted event at %s: validation_error", recordLocation(record))
 		}
 		events = append(events, event)
 	}

@@ -134,9 +134,13 @@ func TestLoadEventWriterRejectsUnsafeBounds(t *testing.T) {
 		{"SENTINEL_WRITER.OPERATION_TIMEOUT", "0s"},
 		{"SENTINEL_WRITER.SHUTDOWN_TIMEOUT", "31s"},
 		{"SENTINEL_WRITER.FETCH_MAX_BYTES", "0"},
+		{"SENTINEL_WRITER.FETCH_MAX_BYTES", "67108865"},
 		{"SENTINEL_WRITER.FETCH_MAX_PARTITION_BYTES", "0"},
+		{"SENTINEL_WRITER.FETCH_MAX_PARTITION_BYTES", "16777217"},
 		{"SENTINEL_WRITER.MAX_CONCURRENT_FETCHES", "0"},
+		{"SENTINEL_WRITER.MAX_CONCURRENT_FETCHES", "9"},
 		{"SENTINEL_WRITER.DLQ_MAX_BYTES", "0"},
+		{"SENTINEL_WRITER.DLQ_MAX_BYTES", "1048577"},
 	}
 
 	for _, tc := range cases {
@@ -173,6 +177,14 @@ func TestLoadEventWriterRejectsCrossFieldBounds(t *testing.T) {
 		t.Setenv("SENTINEL_WRITER.FETCH_MAX_BYTES", "16777216")
 		_, err := config.Load(config.ServiceEventWriter)
 		require.ErrorContains(t, err, "fetch")
+	})
+
+	t.Run("aggregate fetch memory is bounded", func(t *testing.T) {
+		setCompleteEnv(t)
+		t.Setenv("SENTINEL_WRITER.FETCH_MAX_BYTES", "67108864")
+		t.Setenv("SENTINEL_WRITER.MAX_CONCURRENT_FETCHES", "3")
+		_, err := config.Load(config.ServiceEventWriter)
+		require.ErrorContains(t, err, "aggregate fetch")
 	})
 }
 

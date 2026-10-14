@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	consumerSessionTimeout   = 45 * time.Second
-	consumerRebalanceTimeout = 60 * time.Second
-	consumerFetchMaxWait     = 500 * time.Millisecond
+	consumerSessionTimeout = 45 * time.Second
+	consumerFetchMaxWait   = 500 * time.Millisecond
+	minRebalanceTimeout    = 15 * time.Second
 )
 
 // ErrConsumerClosed indicates that polling stopped because Close was called.
@@ -26,6 +26,8 @@ var ErrConsumerClosed = errors.New("kafka consumer closed")
 type Consumer struct {
 	client    *kgo.Client
 	closeOnce sync.Once
+	closeDone chan struct{}
+	closeFn   func()
 }
 
 // NewConsumer creates a bounded group consumer with auto-commit disabled.
@@ -47,13 +49,17 @@ func NewConsumer(_ context.Context, kafka config.KafkaConfig, writer config.Writ
 		kgo.MaxConcurrentFetches(writer.MaxConcurrentFetches),
 		kgo.FetchMaxWait(consumerFetchMaxWait),
 		kgo.SessionTimeout(consumerSessionTimeout),
-		kgo.RebalanceTimeout(consumerRebalanceTimeout),
+		kgo.RebalanceTimeout(rebalanceTimeout(writer)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create Kafka consumer: %w", err)
 	}
 
-	return &Consumer{client: client}, nil
+	return &Consumer{
+		client:    client,
+		closeDone: make(chan struct{}),
+		closeFn:   client.CloseAllowingRebalance,
+	}, nil
 }
 
 // Ping verifies that the configured Kafka cluster is reachable.
@@ -93,7 +99,31 @@ func (c *Consumer) CommitRecords(ctx context.Context, records ...*kgo.Record) er
 // AllowRebalance releases all poll gates after the current batch is finished.
 func (c *Consumer) AllowRebalance() { c.client.AllowRebalance() }
 
-// Close permits any blocked rebalance before leaving the group and closing.
-func (c *Consumer) Close() {
-	c.closeOnce.Do(c.client.CloseAllowingRebalance)
+// Close permits any blocked rebalance before leaving the group and closing,
+// while allowing lifecycle shutdown to remain bounded by ctx.
+func (c *Consumer) Close(ctx context.Context) error {
+	c.closeOnce.Do(func() {
+		go func() {
+			defer close(c.closeDone)
+			c.closeFn()
+		}()
+	})
+
+	select {
+	case <-c.closeDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// rebalanceTimeout covers the maximum insert attempts and retry waits plus a
+// final commit operation. A floor avoids an unrealistically short group join
+// deadline when unit-sized development timeouts are configured.
+func rebalanceTimeout(settings config.WriterConfig) time.Duration {
+	processing := time.Duration(settings.MaxAttempts)*settings.OperationTimeout +
+		time.Duration(max(settings.MaxAttempts-1, 0))*settings.RetryMaxBackoff +
+		settings.OperationTimeout
+
+	return max(processing, minRebalanceTimeout)
 }
