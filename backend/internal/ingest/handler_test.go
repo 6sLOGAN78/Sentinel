@@ -40,6 +40,14 @@ func (f publisherFunc) PublishBatch(ctx context.Context, events []*contracts.Eve
 	return f(ctx, events, requestID)
 }
 
+type limiterFunc func(context.Context, string, int) (bool, int, error)
+
+func (f limiterFunc) Allow(ctx context.Context, keyID string, cost int) (bool, int, error) {
+	return f(ctx, keyID, cost)
+}
+
+func allowAll(context.Context, string, int) (bool, int, error) { return true, 0, nil }
+
 func handlerConfig() *config.Config {
 	return &config.Config{
 		Ingest: config.IngestConfig{
@@ -83,6 +91,17 @@ func newHandlerEcho(
 	publisher publisherFunc,
 	cfg *config.Config,
 ) *echo.Echo {
+	return newHandlerEchoWithLimiter(t, principal, verifyErr, publisher, limiterFunc(allowAll), cfg)
+}
+
+func newHandlerEchoWithLimiter(
+	t *testing.T,
+	principal apikeys.Principal,
+	verifyErr error,
+	publisher publisherFunc,
+	limiter limiterFunc,
+	cfg *config.Config,
+) *echo.Echo {
 	t.Helper()
 	e := echo.New()
 	logger := zerolog.Nop()
@@ -90,9 +109,61 @@ func newHandlerEcho(
 	verifier := verifierFunc(func(_ context.Context, _ string) (apikeys.Principal, error) {
 		return principal, verifyErr
 	})
-	ingest.NewHandler(verifier, publisher, cfg, logger).Register(e)
+	ingest.NewHandler(verifier, publisher, limiter, cfg, logger).Register(e)
 
 	return e
+}
+
+func TestPostBatchRateLimitOrdering(t *testing.T) {
+	oversized := []byte(`{"events":["` + strings.Repeat("x", (1<<20)+1) + `"]}`)
+	malformed := []byte(`{"events":`)
+	invalid := validEvent(nil)
+	invalid["event_id"] = "not-a-uuid"
+	mismatch := validEvent(nil)
+	mismatch["tenant_id"] = "other"
+
+	cases := []struct {
+		name      string
+		principal apikeys.Principal
+		verifyErr error
+		body      []byte
+		allowed   bool
+		status    int
+		calls     int32
+	}{
+		{name: "invalid key before body and quota", verifyErr: apikeys.ErrUnauthorized, body: oversized, allowed: true, status: http.StatusUnauthorized},
+		{name: "missing scope before body and quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo"}, body: malformed, allowed: true, status: http.StatusForbidden},
+		{name: "oversized body before quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: oversized, allowed: true, status: http.StatusRequestEntityTooLarge},
+		{name: "malformed envelope before quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: malformed, allowed: true, status: http.StatusBadRequest},
+		{name: "quota before tenant and fields", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: batchBody(t, invalid, mismatch), status: http.StatusTooManyRequests, calls: 1},
+		{name: "tenant before fields after quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: batchBody(t, invalid, mismatch), allowed: true, status: http.StatusForbidden, calls: 1},
+		{name: "fields after quota", principal: apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}, body: batchBody(t, invalid), allowed: true, status: http.StatusBadRequest, calls: 1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var limiterCalls atomic.Int32
+			limiter := limiterFunc(func(_ context.Context, keyID string, cost int) (bool, int, error) {
+				limiterCalls.Add(1)
+				require.Equal(t, "aaaaaaaaaaaa", keyID)
+				require.Positive(t, cost)
+
+				return tc.allowed, 2, nil
+			})
+			e := newHandlerEchoWithLimiter(t, tc.principal, tc.verifyErr, func(context.Context, []*contracts.Event, string) error {
+				t.Fatal("rejected batch must not publish")
+
+				return nil
+			}, limiter, handlerConfig())
+
+			rec := postBatch(t, e, tc.body, testCredential)
+			require.Equal(t, tc.status, rec.Code, rec.Body.String())
+			require.Equal(t, tc.calls, limiterCalls.Load())
+			if tc.status == http.StatusTooManyRequests {
+				require.Equal(t, "2", rec.Header().Get(echo.HeaderRetryAfter))
+			}
+		})
+	}
 }
 
 func postBatch(t *testing.T, e *echo.Echo, body []byte, key string) *httptest.ResponseRecorder {
