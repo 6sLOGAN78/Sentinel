@@ -123,6 +123,13 @@ func writerKafkaConfig(topic, group string) config.KafkaConfig {
 	return config.KafkaConfig{Brokers: kafkaCfg.Brokers, EventsTopic: topic, EventWriterGroup: group}
 }
 
+func closeWriterConsumer(t *testing.T, consumer *kafkax.Consumer) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, consumer.Close(ctx))
+}
+
 func TestWriterCommitAfterInsert(t *testing.T) {
 	store, conn := newDedupeStore(t)
 	topic := sentineltesting.RequireUniqueTopic(t, kafkaCfg, "writer-order")
@@ -135,7 +142,7 @@ func TestWriterCommitAfterInsert(t *testing.T) {
 
 	consumer, err := kafkax.NewConsumer(t.Context(), kafka, integrationWriterSettings())
 	require.NoError(t, err)
-	t.Cleanup(func() { consumer.Close() })
+	t.Cleanup(func() { closeWriterConsumer(t, consumer) })
 	gated := &gatedEventStore{inner: store, inserted: make(chan struct{}), release: make(chan struct{})}
 	settings := integrationWriterSettings()
 	settings.BatchSize = len(events)
@@ -197,7 +204,7 @@ func TestWriterInsertFailureNoCommit(t *testing.T) {
 	).Run(t.Context())
 	require.Error(t, runErr)
 	require.Less(t, time.Since(started), 10*time.Second)
-	consumer.Close()
+	closeWriterConsumer(t, consumer)
 	_, committed := committedNextOffset(t, kafka, group, topic)
 	require.False(t, committed, "failed insert advanced the source offset")
 
@@ -205,7 +212,7 @@ func TestWriterInsertFailureNoCommit(t *testing.T) {
 	require.Eventually(t, func() bool { return conn.Ping(t.Context()) == nil }, 20*time.Second, 100*time.Millisecond)
 	restart, err := kafkax.NewConsumer(t.Context(), kafka, integrationWriterSettings())
 	require.NoError(t, err)
-	t.Cleanup(func() { restart.Close() })
+	t.Cleanup(func() { closeWriterConsumer(t, restart) })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
