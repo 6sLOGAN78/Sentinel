@@ -233,6 +233,11 @@ func dockerContainerCommand(ctx context.Context, action, id string) error {
 	if id == "" {
 		return errors.New("container id is empty")
 	}
+	if action != "pause" && action != "unpause" {
+		return fmt.Errorf("unsupported container action %q", action)
+	}
+	// action is allowlisted and id comes from testcontainers, never user input.
+	//nolint:gosec // exec uses fixed docker argv without a shell
 	if out, err := exec.CommandContext(ctx, "docker", action, id).CombinedOutput(); err != nil {
 		return fmt.Errorf("docker %s container: %w: %s", action, err, strings.TrimSpace(string(out)))
 	}

@@ -58,7 +58,7 @@ const (
 	defaultWriterBatch = 5000
 	defaultWriterFlush = time.Second
 	defaultWriterTries = 5
-	defaultRetryMin    = 100 * time.Millisecond
+	defaultRetryStart  = 100 * time.Millisecond
 	defaultRetryMax    = 5 * time.Second
 	defaultWriterOp    = 10 * time.Second
 	defaultWriterStop  = 20 * time.Second
@@ -325,7 +325,7 @@ func setDefaults(k *koanf.Koanf) {
 		"writer.batch_size":                          defaultWriterBatch,
 		"writer.flush_interval":                      defaultWriterFlush,
 		"writer.max_attempts":                        defaultWriterTries,
-		"writer.retry_min_backoff":                   defaultRetryMin,
+		"writer.retry_min_backoff":                   defaultRetryStart,
 		"writer.retry_max_backoff":                   defaultRetryMax,
 		"writer.operation_timeout":                   defaultWriterOp,
 		"writer.shutdown_timeout":                    defaultWriterStop,

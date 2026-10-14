@@ -118,7 +118,7 @@ func writerSettings(batchSize int, interval time.Duration) config.WriterConfig {
 	}
 }
 
-func validRecord(t *testing.T, partition int32, offset int64, occurredAt, receivedAt time.Time) *kgo.Record {
+func validRecord(t *testing.T, offset int64, occurredAt, receivedAt time.Time) *kgo.Record {
 	t.Helper()
 	received := contracts.NewTimestamp(receivedAt)
 	event := contracts.Event{
@@ -134,15 +134,15 @@ func validRecord(t *testing.T, partition int32, offset int64, occurredAt, receiv
 	raw, err := json.Marshal(event)
 	require.NoError(t, err)
 
-	return &kgo.Record{Topic: "events", Partition: partition, Offset: offset, Value: raw}
+	return &kgo.Record{Topic: "events", Partition: 0, Offset: offset, Value: raw}
 }
 
 func TestWriterFlushesAtSizeBeforeCommitAndBoundsPolls(t *testing.T) {
 	now := time.Now().UTC()
 	consumer := &scriptedConsumer{records: []*kgo.Record{
-		validRecord(t, 0, 0, now.Add(-48*time.Hour), now),
-		validRecord(t, 0, 1, now.Add(-time.Minute), now),
-		validRecord(t, 0, 2, now.Add(-time.Minute), now),
+		validRecord(t, 0, now.Add(-48*time.Hour), now),
+		validRecord(t, 1, now.Add(-time.Minute), now),
+		validRecord(t, 2, now.Add(-time.Minute), now),
 	}}
 	var order []string
 	store := &recordingStore{order: &order}
@@ -168,7 +168,7 @@ func TestWriterFlushesAtSizeBeforeCommitAndBoundsPolls(t *testing.T) {
 
 func TestWriterFlushesOnWallClockInterval(t *testing.T) {
 	now := time.Now().UTC()
-	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, 0, now, now)}}
+	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, now, now)}}
 	store := &recordingStore{}
 	ctx, cancel := context.WithCancel(context.Background())
 	consumer.onCommit = cancel
@@ -184,7 +184,7 @@ func TestWriterFlushesOnWallClockInterval(t *testing.T) {
 
 func TestWriterRetryExhaustionDoesNotCommit(t *testing.T) {
 	now := time.Now().UTC()
-	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, 0, now, now)}}
+	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, now, now)}}
 	storeErr := errors.New("clickhouse unavailable")
 	store := &recordingStore{fail: storeErr}
 	w := eventwriter.New(
@@ -200,7 +200,7 @@ func TestWriterRetryExhaustionDoesNotCommit(t *testing.T) {
 
 func TestWriterCancellationMidInsertFlushesWithFreshContext(t *testing.T) {
 	now := time.Now().UTC()
-	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, 0, now, now)}}
+	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, now, now)}}
 	store := &shutdownStore{entered: make(chan struct{})}
 	settings := writerSettings(1, time.Second)
 	settings.MaxAttempts = 1

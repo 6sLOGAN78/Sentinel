@@ -4,9 +4,10 @@ package eventwriter
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
-	"math/rand/v2"
+	"math/big"
 	"sort"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 )
+
+const backoffMultiplier = 2
 
 // Consumer is the manual offset lifecycle required by the writer.
 type Consumer interface {
@@ -62,11 +65,7 @@ func (w *Writer) Run(ctx context.Context) error {
 			return w.flushOnShutdown(records)
 		}
 		if len(records) >= w.settings.BatchSize {
-			if err := w.process(ctx, records); err != nil {
-				if ctx.Err() != nil {
-					return w.flushOnShutdown(records)
-				}
-
+			if err := w.processOwned(ctx, records); err != nil {
 				return err
 			}
 			records = records[:0]
@@ -75,60 +74,77 @@ func (w *Writer) Run(ctx context.Context) error {
 			continue
 		}
 
-		pollCtx := ctx
-		cancel := func() {}
-		if len(records) > 0 {
-			pollCtx, cancel = context.WithDeadline(ctx, flushAt)
-		}
-		polled, err := w.consumer.PollRecords(pollCtx, w.settings.BatchSize-len(records))
-		cancel()
+		result, err := w.poll(ctx, len(records), flushAt)
 		if err != nil {
-			switch {
-			case ctx.Err() != nil:
-				return w.flushOnShutdown(records)
-			case errors.Is(err, context.DeadlineExceeded) && len(records) > 0:
-				if processErr := w.process(ctx, records); processErr != nil {
-					if ctx.Err() != nil {
-						return w.flushOnShutdown(records)
-					}
-
-					return processErr
-				}
-				records = records[:0]
-				flushAt = time.Time{}
-
-				continue
-			case errors.Is(err, kafkax.ErrConsumerClosed):
-				return w.flushOnShutdown(records)
-			default:
+			return err
+		}
+		if result.shutdown {
+			return w.flushOnShutdown(records)
+		}
+		if result.flush {
+			if err = w.processOwned(ctx, records); err != nil {
 				return err
 			}
-		}
-
-		if len(polled) == 0 {
-			if ctx.Err() != nil {
-				return w.flushOnShutdown(records)
-			}
-			if len(records) > 0 && !time.Now().Before(flushAt) {
-				if err = w.process(ctx, records); err != nil {
-					if ctx.Err() != nil {
-						return w.flushOnShutdown(records)
-					}
-
-					return err
-				}
-				records = records[:0]
-				flushAt = time.Time{}
-			}
-
+			records = records[:0]
+			flushAt = time.Time{}
 			continue
 		}
-
-		if len(records) == 0 {
+		if len(result.records) > 0 && len(records) == 0 {
 			flushAt = time.Now().Add(w.settings.FlushInterval)
 		}
-		records = append(records, polled...)
+		records = append(records, result.records...)
 	}
+}
+
+type pollResult struct {
+	records  []*kgo.Record
+	flush    bool
+	shutdown bool
+}
+
+func (w *Writer) poll(ctx context.Context, pending int, flushAt time.Time) (pollResult, error) {
+	pollCtx := ctx
+	cancel := func() {}
+	if pending > 0 {
+		pollCtx, cancel = context.WithDeadline(ctx, flushAt)
+	}
+	defer cancel()
+
+	records, err := w.consumer.PollRecords(pollCtx, w.settings.BatchSize-pending)
+	if err != nil {
+		return pollError(ctx, pending, err)
+	}
+	if len(records) > 0 {
+		return pollResult{records: records}, nil
+	}
+
+	return pollResult{
+		flush:    pending > 0 && !time.Now().Before(flushAt),
+		shutdown: ctx.Err() != nil,
+	}, nil
+}
+
+func pollError(ctx context.Context, pending int, err error) (pollResult, error) {
+	switch {
+	case ctx.Err() != nil, errors.Is(err, kafkax.ErrConsumerClosed):
+		// Cancellation and an explicit consumer close are loop-control signals.
+		//nolint:nilerr // translated into a bounded shutdown flush by the caller
+		return pollResult{shutdown: true}, nil
+	case pending > 0 && errors.Is(err, context.DeadlineExceeded):
+		// The poll deadline is the wall-clock batch timer, not a consumer failure.
+		return pollResult{flush: true}, nil
+	default:
+		return pollResult{}, err
+	}
+}
+
+func (w *Writer) processOwned(ctx context.Context, records []*kgo.Record) error {
+	err := w.process(ctx, records)
+	if err != nil && ctx.Err() != nil {
+		return w.flushOnShutdown(records)
+	}
+
+	return err
 }
 
 func (w *Writer) flushOnShutdown(records []*kgo.Record) error {
@@ -142,7 +158,7 @@ func (w *Writer) flushOnShutdown(records []*kgo.Record) error {
 	return w.process(shutdownCtx, records)
 }
 
-func (w *Writer) process(ctx context.Context, records []*kgo.Record) (err error) {
+func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -180,23 +196,27 @@ func (w *Writer) decode(records []*kgo.Record) ([]*contracts.Event, error) {
 	for _, record := range records {
 		event, err := contracts.DecodeEvent(bytes.NewReader(record.Value))
 		if err != nil {
-			return nil, fmt.Errorf("decode persisted event at %s/%d/%d: %w", record.Topic, record.Partition, record.Offset, err)
+			return nil, fmt.Errorf("decode persisted event at %s: %w", recordLocation(record), err)
 		}
 		if event.OccurredAt.IsZero() {
-			return nil, fmt.Errorf("validate persisted event at %s/%d/%d: occurred_at is required", record.Topic, record.Partition, record.Offset)
+			return nil, fmt.Errorf("validate persisted event at %s: occurred_at is required", recordLocation(record))
 		}
 		if event.ReceivedAt == nil || event.ReceivedAt.IsZero() {
-			return nil, fmt.Errorf("validate persisted event at %s/%d/%d: received_at is required", record.Topic, record.Partition, record.Offset)
+			return nil, fmt.Errorf("validate persisted event at %s: received_at is required", recordLocation(record))
 		}
 		// Ingest already checked wall-clock skew. Replay validates the same
 		// structure relative to the immutable event timestamp, not today's clock.
 		if err = event.Validate(event.OccurredAt.Time, w.limits); err != nil {
-			return nil, fmt.Errorf("validate persisted event at %s/%d/%d: %w", record.Topic, record.Partition, record.Offset, err)
+			return nil, fmt.Errorf("validate persisted event at %s: %w", recordLocation(record), err)
 		}
 		events = append(events, event)
 	}
 
 	return events, nil
+}
+
+func recordLocation(record *kgo.Record) string {
+	return fmt.Sprintf("%s/%d/%d", record.Topic, record.Partition, record.Offset)
 }
 
 func (w *Writer) insertWithRetry(ctx context.Context, events []*contracts.Event) error {
@@ -214,7 +234,7 @@ func (w *Writer) insertWithRetry(ctx context.Context, events []*contracts.Event)
 		}
 
 		w.log.Warn().Int("attempt", attempt).Msg("event insert failed; retrying")
-		wait := time.Duration(rand.Int64N(int64(backoff) + 1))
+		wait := jitterDelay(backoff)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -225,10 +245,19 @@ func (w *Writer) insertWithRetry(ctx context.Context, events []*contracts.Event)
 			return fmt.Errorf("insert event batch: %w", errors.Join(lastErr, ctx.Err()))
 		case <-timer.C:
 		}
-		backoff = min(backoff*2, w.settings.RetryMaxBackoff)
+		backoff = min(backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
 	}
 
 	return fmt.Errorf("insert event batch after %d attempts: %w", w.settings.MaxAttempts, lastErr)
+}
+
+func jitterDelay(maximum time.Duration) time.Duration {
+	value, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(maximum)+1))
+	if err != nil {
+		return maximum
+	}
+
+	return time.Duration(value.Int64())
 }
 
 type topicPartition struct {
