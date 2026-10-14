@@ -2,9 +2,11 @@ package testing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -217,6 +219,27 @@ type FaultContainer struct {
 // Close terminates the dedicated container with a bounded background context.
 func (c *FaultContainer) Close() { terminator(c.Container)() }
 
+// Pause suspends the dedicated dependency container for bounded outage tests.
+func (c *FaultContainer) Pause(ctx context.Context) error {
+	return dockerContainerCommand(ctx, "pause", c.GetContainerID())
+}
+
+// Unpause resumes a container previously paused by Pause.
+func (c *FaultContainer) Unpause(ctx context.Context) error {
+	return dockerContainerCommand(ctx, "unpause", c.GetContainerID())
+}
+
+func dockerContainerCommand(ctx context.Context, action, id string) error {
+	if id == "" {
+		return errors.New("container id is empty")
+	}
+	if out, err := exec.CommandContext(ctx, "docker", action, id).CombinedOutput(); err != nil {
+		return fmt.Errorf("docker %s container: %w: %s", action, err, strings.TrimSpace(string(out)))
+	}
+
+	return nil
+}
+
 // StartKafka starts a single-node KRaft apache/kafka container whose external
 // listener is advertised on a fixed free host port.
 func StartKafka(ctx context.Context) (config.KafkaConfig, func(), error) {
@@ -226,6 +249,47 @@ func StartKafka(ctx context.Context) (config.KafkaConfig, func(), error) {
 	}
 
 	return cfg, handle.Close, nil
+}
+
+// StartClickHouseFaultContainer starts an isolated ClickHouse instance and
+// retains its handle for pause/unpause failure tests.
+func StartClickHouseFaultContainer(ctx context.Context) (config.ClickHouseConfig, *FaultContainer, error) {
+	c, err := start(ctx, testcontainers.ContainerRequest{
+		Image:        clickHouseImage,
+		ExposedPorts: []string{"8123/tcp", "9000/tcp"},
+		Env: map[string]string{
+			"CLICKHOUSE_DB":                        postgresDB,
+			"CLICKHOUSE_USER":                      postgresUser,
+			"CLICKHOUSE_PASSWORD":                  ClickHousePassword,
+			"CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT": "1",
+		},
+		WaitingFor: wait.ForHTTP("/ping").WithPort("8123/tcp").WithStartupTimeout(startupTimeout),
+	})
+	if err != nil {
+		return config.ClickHouseConfig{}, nil, err
+	}
+	handle := &FaultContainer{Container: c}
+
+	host, httpPort, err := hostPort(ctx, c, "8123")
+	if err != nil {
+		handle.Close()
+
+		return config.ClickHouseConfig{}, nil, err
+	}
+	_, nativePort, err := hostPort(ctx, c, "9000")
+	if err != nil {
+		handle.Close()
+
+		return config.ClickHouseConfig{}, nil, err
+	}
+
+	return config.ClickHouseConfig{
+		HTTPAddress:   net.JoinHostPort(host, strconv.Itoa(httpPort)),
+		NativeAddress: net.JoinHostPort(host, strconv.Itoa(nativePort)),
+		User:          postgresUser,
+		Password:      ClickHousePassword,
+		Database:      postgresDB,
+	}, handle, nil
 }
 
 // StartKafkaFaultContainer starts an isolated broker and returns its handle.

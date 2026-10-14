@@ -23,6 +23,7 @@ const (
 	sectionClickHouse  = "clickhouse"
 	sectionDatabase    = "database"
 	sectionIngest      = "ingest"
+	sectionWriter      = "writer"
 	levelInfo          = "info"
 	envPrefix          = "SENTINEL_"
 	envKeyPrimaryEnv   = "SENTINEL_PRIMARY.ENV"
@@ -49,11 +50,22 @@ const (
 	defaultCacheSize   = 1024
 	defaultCacheTTL    = 30 * time.Second
 	defaultEventTopic  = "security.events.v1"
-	defaultWriterGroup = "event-writer-v1"
+	defaultWriterGroup = "sentinel-event-writer"
 	defaultProduceWait = 10 * time.Second
 	defaultRetries     = 5
 	defaultRecordCap   = 50_000
 	defaultByteCap     = 64 << 20
+	defaultWriterBatch = 5000
+	defaultWriterFlush = time.Second
+	defaultWriterTries = 5
+	defaultRetryMin    = 100 * time.Millisecond
+	defaultRetryMax    = 5 * time.Second
+	defaultWriterOp    = 10 * time.Second
+	defaultWriterStop  = 20 * time.Second
+	defaultFetchBytes  = 16 << 20
+	defaultPartBytes   = 4 << 20
+	defaultFetches     = 2
+	defaultDLQBytes    = 64 << 10
 )
 
 // Service names accepted by Load.
@@ -77,6 +89,7 @@ type Config struct {
 	RateLimit     RateLimitConfig      `koanf:"ratelimit"`
 	Contracts     ContractsConfig      `koanf:"contracts"`
 	Ingest        IngestConfig         `koanf:"ingest"`
+	Writer        WriterConfig         `koanf:"writer"`
 }
 
 // Primary holds settings that every binary needs.
@@ -140,6 +153,22 @@ type IngestConfig struct {
 	APIKeyCacheTTL      time.Duration `koanf:"api_key_cache_ttl" validate:"gt=0,lte=30s"`
 }
 
+// WriterConfig bounds Kafka fetches, in-memory batches, ClickHouse retries,
+// shutdown flushing, and the poison-record value retained by the later DLQ stage.
+type WriterConfig struct {
+	BatchSize              int           `koanf:"batch_size" validate:"min=1,max=5000"`
+	FlushInterval          time.Duration `koanf:"flush_interval" validate:"gt=0"`
+	MaxAttempts            int           `koanf:"max_attempts" validate:"min=1,max=10"`
+	RetryMinBackoff        time.Duration `koanf:"retry_min_backoff" validate:"gt=0"`
+	RetryMaxBackoff        time.Duration `koanf:"retry_max_backoff" validate:"gt=0,lte=5s"`
+	OperationTimeout       time.Duration `koanf:"operation_timeout" validate:"gt=0"`
+	ShutdownTimeout        time.Duration `koanf:"shutdown_timeout" validate:"gt=0,lte=30s"`
+	FetchMaxBytes          int32         `koanf:"fetch_max_bytes" validate:"min=1"`
+	FetchMaxPartitionBytes int32         `koanf:"fetch_max_partition_bytes" validate:"min=1"`
+	MaxConcurrentFetches   int           `koanf:"max_concurrent_fetches" validate:"min=1"`
+	DLQMaxBytes            int           `koanf:"dlq_max_bytes" validate:"min=1"`
+}
+
 // ClickHouseConfig holds ClickHouse connection settings. Addresses are
 // host:port without a URL scheme.
 type ClickHouseConfig struct {
@@ -168,7 +197,7 @@ func requiredSections() map[string][]string {
 	return map[string][]string{
 		ServiceIngest:      {sectionRedis, sectionKafka, sectionDatabase, sectionIngest},
 		ServiceDetector:    {sectionKafka},
-		ServiceEventWriter: {sectionKafka, sectionClickHouse},
+		ServiceEventWriter: {sectionKafka, sectionClickHouse, sectionWriter},
 		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse},
 		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis},
 	}
@@ -293,6 +322,17 @@ func setDefaults(k *koanf.Koanf) {
 		"ingest.max_in_flight":                       defaultInFlight,
 		"ingest.api_key_cache_capacity":              defaultCacheSize,
 		"ingest.api_key_cache_ttl":                   defaultCacheTTL,
+		"writer.batch_size":                          defaultWriterBatch,
+		"writer.flush_interval":                      defaultWriterFlush,
+		"writer.max_attempts":                        defaultWriterTries,
+		"writer.retry_min_backoff":                   defaultRetryMin,
+		"writer.retry_max_backoff":                   defaultRetryMax,
+		"writer.operation_timeout":                   defaultWriterOp,
+		"writer.shutdown_timeout":                    defaultWriterStop,
+		"writer.fetch_max_bytes":                     defaultFetchBytes,
+		"writer.fetch_max_partition_bytes":           defaultPartBytes,
+		"writer.max_concurrent_fetches":              defaultFetches,
+		"writer.dlq_max_bytes":                       defaultDLQBytes,
 	}
 
 	for key, val := range defaults {
@@ -338,6 +378,8 @@ func validateFor(cfg *Config, sections []string) error {
 			target = cfg.ClickHouse
 		case sectionIngest:
 			target = cfg.Ingest
+		case sectionWriter:
+			target = cfg.Writer
 		default:
 			return fmt.Errorf("unknown config section %q", section)
 		}
@@ -370,6 +412,18 @@ func validateSection(cfg *Config, section string) error {
 		}
 		if cfg.Kafka.MaxBufferedRecords < cfg.Ingest.MaxBatchSize {
 			return errors.New("validate ingest config: buffered records must cover the maximum batch size")
+		}
+
+		return nil
+	case sectionWriter:
+		if cfg.Writer.RetryMinBackoff > cfg.Writer.RetryMaxBackoff {
+			return errors.New("validate writer config: retry minimum exceeds retry maximum")
+		}
+		if cfg.Writer.OperationTimeout > cfg.Writer.ShutdownTimeout {
+			return errors.New("validate writer config: operation timeout exceeds shutdown timeout")
+		}
+		if cfg.Writer.FetchMaxPartitionBytes > cfg.Writer.FetchMaxBytes {
+			return errors.New("validate writer config: partition fetch bytes exceed total fetch bytes")
 		}
 
 		return nil

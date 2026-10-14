@@ -90,7 +90,7 @@ func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
 	require.Equal(t, 1024, ingestCfg.Ingest.APIKeyCacheCapacity)
 	require.Equal(t, 30*time.Second, ingestCfg.Ingest.APIKeyCacheTTL)
 	require.Equal(t, "security.events.v1", ingestCfg.Kafka.EventsTopic)
-	require.Equal(t, "event-writer-v1", ingestCfg.Kafka.EventWriterGroup)
+	require.Equal(t, "sentinel-event-writer", ingestCfg.Kafka.EventWriterGroup)
 	require.Equal(t, 10*time.Second, ingestCfg.Kafka.ProduceTimeout)
 	require.Equal(t, 5, ingestCfg.Kafka.RecordRetries)
 	require.Equal(t, 50_000, ingestCfg.Kafka.MaxBufferedRecords)
@@ -99,6 +99,81 @@ func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
 	queryCfg, err := config.Load(config.ServiceQueryAPI)
 	require.NoError(t, err)
 	require.Equal(t, "8081", queryCfg.Server.Port)
+}
+
+func TestLoadEventWriterDefaults(t *testing.T) {
+	setCompleteEnv(t)
+
+	cfg, err := config.Load(config.ServiceEventWriter)
+	require.NoError(t, err)
+	require.Equal(t, "sentinel-event-writer", cfg.Kafka.EventWriterGroup)
+	require.Equal(t, 5000, cfg.Writer.BatchSize)
+	require.Equal(t, time.Second, cfg.Writer.FlushInterval)
+	require.Equal(t, 5, cfg.Writer.MaxAttempts)
+	require.Equal(t, 100*time.Millisecond, cfg.Writer.RetryMinBackoff)
+	require.Equal(t, 5*time.Second, cfg.Writer.RetryMaxBackoff)
+	require.Equal(t, 10*time.Second, cfg.Writer.OperationTimeout)
+	require.Equal(t, 20*time.Second, cfg.Writer.ShutdownTimeout)
+	require.Equal(t, int32(16<<20), cfg.Writer.FetchMaxBytes)
+	require.Equal(t, int32(4<<20), cfg.Writer.FetchMaxPartitionBytes)
+	require.Equal(t, 2, cfg.Writer.MaxConcurrentFetches)
+	require.Equal(t, 64<<10, cfg.Writer.DLQMaxBytes)
+}
+
+func TestLoadEventWriterRejectsUnsafeBounds(t *testing.T) {
+	cases := []struct {
+		key   string
+		value string
+	}{
+		{"SENTINEL_WRITER.BATCH_SIZE", "5001"},
+		{"SENTINEL_WRITER.FLUSH_INTERVAL", "0s"},
+		{"SENTINEL_WRITER.MAX_ATTEMPTS", "0"},
+		{"SENTINEL_WRITER.MAX_ATTEMPTS", "11"},
+		{"SENTINEL_WRITER.RETRY_MIN_BACKOFF", "0s"},
+		{"SENTINEL_WRITER.RETRY_MAX_BACKOFF", "6s"},
+		{"SENTINEL_WRITER.OPERATION_TIMEOUT", "0s"},
+		{"SENTINEL_WRITER.SHUTDOWN_TIMEOUT", "31s"},
+		{"SENTINEL_WRITER.FETCH_MAX_BYTES", "0"},
+		{"SENTINEL_WRITER.FETCH_MAX_PARTITION_BYTES", "0"},
+		{"SENTINEL_WRITER.MAX_CONCURRENT_FETCHES", "0"},
+		{"SENTINEL_WRITER.DLQ_MAX_BYTES", "0"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv(tc.key, tc.value)
+
+			_, err := config.Load(config.ServiceEventWriter)
+			require.ErrorContains(t, err, "writer")
+		})
+	}
+}
+
+func TestLoadEventWriterRejectsCrossFieldBounds(t *testing.T) {
+	t.Run("retry range", func(t *testing.T) {
+		setCompleteEnv(t)
+		t.Setenv("SENTINEL_WRITER.RETRY_MIN_BACKOFF", "2s")
+		t.Setenv("SENTINEL_WRITER.RETRY_MAX_BACKOFF", "1s")
+		_, err := config.Load(config.ServiceEventWriter)
+		require.ErrorContains(t, err, "retry")
+	})
+
+	t.Run("operation fits shutdown", func(t *testing.T) {
+		setCompleteEnv(t)
+		t.Setenv("SENTINEL_WRITER.OPERATION_TIMEOUT", "21s")
+		t.Setenv("SENTINEL_WRITER.SHUTDOWN_TIMEOUT", "20s")
+		_, err := config.Load(config.ServiceEventWriter)
+		require.ErrorContains(t, err, "operation timeout")
+	})
+
+	t.Run("partition fetch fits total", func(t *testing.T) {
+		setCompleteEnv(t)
+		t.Setenv("SENTINEL_WRITER.FETCH_MAX_PARTITION_BYTES", "16777217")
+		t.Setenv("SENTINEL_WRITER.FETCH_MAX_BYTES", "16777216")
+		_, err := config.Load(config.ServiceEventWriter)
+		require.ErrorContains(t, err, "fetch")
+	})
 }
 
 func TestLoadIngestRequiresDatabase(t *testing.T) {

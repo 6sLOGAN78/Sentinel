@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/chmigrate"
 	"github.com/6sLOGAN78/sentinel/internal/config"
@@ -93,9 +94,10 @@ func newWriterProducer(t *testing.T, kafka config.KafkaConfig) *kafkax.Producer 
 
 func committedNextOffset(t *testing.T, kafka config.KafkaConfig, group, topic string) (int64, bool) {
 	t.Helper()
-	client, err := kadm.NewOptClient(kadm.WithBrokerList(strings.Split(kafka.Brokers, ",")...))
+	kafkaClient, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...))
 	require.NoError(t, err)
-	t.Cleanup(client.Close)
+	t.Cleanup(kafkaClient.Close)
+	client := kadm.NewClient(kafkaClient)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	offsets, err := client.FetchOffsets(ctx, group)
