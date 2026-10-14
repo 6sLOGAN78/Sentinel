@@ -36,7 +36,7 @@ Progress: [████████░░] 78%
 
 **Velocity:**
 
-- Total plans completed: 20
+- Total plans completed: 21
 - Average duration: -
 - Total execution time: -
 
