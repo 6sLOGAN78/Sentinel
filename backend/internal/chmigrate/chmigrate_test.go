@@ -2,6 +2,7 @@ package chmigrate_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,17 @@ type fakeCH struct {
 	badAuth bool
 	badURL  bool
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type fakeServer struct {
+	URL    string
+	client *http.Client
+}
+
+func (s *fakeServer) Client() *http.Client { return s.client }
 
 func (f *fakeCH) handler(w http.ResponseWriter, r *http.Request) {
 	b, _ := io.ReadAll(r.Body)
@@ -61,12 +73,22 @@ func (f *fakeCH) handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func newFake(t *testing.T) (*fakeCH, *httptest.Server) {
+func newFake(t *testing.T) (*fakeCH, *fakeServer) {
 	t.Helper()
 
 	f := &fakeCH{}
-	srv := httptest.NewServer(http.HandlerFunc(f.handler))
-	t.Cleanup(srv.Close)
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if err := req.Context().Err(); err != nil {
+			return nil, err
+		}
+
+		recorder := httptest.NewRecorder()
+		f.handler(recorder, req)
+
+		return recorder.Result(), nil
+	})}
+	srv := &fakeServer{URL: "http://clickhouse.test", client: client}
+	t.Cleanup(client.CloseIdleConnections)
 
 	return f, srv
 }
@@ -185,6 +207,97 @@ func TestChmigrateInvalidDatabase(t *testing.T) {
 
 	if len(f.stmts) != 0 {
 		t.Fatal("statements sent for invalid identifier")
+	}
+}
+
+func TestSetEventsTTL(t *testing.T) {
+	t.Parallel()
+
+	for _, days := range []int{1, 14, 3650} {
+		t.Run(fmt.Sprintf("%d_days", days), func(t *testing.T) {
+			t.Parallel()
+
+			f, srv := newFake(t)
+			r := chmigrate.New(srv.URL, "usr", "pw", "retention_db", srv.Client())
+
+			if err := r.SetEventsTTL(context.Background(), days); err != nil {
+				t.Fatal(err)
+			}
+
+			want := fmt.Sprintf(
+				"ALTER TABLE retention_db.events MODIFY TTL toDateTime(occurred_at) + INTERVAL %d DAY",
+				days,
+			)
+			if len(f.stmts) != 1 || f.stmts[0] != want {
+				t.Fatalf("statements = %q, want %q", f.stmts, want)
+			}
+			if len(f.dbs) != 1 || f.dbs[0] != "retention_db" {
+				t.Fatalf("session databases = %q, want retention_db", f.dbs)
+			}
+		})
+	}
+}
+
+func TestSetEventsTTLRejectsInvalidDaysWithoutRequest(t *testing.T) {
+	t.Parallel()
+
+	for _, days := range []int{-1, 0, 3651} {
+		t.Run(fmt.Sprintf("%d_days", days), func(t *testing.T) {
+			t.Parallel()
+
+			f, srv := newFake(t)
+			r := chmigrate.New(srv.URL, "usr", "pw", "retention_db", srv.Client())
+
+			if err := r.SetEventsTTL(context.Background(), days); err == nil {
+				t.Fatal("expected invalid retention error")
+			}
+			if len(f.stmts) != 0 {
+				t.Fatalf("statements sent for invalid retention: %q", f.stmts)
+			}
+		})
+	}
+}
+
+func TestSetEventsTTLRejectsInvalidDatabaseWithoutRequest(t *testing.T) {
+	t.Parallel()
+
+	f, srv := newFake(t)
+	r := chmigrate.New(srv.URL, "usr", "pw", "db; DROP TABLE events", srv.Client())
+
+	if err := r.SetEventsTTL(context.Background(), 14); err == nil {
+		t.Fatal("expected invalid database error")
+	}
+	if len(f.stmts) != 0 {
+		t.Fatalf("statements sent for invalid database: %q", f.stmts)
+	}
+}
+
+func TestSetEventsTTLErrorIsSanitized(t *testing.T) {
+	t.Parallel()
+
+	f, srv := newFake(t)
+	f.failOn = "ALTER TABLE"
+	r := chmigrate.New(srv.URL, "usr", "pw", "retention_db", srv.Client())
+
+	err := r.SetEventsTTL(context.Background(), 14)
+	if err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(err.Error(), "boom") || strings.Contains(err.Error(), "pw") {
+		t.Fatalf("ClickHouse response or password leaked in error: %v", err)
+	}
+}
+
+func TestSetEventsTTLHonorsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	_, srv := newFake(t)
+	r := chmigrate.New(srv.URL, "usr", "pw", "retention_db", srv.Client())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := r.SetEventsTTL(ctx, 14); err == nil {
+		t.Fatal("expected canceled request error")
 	}
 }
 

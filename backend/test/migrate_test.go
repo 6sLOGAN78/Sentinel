@@ -203,6 +203,38 @@ func TestMigrateClickHouseUsesConfiguredDatabase(t *testing.T) {
 		"SELECT database FROM system.tables WHERE name = 'probe' FORMAT TabSeparated"))
 }
 
+func TestEventsTTLConfigurable(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	cfg := sentineltesting.RequireClickHouse(t)
+	dbName := fmt.Sprintf("sentinel_ttl_%d", time.Now().UnixNano())
+	runner := chmigrate.New(cfg.HTTPAddress, cfg.User, cfg.Password, dbName, nil)
+
+	applied, err := runner.Run(ctx, migrations.ClickHouse())
+	require.NoError(t, err)
+	require.NotEmpty(t, applied)
+
+	historyCount := chQuery(ctx, t, cfg,
+		"SELECT count() FROM "+dbName+".schema_migrations FORMAT TabSeparated")
+
+	again, err := runner.Run(ctx, migrations.ClickHouse())
+	require.NoError(t, err)
+	assert.Empty(t, again, "second migration run must be a no-op")
+	require.NoError(t, runner.SetEventsTTL(ctx, 14), "TTL must run after a no-op migration")
+	require.NoError(t, runner.SetEventsTTL(ctx, 14), "repeating the same TTL must be idempotent")
+
+	assert.Equal(t, historyCount, chQuery(ctx, t, cfg,
+		"SELECT count() FROM "+dbName+".schema_migrations FORMAT TabSeparated"))
+	createQuery := chQuery(ctx, t, cfg,
+		"SELECT create_table_query FROM system.tables WHERE database = '"+dbName+
+			"' AND name = 'events' FORMAT TabSeparated")
+	assert.Contains(t, createQuery, "TTL toDateTime(occurred_at) + toIntervalDay(14)")
+	assert.Contains(t, createQuery, "CREATE TABLE "+dbName+".events")
+}
+
 func TestRedisIntegration(t *testing.T) {
 	t.Parallel()
 
