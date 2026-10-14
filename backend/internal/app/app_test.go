@@ -180,20 +180,15 @@ func TestFatalBackgroundFailureExitsNonZeroAndClosesLIFO(t *testing.T) {
 	detectorEnv(t)
 
 	var order []string
-	started := make(chan struct{})
 	workerErr := errors.New("writer retries exhausted")
 	setup := func(_ context.Context, _ *config.Config, _ zerolog.Logger, lc *app.Lifecycle) error {
 		lc.Add("dependency", func(context.Context) error { order = append(order, "dependency"); return nil })
 		lc.Add("worker", func(context.Context) error { order = append(order, "worker"); return nil })
-		go func() {
-			close(started)
-			lc.Fail(workerErr)
-		}()
+		lc.Fail(workerErr)
 
 		return nil
 	}
 
-	<-started
 	require.Equal(t, 1, app.RunContext(context.Background(), config.ServiceDetector, setup))
 	require.Equal(t, []string{"worker", "dependency"}, order)
 }

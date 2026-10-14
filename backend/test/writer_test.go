@@ -226,3 +226,56 @@ func TestWriterInsertFailureNoCommit(t *testing.T) {
 		require.Equal(t, event.EventID, got.EventID)
 	}
 }
+
+func TestWriterFailureExitsNonzero(t *testing.T) {
+	clickhouseCfg, handle, err := sentineltesting.StartClickHouseFaultContainer(t.Context())
+	require.NoError(t, err)
+	t.Cleanup(handle.Close)
+	_, err = chmigrate.New(
+		clickhouseCfg.HTTPAddress, clickhouseCfg.User, clickhouseCfg.Password, clickhouseCfg.Database, nil,
+	).Run(t.Context(), migrations.ClickHouse())
+	require.NoError(t, err)
+
+	topic := sentineltesting.RequireUniqueTopic(t, kafkaCfg, "writer-process-failure")
+	group := "writer-process-failure-" + uuid.NewString()
+	kafka := writerKafkaConfig(topic, group)
+	producer := newWriterProducer(t, kafka)
+	env := serviceEnv(t, "event-writer")
+	for _, prefix := range []string{
+		"SENTINEL_KAFKA.EVENTS_TOPIC=", "SENTINEL_KAFKA.EVENT_WRITER_GROUP=",
+		"SENTINEL_CLICKHOUSE.HTTP_ADDRESS=", "SENTINEL_CLICKHOUSE.NATIVE_ADDRESS=",
+		"SENTINEL_CLICKHOUSE.USER=", "SENTINEL_CLICKHOUSE.PASSWORD=", "SENTINEL_CLICKHOUSE.DATABASE=",
+	} {
+		env = without(env, prefix)
+	}
+	env = append(env,
+		"SENTINEL_KAFKA.EVENTS_TOPIC="+topic,
+		"SENTINEL_KAFKA.EVENT_WRITER_GROUP="+group,
+		"SENTINEL_CLICKHOUSE.HTTP_ADDRESS="+clickhouseCfg.HTTPAddress,
+		"SENTINEL_CLICKHOUSE.NATIVE_ADDRESS="+clickhouseCfg.NativeAddress,
+		"SENTINEL_CLICKHOUSE.USER="+clickhouseCfg.User,
+		"SENTINEL_CLICKHOUSE.PASSWORD="+clickhouseCfg.Password,
+		"SENTINEL_CLICKHOUSE.DATABASE="+clickhouseCfg.Database,
+		"SENTINEL_WRITER.BATCH_SIZE=1",
+		"SENTINEL_WRITER.MAX_ATTEMPTS=2",
+		"SENTINEL_WRITER.OPERATION_TIMEOUT=500ms",
+		"SENTINEL_WRITER.RETRY_MIN_BACKOFF=10ms",
+		"SENTINEL_WRITER.RETRY_MAX_BACKOFF=20ms",
+	)
+	p := startProc(t, "event-writer", "", env)
+	require.Eventually(t, func() bool {
+		return strings.Contains(p.output.String(), "service started")
+	}, failFastLimit, 50*time.Millisecond, p.output.String())
+
+	require.NoError(t, handle.Pause(t.Context()))
+	t.Cleanup(func() { _ = handle.Unpause(context.Background()) })
+	events := canonicalWriterEvents(1, time.Now().UTC().Add(-time.Minute))
+	require.NoError(t, producer.PublishBatch(t.Context(), events, uuid.NewString()))
+
+	require.NotZero(t, p.requireExit(t, failFastLimit), p.output.String())
+	_, committed := committedNextOffset(t, kafka, group, topic)
+	require.False(t, committed, "fatal writer failure advanced the source offset")
+	require.NotContains(t, p.output.String(), events[0].EventID)
+	require.NotContains(t, p.output.String(), clickhouseCfg.Password)
+	require.Contains(t, p.output.String(), "background worker failed")
+}

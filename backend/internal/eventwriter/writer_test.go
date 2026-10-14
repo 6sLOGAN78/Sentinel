@@ -71,6 +71,29 @@ type recordingStore struct {
 	order    *[]string
 }
 
+type shutdownStore struct {
+	mu       sync.Mutex
+	attempts int
+	entered  chan struct{}
+}
+
+func (s *shutdownStore) InsertBatch(ctx context.Context, _ []*contracts.Event) error {
+	s.mu.Lock()
+	s.attempts++
+	attempt := s.attempts
+	if attempt == 1 {
+		close(s.entered)
+	}
+	s.mu.Unlock()
+	if attempt == 1 {
+		<-ctx.Done()
+
+		return ctx.Err()
+	}
+
+	return nil
+}
+
 func (s *recordingStore) InsertBatch(_ context.Context, events []*contracts.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,5 +195,34 @@ func TestWriterRetryExhaustionDoesNotCommit(t *testing.T) {
 	require.ErrorIs(t, err, storeErr)
 	require.Equal(t, 3, store.attempts)
 	require.Empty(t, consumer.commits)
+	require.Equal(t, 1, consumer.allowRebalance)
+}
+
+func TestWriterCancellationMidInsertFlushesWithFreshContext(t *testing.T) {
+	now := time.Now().UTC()
+	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, 0, now, now)}}
+	store := &shutdownStore{entered: make(chan struct{})}
+	settings := writerSettings(1, time.Second)
+	settings.MaxAttempts = 1
+	w := eventwriter.New(consumer, store, settings, contracts.DefaultLimits(), zerolog.Nop())
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case <-store.entered:
+	case <-time.After(time.Second):
+		t.Fatal("insert did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("writer leaked after cancellation")
+	}
+	require.Equal(t, 2, store.attempts)
+	require.Len(t, consumer.commits, 1)
 	require.Equal(t, 1, consumer.allowRebalance)
 }

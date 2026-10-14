@@ -63,6 +63,10 @@ func (w *Writer) Run(ctx context.Context) error {
 		}
 		if len(records) >= w.settings.BatchSize {
 			if err := w.process(ctx, records); err != nil {
+				if ctx.Err() != nil {
+					return w.flushOnShutdown(records)
+				}
+
 				return err
 			}
 			records = records[:0]
@@ -84,6 +88,10 @@ func (w *Writer) Run(ctx context.Context) error {
 				return w.flushOnShutdown(records)
 			case errors.Is(err, context.DeadlineExceeded) && len(records) > 0:
 				if processErr := w.process(ctx, records); processErr != nil {
+					if ctx.Err() != nil {
+						return w.flushOnShutdown(records)
+					}
+
 					return processErr
 				}
 				records = records[:0]
@@ -103,6 +111,10 @@ func (w *Writer) Run(ctx context.Context) error {
 			}
 			if len(records) > 0 && !time.Now().Before(flushAt) {
 				if err = w.process(ctx, records); err != nil {
+					if ctx.Err() != nil {
+						return w.flushOnShutdown(records)
+					}
+
 					return err
 				}
 				records = records[:0]
@@ -130,11 +142,17 @@ func (w *Writer) flushOnShutdown(records []*kgo.Record) error {
 	return w.process(shutdownCtx, records)
 }
 
-func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
+func (w *Writer) process(ctx context.Context, records []*kgo.Record) (err error) {
 	if len(records) == 0 {
 		return nil
 	}
-	defer w.consumer.AllowRebalance()
+	defer func() {
+		// A parent cancellation transfers the still-owned records to the fresh
+		// shutdown attempt. Keep the poll gate held until that attempt completes.
+		if ctx.Err() == nil {
+			w.consumer.AllowRebalance()
+		}
+	}()
 
 	events, err := w.decode(records)
 	if err != nil {

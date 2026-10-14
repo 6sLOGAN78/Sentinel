@@ -49,6 +49,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		workerErr := worker.Run(workerCtx)
 		if workerErr != nil {
 			log.Error().Err(workerErr).Msg("event writer stopped")
+			lc.Fail(workerErr)
 		}
 		workerDone <- workerErr
 	}()

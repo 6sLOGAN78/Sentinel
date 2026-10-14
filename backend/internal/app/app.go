@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,13 +40,55 @@ type closer struct {
 // Lifecycle collects resource closers and runs them in reverse registration
 // order.
 type Lifecycle struct {
-	log     zerolog.Logger
-	closers []closer
+	log         zerolog.Logger
+	closers     []closer
+	failureOnce sync.Once
+	failureMu   sync.RWMutex
+	failureErr  error
+	cancelMu    sync.Mutex
+	cancel      context.CancelCauseFunc
 }
 
 // NewLifecycle returns an empty Lifecycle that logs closes to log.
 func NewLifecycle(log zerolog.Logger) *Lifecycle {
 	return &Lifecycle{log: log}
+}
+
+// Fail records the first fatal background error and cancels the service
+// context with that cause. Repeated failures cannot overwrite the root cause.
+func (l *Lifecycle) Fail(err error) {
+	if err == nil {
+		return
+	}
+	l.failureOnce.Do(func() {
+		l.failureMu.Lock()
+		l.failureErr = err
+		l.failureMu.Unlock()
+
+		l.cancelMu.Lock()
+		cancel := l.cancel
+		l.cancelMu.Unlock()
+		if cancel != nil {
+			cancel(err)
+		}
+	})
+}
+
+// Err returns the first fatal background error, if one was reported.
+func (l *Lifecycle) Err() error {
+	l.failureMu.RLock()
+	defer l.failureMu.RUnlock()
+
+	return l.failureErr
+}
+
+func (l *Lifecycle) bindCancel(cancel context.CancelCauseFunc) {
+	l.cancelMu.Lock()
+	l.cancel = cancel
+	l.cancelMu.Unlock()
+	if err := l.Err(); err != nil {
+		cancel(err)
+	}
 }
 
 // Add registers a closer. Register immediately after the resource is opened.
@@ -115,8 +158,11 @@ func RunContext(ctx context.Context, service string, setup SetupFunc) int {
 
 	log := logger.New(cfg.Observability, service)
 	lc := NewLifecycle(log)
+	runCtx, cancelRun := context.WithCancelCause(ctx)
+	defer cancelRun(nil)
+	lc.bindCancel(cancelRun)
 
-	if err = runSetup(ctx, setup, cfg, log, lc); err != nil {
+	if err = runSetup(runCtx, setup, cfg, log, lc); err != nil {
 		log.Error().Err(err).Msg("startup failed")
 
 		if cerr := closeWithTimeout(lc); cerr != nil {
@@ -128,13 +174,20 @@ func RunContext(ctx context.Context, service string, setup SetupFunc) int {
 
 	log.Info().Str("dependencies", strings.Join(lc.Names(), ",")).Msg("service started")
 
-	<-ctx.Done()
-
-	log.Info().Msg("shutdown signal received")
+	<-runCtx.Done()
+	failureErr := lc.Err()
+	if failureErr != nil {
+		log.Error().Err(failureErr).Msg("background worker failed")
+	} else {
+		log.Info().Msg("shutdown signal received")
+	}
 
 	if err = closeWithTimeout(lc); err != nil {
 		log.Error().Err(err).Msg("shutdown incomplete")
 
+		return exitError
+	}
+	if failureErr != nil {
 		return exitError
 	}
 
