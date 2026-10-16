@@ -67,6 +67,37 @@ class ManifestTests(unittest.TestCase):
 
 
 class KeySafetyTests(unittest.TestCase):
+    def test_symlink_credential_directories_do_not_mutate_targets(self) -> None:
+        for component in (".local", "keys"):
+            with self.subTest(component=component), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / "project"
+                root.mkdir()
+                target = Path(directory) / "external"
+                target.mkdir(mode=0o755)
+                local = root / ".local"
+                if component == ".local":
+                    local.symlink_to(target, target_is_directory=True)
+                else:
+                    local.mkdir(mode=0o755)
+                    (local / "keys").symlink_to(target, target_is_directory=True)
+                with mock.patch.multiple(seed, ROOT=root, KEY_DIRECTORY=local / "keys"):
+                    with self.assertRaises(seed.SeedError):
+                        seed._prepare_key_directory()
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o755)
+                self.assertEqual(list(target.iterdir()), [])
+
+    def test_real_credential_directories_are_private_and_reusable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            keys = root / ".local/keys"
+            with mock.patch.multiple(seed, ROOT=root, KEY_DIRECTORY=keys):
+                seed._prepare_key_directory()
+                inode = keys.stat().st_ino
+                seed._prepare_key_directory()
+            self.assertEqual(keys.stat().st_ino, inode)
+            self.assertEqual(stat.S_IMODE(keys.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(keys.parent.stat().st_mode), 0o700)
+
     def test_existing_private_key_mode_is_repaired(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             key = Path(directory) / "demo.key"
