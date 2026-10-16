@@ -66,6 +66,27 @@ verification. HTTP `202` means Kafka acknowledged the batch; it does not claim C
 persistence. Terminal HTTP, response-validation, and exhausted-retry failures return a
 nonzero exit status without writing a success manifest.
 
+## Verified local seed
+
+From the repository root, the supported end-to-end path is:
+
+```bash
+make seed
+```
+
+It starts the Phase 2 stack once, idempotently ensures private `demo` and
+`demo2` credentials, sends 1,000 events with seed 42, and then independently
+checks the exact manifest IDs in ClickHouse and through the tenant-scoped query
+API. Historical tenant rows cannot satisfy the gate. Storage polling is capped
+at 60 seconds, and any rejected batch, missing ID, API mismatch, or subprocess
+failure makes the command exit nonzero.
+
+Keys and manifests stay under the ignored `.local/` directory at modes `0600`
+and `0700`; credentials are passed by file or child environment, never as
+argument values or log fields. Ingest caches successful key lookups for at
+most 30 seconds, so a revoked local key may remain accepted for that bounded
+interval. The default Redis rate-limit policy is fail-closed.
+
 ## Commands
 
 ```bash

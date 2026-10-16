@@ -39,6 +39,14 @@ jobs:
         run: go tool -modfile=tools.mod golangci-lint run --build-tags=integration ./...
       - name: go mod tidy is clean
         run: go mod tidy -diff
+      - name: prohibited modules are absent
+        run: |
+          set -euo pipefail
+          dependencies="$(go list -deps -test ./...)"
+          if grep -E 'newrelic|^github\.com/pkg/errors$|^github\.com/clerk/|^github\.com/hibiken/asynq($|/)|^github\.com/resend/' <<<"$dependencies"; then
+            echo "prohibited dependency detected" >&2
+            exit 1
+          fi
       - name: unit tests with race detector
         run: go test -race ./...
       - name: defect-fix tests must not silently disappear
@@ -79,6 +87,9 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src tests
       - run: uv run pytest
+      - name: seed orchestration tests
+        working-directory: .
+        run: python3 -B -m unittest discover -s scripts -p test_seed.py
 
   schema:
     runs-on: ubuntu-24.04
@@ -147,6 +158,30 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: integration tests
         run: make test-integ
+      - name: API key integration group is nonempty
+        run: scripts/go-test-nonempty.sh './test/...' 'TestKeyctl|TestIngestAuth' -tags=integration -timeout 4m -p 1
+      - name: ingest integration group is nonempty
+        run: scripts/go-test-nonempty.sh './test/...' 'TestIngest' -tags=integration -timeout 6m -p 1
+      - name: dedupe schema and TTL integration group is nonempty
+        run: scripts/go-test-nonempty.sh './test/...' 'TestDedupe|TestEventLookupTenantScope|TestEventsSchema|TestEventsTTLConfigurable' -tags=integration -timeout 4m -p 1
+      - name: writer and DLQ integration group is nonempty
+        run: scripts/go-test-nonempty.sh './test/...' 'TestWriterCommitAfterInsert|TestWriterPoisonToDLQ|TestWriterDLQFailureNoCommit|TestWriterFailureExitsNonzero' -tags=integration -timeout 5m -p 1
+      - name: recovery integration group is nonempty
+        run: scripts/go-test-nonempty.sh './test/...' 'TestWriterCrashRestart|TestIngestRetryNoDuplicates|TestIngestKafkaTimeout503' -tags=integration -timeout 6m -p 1
+      - name: rate limit integration group is nonempty
+        run: scripts/go-test-nonempty.sh './test/...' 'TestRateLimit' -tags=integration -timeout 4m -p 1
+      - name: readiness integration group is nonempty
+        run: scripts/go-test-nonempty.sh './test/...' 'TestReadyz|TestHealthz|TestBinaryLifecycle' -tags=integration -timeout 5m -p 1
+      - name: causal recovery contracts are named explicitly
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          for test_name in TestWriterCrashRestart TestIngestRetryNoDuplicates TestIngestKafkaTimeout503; do
+            grep -Rqs "^func ${test_name}(" test/ || {
+              echo "missing causal test: ${test_name}" >&2
+              exit 1
+            }
+          done
 
   # Optional until Phase 6 (deployment): a real Compose smoke test of the dev stack.
   compose-smoke:

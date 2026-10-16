@@ -76,6 +76,26 @@ The key file is mode `0600` under a mode `0700` directory. Do not print, pass
 on the command line, or commit its contents. Generator usage is documented in
 [generator/README.md](generator/README.md).
 
+## Seed and verify the complete path
+
+```sh
+make seed
+```
+
+This command runs `make dev-up` once, privately ensures `demo` and `demo2`
+credentials, and sends 1,000 deterministic benign events in batches of 100.
+It exits zero only after all 1,000 IDs from that specific run are visible in a
+tenant-filtered ClickHouse `uniqExact` check, three authenticated API lookups
+succeed, and the same event queried with the other tenant's key returns 404.
+The storage wait is capped at 60 seconds; missing manifests, rejected events,
+shortfalls, malformed responses, and command failures return nonzero.
+
+Local credential files and the send manifest live under ignored `.local/`
+paths with private permissions. Revocation can take up to the ingest key-cache
+TTL of 30 seconds. Redis-backed rate limiting fails closed by default, so a
+Redis outage rejects ingest instead of bypassing quota unless local config
+explicitly selects the audited fail-open mode.
+
 ## Endpoints and readiness
 
 Every published port binds to `127.0.0.1` only.
@@ -136,6 +156,11 @@ local Docker network. The configuration allows those exceptions only in the
 `local` environment. Do not expose this stack to an untrusted network or reuse
 its settings as a production deployment; production packaging, TLS, and secret
 distribution are later-phase work.
+
+The repository CI definition runs unit, integration, seed-orchestration,
+prohibited-module, and nonempty behavioral-group guards. These checks have
+been run locally; hosted GitHub Actions status remains pending until a branch
+is pushed and an actual workflow run completes.
 
 ## Documentation
 
