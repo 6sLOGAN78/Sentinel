@@ -1,10 +1,10 @@
 ---
 phase: 02-ingestion-durable-event-storage
 verified: 2026-10-17
-status: passed
-score: 5/5 roadmap success criteria verified
-requirements_satisfied: 14/14
-implementation_gaps: 0
+status: gaps_found
+score: 4/5 roadmap success criteria verified; final repeat exposed readiness deadline gap
+requirements_satisfied: 13/14; readiness deadline repair under verification
+implementation_gaps: 1
 overrides_applied: 0
 report_completion: root_inline_goal_verification_after_hosted_ci
 hosted_ci_run: 38970203760
@@ -13,11 +13,14 @@ decision_coverage:
   honored: 30
   total: 30
   not_honored: []
-gaps: []
+gaps:
+  - "Final hosted repeat 38972246356 failed to observe Kafka unavailable within the readiness deadline; enforcing deadline independently of client cancellation."
 human_verification: []
 ---
 
 # Phase 2: Ingestion & Durable Event Storage — Final Verification
+
+**Reopened during final closeout repeat:** run 38972246356 at f02c4bd passed the full integration suite and six independently guarded groups, then failed Kafka outage readiness. The earlier passed assessment below remains evidence at its stated revision; current completion is suspended until the readiness boundary is repaired and fresh hosted acceptance passes. Root is adding deterministic uncooperative-client/deadline/admission regression coverage, not merely retrying the hosted job.
 
 **Goal:** As a producer with a scoped API key, I want to submit event batches acknowledged only after Kafka accepts them, so that my events become queryable and duplicate-safe in ClickHouse.
 

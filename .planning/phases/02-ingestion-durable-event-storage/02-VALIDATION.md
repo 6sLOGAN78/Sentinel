@@ -1,10 +1,10 @@
 ---
 phase: 2
 slug: ingestion-durable-event-storage
-status: passed
+status: pending
 local_repair_acceptance: passed
 independent_reverification: local_audits_passed_root_closeout_complete
-hosted_ci: passed
+hosted_ci: readiness_repeat_failed_repair_pending
 hosted_ci_run: 38970203760
 hosted_ci_revision: 36bba7cfefbe8955879d6b402c39495eeef999ad
 nyquist_compliant: true

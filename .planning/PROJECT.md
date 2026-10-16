@@ -59,7 +59,7 @@ Validated in Phase 2: Ingestion & Durable Event Storage (2026-10-17):
 
 ## Context
 
-- **Current state (Phase 2 complete, 2026-10-17):** all 22 plans deliver the scoped producer → ingest → Kafka → event-writer → ClickHouse → tenant lookup slice, including bounded quotas/admission, DLQ, dedupe, crash/replay recovery and real health/readiness.
+- **Current state (Phase 2 final verification reopened, 2026-10-17):** all 22 plans deliver the scoped producer → ingest → Kafka → event-writer → ClickHouse → tenant lookup slice. The final hosted repeat exposed a readiness response deadline gap; repair eb7f6e4 passed local regressions and three race-enabled real readiness/lifecycle group repetitions, with hosted re-acceptance pending. Phase 3 remains unstarted.
   - One Go 1.26 module builds five binaries; ingest, event-writer and minimal query lookup are live application paths. Detection and alert business logic remain Phase 3 work.
   - The seeded Python sender has bounded identical-byte retries and private manifests. Four real 1,000-ID seed runs verified exact visible identities and tenant isolation; this is not a throughput benchmark.
   - Hosted [CI run 38970203760](https://github.com/6sLOGAN78/Sentinel/actions/runs/38970203760) passed all eight jobs at `36bba7c`, including full integration, seven nonempty groups and Compose. Local review is clean, and the registered threat audit has zero open threats.

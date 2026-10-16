@@ -29,6 +29,10 @@ Paths and line numbers below are repository-relative at the audited commit. Shar
 
 ## Trust Boundaries
 
+### Root-owned readiness closeout delta
+
+After the original independent audit, the final hosted repeat exposed a response-deadline gap during Kafka outage. Root rechecked T-02-09-1/2/3 against the bounded-worker repair; this is an explicitly inline delta assessment, not a new independent 90-threat audit. Sanitized states/default binds/draining are unchanged. One worker per admitted request retains its semaphore slot until work truly finishes, limiting stuck dependency calls to sixteen. HTTP response timeout/cancellation is independent of that worker; result buffers are bounded by the trusted check list, no mutable response map crosses goroutines, and late success cannot override deadline failure. Panic recovery closes the result channel and returns the slot without exposing panic content. Saturation, liveness, release/recovery and panic cleanup have race-enabled regression coverage. The original synchronous-check line references below describe the prior audited revision; this delta supersedes that mechanism without creating a new risk acceptance.
+
 | Boundary | Description | Data crossing |
 |----------|-------------|---------------|
 | HTTP client → shared middleware and listeners | Origin, headers, paths, bodies and TCP peer identity meet explicit bind and logging policy | Untrusted request data; API-key secret |

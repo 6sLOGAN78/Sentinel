@@ -153,6 +153,14 @@ Follow-up delta at `36bba7c`: reviewed `backend/internal/httpx/httpx_test.go`. T
 
 ## Previously reported critical issues — resolved
 
+### Readiness response-deadline repair — root inline delta review
+
+The final hosted repeat exposed a missed Kafka outage state. A deterministic test at `2afe6b8` failed because synchronous dependency invocation let a client ignoring cancellation block the HTTP response beyond its configured deadline. Five local repetitions of the old real outage test passed; that is explicitly not a deterministic reproduction of the hosted client's timing. The new uncooperative-check regression establishes the response-boundary defect independently.
+
+Reviewed the repair in `opshttp/server.go`, its deadline/admission/panic regression tests and the integration helper diagnostics. A request launches one worker only after acquiring one of sixteen slots; the worker retains that slot until actual dependency work exits. The response independently observes its deadline, reports unfinished dependencies unavailable, preserves received completed states and never shares mutable maps with the worker. A result buffer sized to the fixed check list lets late completion exit without waiting for a disconnected caller. Pending checks are not invoked after cancellation; late nil results are not promoted to healthy. Panic recovery sanitizes failure and releases admission. Health and draining remain independent. No unbounded fanout, scan bypass or relaxed test deadline was introduced. Fresh unit race repetitions and targeted integration-tag lint passed; real and hosted acceptance remain separately required.
+
+## Previously reported critical issues — resolved (historical)
+
 ### CR-01: Seed directory preparation follows symlinks and chmods their external targets
 
 **Classification:** BLOCKER

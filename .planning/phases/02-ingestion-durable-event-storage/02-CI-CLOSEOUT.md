@@ -1,12 +1,16 @@
 ---
 phase: 02-ingestion-durable-event-storage
-status: passed
+status: in_progress
 date: 2026-10-17
 code_revision: 36bba7cfefbe8955879d6b402c39495eeef999ad
 hosted_run: 38970203760
 ---
 
 # Phase 2 — Hosted CI closeout
+
+**Reopened after the documentation-only repeat:** hosted run 38972246356 at f02c4bd passed seven jobs, the full integration suite and six nonempty groups, but failed the readiness group: Kafka outage never yielded its unavailable state before the test deadline. Phase completion is suspended pending a deterministic bounded-readiness repair and fresh hosted proof. The earlier green run below remains valid historical evidence, not a claim that the repeat passed.
+
+Readiness repair: RED commit `2afe6b8` deterministically failed with a stuck dependency and client timeout despite a configured 20ms response deadline. GREEN `eb7f6e4420d49b4d848379c1c1f6d5f10b032c07` adds one check worker per admitted request, retains the sixteen-slot admission until actual check completion, bounds the HTTP response independently, buffers only the fixed check-result count, and sanitizes panic/late results. New regressions verify deadline response, no seventeenth stuck call, independent liveness, recovery after release and panic admission cleanup. Twenty full ops race repetitions and targeted integration-tag lint passed; fresh make test passed; the exact readiness/lifecycle group passed three race-enabled repetitions in 138.221s. Five old real outage repetitions had passed (220.252s), so those are not falsely described as reproducing the hosted timing failure. Root reviewed the affected code and rechecked T-02-09-1/2/3 explicitly in the canonical review/security reports. Fresh hosted proof is still required.
 
 The user authorized pushing main, then explicitly requested all necessary repairs and Phase 2 completion. Phase 3 execution is outside this authorization.
 
