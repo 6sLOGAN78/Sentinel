@@ -327,7 +327,9 @@ def execute() -> dict[str, int]:
         MANIFEST_PATH.unlink(missing_ok=True)
     except OSError as error:
         raise SeedError("cannot replace the private send manifest") from error
-    run_checked(commands[2], cwd=ROOT / "generator")
+    generator_env = dict(os.environ)
+    generator_env.pop("SENTINEL_API_KEY", None)
+    run_checked(commands[2], cwd=ROOT / "generator", env=generator_env)
     manifest = load_manifest(MANIFEST_PATH, expected=EVENT_COUNT)
     visible = poll_storage(set(manifest.event_ids), query=lambda: _clickhouse_query(manifest))
     verify_api(

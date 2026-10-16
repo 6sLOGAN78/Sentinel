@@ -62,7 +62,12 @@ uv run --locked sentinel-generator send \
 A successful command prints aggregate `sent`, `accepted`, `rejected`, and `retries` totals.
 It atomically writes a mode `0600` JSON manifest to `.local/last-send.json` by default. The
 manifest also records the UTC-millisecond run start and every intended event ID for later
-verification. HTTP `202` means Kafka acknowledged the batch; it does not claim ClickHouse
+verification. An explicit `--output manifest.json` can use the current directory or any
+existing directory without changing its permissions. Newly created output directories use
+mode `0700`; symlink parents, symlink destinations, and other nonregular destinations are
+rejected. Writes, atomic replacement, and cleanup stay anchored to opened directory
+descriptors, and the command fails if safe no-follow handling is unavailable.
+HTTP `202` means Kafka acknowledged the batch; it does not claim ClickHouse
 persistence. Terminal HTTP, response-validation, and exhausted-retry failures return a
 nonzero exit status without writing a success manifest.
 
@@ -80,6 +85,12 @@ checks the exact manifest IDs in ClickHouse and through the tenant-scoped query
 API. Historical tenant rows cannot satisfy the gate. Storage polling is capped
 at 60 seconds, and any rejected batch, missing ID, API mismatch, or subprocess
 failure makes the command exit nonzero.
+
+The seed workflow passes the freshly ensured `demo.key` explicitly and removes
+`SENTINEL_API_KEY` from a copy of the generator child's environment. A conflicting shell key
+therefore cannot override the seed credential; the parent shell and other environment
+values are unchanged. Standalone `sentinel-generator send` retains the environment-first
+credential precedence documented above.
 
 Keys and manifests stay under the ignored `.local/` directory at modes `0600`
 and `0700`; credentials are passed by file or child environment, never as
