@@ -30,7 +30,7 @@ patterns-established:
   - "Output safety: atomically replace the requested regular manifest using a private temporary inode, without following output symlinks."
   - "Credential isolation: preserve ordinary child environment values while excluding the ambient key overridden by an ensured private key file."
 requirements-completed: ["GEN-01","GEN-03"]
-duration: 11 min
+duration: 12 min
 completed: 2026-10-16
 ---
 
@@ -41,8 +41,8 @@ Manifest output preserves existing directory permissions and rejects symlink pat
 ## Performance
 
 - Started: 2026-10-16T09:10:25Z
-- Completed: 2026-10-16T09:21:00Z
-- Duration: 11 min
+- Completed: 2026-10-16T09:22:14Z
+- Duration: 12 min
 - Tasks: 2/2
 - Files modified: 5, plus this summary
 
@@ -111,6 +111,7 @@ CR-02 / verification gap 5 and WR-01 / gap 7's ambient-key subgap have behaviora
 - All five task commits listed above exist in git history, and no task commit deletes tracked files.
 - Both named regressions failed on behavior before their repairs; the same boundaries passed afterward.
 - Final seed, generator, lint, format and type checks exited 0.
+- SDK key-link verification passed 2/2 after summary commit; task commit objects and deletion checks were confirmed.
 - Only assigned files were staged. Concurrent worker changes, user .planning/config.json and .serena contents were not staged or reverted. No volume mutation occurred.
 
 ---
