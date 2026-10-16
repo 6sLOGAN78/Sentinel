@@ -153,6 +153,107 @@ func TestBuildDLQRecordRejectsUnstableReason(t *testing.T) {
 	require.ErrorContains(t, err, "DLQ reason")
 }
 
+func TestBuildDLQRecordForTopicEncodedBoundaries(t *testing.T) {
+	const valueCap = 64
+	for _, topic := range []string{kafkax.DefaultDLQTopic, strings.Repeat("t", 249)} {
+		for _, n := range []int{0, 1, 63, 64, 127, 128, 7400, 7600, 7800, 8000, 8191, 8192, 1 << 20} {
+			t.Run(strconv.Itoa(len(topic))+"/"+strconv.Itoa(n), func(t *testing.T) {
+				original := &kgo.Record{
+					Topic: strings.Repeat("s", 249), Partition: math.MaxInt32, Offset: math.MaxInt64,
+					Key: []byte(strings.Repeat("k", n)), Value: []byte(strings.Repeat("v", valueCap)),
+					Headers: []kgo.RecordHeader{
+						{Key: "dlq.origin.topic", Value: []byte("forged")},
+						{Key: strings.Repeat("h", n), Value: []byte(strings.Repeat("x", n))},
+					},
+				}
+				record, err := kafkax.BuildDLQRecordForTopic(original, kafkax.DLQReasonDecode,
+					time.Unix(0, 0), valueCap, topic)
+				require.NoError(t, err)
+				require.Equal(t, topic, record.Topic)
+				require.Equal(t, original.Topic, headerValue(record.Headers, "dlq.origin.topic"))
+				require.Equal(t, original.Value, record.Value)
+				require.LessOrEqual(t, encodedDLQBytes(record), valueCap+8192)
+				require.LessOrEqual(t, len(record.Headers), 128)
+				if record.Key == nil {
+					require.Equal(t, "true", headerValue(record.Headers, "dlq.key.redacted"))
+					require.Equal(t, strconv.Itoa(n), headerValue(record.Headers, "dlq.key.original_bytes"))
+				} else {
+					require.Equal(t, original.Key, record.Key)
+				}
+			})
+		}
+	}
+}
+
+func TestBuildDLQRecordForTopicEncodedHeaderFlood(t *testing.T) {
+	const valueCap = 64
+	topic := strings.Repeat("t", 249)
+	record, err := kafkax.BuildDLQRecordForTopic(&kgo.Record{
+		Topic: "events", Value: []byte(strings.Repeat("v", valueCap)),
+		Headers: make([]kgo.RecordHeader, 10_000),
+	}, kafkax.DLQReasonValidation, time.Unix(0, 0), valueCap, topic)
+	require.NoError(t, err)
+	require.Equal(t, topic, record.Topic)
+	require.Len(t, record.Headers, 128)
+	require.LessOrEqual(t, encodedDLQBytes(record), valueCap+8192)
+}
+
+func TestBuildDLQRecordForTopicRejectsInvalidMetadata(t *testing.T) {
+	for _, topic := range []string{"", ".", "..", "has space", "a/b", "a\n", "\u00e9", strings.Repeat("t", 250)} {
+		t.Run(strconv.Quote(topic), func(t *testing.T) {
+			_, err := kafkax.BuildDLQRecordForTopic(&kgo.Record{Topic: "events"},
+				kafkax.DLQReasonDecode, time.Unix(0, 0), 64, topic)
+			require.ErrorContains(t, err, "topic")
+			_, err = kafkax.BuildDLQRecordForTopic(&kgo.Record{Topic: topic},
+				kafkax.DLQReasonDecode, time.Unix(0, 0), 64, "valid-topic_1")
+			require.ErrorContains(t, err, "topic")
+		})
+	}
+	_, err := kafkax.BuildDLQRecordForTopic(nil, kafkax.DLQReasonDecode, time.Unix(0, 0), 64, "dlq")
+	require.ErrorContains(t, err, "nil")
+	for _, capBytes := range []int{0, -1, math.MaxInt, math.MaxInt - 8191} {
+		_, err = kafkax.BuildDLQRecordForTopic(&kgo.Record{Topic: "events"},
+			kafkax.DLQReasonDecode, time.Unix(0, 0), capBytes, "dlq")
+		require.Error(t, err)
+	}
+}
+
+func TestBuildDLQRecordPreservesNilEmptyAndCopiesSource(t *testing.T) {
+	for _, payload := range [][]byte{nil, {}, []byte("source")} {
+		original := &kgo.Record{
+			Topic: "events", Key: payload, Value: payload,
+			Headers: []kgo.RecordHeader{{Key: "nil", Value: nil}, {Key: "empty", Value: []byte{}},
+				{Key: "copy", Value: []byte("header")}},
+		}
+		record, err := kafkax.BuildDLQRecord(original, kafkax.DLQReasonDecode, time.Unix(0, 0), 64)
+		require.NoError(t, err)
+		require.Equal(t, payload, record.Key)
+		require.Equal(t, payload, record.Value)
+		require.Nil(t, record.Headers[5].Value)
+		require.NotNil(t, record.Headers[6].Value)
+		original.Headers[2].Value[0] = 'X'
+		require.Equal(t, "header", headerValue(record.Headers, "copy"))
+		if len(payload) > 0 {
+			payload[0] = 'X'
+			require.Equal(t, "source", string(record.Key))
+			require.Equal(t, "source", string(record.Value))
+		}
+	}
+}
+
+func TestBuildDLQRecordBoundsSourceInspection(t *testing.T) {
+	headers := make([]kgo.RecordHeader, 10_000)
+	for i := range headers {
+		headers[i] = kgo.RecordHeader{Key: "dLq.reason"}
+	}
+	headers[len(headers)-1] = kgo.RecordHeader{Key: "late-header", Value: []byte("must not be scanned")}
+	record, err := kafkax.BuildDLQRecord(&kgo.Record{Topic: "events", Headers: headers},
+		kafkax.DLQReasonDecode, time.Unix(0, 0), 1)
+	require.NoError(t, err)
+	require.Len(t, record.Headers, 5)
+	require.LessOrEqual(t, encodedDLQBytes(record), 1+8192)
+}
+
 func headerValue(headers []kgo.RecordHeader, key string) string {
 	for _, header := range headers {
 		if header.Key == key {
