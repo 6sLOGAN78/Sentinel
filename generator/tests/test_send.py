@@ -1,9 +1,12 @@
 import ipaddress
 import json
+import os
+import stat
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
+from unittest import mock
 
 import httpx
 import pytest
@@ -364,6 +367,130 @@ def test_send_help_exposes_safe_installed_arguments(capsys: pytest.CaptureFixtur
     assert "--run-start" in help_text
     assert "--key-file" in help_text
     assert "--api-key" not in help_text
+
+
+def _send_manifest(path: Path, monkeypatch: pytest.MonkeyPatch) -> int:
+    monkeypatch.setenv("SENTINEL_API_KEY", API_KEY)
+    return main(
+        ["send", "--tenant", "demo", "--count", "1", "--output", str(path)],
+        transport=httpx.MockTransport(_accepted),
+        utc_now=lambda: RUN_START,
+    )
+
+
+@pytest.mark.parametrize("mode", [0o755, 0o775])
+@pytest.mark.parametrize("relative", [False, True])
+def test_manifest_preserves_existing_parent_mode(
+    mode: int, relative: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = tmp_path / "existing"
+    parent.mkdir(mode=mode)
+    parent.chmod(mode)
+    monkeypatch.chdir(parent)
+    output = Path("manifest.json") if relative else parent / "manifest.json"
+
+    assert _send_manifest(output, monkeypatch) == 0
+    assert stat.S_IMODE(parent.stat().st_mode) == mode
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+
+
+def test_manifest_creates_private_nested_directories_and_replaces_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tmp_path.chmod(0o775)
+    output = tmp_path / "new" / "nested" / "manifest.json"
+    assert _send_manifest(output, monkeypatch) == 0
+    first_inode = output.stat().st_ino
+    output.chmod(0o644)
+    assert _send_manifest(output, monkeypatch) == 0
+    assert output.stat().st_ino != first_inode
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    assert stat.S_IMODE(output.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(output.parent.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o775
+
+
+@pytest.mark.parametrize("kind", ["parent", "ancestor", "output", "file-parent", "directory-output"])
+def test_manifest_rejects_unsafe_paths_without_mutating_targets(
+    kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    existing = target / "existing.json"
+    existing.write_text("unchanged")
+    existing.chmod(0o644)
+    if kind in {"parent", "ancestor"}:
+        link = tmp_path / "link"
+        link.symlink_to(target, target_is_directory=True)
+        output = link / "new" / "manifest.json" if kind == "ancestor" else link / "manifest.json"
+    elif kind == "output":
+        output = tmp_path / "manifest.json"
+        output.symlink_to(existing)
+    elif kind == "file-parent":
+        output = existing / "manifest.json"
+    else:
+        output = target
+
+    assert _send_manifest(output, monkeypatch) == 1
+    assert existing.read_text() == "unchanged"
+    assert stat.S_IMODE(existing.stat().st_mode) == 0o644
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+    assert sorted(item.name for item in target.iterdir()) == ["existing.json"]
+
+
+@pytest.mark.parametrize("operation", ["json.dump", "os.replace"])
+def test_manifest_failure_preserves_existing_file_modes_and_cleans_owned_temp(
+    operation: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    tmp_path.chmod(0o775)
+    output = tmp_path / "manifest.json"
+    output.write_text("previous manifest")
+    output.chmod(0o644)
+    with mock.patch(f"sentinel_generator.cli.{operation}", side_effect=OSError(API_KEY)):
+        assert _send_manifest(output, monkeypatch) == 1
+    captured = capsys.readouterr()
+    assert API_KEY not in captured.out + captured.err
+    assert output.read_text() == "previous manifest"
+    assert stat.S_IMODE(output.stat().st_mode) == 0o644
+    assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o775
+    assert list(tmp_path.iterdir()) == [output]
+
+
+def test_manifest_parent_swap_cannot_redirect_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = tmp_path / "parent"
+    parent.mkdir(mode=0o755)
+    moved = tmp_path / "moved"
+    target = tmp_path / "target"
+    target.mkdir(mode=0o775)
+    target.chmod(0o775)
+    real_replace = os.replace
+
+    def replace_after_swap(
+        source: str, destination: str, *, src_dir_fd: int, dst_dir_fd: int
+    ) -> None:
+        parent.rename(moved)
+        parent.symlink_to(target, target_is_directory=True)
+        real_replace(source, destination, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
+
+    monkeypatch.setattr("sentinel_generator.cli.os.replace", replace_after_swap)
+    assert _send_manifest(parent / "manifest.json", monkeypatch) == 0
+    assert (moved / "manifest.json").is_file()
+    assert list(target.iterdir()) == []
+    assert stat.S_IMODE(target.stat().st_mode) == 0o775
+
+
+def test_manifest_fails_closed_without_no_follow_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delattr(os, "O_NOFOLLOW")
+    assert _send_manifest(tmp_path / "manifest.json", monkeypatch) == 1
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize(
