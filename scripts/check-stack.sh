@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FND-01 acceptance: healthy stack, explicit topics, auto-create off, host ports reachable.
+# Stack acceptance: healthy dependencies/apps, explicit topics, and loopback endpoints.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,6 +16,12 @@ for svc in kafka clickhouse postgres redis; do
   [ "$health" = "healthy" ] || fail "$svc health is '$health', expected healthy"
 done
 pass "kafka, clickhouse, postgres, redis are healthy"
+
+for svc in ingest event-writer query-api; do
+  health="$("${compose[@]}" ps --format '{{.Health}}' "$svc")"
+  [ "$health" = "healthy" ] || fail "$svc health is '$health', expected healthy"
+done
+pass "ingest, event-writer, query-api are healthy"
 
 check_topic() {
   local name="$1" parts="$2" retention="$3" out
@@ -44,10 +50,18 @@ if echo "$listing" | grep -qx "undeclared.topic.check"; then
 fi
 pass "auto-create is off"
 
-for port in 29092 15432 16379 18123 19000; do
+for port in 8080 8081 9101 9103 9105 29092 15432 16379 18123 19000; do
   (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || fail "TCP dial 127.0.0.1:$port failed"
 done
-pass "TCP dial ok on 29092 15432 16379 18123 19000"
+pass "TCP dial ok on application, operations, and infrastructure ports"
+
+for port in 9101 9103 9105; do
+  body="$(curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$port/readyz")" \
+    || fail "readiness request on port $port failed"
+  grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' <<<"$body" \
+    || fail "readiness response on port $port did not report ready"
+done
+pass "application readiness endpoints returned ready"
 
 # The env file holds dotted keys, but the Compose passwords are plain names.
 ch_password="$(grep -E '^SENTINEL_CLICKHOUSE_PASSWORD=' .env | cut -d= -f2-)"

@@ -9,6 +9,10 @@
 # - Secrets come from .env via ${VAR:?}; there are no literal secrets here.
 name: sentinel
 
+x-app-build: &app-build
+  context: ../..
+  dockerfile: deployments/docker/Dockerfile
+
 services:
   kafka:
     image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
@@ -101,6 +105,109 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  ingest:
+    build: *app-build
+    entrypoint: ["/app/ingest"]
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9101:9101"
+    environment:
+      SENTINEL_PRIMARY.ENV: local
+      SENTINEL_SERVER.BIND_ADDRESS: 0.0.0.0
+      SENTINEL_SERVER.PORT: "8080"
+      SENTINEL_OPS.BIND_ADDRESS: 0.0.0.0
+      SENTINEL_OPS.PORT: "9101"
+      SENTINEL_DATABASE.HOST: postgres
+      SENTINEL_DATABASE.PORT: "5432"
+      SENTINEL_DATABASE.USER: sentinel
+      SENTINEL_DATABASE.PASSWORD: ${SENTINEL_POSTGRES_PASSWORD:?set in .env}
+      SENTINEL_DATABASE.NAME: sentinel
+      SENTINEL_DATABASE.SSL_MODE: disable
+      SENTINEL_REDIS.ADDRESS: redis:6379
+      SENTINEL_KAFKA.BROKERS: kafka:9092
+    healthcheck:
+      test: ["CMD", "/app/healthprobe", "http://127.0.0.1:9101/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  event-writer:
+    build: *app-build
+    entrypoint: ["/app/event-writer"]
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9103:9103"
+    environment:
+      SENTINEL_PRIMARY.ENV: local
+      SENTINEL_SERVER.BIND_ADDRESS: 0.0.0.0
+      SENTINEL_OPS.BIND_ADDRESS: 0.0.0.0
+      SENTINEL_OPS.PORT: "9103"
+      SENTINEL_KAFKA.BROKERS: kafka:9092
+      SENTINEL_CLICKHOUSE.HTTP_ADDRESS: clickhouse:8123
+      SENTINEL_CLICKHOUSE.NATIVE_ADDRESS: clickhouse:9000
+      SENTINEL_CLICKHOUSE.USER: sentinel
+      SENTINEL_CLICKHOUSE.PASSWORD: ${SENTINEL_CLICKHOUSE_PASSWORD:?set in .env}
+      SENTINEL_CLICKHOUSE.DATABASE: sentinel
+    healthcheck:
+      test: ["CMD", "/app/healthprobe", "http://127.0.0.1:9103/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  query-api:
+    build: *app-build
+    entrypoint: ["/app/query-api"]
+    restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:9105:9105"
+    environment:
+      SENTINEL_PRIMARY.ENV: local
+      SENTINEL_SERVER.BIND_ADDRESS: 0.0.0.0
+      SENTINEL_SERVER.PORT: "8081"
+      SENTINEL_OPS.BIND_ADDRESS: 0.0.0.0
+      SENTINEL_OPS.PORT: "9105"
+      SENTINEL_DATABASE.HOST: postgres
+      SENTINEL_DATABASE.PORT: "5432"
+      SENTINEL_DATABASE.USER: sentinel
+      SENTINEL_DATABASE.PASSWORD: ${SENTINEL_POSTGRES_PASSWORD:?set in .env}
+      SENTINEL_DATABASE.NAME: sentinel
+      SENTINEL_DATABASE.SSL_MODE: disable
+      SENTINEL_REDIS.ADDRESS: redis:6379
+      SENTINEL_CLICKHOUSE.HTTP_ADDRESS: clickhouse:8123
+      SENTINEL_CLICKHOUSE.NATIVE_ADDRESS: clickhouse:9000
+      SENTINEL_CLICKHOUSE.USER: sentinel
+      SENTINEL_CLICKHOUSE.PASSWORD: ${SENTINEL_CLICKHOUSE_PASSWORD:?set in .env}
+      SENTINEL_CLICKHOUSE.DATABASE: sentinel
+    healthcheck:
+      test: ["CMD", "/app/healthprobe", "http://127.0.0.1:9105/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
 volumes:
   kafka-data: {}

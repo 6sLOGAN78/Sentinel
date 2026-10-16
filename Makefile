@@ -21,10 +21,12 @@ CH_ADDR ?= http://127.0.0.1:18123
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
 
-dev-up: ## Start the pinned dependency stack and create topics (idempotent)
+dev-up: ## Start infrastructure, migrate, and launch the Phase 2 app stack
 	@if [ ! -f .env ]; then cp .env.example .env && echo "created .env from .env.example"; fi
 	$(COMPOSE) up -d --wait kafka clickhouse postgres redis
 	$(COMPOSE) run --rm topic-init
+	$(MAKE) migrate
+	$(COMPOSE) up -d --build --wait ingest event-writer query-api
 
 dev-down: ## Stop the stack (volumes are preserved)
 	$(COMPOSE) down
@@ -66,7 +68,7 @@ run: ## Run a service: make run SVC=<ingest|detector|event-writer|alert-writer|q
 		*) echo "SVC must be one of: $(SERVICES)" >&2; exit 1 ;; \
 	esac
 	@if [ ! -f .env ]; then echo ".env not found; run 'make dev-up' first" >&2; exit 1; fi
-	cd backend && env 'SENTINEL_PRIMARY.ENV=local' 'SENTINEL_ENV_FILE=$(CURDIR)/.env' go run ./cmd/$(SVC)
+	cd backend && env 'SENTINEL_PRIMARY.ENV=local' 'SENTINEL_ENV_FILE=$(CURDIR)/.env' 'SENTINEL_SERVER.BIND_ADDRESS=127.0.0.1' 'SENTINEL_OPS.BIND_ADDRESS=127.0.0.1' go run ./cmd/$(SVC)
 
 seed: ## Not available yet
 	@echo "seed is available from Phase 2" >&2
