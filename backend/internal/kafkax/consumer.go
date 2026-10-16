@@ -15,7 +15,6 @@ import (
 const (
 	consumerSessionTimeout = 45 * time.Second
 	consumerFetchMaxWait   = 500 * time.Millisecond
-	minRebalanceTimeout    = 15 * time.Second
 )
 
 // ErrConsumerClosed indicates that polling stopped because Close was called.
@@ -36,6 +35,10 @@ func NewConsumer(_ context.Context, kafka config.KafkaConfig, writer config.Writ
 	if err != nil {
 		return nil, err
 	}
+	budgets, err := config.ComputeWriterBudgets(writer)
+	if err != nil {
+		return nil, err
+	}
 
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
@@ -49,7 +52,7 @@ func NewConsumer(_ context.Context, kafka config.KafkaConfig, writer config.Writ
 		kgo.MaxConcurrentFetches(writer.MaxConcurrentFetches),
 		kgo.FetchMaxWait(consumerFetchMaxWait),
 		kgo.SessionTimeout(consumerSessionTimeout),
-		kgo.RebalanceTimeout(rebalanceTimeout(writer)),
+		kgo.RebalanceTimeout(budgets.Rebalance),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create Kafka consumer: %w", err)
@@ -115,15 +118,4 @@ func (c *Consumer) Close(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// rebalanceTimeout covers the maximum insert attempts and retry waits plus a
-// final commit operation. A floor avoids an unrealistically short group join
-// deadline when unit-sized development timeouts are configured.
-func rebalanceTimeout(settings config.WriterConfig) time.Duration {
-	processing := time.Duration(settings.MaxAttempts)*settings.OperationTimeout +
-		time.Duration(max(settings.MaxAttempts-1, 0))*settings.RetryMaxBackoff +
-		settings.OperationTimeout
-
-	return max(processing, minRebalanceTimeout)
 }

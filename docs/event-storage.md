@@ -126,3 +126,35 @@ source offset is committed. Event reads collapse duplicate `event_id` values;
 operators inspecting the DLQ must tolerate duplicate quarantine records and
 use the origin topic, partition, and offset as their source identity. Sentinel
 does not expose an administrative replay endpoint in this phase.
+
+## Writer work and rebalance bounds
+
+The writer keeps one batch of at most 5,000 source records and flushes at the
+configured size or interval (defaults: 5,000 records / one second). All poison
+records in an owned batch share one deadline, rather than each receiving a new
+complete retry sequence. With attempts `A`, operation timeout `O`, and maximum
+retry backoff `B`, the shared bounds are:
+
+- Retry sequence `R = A*O + (A-1)*B`.
+- Processing `P = 2*R + O`: one insert sequence, one aggregate poison stage,
+  and one reserved commit operation.
+- Group rebalance `max(15s, flush interval + P + shutdown timeout + 5s)`.
+
+Defaults yield `R=70s`, `P=150s`, and a 176-second rebalance timeout. The shared
+configuration helper rejects invalid, overflowing, or greater-than-five-minute
+ownership budgets; it is also applied to directly constructed writers. The
+bound does not multiply by the number of poison records.
+
+The processing clock starts before classification. Valid rows are inserted
+before any DLQ work. On aggregate poison expiry, no further poison publish
+starts, and a separate live commit context uses the reserved operation budget
+to acknowledge only already durable, contiguous partition prefixes. A blocked
+partition never prevents an independently durable prefix from committing.
+The worker then exits with an error and releases rebalance ownership. Restart
+with the same group to process the remaining source offsets with a fresh batch
+budget; DLQ origin tuples can appear again after ambiguous acknowledgements.
+
+Only cancellation of the original run context transfers the current batch to
+one fresh shutdown attempt. That attempt is capped by `shutdown_timeout` and
+always releases ownership, including on expiry. Internal processing/poison
+expiry does not start another shutdown attempt or reset the effects budget.

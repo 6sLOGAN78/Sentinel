@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -222,6 +223,46 @@ func TestWriterBudgetRejectsOversizedOwnership(t *testing.T) {
 			require.ErrorContains(t, err, "writer")
 		})
 	}
+}
+
+func TestWriterBudgetSharedArithmeticAndBounds(t *testing.T) {
+	setCompleteEnv(t)
+	cfg, err := config.Load(config.ServiceEventWriter)
+	require.NoError(t, err)
+	budgets, err := config.ComputeWriterBudgets(cfg.Writer)
+	require.NoError(t, err)
+	require.Equal(t, config.WriterBudgets{
+		Retry: 70 * time.Second, Processing: 150 * time.Second, Rebalance: 176 * time.Second,
+	}, budgets)
+	for _, mutate := range []func(*config.WriterConfig){
+		func(w *config.WriterConfig) { w.FlushInterval = time.Duration(math.MaxInt64) },
+		func(w *config.WriterConfig) { w.OperationTimeout = time.Duration(math.MaxInt64) },
+		func(w *config.WriterConfig) { w.MaxAttempts = math.MaxInt },
+		func(w *config.WriterConfig) { w.BatchSize = 5001 },
+		func(w *config.WriterConfig) { w.RetryMinBackoff = -time.Second },
+		func(w *config.WriterConfig) { w.ShutdownTimeout = 31 * time.Second },
+	} {
+		writer := cfg.Writer
+		mutate(&writer)
+		_, budgetErr := config.ComputeWriterBudgets(writer)
+		require.ErrorContains(t, budgetErr, "writer config")
+	}
+	writer := cfg.Writer
+	writer.FlushInterval = 125 * time.Second
+	budgets, err = config.ComputeWriterBudgets(writer)
+	require.NoError(t, err)
+	require.Equal(t, 5*time.Minute, budgets.Rebalance)
+	writer.FlushInterval++
+	_, err = config.ComputeWriterBudgets(writer)
+	require.Error(t, err)
+	writer = cfg.Writer
+	writer.MaxAttempts = 1
+	writer.OperationTimeout = time.Millisecond
+	writer.FlushInterval = time.Millisecond
+	writer.ShutdownTimeout = time.Millisecond
+	budgets, err = config.ComputeWriterBudgets(writer)
+	require.NoError(t, err)
+	require.Equal(t, 15*time.Second, budgets.Rebalance)
 }
 
 func TestLoadEventWriterRejectsUnsafeBounds(t *testing.T) {

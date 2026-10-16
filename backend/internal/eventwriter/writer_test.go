@@ -244,7 +244,7 @@ func TestWriterFlushesAtSizeBeforeCommitAndBoundsPolls(t *testing.T) {
 	}
 	limits := contracts.DefaultLimits()
 	limits.PastSkew = time.Hour
-	w := newWriter(consumer, store, &recordingDLQ{}, writerSettings(2, time.Hour), limits)
+	w := newWriter(consumer, store, &recordingDLQ{}, writerSettings(2, time.Second), limits)
 
 	require.NoError(t, w.Run(ctx))
 	require.Equal(t, []string{"insert", "commit"}, order)
@@ -348,7 +348,7 @@ func TestWriterClassifiesOnlyPoisonWithStableReasons(t *testing.T) {
 	dlq := &recordingDLQ{}
 	ctx, cancel := context.WithCancel(context.Background())
 	consumer.onCommit = cancel
-	w := newWriter(consumer, &recordingStore{}, dlq, writerSettings(3, time.Hour), contracts.DefaultLimits())
+	w := newWriter(consumer, &recordingStore{}, dlq, writerSettings(3, time.Second), contracts.DefaultLimits())
 
 	require.NoError(t, w.Run(ctx))
 	require.Equal(t, []kafkax.DLQReason{
@@ -369,7 +369,7 @@ func TestWriterDLQFailureDoesNotCommitPastPoison(t *testing.T) {
 	}}
 	dlqErr := errors.New("DLQ unavailable")
 	dlq := &recordingDLQ{fail: dlqErr}
-	w := newWriter(consumer, &recordingStore{}, dlq, writerSettings(3, time.Hour), contracts.DefaultLimits())
+	w := newWriter(consumer, &recordingStore{}, dlq, writerSettings(3, time.Second), contracts.DefaultLimits())
 
 	err := w.Run(context.Background())
 	require.ErrorIs(t, err, dlqErr)
@@ -394,7 +394,7 @@ func TestWriterMixedPartitionsCommitIndependentDurablePrefixes(t *testing.T) {
 				return nil
 			}}
 			w := newWriter(
-				consumer, &recordingStore{}, dlq, writerSettings(len(records), time.Hour), contracts.DefaultLimits(),
+				consumer, &recordingStore{}, dlq, writerSettings(len(records), time.Second), contracts.DefaultLimits(),
 			)
 
 			err := w.Run(context.Background())
@@ -435,4 +435,14 @@ func offsetsByPartition(records []*kgo.Record) map[int32]int64 {
 	}
 
 	return offsets
+}
+
+func TestWriterBudgetRejectsDirectInvalidSettings(t *testing.T) {
+	settings := writerSettings(1, time.Second)
+	settings.MaxAttempts = 0
+	err := newWriter(nil, nil, nil, settings, contracts.DefaultLimits()).Run(t.Context())
+	require.ErrorContains(t, err, "writer config")
+	settings = writerSettings(1, 5*time.Minute)
+	err = newWriter(nil, nil, nil, settings, contracts.DefaultLimits()).Run(t.Context())
+	require.ErrorContains(t, err, "writer config")
 }

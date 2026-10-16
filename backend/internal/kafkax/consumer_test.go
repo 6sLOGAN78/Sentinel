@@ -33,12 +33,17 @@ func TestConsumerCloseHonorsContext(t *testing.T) {
 
 func TestRebalanceTimeoutCoversWorstProcessingBudget(t *testing.T) {
 	settings := config.WriterConfig{
+		BatchSize:        1,
 		MaxAttempts:      3,
 		OperationTimeout: 2 * time.Second,
 		RetryMaxBackoff:  time.Second,
 		FlushInterval:    time.Second,
 		ShutdownTimeout:  3 * time.Second,
+		RetryMinBackoff:  time.Millisecond,
 	}
 
-	require.Equal(t, 27*time.Second, rebalanceTimeout(settings), "collection + insert + aggregate poison + commit + shutdown + margin")
+	budgets, err := config.ComputeWriterBudgets(settings)
+	require.NoError(t, err)
+	require.Equal(t, 27*time.Second, budgets.Rebalance,
+		"collection + insert + aggregate poison + commit + shutdown + margin")
 }

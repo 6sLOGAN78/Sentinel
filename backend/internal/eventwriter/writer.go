@@ -65,6 +65,13 @@ func New(
 // Run polls no more than one in-memory batch, stops polling during storage
 // retries, and commits only after the entire batch is durably inserted.
 func (w *Writer) Run(ctx context.Context) error {
+	if _, err := config.ComputeWriterBudgets(w.settings); err != nil {
+		return err
+	}
+	return w.run(ctx)
+}
+
+func (w *Writer) run(ctx context.Context) error {
 	records := make([]*kgo.Record, 0, w.settings.BatchSize)
 	var flushAt time.Time
 
@@ -151,6 +158,7 @@ func (w *Writer) processOwned(ctx context.Context, records []*kgo.Record) error 
 	if err != nil && ctx.Err() != nil {
 		return w.flushOnShutdown(records)
 	}
+	w.consumer.AllowRebalance()
 
 	return err
 }
@@ -162,6 +170,8 @@ func (w *Writer) flushOnShutdown(records []*kgo.Record) error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), w.settings.ShutdownTimeout)
 	defer cancel()
+	// Release the final owned batch even if the shutdown deadline expires.
+	defer w.consumer.AllowRebalance()
 
 	return w.process(shutdownCtx, records)
 }
@@ -170,13 +180,12 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 	if len(records) == 0 {
 		return nil
 	}
-	defer func() {
-		// A parent cancellation transfers the still-owned records to the fresh
-		// shutdown attempt. Keep the poll gate held until that attempt completes.
-		if ctx.Err() == nil {
-			w.consumer.AllowRebalance()
-		}
-	}()
+	budgets, err := config.ComputeWriterBudgets(w.settings)
+	if err != nil {
+		return err
+	}
+	processingCtx, cancelProcessing := context.WithTimeout(ctx, budgets.Processing)
+	defer cancelProcessing()
 
 	partitions, err := groupContiguousRecords(records)
 	if err != nil {
@@ -184,19 +193,31 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 	}
 	classified, events := w.classifyPartitions(partitions, len(records))
 	if len(events) > 0 {
-		if err = w.insertWithRetry(ctx, events); err != nil {
+		insertCtx, cancelInsert := context.WithTimeout(processingCtx, budgets.Retry)
+		err = w.insertWithRetry(insertCtx, events)
+		cancelInsert()
+		if err != nil {
 			return err
 		}
-		if err = afterInsertBeforeCommit(ctx); err != nil {
+		if err = afterInsertBeforeCommit(processingCtx); err != nil {
 			return err
 		}
 	}
 
-	committable, effectErr := w.durablePrefixes(ctx, classified, sortedPartitionKeys(partitions))
+	processingDeadline, _ := processingCtx.Deadline()
+	effectsDeadline := time.Now().Add(budgets.Retry)
+	if latest := processingDeadline.Add(-w.settings.OperationTimeout); latest.Before(effectsDeadline) {
+		effectsDeadline = latest
+	}
+	effectsCtx, cancelEffects := context.WithDeadline(processingCtx, effectsDeadline)
+	committable, effectErr := w.durablePrefixes(effectsCtx, classified, sortedPartitionKeys(partitions))
+	cancelEffects()
 	if len(committable) == 0 {
 		return effectErr
 	}
-	commitCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
+	// Effects expiry leaves this independent reservation live; original parent
+	// cancellation and the overall processing deadline still bound the commit.
+	commitCtx, cancel := context.WithTimeout(processingCtx, w.settings.OperationTimeout)
 	defer cancel()
 	if err = w.consumer.CommitRecords(commitCtx, committable...); err != nil {
 		return fmt.Errorf("commit durable event effects: %w", errors.Join(err, effectErr))
@@ -237,6 +258,10 @@ func (w *Writer) durablePrefixes(
 		var lastDurable *kgo.Record
 		for _, effect := range classified[key] {
 			if effect.reason != "" {
+				if err := ctx.Err(); err != nil {
+					effectErr = errors.Join(effectErr, err)
+					break
+				}
 				if err := w.publishWithRetry(ctx, effect.record, effect.reason); err != nil {
 					effectErr = errors.Join(effectErr, err)
 					break

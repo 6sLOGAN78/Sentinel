@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"strconv"
@@ -198,6 +199,58 @@ type WriterConfig struct {
 	FetchMaxPartitionBytes int32         `koanf:"fetch_max_partition_bytes" validate:"min=1"`
 	MaxConcurrentFetches   int           `koanf:"max_concurrent_fetches" validate:"min=1"`
 	DLQMaxBytes            int           `koanf:"dlq_max_bytes" validate:"min=1"`
+}
+
+// WriterBudgets bounds retry work, one owned batch, and group handoff. Poison
+// work shares one Retry budget regardless of the number of source records.
+type WriterBudgets struct {
+	Retry      time.Duration
+	Processing time.Duration
+	Rebalance  time.Duration
+}
+
+// ComputeWriterBudgets validates timing and batch bounds for environment-loaded
+// settings and directly constructed writers, without overflowing durations.
+func ComputeWriterBudgets(writer WriterConfig) (WriterBudgets, error) {
+	const schedulingMargin = 5 * time.Second
+	const minimumRebalance = 15 * time.Second
+	const maximumRebalance = 5 * time.Minute
+	if writer.BatchSize < 1 || writer.BatchSize > defaultWriterBatch ||
+		writer.MaxAttempts < 1 || writer.MaxAttempts > 10 || writer.FlushInterval <= 0 ||
+		writer.OperationTimeout <= 0 || writer.ShutdownTimeout <= 0 || writer.ShutdownTimeout > 30*time.Second ||
+		writer.OperationTimeout > writer.ShutdownTimeout || writer.RetryMinBackoff <= 0 ||
+		writer.RetryMinBackoff > writer.RetryMaxBackoff || writer.RetryMaxBackoff > defaultRetryMax {
+		return WriterBudgets{}, errors.New("validate writer config: invalid processing bounds")
+	}
+	// The validated attempt/operation/backoff caps make both products safe.
+	retry, err := sumWriterDurations(time.Duration(writer.MaxAttempts)*writer.OperationTimeout,
+		time.Duration(writer.MaxAttempts-1)*writer.RetryMaxBackoff)
+	if err != nil {
+		return WriterBudgets{}, err
+	}
+	processing, err := sumWriterDurations(retry, retry, writer.OperationTimeout)
+	if err != nil {
+		return WriterBudgets{}, err
+	}
+	rebalance, err := sumWriterDurations(writer.FlushInterval, processing, writer.ShutdownTimeout, schedulingMargin)
+	if err != nil {
+		return WriterBudgets{}, err
+	}
+	if rebalance > maximumRebalance {
+		return WriterBudgets{}, errors.New("validate writer config: ownership budget exceeds five minutes")
+	}
+	return WriterBudgets{Retry: retry, Processing: processing, Rebalance: max(minimumRebalance, rebalance)}, nil
+}
+
+func sumWriterDurations(parts ...time.Duration) (time.Duration, error) {
+	var total time.Duration
+	for _, part := range parts {
+		if part < 0 || part > time.Duration(math.MaxInt64)-total {
+			return 0, errors.New("validate writer config: ownership budget overflows duration")
+		}
+		total += part
+	}
+	return total, nil
 }
 
 // ClickHouseConfig holds ClickHouse connection settings. Addresses are
@@ -546,7 +599,8 @@ func validateWriterConfig(writer WriterConfig) error {
 		}
 	}
 
-	return nil
+	_, err := ComputeWriterBudgets(writer)
+	return err
 }
 
 // ParseBrokers splits a comma-separated broker list, trimming blanks, and
