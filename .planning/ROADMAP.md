@@ -9,7 +9,7 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 ## Phases
 
 - [x] **Phase 1: Foundations & Contracts** - Clean Go module with five binaries, Compose stack, schemas, OpenAPI skeleton, ADRs, CI skeleton (completed 2026-10-11)
-- [ ] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ
+- [x] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (completed 2026-10-16)
 - [ ] **Phase 3: Detection & Alert Pipeline** - Four event-time rules, deterministic alerts, crash-safe recovery, alert persistence
 - [ ] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
 - [ ] **Phase 5: Observability, Resilience & Scale** - Metrics, tracing, Grafana, failure suites, overload behavior, benchmark report
@@ -123,7 +123,7 @@ Plans:
 
 **Wave 10** *(blocked on prior dependency waves)*
 
-- [ ] 02-13-PLAN.md — Verify 1000 current-run events and enforce CI coverage guards
+- [x] 02-13-PLAN.md — Verify 1000 current-run events and enforce CI coverage guards
 
 **Research**: Complete (02-RESEARCH.md, 2026-10-12); plan verification passed (02-PLAN-CHECK.md). Read-time dedupe, native ClickHouse, Kafka timeout/manual commits and Redis Lua behavior have implementation guidance.
 **Note**: GEN-02 (scenario injection) lands with detection fixtures in Phase 3.
@@ -205,7 +205,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 13/14 | In Progress|  |
+| 2. Ingestion & Durable Event Storage | 14/14 | Complete   | 2026-10-16 |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
