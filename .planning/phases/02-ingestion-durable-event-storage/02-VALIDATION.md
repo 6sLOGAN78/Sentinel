@@ -1,10 +1,12 @@
 ---
 phase: 2
 slug: ingestion-durable-event-storage
-status: pending
+status: passed
 local_repair_acceptance: passed
-independent_reverification: human_needed
-hosted_ci: pending
+independent_reverification: local_audits_passed_root_closeout_complete
+hosted_ci: passed
+hosted_ci_run: 38970203760
+hosted_ci_revision: 36bba7cfefbe8955879d6b402c39495eeef999ad
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-10-12
@@ -131,6 +133,8 @@ Quick feedback is the unit/static part of the task command (target <=60s). Real-
 - [x] `nyquist_compliant: true` set in frontmatter
 
 **Historical approval:** local Phase 2 validation passed on 2026-10-16 with real Docker-backed integration and two exact seed runs. Hosted GitHub Actions remains pending until a branch is pushed. The later verification/review findings require the pending repairs and fresh acceptance below.
+
+**Final approval (2026-10-17 Asia/Kolkata):** the repaired code at `36bba7c` passed hosted run [38970203760](https://github.com/6sLOGAN78/Sentinel/actions/runs/38970203760): all eight jobs, full real integration, all seven independently nonempty groups and Compose startup/check/repeat migration/teardown. This supersedes pending-status statements in the historical observations below. Independent local review is clean, the threat audit has zero open items, and root completed inline goal verification after observing hosted success. See `02-VERIFICATION.md` and `02-CI-CLOSEOUT.md` for provenance and exact evidence.
 
 ## Gap-Closure Validation — Local Acceptance Passed; Independent Assessment Pending
 

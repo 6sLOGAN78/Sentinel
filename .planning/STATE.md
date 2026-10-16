@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
-status: verifying
-stopped_at: Phase2 local repair audits passed; authorize branch push and verify hostedCI
-last_updated: "2026-10-16T21:04:16.269Z"
-last_activity: 2026-10-16 -- Phase 02 planning complete
+status: ready_to_plan
+stopped_at: Phase 02 complete (22/22) — ready to discuss Phase 3
+last_updated: 2026-10-16T21:49:39.123Z
+last_activity: 2026-10-17 -- Phase 2 verified and complete; all eight hosted CI jobs passed
 progress:
   total_phases: 6
   completed_phases: 2
@@ -18,25 +18,25 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-10)
+See: .planning/PROJECT.md (updated 2026-10-17)
 
 **Core value:** The end-to-end flow (generator → ingest → Kafka → detector → ClickHouse/PostgreSQL → API → live dashboard) works and is provably correct under failure, with deterministic, deduplicated alerts and no loss of acknowledged events.
-**Current focus:** Phase 02
+**Current focus:** Phase 3 — detection & alert pipeline
 
 ## Current Position
 
-Phase: 02 — HUMAN VERIFICATION
-Plan: 22 of 22
-Status: Awaiting human verification: hosted GitHub Actions; local repairs verified
-Last activity: 2026-10-16 -- Phase 02 planning complete
+Phase: 3
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-17 — Phase 2 closed after green hosted CI; Phase 3 not started
 
-Progress: [██████████] 100%
+Progress: [███░░░░░░░] 33% (2 of 6 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 25
+- Total plans completed: 35 (13 Phase 1 + 22 Phase 2)
 - Average duration: -
 - Total execution time: -
 
@@ -53,18 +53,18 @@ Progress: [██████████] 100%
 | Phase 02 P05 | 2 min | 3 tasks | 7 files |
 | Phase 02 P06 | 7 min | 3 tasks | 12 files |
 | Phase 02 P07 | 22 min | 3 tasks | 10 files |
+| Phase 02 P08 | 14min | 3 tasks | 12 files |
+| Phase 02 P09 | 26h 33m | 3 tasks | 15 files |
+| Phase 02 P11 | 20 min | 3 tasks | 9 files |
+| Phase 02 P12 | 8 min | 3 tasks | 10 files |
+| Phase 02 P13 | 22 min | 3 tasks | 7 files |
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 13 | - | - |
-| 2 | 12 | 33 h 42 min elapsed | - |
-| Phase 02 P08 | 14min | 3 tasks | 12 files |
-| Phase 02 P09 | 26h 33m | 3 tasks | 15 files |
-| Phase 02 P11 | 20 min | 3 tasks | 9 files |
-| Phase 02 P12 | 8 min | 3 tasks | 10 files |
-| Phase 02 P13 | 22 min | 3 tasks | 7 files |
+| 2 | 22 | - | - |
 
 ## Accumulated Context
 
@@ -120,19 +120,21 @@ None yet.
 
 ### Planning Continuation
 
-- Latest user authorization supersedes the earlier stop-after-planning instruction: after verifying plans, run `$gsd-execute-phase 2 --auto`. Scope remains Phase 2.
-- All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00 through 02-07 and 02-10 are implemented and committed; 5 Phase 2 plans remain.
-- Initial checker found two blockers and one warning: missing fail-open counter, oversized intake plan, and bind-field compile ordering. Revisions add prerequisite 02-00 and the atomic bypass counter, reducing intake scope and resolving declaration order. Independent recheck passed with no remaining issues.
-- Structural gates pass; all 14 requirements and 30 decisions covered; no same-wave modified-file conflicts. Validation task bindings and roadmap updated.
-- Next: execute 02-12 Compose full-path wiring, then 02-13 end-to-end seed/CI guards. Preserve unrelated configuration/.serena edits and existing user volumes.
+- User authorized all repairs and Phase 2 closeout; Phase 3 execution remains outside this authorization.
+- All 22 plans (02-00..21) across 14 waves are implemented and summarized. Final verdict passed: 5/5 roadmap criteria, 14/14 requirements, 61/61 artifacts and 30/30 decisions accounted for.
+- Hosted run 38970203760 passed all eight jobs at 36bba7cfefbe8955879d6b402c39495eeef999ad, including full integration, seven nonempty groups and Compose. See 02-CI-CLOSEOUT.md for failed attempts, repairs and final proof.
+- Independent code review is clean and the registered threat audit has zero open threats. Root completed the final inline goal verification; the previous quota-limited handoff remains byte-identical in a dated snapshot.
+- Registered phase.complete 02 was run. Its zero-padded lookup left unpadded roadmap rows unchanged and added completed-plan counts twice; root reconciled actual checkboxes/progress and the 35 summaries explicitly. Its two debt warnings refer only to intentionally preserved historical PRE-GAPS/PRE-CI snapshots, not the passed canonical verification or complete UAT.
+- Next action, only when requested: discuss Phase 3. Preserve unrelated configuration/.serena edits and existing user volumes.
 
 ### Blockers/Concerns
 
-- Phase 1: confirm layout (`backend/cmd/*`) and boilerplate removal in discuss. Go 1.26 bump required by franz-go.
-- Open gaps: tumbling-window straddle acceptability, rule-version semantics under replay, event_id policy, dashboard login flow.
+- No current Phase 2 blocker. Historical failed assessments are preserved, not open findings.
+- Upcoming Phase 3 decisions: tumbling-window straddle and rule-version semantics under replay. Dashboard login flow belongs to Phase 4.
+- The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-16T21:04:16.258Z
-Stopped at: Phase2 local repair audits passed; authorize branch push and verify hostedCI
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-HUMAN-UAT.md
+Last session: 2026-10-16T21:49:39.123Z
+Stopped at: Phase 2 verified and complete; Phase 3 ready for discussion, not executed
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-CI-CLOSEOUT.md

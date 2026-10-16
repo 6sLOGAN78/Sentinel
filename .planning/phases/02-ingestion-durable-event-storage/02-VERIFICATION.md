@@ -1,108 +1,125 @@
 ---
 phase: 02-ingestion-durable-event-storage
 verified: 2026-10-17
-status: human_needed
-score: 14/14 phase requirements locally verified; hosted CI pending
+status: passed
+score: 5/5 roadmap success criteria verified
+requirements_satisfied: 14/14
 implementation_gaps: 0
 overrides_applied: 0
-report_completion: root_recovered_from_verifier_audit_messages
+report_completion: root_inline_goal_verification_after_hosted_ci
+hosted_ci_run: 38970203760
+hosted_ci_revision: 36bba7cfefbe8955879d6b402c39495eeef999ad
+decision_coverage:
+  honored: 30
+  total: 30
+  not_honored: []
 gaps: []
-human_verification:
-  - test: "Push an authorized branch and observe all required GitHub Actions jobs."
-    expected: "All jobs, including Docker-backed integration and every nonempty Phase 2 group, pass at the pushed revision."
-    why_human: "No push was performed or authorized by the repair plans; hosted runner evidence is still absent."
+human_verification: []
 ---
 
-# Phase 2 — Re-verification handoff
+# Phase 2: Ingestion & Durable Event Storage — Final Verification
 
-**Verdict: human_needed.** The local producer → ingest → Kafka → writer → ClickHouse → tenant lookup slice is implemented and tested. No outstanding implementation gap was identified in the final audit. Full phase sign-off still requires a real hosted CI run.
+**Goal:** As a producer with a scoped API key, I want to submit event batches acknowledged only after Kafka accepts them, so that my events become queryable and duplicate-safe in ClickHouse.
 
-## Audit provenance
+**Verdict: passed.** All 22 plans are implemented; the five roadmap success criteria and all 14 Phase 2 requirements have implementation and behavioral evidence. Hosted [CI run 38970203760](https://github.com/6sLOGAN78/Sentinel/actions/runs/38970203760) completed successfully at `2026-10-16T21:46:23Z` on exact SHA `36bba7cfefbe8955879d6b402c39495eeef999ad`. All eight jobs passed, including the full real integration suite, all seven separately nonempty behavior groups, explicit causal contracts and Compose.
 
-The independent goal verifier inspected current implementation, plans, summaries, raw acceptance logs, artifact/link declarations and targeted behaviors. It reported all seven original gap groups and all nine original review findings closed, with hosted CI as the sole pending check. The verifier then hit its provider usage limit before writing a report. The root agent recovered this handoff from its recorded audit messages and committed evidence. This document does not falsely claim that the verifier completed and signed a final report or assign an invented must-have score.
+## Verification provenance
 
-The separate independent code review completed as `clean` in `02-REVIEW.md` (commit `c16a784`). The independent security audit completed as `verified`, with all 90 registered threats closed and zero open in `02-SECURITY.md` (commit `6c09a58`). Original failing assessments remain byte-identical in the dated `PRE-GAPS` snapshots.
+This is the root agent's completed inline goal-backward closeout, not a fabricated signature from the earlier independent verifier. The GSD skill's no-automatic-spawn fallback was used. Root reran declared artifact/key-link and decision checks, traced the authentication/intake/storage/commit path, spot-checked requirement-linked assertions and skip patterns, ran fresh local regressions, reviewed the three-file hosted delta, and observed hosted success through the GitHub API.
 
-## Goal and user flow
+The previous independent goal verifier inspected implementation and raw local evidence but reached provider quota before signing its final report. Its recovered `human_needed` handoff is retained byte-identically in `02-VERIFICATION-2026-10-17-PRE-CI.md` (Git blob `d80208726b7ad08ce93b19c41fec5d37c76daa39`). Independent code review did complete as clean (`c16a784`), and the independent security audit verified all 90 registered threat dispositions with zero open (`6c09a58`). Root's subsequent delta review is explicitly identified in `02-REVIEW.md`. Original failing assessments remain unchanged in dated PRE-GAPS snapshots.
 
-The persisted MVP goal now passes the canonical story validator:
+## Goal achievement
 
-> As a producer with a scoped API key, I want to submit event batches acknowledged only after Kafka accepts them, so that my events become queryable and duplicate-safe in ClickHouse.
+Roadmap success criteria take precedence over individual plan declarations.
 
-| Flow step | Evidence | Local result |
+| # | Observable truth | Result | Evidence |
+|---|---|---|---|
+| 1 | A scoped producer receives ordered 202 acceptance only after Kafka acknowledgement; invalid batches publish nothing and errors have the required envelope | Verified | `Handler.PostBatch` authenticates and validates before `PublishBatch`; producer uses all-ISR synchronous results. Real `TestIngestAcceptedAfterAck`, authentication/status/invalid-batch and Kafka-timeout cases passed in hosted integration. Invalid cases assert no Kafka record. |
+| 2 | A 1,000-event seed traverses the real application and becomes queryable | Verified | Four bounded actual seed runs in `02-GAP-ACCEPTANCE.md`, each sent=accepted=visible=1000, API spotchecks=3, tenant isolation=1, retries=0. Exact current-run ID sets and time/tenant bounds prevent old rows satisfying acceptance. Runtime code is unchanged during CI closeout. Hosted Compose independently started and checked the pipeline. |
+| 3 | Retries and replay never expose duplicate identities immediately, without OPTIMIZE | Verified | Native store binds tenant/ID and uses single-ID lookup plus `uniqExact(event_id)`. `TestDedupeDoubleInsertNoOptimize` proves twice the physical rows but one visible identity per event; different timestamps, tenant scope, retry and writer crash/replay cases passed on hosted real dependencies. |
+| 4 | Quotas return 429/Retry-After, Redis outage policy is explicit, and overload does not buffer without bound | Verified | Bounded HTTP admission, capped Kafka buffers and Redis TIME/token-bucket operations are wired. Real quota/concurrency, validation accounting, fail-closed/fail-open and load-shedding cases passed in the separately guarded hosted rate-limit/ingest groups. |
+| 5 | Poison reaches DLQ before source commit and readiness reflects actual dependencies | Verified | Writer inserts valid events, obtains acknowledged DLQ effects and commits only per-partition contiguous durable prefixes. Encoded/header bounds and aggregate deadlines are tested. Hosted poison/DLQ-failure/slow-rebalance/recovery tests and five-service dependency outage/draining/liveness cases passed. |
+
+**Score: 5/5 roadmap success criteria verified.**
+
+## Artifact and key-link verification
+
+Fresh registered checks against all 22 plans verified **61/61 artifact declarations**. These checks establish existence and substantive expected patterns; source tracing and behavioral results establish wiring/function, not mere file counts.
+
+| Artifact group | Concrete implementation | Wiring/function evidence |
 |---|---|---|
-| Authenticate scoped producer and validate batch | Key/tenant/scope/error-envelope unit and real ingest tests | Pass |
-| Return 202 after Kafka acknowledges every event | Synchronous all-ISR producer; timeout and partial-publish retry tests | Pass |
-| Persist valid events before source commit | Native ClickHouse writer; failure, crash, replay and prefix-offset tests | Pass |
-| Quarantine poison before source commit within bounded work | Encoded/header caps; shared processing budgets; real slow-poison rebalance and full-origin recovery | Pass |
-| Retrieve tenant-scoped, immediately duplicate-safe events | Parameterized lookup, uniqExact and immediate no-OPTIMIZE duplicate tests | Pass |
-| Prove the complete run and readiness | Exact-ID seed manifest verification, tenant-hidden 404 and dependency-readiness tests | Pass |
+| Credentials and intake | `apikeys/{keys,store,verifier}.go`, `ingest/handler.go`, ingest binary | PostgreSQL hash metadata → per-presentation secret verification → scoped principal → validated batch; real key/auth/ingest tests |
+| Kafka durability | `kafkax/{producer,consumer,dlq}.go` | All-ISR publishing, bounded fetch/manual commits, acknowledged bounded DLQ; real timeout/recovery and origin assertions |
+| Writer and event storage | `eventwriter/writer.go`, `storage/clickhouse/events.go`, migrations/chmigrate | Insert/DLQ before contiguous source commit; native parameterized queries, immediate unique counts, TTL repeat tests |
+| Tenant lookup | `eventquery/handler.go`, query-api binary, OpenAPI/runtime-auth tests | Verified read principal supplies tenant to bound query; other-tenant identity hidden, API-key-only contract enforced |
+| Operations and stack | `opshttp/server.go`, five binary entrypoints, healthprobe, Compose/topic-init | Protocol checks and bounded draining; redirect-rejecting loopback probe; real readiness tests and hosted Compose |
+| Generator and seed | generator events/send/CLI, `scripts/seed.py` and regression tests | Deterministic reserved-range data, identical retries, descriptor-anchored manifests/keys, isolated credentials, exact-ID seed acceptance |
+
+**Key links: 50/51 automatic textual checks passed; all 51 are accounted for.** The one automatic false negative searches for `ConstantTimeCompare` in `verifier.go` rather than its helper. Manual tracing confirms `Verifier.Authenticate` calls `VerifyHash` on every request (including cache hits), and `keys.go:82` invokes `subtle.ConstantTimeCompare(Hash(secret), expected)`.
+
+Critical source paths traced inline:
+
+- Intake authenticates and checks `events:write`, normalizes/validates the whole batch, then awaits `PublishBatch` before 202.
+- `Producer.PublishBatch` waits for synchronous record results with bounded delivery; partial failure produces retryable 503, not success.
+- `Writer.process` inserts valid events before DLQ effects, obtains durable partition prefixes, and commits only those records with an independently reserved bounded deadline.
+- Query lookup checks `events:read` and passes only the verified principal tenant plus validated UUID to native named parameters.
+- Readiness registers live dependency capabilities; process lifecycle advertises draining before closing work and keeps ops available until final cleanup.
 
 ## Requirement coverage
 
-All 14 Phase 2 IDs occur in plan frontmatter and have implementation/test evidence. No orphan requirement was identified.
+| Requirement | Status | Implementation/behavior evidence |
+|---|---|---|
+| ING-01 | Satisfied | Hash-only scoped keys, trusted tenant, bounded authenticated batches |
+| ING-02 | Satisfied | Strict atomic validation and no-publication invalid-batch assertions |
+| ING-03 | Satisfied | Ordered acceptance after all-ISR record results |
+| ING-04 | Satisfied | Stable IDs, identical retry bytes, immediate read dedupe and real replay |
+| ING-05 | Satisfied | Real authentication, tenant, size and dependency-error envelope cases |
+| ING-06 | Satisfied | Redis quota/Retry-After, explicit tested outage policies |
+| ING-07 | Satisfied | Admission/fetch/producer caps and aggregate writer deadlines |
+| STOR-01 | Satisfied | Insert-before-commit and real crash/failure recovery |
+| STOR-02 | Satisfied | Monthly schema and configurable, repeatable TTL migrations |
+| STOR-03 | Satisfied | Immediate lookup/count dedupe without background merges |
+| STOR-04 | Satisfied | Bounded trusted DLQ metadata, durable origins and prefix/rebalance proof |
+| GEN-01 | Satisfied | Seeded reserved-range events and private safe manifests |
+| GEN-03 | Satisfied | Four actual 1,000-ID acceptance runs and controlled child credentials |
+| OBS-01 | Satisfied | Five services' real liveness/readiness/outage/draining behavior |
 
-| Requirement | Local evidence |
+All 14 IDs appear in plan frontmatter and REQUIREMENTS.md; none is orphaned. The broad functional requirements for detector rules/scenarios, alert recovery, complete list/filter APIs, JWT/dashboard and metrics/benchmarks remain assigned to later phases; Phase 2 does not claim those deliverables.
+
+### Decision coverage
+
+Fresh registered check: all **30/30** trackable CONTEXT decisions honored; no missing decisions. Schema drift check returned false. The stale pre-Phase-1 codebase map produces a nonblocking refresh warning; this verification used current source and tests, not that map.
+
+## Behavioral verification and test quality
+
+| Check | Observed result |
 |---|---|
-| ING-01 | Hash-only scoped API keys, tenant binding, 500-event/1 MiB intake caps |
-| ING-02 | Strict all-or-nothing field validation and zero-publication invalid-batch tests |
-| ING-03 | Ordered 202 response only after synchronous all-ISR acknowledgements |
-| ING-04 | Stable IDs, identical retry bytes and immediate read-time deduplication |
-| ING-05 | Authentication, scope, tenant, size and availability error-envelope cases |
-| ING-06 | Redis TIME quota, Retry-After and explicit outage behavior |
-| ING-07 | Bounded admission, producer/fetch buffers and aggregate writer deadlines |
-| STOR-01 | Insert-before-offset commits and real crash/failure recovery |
-| STOR-02 | Monthly event schema and configurable TTL migration behavior |
-| STOR-03 | Immediate duplicate-safe lookup/counts without background merge reliance |
-| STOR-04 | Trusted bounded DLQ origins, publish-before-prefix commit, replay after rebalance |
-| GEN-01 | Deterministic reserved-range events and private safe manifests |
-| GEN-03 | Repeated real 1,000-ID seed acceptance and controlled child credentials |
-| OBS-01 | Five binaries wired to liveness/readiness and bounded draining |
+| Full hosted workflow | All eight jobs successful at the exact code SHA above |
+| Hosted integration | Full suite plus all seven nonempty groups and explicit causal-contract step successful |
+| Hosted Compose | Startup, stack checker, repeat migration and teardown successful |
+| Fresh local `make test` | All Go race packages, 6 web tests and 54 generator tests passed before the test-only shutdown repair |
+| Shutdown repair validation | All HTTP tests passed 200 race-enabled repetitions after repair; focused lint zero issues; final hosted full race suite passed |
+| Script regressions | All 27 passed |
+| Module/scanner regressions | Tidy no diff; original two findings reproduced in isolated clone, exact exceptions pass, new synthetic positive control still fails |
+| Earlier complete local acceptance | 809-second gate, full real integration, seven guarded groups and four actual 1,000-ID seeds; see GAP-ACCEPTANCE |
 
-## Original gap closure
+Requirement-linked test scans found no disabled/skip markers. Inspected assertions are behavioral/value-level, not existence-only: actual Kafka headers/keys and ordered IDs, invalid-batch zero publication, double physical rows versus exact unique count, complete durable poison-origin sets, source offsets bounded by independently observed effects, and real dependency outage/recovery/draining.
 
-| Original gap | Repair evidence |
-|---|---|
-| Noncanonical MVP goal | Persisted exact story validates; no goal meaning changed |
-| DLQ wire bound and poison-heavy rebalance | 02-14/15 RED→GREEN summaries, encoded-size oracle, real two-partition rebalance/origin/offset recovery |
-| Advertised bearer alternative absent at runtime | 02-16 YAML-driven runtime test and accurate API-key-only live getEvent contract; JWT remains Phase 4 |
-| Redirect escape from loopback probe | 02-17 ten-case zero-follow regression and safe copied client |
-| Manifest parent permission mutation | 02-18 descriptor-anchored private writes, existing-parent/symlink/swap/failure cases |
-| Credentials entering Docker context | 02-19 actual fixture export and exclusion-removal regression |
-| Ambient seed key and integration-only dependency policy | Explicit generator environment and fail-closed dual-graph guard |
+Seed expectations come from the submitted manifest's exact identity set, with tenant/run-start bounds; durability expectations come from independently observed database/DLQ effects and broker offsets. No circular expected-value generator or insufficient assertion was identified in these inspected requirement paths. Hosted group guards fail if no tests run.
 
-The additional retention warning is closed by 02-20's real default/change/repeat topic test and effective exact-value checker. The follow-up review found and then closed the separate seed-directory symlink chmod defect (`537e073` RED, `428604a` fix) and stale README liveness route. Focused review recheck passed before the canonical review was marked clean.
+The hosted delta did not disable any test, scan rule or workflow step. The shutdown test checks its original listener's closed state instead of redialing a reusable port. The scanner exempts two verified historical synthetic fingerprints only; positive controls demonstrate new findings still fail.
 
-## Observed acceptance
+## Anti-patterns, security and scope
 
-See `02-GAP-ACCEPTANCE.md` for complete commands, timings, commits and provenance.
+No blocking placeholder/TODO/FIXME or stub pattern was found in the inspected Phase 2 intake, credential, Kafka, writer, query, ops and seed paths. Code review remains clean; the completed registered threat audit has zero open threats. No new runtime code, dependency pin or risk acceptance was introduced during closeout.
 
-- Full sequential local acceptance exited 0 in **809 seconds**: default/integration lint and vet, Go race/web/generator checks, scripts, Docker context and dependency guards, pins, full real integration and all seven independently nonempty CI groups.
-- Full Docker-backed integration package passed in **253.377 seconds**. Exact new rebalance and retention tests passed in **32.403** and **64.612 seconds**.
-- Two consecutive rebuilt-stack seeds each verified sent=accepted=visible=1000, API spotchecks=3, tenant isolation=1, retries=0. After the small seed-directory follow-up, all **27 script tests** and two more complete 1,000-ID seed runs passed.
-- Three named Sentinel volumes retained their original identities and creation timestamps. No reset or OPTIMIZE was used.
-- Default builds exclude integration failure controls. Schema drift is false; all 30 recorded decisions remain covered.
+The dated original reports and recovered verifier handoff are preserved. User-owned configuration/Serena changes, local environment/keys and persistent volumes were not staged, reset or deleted. No OPTIMIZE, force push or history rewrite was used.
 
-## Independent verifier spot-checks and limits
+## Human verification and gaps
 
-The verifier separately confirmed raw gate logs and persistent-volume identities, all **61 artifact declarations**, and **50/51 automated key links**. It manually traced the remaining API-key link through `VerifyHash` to `subtle.ConstantTimeCompare`.
+None remaining. The previously pending external CI check was authorized, executed and observed programmatically. Phase 2 has no visual UI requirement requiring a subjective review. No implementation gap or verification override remains.
 
-Fresh focused checks reported by the verifier:
+## Completion
 
-- All **13 seed tests** passed, including both symlink-directory cases, environment isolation and exact-ID/shortfall oracles.
-- The stdlib healthprobe package passed uncached in **0.108 seconds**.
-- **19 selected generator manifest/retry/precedence cases** passed in **0.33 seconds** using the existing virtual environment.
-- A separate wider Go spot-check could not finish uncached dependency downloads under its 10-second diagnostic ceiling; it was recorded as an environment skip, not a code failure or a pass.
-- At reassessment time no Sentinel containers were running; live requests were connection-refused. This temporal observation does not erase the independently inspected earlier real integration/seed evidence. The verifier did not restart services or touch unrelated running containers.
-- Hosted GitHub Actions was not observed. Local equivalence does not substitute for that external check.
-
-## Remaining human check
-
-Authorize and push the intended branch, then confirm every required GitHub Actions job succeeds at that revision. Save the run URL and result in `02-HUMAN-UAT.md`, then rerun phase verification to obtain a completed final verdict. Phase 2 stays pending human verification; this handoff does not advance Phase 3.
-
-## Historical reports
-
-- `02-VERIFICATION-2026-10-16-PRE-GAPS.md`: original 37/43, gaps_found assessment.
-- `02-REVIEW-2026-10-16-PRE-GAPS.md`: original five critical/four warning findings.
-- Current `02-REVIEW.md`: independent clean re-review with follow-up audit trail.
-- Current `02-SECURITY.md`: independent verification of all 90 planned threat dispositions.
+Ready for the registered `phase.complete 02` operation. Root owns the completed verdict and tracking updates. Phase 3 may become the next planning position but is not executed by this closeout.

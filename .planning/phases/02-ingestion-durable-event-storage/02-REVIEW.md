@@ -141,6 +141,16 @@ The follow-up examined only `scripts/seed.py`, `scripts/test_seed.py` and `READM
 
 No current BLOCKER or WARNING findings remain in the reviewed scope. Hosted CI is still pending; this verdict does not claim a hosted run or a new broad review.
 
+## Hosted-CI closeout delta review — root, 2026-10-17
+
+Reviewed only `backend/go.mod` and `.gitleaksignore` at `444d47e`. This inline delta review supplements, and does not impersonate or replace, the completed independent 99-file review above. No new findings.
+
+- `producer.go` directly imports `pkg/kmsg`; changing its direct/indirect classification preserves version `v1.14.0`, dependency checksums and runtime code. Fresh `go mod tidy -diff` exited 0; focused API-key/Kafka race tests and full `make test` passed.
+- The two exact historical fingerprints point to `TestAPIKeyRejectMalformed`, whose secret is an all-zero 32-byte synthetic value. No file, rule or commit-wide allowlist was introduced. The unmodified history in an isolated temporary clone failed with two findings; applying the ignore file passed. A new synthetic positive-control finding in that clone still failed with one finding. The production full-history scan also passed locally and on the repair CI run.
+- No real credential, Git history, unrelated configuration, Serena files or persistent volume was changed by this delta.
+
+Follow-up delta at `36bba7c`: reviewed `backend/internal/httpx/httpx_test.go`. The hosted failure redialed a released ephemeral port, which is not an assertion about ownership of the original listener. The replacement requires `net.ErrClosed` from closing that same listener after successful Shutdown and Serve completion; a still-open listener would return nil and fail the assertion. It does not mask an error, add a sleep, skip a test or weaken production shutdown. All HTTP tests passed 200 repetitions under `-race`; focused lint reported zero issues. No new findings.
+
 ## Previously reported critical issues — resolved
 
 ### CR-01: Seed directory preparation follows symlinks and chmods their external targets
