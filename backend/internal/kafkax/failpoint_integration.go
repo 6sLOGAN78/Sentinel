@@ -35,6 +35,7 @@ func publishWithPrefixBarrier(ctx context.Context, client *kgo.Client, records [
 	if err = client.ProduceSync(ctx, records[:prefix]...).FirstErr(); err != nil {
 		return true, fmt.Errorf("publish acknowledged integration prefix: %w", err)
 	}
+	// #nosec G304 G703 -- integration-only barrier path is supplied by the trusted test runner.
 	file, err := os.OpenFile(path+".reached", os.O_WRONLY|os.O_CREATE|os.O_EXCL, prefixBarrierPerms)
 	if err != nil {
 		return true, fmt.Errorf("create Kafka test barrier: %w", err)
@@ -46,6 +47,7 @@ func publishWithPrefixBarrier(ctx context.Context, client *kgo.Client, records [
 	ticker := time.NewTicker(prefixBarrierPoll)
 	defer ticker.Stop()
 	for {
+		// #nosec G703 -- integration-only path selects a test-runner-owned release barrier.
 		if _, statErr := os.Stat(path + ".release"); statErr == nil {
 			break
 		} else if !errors.Is(statErr, os.ErrNotExist) {

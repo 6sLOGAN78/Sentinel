@@ -40,7 +40,9 @@ func rateLimitConfig(capacity int, refill float64, failMode string) config.RateL
 	}
 }
 
-func newRateLimiter(t *testing.T, redisConfig config.RedisConfig, cfg config.RateLimitConfig, log zerolog.Logger) (*ratelimit.Limiter, *redis.Client) {
+func newRateLimiter(
+	t *testing.T, redisConfig config.RedisConfig, cfg config.RateLimitConfig, log zerolog.Logger,
+) (*ratelimit.Limiter, *redis.Client) {
 	t.Helper()
 	client, err := redisx.New(t.Context(), redisConfig)
 	require.NoError(t, err)

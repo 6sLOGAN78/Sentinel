@@ -4,7 +4,7 @@ package test_test
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +34,7 @@ type gatedEventStore struct {
 type unusedDLQ struct{}
 
 func (unusedDLQ) Publish(context.Context, *kgo.Record, kafkax.DLQReason) error {
-	return fmt.Errorf("unexpected DLQ publish")
+	return errors.New("unexpected DLQ publish")
 }
 
 func (s *gatedEventStore) InsertBatch(ctx context.Context, events []*contracts.Event) error {
@@ -239,7 +239,7 @@ func TestWriterInsertFailureNoCommit(t *testing.T) {
 
 	for _, event := range events {
 		got, getErr := store.Get(t.Context(), "demo", event.EventID)
-		require.NoError(t, getErr, fmt.Sprintf("event %s", event.EventID))
+		require.NoError(t, getErr, "event %s", event.EventID)
 		require.Equal(t, event.EventID, got.EventID)
 	}
 }

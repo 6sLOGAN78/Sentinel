@@ -268,7 +268,9 @@ func TestIngestKafkaTimeout503(t *testing.T) {
 
 	require.NoError(t, handle.Unpause(t.Context()))
 	paused = false
-	require.Eventually(t, func() bool { return fixture.producer.Ping(t.Context()) == nil }, 20*time.Second, 100*time.Millisecond)
+	require.Eventually(t, func() bool {
+		return fixture.producer.Ping(t.Context()) == nil
+	}, 20*time.Second, 100*time.Millisecond)
 }
 
 func requireKafkaProduceEventually(t *testing.T, kafka config.KafkaConfig) {

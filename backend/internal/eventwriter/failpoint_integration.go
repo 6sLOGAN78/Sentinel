@@ -25,6 +25,7 @@ func afterInsertBeforeCommit(ctx context.Context) error {
 	if path == "" || !writerBarrierUsed.CompareAndSwap(false, true) {
 		return nil
 	}
+	// #nosec G304 G703 -- integration-only barrier path is supplied by the trusted test runner.
 	file, err := os.OpenFile(path+".reached", os.O_WRONLY|os.O_CREATE|os.O_EXCL, privateBarrierPerms)
 	if err != nil {
 		return fmt.Errorf("create writer test barrier: %w", err)
@@ -38,6 +39,7 @@ func afterInsertBeforeCommit(ctx context.Context) error {
 	ticker := time.NewTicker(barrierPollInterval)
 	defer ticker.Stop()
 	for {
+		// #nosec G703 -- integration-only path selects a test-runner-owned release barrier.
 		if _, statErr := os.Stat(path + ".release"); statErr == nil {
 			return nil
 		} else if !errors.Is(statErr, os.ErrNotExist) {
