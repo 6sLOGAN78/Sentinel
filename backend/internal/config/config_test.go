@@ -208,6 +208,22 @@ func TestLoadEventWriterDefaults(t *testing.T) {
 	require.Equal(t, 64<<10, cfg.Writer.DLQMaxBytes)
 }
 
+func TestWriterBudgetRejectsOversizedOwnership(t *testing.T) {
+	for _, values := range []map[string]string{
+		{"FLUSH_INTERVAL": "4m"},
+		{"MAX_ATTEMPTS": "10", "OPERATION_TIMEOUT": "20s", "SHUTDOWN_TIMEOUT": "30s"},
+	} {
+		t.Run(values["FLUSH_INTERVAL"]+values["OPERATION_TIMEOUT"], func(t *testing.T) {
+			setCompleteEnv(t)
+			for field, value := range values {
+				t.Setenv("SENTINEL_WRITER."+field, value)
+			}
+			_, err := config.Load(config.ServiceEventWriter)
+			require.ErrorContains(t, err, "writer")
+		})
+	}
+}
+
 func TestLoadEventWriterRejectsUnsafeBounds(t *testing.T) {
 	cases := []struct {
 		key   string

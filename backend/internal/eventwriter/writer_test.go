@@ -22,12 +22,13 @@ import (
 )
 
 type scriptedConsumer struct {
-	mu             sync.Mutex
-	records        []*kgo.Record
-	pollLimits     []int
-	commits        [][]*kgo.Record
-	allowRebalance int
-	onCommit       func()
+	mu               sync.Mutex
+	records          []*kgo.Record
+	pollLimits       []int
+	commits          [][]*kgo.Record
+	allowRebalance   int
+	onCommit         func()
+	commitContextErr error
 }
 
 func (c *scriptedConsumer) PollRecords(ctx context.Context, maxRecords int) ([]*kgo.Record, error) {
@@ -48,8 +49,9 @@ func (c *scriptedConsumer) PollRecords(ctx context.Context, maxRecords int) ([]*
 	return nil, ctx.Err()
 }
 
-func (c *scriptedConsumer) CommitRecords(_ context.Context, records ...*kgo.Record) error {
+func (c *scriptedConsumer) CommitRecords(ctx context.Context, records ...*kgo.Record) error {
 	c.mu.Lock()
+	c.commitContextErr = ctx.Err()
 	c.commits = append(c.commits, append([]*kgo.Record(nil), records...))
 	onCommit := c.onCommit
 	c.mu.Unlock()
@@ -58,6 +60,62 @@ func (c *scriptedConsumer) CommitRecords(_ context.Context, records ...*kgo.Reco
 	}
 
 	return nil
+}
+
+type delayedDLQ struct {
+	store       *recordingStore
+	delay       time.Duration
+	completed   int
+	started     int
+	insertFirst bool
+}
+
+func (p *delayedDLQ) Publish(ctx context.Context, _ *kgo.Record, _ kafkax.DLQReason) error {
+	p.started++
+	p.insertFirst = p.insertFirst && p.store.attempts > 0
+	timer := time.NewTimer(p.delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		p.completed++
+		return nil
+	}
+}
+
+func TestWriterAggregatePoisonBudget(t *testing.T) {
+	now := time.Now().UTC()
+	records := []*kgo.Record{validRecord(t, 0, now, now)}
+	for offset := range int64(8) {
+		records = append(records, &kgo.Record{Topic: "events", Partition: 0, Offset: offset + 1, Value: []byte(`{"broken":`)})
+	}
+	independent := validRecord(t, 0, now, now)
+	independent.Partition = 1
+	records = append(records, independent)
+	consumer := &scriptedConsumer{records: records}
+	store := &recordingStore{}
+	dlq := &delayedDLQ{store: store, delay: 40 * time.Millisecond, insertFirst: true}
+	settings := writerSettings(len(records), 10*time.Millisecond)
+	settings.MaxAttempts = 1
+	settings.OperationTimeout = 100 * time.Millisecond
+	settings.ShutdownTimeout = 100 * time.Millisecond
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	started := time.Now()
+	err := newWriter(consumer, store, dlq, settings, contracts.DefaultLimits()).Run(ctx)
+	elapsed := time.Since(started)
+	t.Logf("aggregate elapsed=%s completed=%d started=%d", elapsed, dlq.completed, dlq.started)
+	require.ErrorIs(t, err, context.DeadlineExceeded, "poison batch must exhaust one shared retry budget")
+	require.Less(t, elapsed, 250*time.Millisecond)
+	require.True(t, dlq.insertFirst)
+	require.Equal(t, 2, dlq.completed)
+	require.Equal(t, 3, dlq.started, "no new poison work after exhaustion")
+	require.Len(t, consumer.commits, 1)
+	require.NoError(t, consumer.commitContextErr, "expired effects context must leave the commit reservation live")
+	require.Equal(t, map[int32]int64{0: 2, 1: 0}, offsetsByPartition(consumer.commits[0]))
+	require.Equal(t, 1, consumer.allowRebalance)
+	require.Equal(t, 1, store.attempts, "internal expiry must not trigger a shutdown retry")
 }
 
 func (c *scriptedConsumer) AllowRebalance() {

@@ -36,7 +36,9 @@ func TestRebalanceTimeoutCoversWorstProcessingBudget(t *testing.T) {
 		MaxAttempts:      3,
 		OperationTimeout: 2 * time.Second,
 		RetryMaxBackoff:  time.Second,
+		FlushInterval:    time.Second,
+		ShutdownTimeout:  3 * time.Second,
 	}
 
-	require.Equal(t, 15*time.Second, rebalanceTimeout(settings))
+	require.Equal(t, 27*time.Second, rebalanceTimeout(settings), "collection + insert + aggregate poison + commit + shutdown + margin")
 }
