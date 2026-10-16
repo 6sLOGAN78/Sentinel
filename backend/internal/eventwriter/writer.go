@@ -91,6 +91,7 @@ func (w *Writer) run(ctx context.Context) error {
 
 		result, err := w.poll(ctx, len(records), flushAt)
 		if err != nil {
+			w.consumer.AllowRebalance()
 			return err
 		}
 		if result.shutdown {
@@ -141,8 +142,8 @@ func (w *Writer) poll(ctx context.Context, pending int, flushAt time.Time) (poll
 
 func pollError(ctx context.Context, pending int, err error) (pollResult, error) {
 	switch {
-	case ctx.Err() != nil, errors.Is(err, kafkax.ErrConsumerClosed):
-		// Cancellation and an explicit consumer close are loop-control signals.
+	case ctx.Err() != nil:
+		// Only genuine parent cancellation transfers work to shutdown.
 		//nolint:nilerr // translated into a bounded shutdown flush by the caller
 		return pollResult{shutdown: true}, nil
 	case pending > 0 && errors.Is(err, context.DeadlineExceeded):

@@ -460,7 +460,8 @@ func TestWriterConsumerCloseDoesNotStartShutdownTransfer(t *testing.T) {
 	now := time.Now().UTC()
 	consumer := closingConsumer{&scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, now, now)}}}
 	store := &recordingStore{}
-	err := newWriter(consumer, store, &recordingDLQ{}, writerSettings(2, time.Second), contracts.DefaultLimits()).Run(t.Context())
+	w := newWriter(consumer, store, &recordingDLQ{}, writerSettings(2, time.Second), contracts.DefaultLimits())
+	err := w.Run(t.Context())
 	require.ErrorIs(t, err, kafkax.ErrConsumerClosed)
 	require.Zero(t, store.attempts, "only genuine parent cancellation may start fresh shutdown processing")
 	require.Empty(t, consumer.commits)
