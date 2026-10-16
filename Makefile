@@ -70,9 +70,8 @@ run: ## Run a service: make run SVC=<ingest|detector|event-writer|alert-writer|q
 	@if [ ! -f .env ]; then echo ".env not found; run 'make dev-up' first" >&2; exit 1; fi
 	cd backend && env 'SENTINEL_PRIMARY.ENV=local' 'SENTINEL_ENV_FILE=$(CURDIR)/.env' 'SENTINEL_SERVER.BIND_ADDRESS=127.0.0.1' 'SENTINEL_OPS.BIND_ADDRESS=127.0.0.1' go run ./cmd/$(SVC)
 
-seed: ## Not available yet
-	@echo "seed is available from Phase 2" >&2
-	@exit 1
+seed: dev-up ## Seed and verify 1000 events through the real application path
+	python3 -B scripts/seed.py
 
 bench: ## Not available yet
 	@echo "bench is available from Phase 5" >&2
