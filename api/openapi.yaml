@@ -7,8 +7,9 @@ info:
     The Event and Alert component schemas mirror backend/internal/contracts/schema/*.json,
     which are canonical; a drift test keeps them in sync.
 
-    Authentication: ingestion uses a scoped API key in the X-API-Key header; dashboard
-    and query routes use a bearer JWT. The tenant is always resolved from the verified
+    Authentication: the implemented Phase 2 ingestion and single-event lookup routes
+    use scoped API keys in the X-API-Key header. Dashboard and list operations describe
+    planned Phase 4 bearer JWT contracts. The tenant is always resolved from the verified
     identity, never only from the request. Credentials are never accepted in URL query
     parameters, including for the SSE stream.
 servers:
@@ -103,9 +104,13 @@ paths:
       tags: [events]
       operationId: getEvent
       summary: Retrieve one event scoped to the tenant
+      description: |
+        Requires an API key in the X-API-Key header with events:read scope. The tenant
+        comes from the verified key. An event belonging to another tenant returns the
+        same 404 response as an absent event. Bearer authentication is not implemented
+        for this operation in Phase 2.
       security:
         - ApiKeyAuth: []
-        - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/EventID"
       responses:
