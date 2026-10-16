@@ -74,6 +74,8 @@ const (
 	defaultPartBytes   = 4 << 20
 	defaultFetches     = 2
 	defaultDLQBytes    = 64 << 10
+	defaultOpsBind     = "127.0.0.1"
+	defaultOpsCheck    = 2 * time.Second
 	maxFetchBytes      = 64 << 20
 	maxPartBytes       = 16 << 20
 	maxFetches         = 8
@@ -95,6 +97,7 @@ type Config struct {
 	Primary       Primary              `koanf:"primary"`
 	Observability *ObservabilityConfig `koanf:"observability"`
 	Server        ServerConfig         `koanf:"server"`
+	Ops           OpsConfig            `koanf:"ops"`
 	Database      DatabaseConfig       `koanf:"database"`
 	Redis         RedisConfig          `koanf:"redis"`
 	Kafka         KafkaConfig          `koanf:"kafka"`
@@ -103,6 +106,16 @@ type Config struct {
 	Contracts     ContractsConfig      `koanf:"contracts"`
 	Ingest        IngestConfig         `koanf:"ingest"`
 	Writer        WriterConfig         `koanf:"writer"`
+}
+
+// OpsConfig controls the private liveness/readiness listener.
+type OpsConfig struct {
+	BindAddress  string        `koanf:"bind_address" validate:"required,ip"`
+	Port         string        `koanf:"port" validate:"required"`
+	CheckTimeout time.Duration `koanf:"check_timeout" validate:"gt=0,lte=10s"`
+	// DrainHold is a bounded readiness propagation interval. Production uses
+	// zero; lifecycle acceptance tests set a short value to observe draining.
+	DrainHold time.Duration `koanf:"drain_hold" validate:"min=0,lte=5s"`
 }
 
 // Primary holds settings that every binary needs.
@@ -267,6 +280,9 @@ func Load(service string) (*Config, error) {
 			cfg.Server.Port = "8081"
 		}
 	}
+	if cfg.Ops.Port == "" {
+		cfg.Ops.Port = defaultOpsPort(service)
+	}
 
 	cfg.Observability.ServiceName = service
 	cfg.Observability.Environment = cfg.Primary.Env
@@ -316,6 +332,9 @@ func setDefaults(k *koanf.Koanf) {
 		"server.read_timeout":                        defaultHTTPSeconds,
 		"server.write_timeout":                       defaultHTTPSeconds,
 		"server.idle_timeout":                        defaultHTTPSeconds,
+		"ops.bind_address":                           defaultOpsBind,
+		"ops.check_timeout":                          defaultOpsCheck,
+		"ops.drain_hold":                             time.Duration(0),
 		"observability.logging.level":                levelInfo,
 		"observability.logging.format":               "json",
 		"observability.logging.slow_query_threshold": defaultSlowQuery,
@@ -376,6 +395,12 @@ func validateFor(cfg *Config, sections []string) error {
 	if err := v.Struct(cfg.Server); err != nil {
 		return fmt.Errorf("validate server config: %w", err)
 	}
+	if err := v.Struct(cfg.Ops); err != nil {
+		return fmt.Errorf("validate ops config: %w", err)
+	}
+	if err := validateListenerPorts(cfg.Server.Port, cfg.Ops.Port); err != nil {
+		return err
+	}
 
 	if err := v.Struct(cfg.Primary); err != nil {
 		return fmt.Errorf("validate primary config: %w", err)
@@ -423,6 +448,48 @@ func validateFor(cfg *Config, sections []string) error {
 	}
 
 	return nil
+}
+
+func defaultOpsPort(service string) string {
+	switch service {
+	case ServiceIngest:
+		return "9101"
+	case ServiceDetector:
+		return "9102"
+	case ServiceEventWriter:
+		return "9103"
+	case ServiceAlertWriter:
+		return "9104"
+	case ServiceQueryAPI:
+		return "9105"
+	default:
+		return ""
+	}
+}
+
+func validateListenerPorts(publicPort, opsPort string) error {
+	public, err := parsePort(publicPort)
+	if err != nil {
+		return fmt.Errorf("validate server config: %w", err)
+	}
+	ops, err := parsePort(opsPort)
+	if err != nil {
+		return fmt.Errorf("validate ops config: %w", err)
+	}
+	if public == ops {
+		return errors.New("validate listener config: public and ops ports must differ")
+	}
+
+	return nil
+}
+
+func parsePort(raw string) (uint64, error) {
+	port, err := strconv.ParseUint(raw, 10, 16)
+	if err != nil || port == 0 {
+		return 0, fmt.Errorf("port %q must be between 1 and 65535", raw)
+	}
+
+	return port, nil
 }
 
 // validateSection applies the checks a struct tag cannot express.

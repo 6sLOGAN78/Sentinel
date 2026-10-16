@@ -164,6 +164,26 @@ func TestChmigrateAddrForms(t *testing.T) {
 	}
 }
 
+func TestChmigratePingUsesConfiguredProtocolAndDatabase(t *testing.T) {
+	t.Parallel()
+
+	f, srv := newFake(t)
+	r := chmigrate.New(srv.URL, "usr", "pw", "db1", srv.Client())
+
+	if err := r.Ping(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.stmts) != 1 || f.stmts[0] != "SELECT 1" {
+		t.Fatalf("statements = %q", f.stmts)
+	}
+	if len(f.dbs) != 1 || f.dbs[0] != "db1" {
+		t.Fatalf("databases = %q", f.dbs)
+	}
+	if f.badAuth || f.badURL {
+		t.Fatalf("auth header missing or credentials in URL: auth=%v url=%v", f.badAuth, f.badURL)
+	}
+}
+
 func TestChmigrateErrorWrapped(t *testing.T) {
 	t.Parallel()
 

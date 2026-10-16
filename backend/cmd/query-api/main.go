@@ -17,6 +17,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/eventquery"
 	"github.com/6sLOGAN78/sentinel/internal/httpx"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
+	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	"github.com/6sLOGAN78/sentinel/internal/redisx"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
@@ -26,6 +27,15 @@ func main() {
 }
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
+	var opsServer *opshttp.Server
+	lc.Add("ops-http", func(closeCtx context.Context) error {
+		if opsServer == nil {
+			return nil
+		}
+
+		return opsServer.Shutdown(closeCtx)
+	})
+
 	db, err := database.New(ctx, cfg.Database, log)
 	if err != nil {
 		return fmt.Errorf("postgres: %w", err)
@@ -50,6 +60,22 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 
 	lc.Add("redis", app.CloseRedis(client))
 
+	draining := &opshttp.Draining{}
+	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
+		{Name: "postgres", Fn: db.Pool.Ping},
+		{Name: "redis", Fn: func(checkCtx context.Context) error { return client.Ping(checkCtx).Err() }},
+		{Name: "clickhouse", Fn: clickhouseConn.Ping},
+	})
+	if err != nil {
+		return fmt.Errorf("ops http: %w", err)
+	}
+	go func() {
+		<-opsServer.Done()
+		if serveErr := opsServer.Err(); serveErr != nil {
+			lc.Fail(fmt.Errorf("ops http: %w", serveErr))
+		}
+	}()
+
 	verifier := apikeys.NewVerifier(apikeys.NewStore(db.Pool), 0, 0, nil)
 	e := echo.New()
 	middleware.Apply(e, &log, cfg.Server.CORSAllowedOrigins)
@@ -72,6 +98,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		}
 	})
 	lc.Add("http", server.Shutdown)
+	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
 }

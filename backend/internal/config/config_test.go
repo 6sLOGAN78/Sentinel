@@ -81,6 +81,10 @@ func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
 	ingestCfg, err := config.Load(config.ServiceIngest)
 	require.NoError(t, err)
 	require.Equal(t, "8080", ingestCfg.Server.Port)
+	require.Equal(t, "127.0.0.1", ingestCfg.Ops.BindAddress)
+	require.Equal(t, "9101", ingestCfg.Ops.Port)
+	require.Equal(t, 2*time.Second, ingestCfg.Ops.CheckTimeout)
+	require.Zero(t, ingestCfg.Ops.DrainHold)
 	require.Equal(t, 30, ingestCfg.Server.ReadTimeout)
 	require.Equal(t, 30, ingestCfg.Server.WriteTimeout)
 	require.Equal(t, 30, ingestCfg.Server.IdleTimeout)
@@ -107,6 +111,69 @@ func TestLoadIngestDefaultsAndServicePorts(t *testing.T) {
 	queryCfg, err := config.Load(config.ServiceQueryAPI)
 	require.NoError(t, err)
 	require.Equal(t, "8081", queryCfg.Server.Port)
+	require.Equal(t, "9105", queryCfg.Ops.Port)
+}
+
+func TestLoadOpsDefaultsByService(t *testing.T) {
+	ports := map[string]string{
+		config.ServiceIngest:      "9101",
+		config.ServiceDetector:    "9102",
+		config.ServiceEventWriter: "9103",
+		config.ServiceAlertWriter: "9104",
+		config.ServiceQueryAPI:    "9105",
+	}
+	for service, want := range ports {
+		t.Run(service, func(t *testing.T) {
+			setCompleteEnv(t)
+			cfg, err := config.Load(service)
+			require.NoError(t, err)
+			require.Equal(t, want, cfg.Ops.Port)
+		})
+	}
+}
+
+func TestLoadOpsOverridesAndBounds(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_OPS.BIND_ADDRESS", "0.0.0.0")
+	t.Setenv("SENTINEL_OPS.PORT", "19101")
+	t.Setenv("SENTINEL_OPS.CHECK_TIMEOUT", "750ms")
+	t.Setenv("SENTINEL_OPS.DRAIN_HOLD", "250ms")
+
+	cfg, err := config.Load(config.ServiceIngest)
+	require.NoError(t, err)
+	require.Equal(t, "0.0.0.0", cfg.Ops.BindAddress)
+	require.Equal(t, "19101", cfg.Ops.Port)
+	require.Equal(t, 750*time.Millisecond, cfg.Ops.CheckTimeout)
+	require.Equal(t, 250*time.Millisecond, cfg.Ops.DrainHold)
+
+	for _, tc := range []struct {
+		key   string
+		value string
+	}{
+		{"SENTINEL_OPS.BIND_ADDRESS", "ops.internal"},
+		{"SENTINEL_OPS.PORT", "0"},
+		{"SENTINEL_OPS.PORT", "65536"},
+		{"SENTINEL_OPS.PORT", "not-a-port"},
+		{"SENTINEL_OPS.CHECK_TIMEOUT", "0s"},
+		{"SENTINEL_OPS.CHECK_TIMEOUT", "11s"},
+		{"SENTINEL_OPS.DRAIN_HOLD", "6s"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv(tc.key, tc.value)
+			_, loadErr := config.Load(config.ServiceIngest)
+			require.ErrorContains(t, loadErr, "ops")
+		})
+	}
+}
+
+func TestLoadRejectsPublicOpsPortCollision(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_SERVER.PORT", "19101")
+	t.Setenv("SENTINEL_OPS.PORT", "19101")
+
+	_, err := config.Load(config.ServiceIngest)
+	require.ErrorContains(t, err, "ports must differ")
 }
 
 func TestLoadEventWriterDefaults(t *testing.T) {

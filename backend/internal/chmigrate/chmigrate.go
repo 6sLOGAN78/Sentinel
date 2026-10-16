@@ -69,6 +69,19 @@ func New(addr, user, password, database string, client *http.Client) *Runner {
 // URL returns the HTTP endpoint the runner targets.
 func (r *Runner) URL() string { return r.baseURL }
 
+// Ping performs a real ClickHouse query over the configured HTTP protocol.
+// The response body and connection details remain internal to the runner.
+func (r *Runner) Ping(ctx context.Context) error {
+	if !identRe.MatchString(r.database) {
+		return ErrInvalidDatabase
+	}
+	if _, err := r.exec(ctx, "SELECT 1", r.database); err != nil {
+		return fmt.Errorf("pinging clickhouse: %w", err)
+	}
+
+	return nil
+}
+
 // SetEventsTTL changes retention for the events table in this runner's
 // configured database. Only the validated database identifier and integer
 // number of days are inserted into the fixed DDL statement.

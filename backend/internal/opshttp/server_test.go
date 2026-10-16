@@ -128,11 +128,17 @@ func TestReadyzTimeoutAndConcurrencyBound(t *testing.T) {
 			t.Fatal("sixteen readiness checks did not start")
 		}
 	}
+	select {
+	case status := <-statuses:
+		require.Equal(t, http.StatusServiceUnavailable, status)
+	case <-time.After(time.Second):
+		t.Fatal("saturated readiness request did not return immediately")
+	}
 	close(release)
 	wg.Wait()
 	close(statuses)
 
-	var saturated int
+	saturated := 1
 	for status := range statuses {
 		if status == http.StatusServiceUnavailable {
 			saturated++
@@ -144,6 +150,31 @@ func TestReadyzTimeoutAndConcurrencyBound(t *testing.T) {
 		t.Fatal("saturated request launched a dependency check")
 	default:
 	}
+}
+
+func TestReadyzUsesOneBoundedRequestContext(t *testing.T) {
+	const checkTimeout = 30 * time.Millisecond
+	secondCalled := false
+	handler := opshttp.NewHandler(checkTimeout, &opshttp.Draining{}, []opshttp.Check{
+		{Name: "slow", Fn: func(ctx context.Context) error {
+			<-ctx.Done()
+
+			return ctx.Err()
+		}},
+		{Name: "after", Fn: func(context.Context) error {
+			secondCalled = true
+
+			return nil
+		}},
+	})
+
+	started := time.Now()
+	status, body := probe(t, handler)
+	require.Equal(t, http.StatusServiceUnavailable, status)
+	require.Less(t, time.Since(started), 500*time.Millisecond)
+	require.Equal(t, "unavailable", body.Dependencies["slow"])
+	require.Equal(t, "unavailable", body.Dependencies["after"])
+	require.False(t, secondCalled)
 }
 
 type readinessBody struct {

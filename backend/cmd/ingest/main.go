@@ -18,6 +18,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/ingest"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
+	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	"github.com/6sLOGAN78/sentinel/internal/ratelimit"
 	"github.com/6sLOGAN78/sentinel/internal/redisx"
 )
@@ -27,6 +28,15 @@ func main() {
 }
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
+	var opsServer *opshttp.Server
+	lc.Add("ops-http", func(closeCtx context.Context) error {
+		if opsServer == nil {
+			return nil
+		}
+
+		return opsServer.Shutdown(closeCtx)
+	})
+
 	db, err := database.New(ctx, cfg.Database, log)
 	if err != nil {
 		return fmt.Errorf("postgres: %w", err)
@@ -54,6 +64,22 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return fmt.Errorf("kafka: %w", err)
 	}
 
+	draining := &opshttp.Draining{}
+	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
+		{Name: "postgres", Fn: db.Pool.Ping},
+		{Name: "redis", Fn: func(checkCtx context.Context) error { return client.Ping(checkCtx).Err() }},
+		{Name: "kafka", Fn: producer.Ping},
+	})
+	if err != nil {
+		return fmt.Errorf("ops http: %w", err)
+	}
+	go func() {
+		<-opsServer.Done()
+		if serveErr := opsServer.Err(); serveErr != nil {
+			lc.Fail(fmt.Errorf("ops http: %w", serveErr))
+		}
+	}()
+
 	verifier := apikeys.NewVerifier(
 		apikeys.NewStore(db.Pool), cfg.Ingest.APIKeyCacheCapacity, cfg.Ingest.APIKeyCacheTTL, nil,
 	)
@@ -78,6 +104,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		}
 	})
 	lc.Add("http", server.Shutdown)
+	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
 }

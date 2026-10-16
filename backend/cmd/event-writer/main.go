@@ -13,6 +13,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/eventwriter"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
 
@@ -21,6 +22,15 @@ func main() {
 }
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
+	var opsServer *opshttp.Server
+	lc.Add("ops-http", func(closeCtx context.Context) error {
+		if opsServer == nil {
+			return nil
+		}
+
+		return opsServer.Shutdown(closeCtx)
+	})
+
 	conn, err := storageclickhouse.Open(ctx, cfg.ClickHouse)
 	if err != nil {
 		return fmt.Errorf("clickhouse: %w", err)
@@ -68,6 +78,22 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 			return closeCtx.Err()
 		}
 	})
+
+	draining := &opshttp.Draining{}
+	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
+		{Name: "kafka", Fn: consumer.Ping},
+		{Name: "clickhouse", Fn: conn.Ping},
+	})
+	if err != nil {
+		return fmt.Errorf("ops http: %w", err)
+	}
+	go func() {
+		<-opsServer.Done()
+		if serveErr := opsServer.Err(); serveErr != nil {
+			lc.Fail(fmt.Errorf("ops http: %w", serveErr))
+		}
+	}()
+	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
 }
