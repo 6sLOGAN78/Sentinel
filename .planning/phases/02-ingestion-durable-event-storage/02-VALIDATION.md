@@ -1,7 +1,7 @@
 ---
 phase: 2
 slug: ingestion-durable-event-storage
-status: passed
+status: pending
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-10-12
@@ -127,4 +127,44 @@ Quick feedback is the unit/static part of the task command (target <=60s). Real-
 - [x] Quick loop targets <=60s; real-container feature gates have explicit longer ceilings
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** local Phase 2 validation passed on 2026-10-16 with real Docker-backed integration and two exact seed runs. Hosted GitHub Actions remains pending until a branch is pushed.
+**Historical approval:** local Phase 2 validation passed on 2026-10-16 with real Docker-backed integration and two exact seed runs. Hosted GitHub Actions remains pending until a branch is pushed. The later verification/review findings require the pending repairs and fresh acceptance below.
+
+## Gap-Closure Validation — Pending Repairs
+
+The original local gate and 41 passed task rows above remain valid historical observations at the pre-review revision. They do not establish the repaired boundaries. Overall status is pending until the eight new plans execute and independent assessment evaluates the original gaps. No new test or gate has been run during gap planning.
+
+| Task ID | Wave | Requirements | Threat Ref | Test Type | Automated Command | Test Availability | Status |
+|---------|------|--------------|------------|-----------|-------------------|-------------------|--------|
+| 02-14-01 | 11 | STOR-04, ING-07 | T-02-14 | Go unit | `cd backend && go test ./internal/kafkax -run TestBuildDLQRecordEncodedHeaderFlood -count=1 -timeout 30s` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-14-02 | 11 | STOR-04, ING-07 | T-02-14 | Go race | `cd backend && go test -race ./internal/kafkax -count=1 -timeout 60s` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-15-01 | 12 | STOR-01, STOR-04, ING-04, ING-07 | T-02-15 | unit + real Kafka | `cd backend && go test -tags=integration ./test -run TestWriterSlowPoisonRebalance -count=1 -timeout 3m -p 1` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-15-02 | 12 | STOR-01, STOR-04, ING-04, ING-07 | T-02-15 | Go race | `cd backend && go test -race ./internal/config ./internal/kafkax ./internal/eventwriter -count=1 -timeout 60s` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-15-03 | 12 | STOR-01, STOR-04, ING-04, ING-07 | T-02-15 | real rebalance + replay | `cd backend && go test -tags=integration ./test -run TestWriterSlowPoisonRebalance -count=1 -timeout 3m -p 1` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-16-01 | 11 | ING-01, ING-05, STOR-03 | T-02-16 | runtime contract | `cd backend && go test ./test ./internal/eventquery -run 'TestOpenAPIGetEventRuntimeSecurity&#124;TestEventLookup' -count=1 -timeout 30s` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-16-02 | 11 | ING-01, ING-05, STOR-03 | T-02-16 | contract + real lookup | `cd backend && go test -tags=integration ./test -run TestEventLookupTenantScope -count=1 -timeout 3m -p 1` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-17-01 | 11 | OBS-01, GEN-03 | T-02-17 | Go unit | `cd backend && go test ./tools/healthprobe -run TestRunRejectsRedirects -count=1 -timeout 15s` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-17-02 | 11 | OBS-01, GEN-03 | T-02-17 | Go race/readiness | `cd backend && go test -race ./tools/healthprobe -count=1 -timeout 60s` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-18-01 | 11 | GEN-01, GEN-03 | T-02-18 | pytest | `cd generator && uv run --locked pytest tests/test_send.py -k manifest` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-18-02 | 11 | GEN-01, GEN-03 | T-02-18 | stdlib + pytest | `python3 -B -m unittest discover -s scripts -p test_seed.py` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-19-01 | 13 | GEN-03, ING-07 | T-02-19 | Docker context fixture | `python3 -B -m unittest discover -s scripts -p test_docker_context.py` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-19-02 | 13 | GEN-03, ING-07 | T-02-19 | dual Go graph | `python3 -B -m unittest discover -s scripts -p test_go_dependencies.py && scripts/check-go-dependencies.sh` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-20-01 | 11 | GEN-03, STOR-04 | T-02-20 | real Kafka topic config | `cd backend && go test -tags=integration ./test -run TestTopicRetentionOverridesReapply -count=1 -timeout 3m -p 1` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-20-02 | 11 | GEN-03, STOR-04 | T-02-20 | config + real Kafka | `python3 -B -m unittest discover -s scripts -p test_stack_config.py` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-21-01 | 14 | all Phase 2 IDs | T-02-21 | canonical/status | `gsd-sdk query roadmap.get-phase 2 && gsd-sdk query state.load` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-21-02 | 14 | all Phase 2 IDs | T-02-21 | full gate + exact e2e | `make lint test && make test-integ && timeout 10m make seed && timeout 10m make seed` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-21-03 | 14 | all Phase 2 IDs | T-02-21 | evidence/tracking | `test -s .planning/phases/02-ingestion-durable-event-storage/02-GAP-ACCEPTANCE.md && git diff --check` | Planned; first task supplies behavioral RED | ⏳ pending |
+
+Full command details, extra static gates and exact nonempty groups live in the corresponding PLAN tasks. Each defect must first fail a behavioral regression, then the same test must pass; missing executables, compile errors and empty selections are not RED/GREEN evidence.
+
+New test scaffolds created by the owning tasks (pending):
+
+- [ ] 02-14: independent encoded-header bound cases in kafkax/dlq_test.go.
+- [ ] 02-15: aggregate unit cases and integration writer_rebalance_test.go.
+- [ ] 02-16: YAML-driven openapi_runtime_auth_test.go plus handler negatives.
+- [ ] 02-17: redirect no-second-request regressions.
+- [ ] 02-18: parent-mode/symlink and ambient-seed-key regressions.
+- [ ] 02-19: real Docker context fixture/mutation and dual-tag/fail-closed checker tests.
+- [ ] 02-20: topic_retention_test.go and test_stack_config.py.
+- [ ] 02-21: additive GAP-ACCEPTANCE with canonical validator, full local gate, two exact seed runs, preserved volumes and true status.
+
+Quick loops target <=60s; real rebalance/retention tests have <=3m command ceilings, related replay gate <=6m, full integration <=10m, each seed <=10m and complete final local gate <=45m. Hosted GitHub Actions remains pending; no push is included. Preserve dated original VERIFICATION/REVIEW snapshots before updating canonical assessment reports. Coverage mapping: 02-GAP-COVERAGE.md.

@@ -9,7 +9,7 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 ## Phases
 
 - [x] **Phase 1: Foundations & Contracts** - Clean Go module with five binaries, Compose stack, schemas, OpenAPI skeleton, ADRs, CI skeleton (completed 2026-10-11)
-- [x] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (completed 2026-10-16)
+- [ ] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (14 original plans executed; verification gaps under repair)
 - [ ] **Phase 3: Detection & Alert Pipeline** - Four event-time rules, deterministic alerts, crash-safe recovery, alert persistence
 - [ ] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
 - [ ] **Phase 5: Observability, Resilience & Scale** - Metrics, tracing, Grafana, failure suites, overload behavior, benchmark report
@@ -66,7 +66,7 @@ Plans:
 
 ### Phase 2: Ingestion & Durable Event Storage
 
-**Goal**: A producer with a scoped API key can submit event batches that are durably acknowledged only after Kafka accepts them, and the events end up queryable and duplicate-safe in ClickHouse
+**Goal**: As a producer with a scoped API key, I want to submit event batches acknowledged only after Kafka accepts them, so that my events become queryable and duplicate-safe in ClickHouse.
 **Mode:** mvp
 **Depends on**: Phase 1
 **Requirements**: ING-01, ING-02, ING-03, ING-04, ING-05, ING-06, ING-07, STOR-01, STOR-02, STOR-03, STOR-04, GEN-01, GEN-03, OBS-01
@@ -78,7 +78,7 @@ Plans:
   4. A producer over quota gets 429 with `Retry-After`. With Redis down, intake follows the documented policy (503 by default) and never silently bypasses limits. Under excess load the HTTP layer sheds with 429/503 instead of buffering without bound
   5. A poison message lands in `security.events.dlq.v1` with reason and origin offset, and the source offset is committed only after the DLQ publish. Each service's `/readyz` reflects real dependency state
 
-**Plans**: 14 plans across 10 dependency waves
+**Plans**: 22 plans across 14 dependency waves (14 executed; 8 gap-closure plans pending)
 
 
 **Wave 1**
@@ -124,6 +124,28 @@ Plans:
 **Wave 10** *(blocked on prior dependency waves)*
 
 - [x] 02-13-PLAN.md — Verify 1000 current-run events and enforce CI coverage guards
+
+**Wave 11** *(gap repairs; depends on executed 02-13)*
+
+- [ ] 02-14-PLAN.md — Bound encoded DLQ records and adversarial headers
+- [ ] 02-16-PLAN.md — Match event-lookup authentication contract to runtime
+- [ ] 02-17-PLAN.md — Reject healthprobe redirects
+- [ ] 02-18-PLAN.md — Preserve manifest parent permissions and isolate seed credentials
+- [ ] 02-20-PLAN.md — Reapply configured topic retention on repeat startup
+
+**Wave 12** *(blocked on 02-14)*
+
+- [ ] 02-15-PLAN.md — Bound aggregate poison processing and prove safe rebalance recovery
+
+**Wave 13** *(blocked on 02-15's named rebalance regression)*
+
+- [ ] 02-19-PLAN.md — Exclude build credentials and guard both Go dependency graphs
+
+**Wave 14** *(blocked on every gap repair)*
+
+- [ ] 02-21-PLAN.md — Revalidate the complete slice and record truthful phase status
+
+**Verification:** Original assessment remains `gaps_found`; new repair tests are pending. See `02-GAP-COVERAGE.md` for all seven gap groups and nine review findings.
 
 **Research**: Complete (02-RESEARCH.md, 2026-10-12); plan verification passed (02-PLAN-CHECK.md). Read-time dedupe, native ClickHouse, Kafka timeout/manual commits and Redis Lua behavior have implementation guidance.
 **Note**: GEN-02 (scenario injection) lands with detection fixtures in Phase 3.
@@ -205,7 +227,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 14/14 | Complete   | 2026-10-16 |
+| 2. Ingestion & Durable Event Storage | 14/22 | In Progress|  |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
