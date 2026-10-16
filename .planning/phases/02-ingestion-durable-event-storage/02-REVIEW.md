@@ -1,8 +1,8 @@
 ---
 phase: 02-ingestion-durable-event-storage
-reviewed: 2026-10-16T08:30:20Z
+reviewed: 2026-10-16T20:09:03Z
 depth: standard
-files_reviewed: 93
+files_reviewed: 99
 files_reviewed_list:
   - .dockerignore
   - .env.example
@@ -17,7 +17,6 @@ files_reviewed_list:
   - backend/cmd/ingest/main.go
   - backend/cmd/query-api/main.go
   - backend/go.mod
-  - backend/go.sum
   - backend/internal/apikeys/keys.go
   - backend/internal/apikeys/keys_test.go
   - backend/internal/apikeys/store.go
@@ -70,10 +69,13 @@ files_reviewed_list:
   - backend/test/main_test.go
   - backend/test/migrate_test.go
   - backend/test/openapi_drift_test.go
+  - backend/test/openapi_runtime_auth_test.go
   - backend/test/openapi_test.go
   - backend/test/ratelimit_test.go
   - backend/test/readyz_test.go
   - backend/test/recovery_test.go
+  - backend/test/topic_retention_test.go
+  - backend/test/writer_rebalance_test.go
   - backend/test/writer_test.go
   - backend/tools/chmigrate/main.go
   - backend/tools/chmigrate/main_test.go
@@ -92,126 +94,72 @@ files_reviewed_list:
   - generator/src/sentinel_generator/cli.py
   - generator/src/sentinel_generator/send.py
   - generator/tests/test_send.py
-  - generator/uv.lock
+  - scripts/check-docker-context.py
+  - scripts/check-go-dependencies.sh
   - scripts/check-stack.sh
   - scripts/seed.py
+  - scripts/test_docker_context.py
+  - scripts/test_go_dependencies.py
   - scripts/test_seed.py
+  - scripts/test_stack_config.py
   - web/src/api/types.test.ts
 findings:
-  critical: 5
-  warning: 4
+  critical: 1
+  warning: 1
   info: 0
-  total: 9
+  total: 2
 status: issues_found
 ---
 
 # Phase 2: Code Review Report
 
-**Reviewed:** 2026-10-16T08:30:20Z
+**Reviewed:** 2026-10-16T20:09:03Z
 **Depth:** standard
-**Files Reviewed:** 93
+**Files Reviewed:** 99
 **Status:** issues_found
+
+## Narrative Findings (AI reviewer)
 
 ## Summary
 
-The Phase 2 implementation has strong test breadth, but five release-blocking defects remain at security and correctness boundaries: the supposedly loopback-only health probe follows unrestricted redirects; manifest output mutates arbitrary parent-directory permissions; the DLQ size cap can be bypassed with zero-length header floods; the published bearer-auth contract is not implemented; and the Kafka rebalance bound does not cover the writer's sequential poison-record work. Four additional robustness issues affect documented local operation and build secrecy.
+Independent review of the existing Phase 2 changed-file scope from `95f30ab^..HEAD`, excluding planning artifacts, deleted files and dependency lock/checksum files. Manual tracing concentrated on repaired trust boundaries, their callers, and the assertions establishing real durable effects. No structural pre-pass was supplied.
+
+One remaining blocker permits the seed wrapper to change permissions on a directory outside its managed paths through a symlink. One operational documentation defect supplies a liveness command that always fails. These are current findings; the original five critical and four warning findings remain preserved in `02-REVIEW-2026-10-16-PRE-GAPS.md`.
+
+The review checked the actual encoded-DLQ builder and 128-header/pre-copy limits, shared checked writer budgets, aggregate poison stage and independent commit reservation, per-partition durable prefixes, parent-only shutdown transfer, default-build exclusion of integration controls, real recovery barriers, redirect rejection, descriptor-anchored manifest output, sanitized generator environment, API-key-only event lookup contract, actual Docker fixture exporter, default/integration dependency enumeration, and repeated retention alteration/checking. The old manifest-output chmod defect is fixed in the generator; CR-01 below identifies the separate remaining seed-wrapper path.
+
+The 809-second local acceptance results in `02-GAP-ACCEPTANCE.md` were treated as implementer evidence, not as proof that untested edge cases are correct. This reviewer did not rerun the broad acceptance suite. Focused reproductions below use temporary synthetic directories and read-only requests to the running local ops listener. Hosted CI remains pending and is not classified as a source defect. Deferred Phase 4 JWT/dashboard work, metrics and benchmarks are outside this review.
 
 ## Critical Issues
 
-### CR-01: Loopback health probe follows redirects to arbitrary hosts
+### CR-01: Seed directory preparation follows symlinks and chmods their external targets
 
 **Classification:** BLOCKER
 
-**File:** `backend/tools/healthprobe/main.go:34-52`
+**File:** `/home/logan78/Desktop/Sentinel/scripts/seed.py:140-144`
 
-**Issue:** Only the initial URL is checked for a literal loopback host. The default `http.Client` used by `main` follows redirects, and no `CheckRedirect` callback revalidates or rejects the redirect target. A loopback endpoint returning `302 Location: http://169.254.169.254/...` therefore turns the probe into the SSRF primitive the validation is intended to prevent. A live reproduction against a loopback redirect returned exit code 0 after the redirected target answered 200.
+**Issue:** `KEY_DIRECTORY.mkdir(..., parents=True, exist_ok=True)` accepts an existing directory symlink, and the following two path-based `chmod(0700)` calls follow symlinks. If either `<repo>/.local` or `<repo>/.local/keys` is a symlink to an existing shared directory, ordinary `make seed` changes that unrelated target's permissions. For a `keys` symlink, this happens before `keyctl ensure` can reject the unsafe directory. For a `.local` symlink, preparation can also create a `keys` directory in the external target. An eventual failure does not undo those mutations. This is an unintended filesystem modification of the same class as the original manifest-output chmod defect, in a different entry point.
 
-**Fix:** Reject redirects for a health probe, or validate every redirect target with the same literal-loopback policy. For example, set `CheckRedirect` to return `http.ErrUseLastResponse` and treat every 3xx as failure. Add a test whose loopback server redirects to another host and assert no second request is sent.
+**Evidence:** Independently invoked the actual `seed._prepare_key_directory()` with only `ROOT` and `KEY_DIRECTORY` redirected to temporary fixtures. Both a symlink at `.local` and a symlink at `.local/keys` changed the external target from mode `0755` to `0700`. No real repository credential, environment, volume or external shared directory was touched.
 
-### CR-02: Custom manifest output can chmod arbitrary existing directories
-
-**Classification:** BLOCKER
-
-**File:** `generator/src/sentinel_generator/cli.py:118-120`
-
-**Issue:** `_write_manifest` unconditionally changes `path.parent` to mode `0700`, even when that directory already existed and was not created by the generator. `--output manifest.json` changes the current working directory's permissions; `--output /tmp/manifest.json` changes `/tmp`. This is destructive behavior outside the requested output file. A safe reproduction with a temporary mode-0755 directory changed it to 0700.
-
-**Fix:** Track whether the parent was newly created. Set 0700 only on a newly created dedicated directory; for an existing directory, validate that it is a real directory (not a symlink) and leave its mode untouched. Continue creating the temporary file at 0600 and atomically replacing only the requested manifest path. Add a regression test asserting the parent mode is unchanged.
-
-### CR-03: DLQ metadata cap is bypassable by empty-header floods
-
-**Classification:** BLOCKER
-
-**File:** `backend/internal/kafkax/dlq.go:152-177,196-201`
-
-**Issue:** The claimed bounded DLQ record size sums only topic/key/value/header payload byte lengths. It does not count Kafka's per-header encoding overhead and does not cap header count. An untrusted source record containing thousands of empty-key/empty-value headers passes every size check because each candidate adds zero according to `dlqRecordSize`, yet produces a large encoded record. Publishing can then fail repeatedly and prevent the source partition from advancing. The same calculation also hardcodes `DefaultDLQTopic` even though `Publish` later replaces it with a configurable topic at line 93.
-
-**Fix:** Stop copying arbitrary origin headers, or enforce a strict header-count cap plus a conservative encoded-size calculation that includes per-header varint/length overhead and the actual destination topic. Add tests with thousands of empty headers and with a long configured DLQ topic; assert the returned record remains within the real bound.
-
-### CR-04: OpenAPI advertises bearer authentication that the query API cannot perform
-
-**Classification:** BLOCKER
-
-**File:** `api/openapi.yaml:10-13,101-108`; `backend/internal/eventquery/handler.go:41-52`
-
-**Issue:** The public contract says query routes use bearer JWTs and explicitly declares `ApiKeyAuth` and `BearerAuth` as alternatives for `GET /api/v1/events/{event_id}`. The implementation reads only `X-Api-Key`; there is no bearer/JWT authentication in the query service or shared middleware. A conforming client that chooses the documented bearer alternative always receives 401.
-
-**Fix:** Either implement and tenant-bind bearer verification before shipping this contract, or remove `BearerAuth` from this operation and revise the top-level authentication description until bearer support exists. Add an implementation-level contract test that exercises every advertised security alternative rather than only inspecting YAML.
-
-### CR-05: Rebalance timeout omits sequential poison-record processing
-
-**Classification:** BLOCKER
-
-**File:** `backend/internal/kafkax/consumer.go:40-53,120-128`; `backend/internal/eventwriter/writer.go:229-252,291-320`
-
-**Issue:** The consumer uses `BlockRebalanceOnPoll`, but `rebalanceTimeout` budgets only one retry sequence plus one commit. A batch may contain up to 5,000 poison records, and `durablePrefixes` publishes each DLQ record synchronously with its own full retry sequence. A rebalance that starts during such a batch can exceed the advertised rebalance timeout, causing Kafka to evict the member before its commit. The writer then replays already inserted events and already published DLQ records, and a poison-heavy partition can fail repeatedly.
-
-**Fix:** Bound work per poll to a duration the rebalance timeout truly covers—for example, process/commit smaller per-partition prefixes or batch DLQ publication with a strict total deadline. Compute the group timeout from the actual maximum processing path, including poison effects, and add an integration test that triggers a rebalance while multiple slow DLQ records are in flight.
+**Fix:** Traverse/create the managed directories through anchored directory descriptors with `O_DIRECTORY | O_NOFOLLOW`, refusing symlinks before creating children or changing permissions. Perform any intended permission changes through the validated descriptor, not a pathname. Preserve unrelated targets on all failure paths. Apply the same descriptor/no-follow discipline to `secure_key_file` at lines 128–133, whose separate `lstat` then path-based `chmod` otherwise leaves a substitution window. Add regressions for both linked directory components and component swaps, asserting failure with external permissions and contents unchanged; retain the ordinary idempotent seed path.
 
 ## Warnings
 
-### WR-01: `make seed` can ignore the keys it just provisioned
+### WR-01: Documented liveness command targets an unregistered route
 
 **Classification:** WARNING
 
-**File:** `scripts/seed.py:304-330`; `generator/src/sentinel_generator/cli.py:111-115`
+**File:** `/home/logan78/Desktop/Sentinel/README.md:129`
 
-**Issue:** The seed script invokes the generator without a sanitized environment. The generator deliberately prefers ambient `SENTINEL_API_KEY` over the explicit `--key-file`, so a developer who has that variable set can send with an unrelated key and make the documented one-command seed fail or target the wrong allowed tenant.
+**Issue:** The quickstart instructs operators to run `curl --fail ... http://127.0.0.1:9101/livez`, but the operations server registers only `GET /healthz` and `GET /readyz` (`backend/internal/opshttp/server.go:81-82`), consistent with the OpenAPI contract. The documented liveness command therefore reports failure even when the ingest process is healthy.
 
-**Fix:** Pass a copy of the environment with `SENTINEL_API_KEY` removed for the generator subprocess, or make an explicitly supplied `--key-file` take precedence over the environment. Add a seed orchestration test with a conflicting ambient key.
+**Evidence:** Read-only requests against the running local listener returned HTTP **404** for `/livez` and HTTP **200** for `/healthz`.
 
-### WR-02: Documented topic retention overrides are not repeatable
-
-**Classification:** WARNING
-
-**File:** `deployments/compose/docker-compose.yml:53-66`; `scripts/check-stack.sh:26-38`
-
-**Issue:** `EVENTS_RETENTION_MS`, `ALERTS_RETENTION_MS`, and `DLQ_RETENTION_MS` are exposed as overrides, but topic initialization uses `--create --if-not-exists`, so changing retention after the first startup has no effect. The acceptance script also hardcodes default values and fails when valid overrides are used. This contradicts the documented repeatable local stack behavior.
-
-**Fix:** After idempotent creation, explicitly alter each topic's retention to the configured value. Load the same effective values in `check-stack.sh` instead of hardcoding defaults. Keep partition-count changes reset-gated as already documented.
-
-### WR-03: Docker build context includes git-ignored private key material
-
-**Classification:** WARNING
-
-**File:** `.dockerignore:1-13`; `.gitignore:52-55`; `deployments/docker/Dockerfile:12`
-
-**Issue:** Git ignores `*.pem`, but Docker does not. Any local PEM under `backend/` is sent in the build context and copied into the builder layer by `COPY backend/ ./`, even though it is absent from the final distroless image. That exposes private material to the Docker daemon and build cache.
-
-**Fix:** Add credential patterns such as `**/*.pem`, `**/*.key`, and project-specific certificate directories to `.dockerignore`; use BuildKit secret mounts for any build-time secret that is genuinely required. Add a context hygiene check alongside the existing pin checks.
-
-### WR-04: Banned-module CI scan misses integration-tag-only dependencies
-
-**Classification:** WARNING
-
-**File:** `.github/workflows/ci.yml:42-49`
-
-**Issue:** The prohibited-module guard runs `go list -deps -test ./...` only for the default build. A banned package imported exclusively by `//go:build integration` code is compiled by later integration-tag vet/lint steps but is invisible to this policy check.
-
-**Fix:** Scan both default and integration dependency graphs, or inspect the complete module graph with a policy appropriate for direct and transitive modules. Preserve the current fail-closed `go list` behavior for both invocations.
+**Fix:** Change the README command to `http://127.0.0.1:9101/healthz`.
 
 ---
 
-_Reviewed: 2026-10-16T08:30:20Z_
+_Reviewed: 2026-10-16T20:09:03Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_
