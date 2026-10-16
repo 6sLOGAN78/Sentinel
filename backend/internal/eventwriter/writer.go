@@ -187,6 +187,9 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 		if err = w.insertWithRetry(ctx, events); err != nil {
 			return err
 		}
+		if err = afterInsertBeforeCommit(ctx); err != nil {
+			return err
+		}
 	}
 
 	committable, effectErr := w.durablePrefixes(ctx, classified, sortedPartitionKeys(partitions))

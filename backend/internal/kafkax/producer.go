@@ -80,6 +80,13 @@ func (p *Producer) PublishBatch(ctx context.Context, events []*contracts.Event, 
 
 	produceCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
+	if handled, hookErr := publishWithPrefixBarrier(produceCtx, p.client, records); handled {
+		if hookErr != nil {
+			return fmt.Errorf("publish event batch: %w", hookErr)
+		}
+
+		return nil
+	}
 
 	if err = p.client.ProduceSync(produceCtx, records...).FirstErr(); err != nil {
 		return fmt.Errorf("publish event batch: %w", err)
