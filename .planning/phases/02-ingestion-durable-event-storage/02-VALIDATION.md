@@ -3,7 +3,7 @@ phase: 2
 slug: ingestion-durable-event-storage
 status: pending
 local_repair_acceptance: passed
-independent_reverification: pending
+independent_reverification: human_needed
 hosted_ci: pending
 nyquist_compliant: true
 wave_0_complete: true

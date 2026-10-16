@@ -116,3 +116,9 @@ The fresh reviewer found a residual directory-preparation defect in the seed wra
 - No Go/service source changed in this follow-up, so the already-passing complete integration gate was not repeated. Two additional bounded live seed runs check the changed credential-preparation path; their outcomes are recorded in the follow-up closeout below.
 
 Follow-up closeout: repair commit `428604a`; both consecutive `timeout 10m make seed` invocations exited 0 and each reported sent=accepted=visible=1000, api_spotchecks=3, tenant_isolation=1 and retries=0. No reset or volume removal occurred. Logs: `/tmp/sentinel-seed-followup-1.log` and `/tmp/sentinel-seed-followup-2.log`. The reviewer will reassess both findings before issuing its new canonical verdict. Hosted CI remains pending.
+
+## Final audit handoff — 2026-10-17
+
+The independent code reviewer rechecked the follow-up and issued `clean`, zero outstanding findings (`c16a784`). The independent security auditor verified all 90 plan-time threat dispositions with zero open (`6c09a58`). The goal verifier independently confirmed repaired implementation, raw local gate logs, declared artifacts/key links and focused tests, reporting hosted CI as the sole remaining check, but hit provider quota before writing a report. Root preserved that audit's findings with explicit recovered-report provenance in `02-VERIFICATION.md` (`human_needed`) and persisted `02-HUMAN-UAT.md`.
+
+At final reassessment no Sentinel containers were running; live requests were unavailable. The verifier did not restart services. Persistent volumes retained their identities, and earlier bounded real acceptance remains recorded above. No hosted run was inferred and Phase 3 was not advanced.

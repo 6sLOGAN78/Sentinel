@@ -9,7 +9,7 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 ## Phases
 
 - [x] **Phase 1: Foundations & Contracts** - Clean Go module with five binaries, Compose stack, schemas, OpenAPI skeleton, ADRs, CI skeleton (completed 2026-10-11)
-- [ ] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (14 original plans executed; verification gaps under repair)
+- [ ] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (22/22 plans executed; hosted CI verification pending)
 - [ ] **Phase 3: Detection & Alert Pipeline** - Four event-time rules, deterministic alerts, crash-safe recovery, alert persistence
 - [ ] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
 - [ ] **Phase 5: Observability, Resilience & Scale** - Metrics, tracing, Grafana, failure suites, overload behavior, benchmark report
@@ -78,7 +78,7 @@ Plans:
   4. A producer over quota gets 429 with `Retry-After`. With Redis down, intake follows the documented policy (503 by default) and never silently bypasses limits. Under excess load the HTTP layer sheds with 429/503 instead of buffering without bound
   5. A poison message lands in `security.events.dlq.v1` with reason and origin offset, and the source offset is committed only after the DLQ publish. Each service's `/readyz` reflects real dependency state
 
-**Plans**: 22 plans across 14 dependency waves (14 executed; 8 gap-closure plans pending)
+**Plans**: 22 plans across 14 dependency waves (22 executed; local repair acceptance passed)
 
 
 **Wave 1**
@@ -143,9 +143,9 @@ Plans:
 
 **Wave 14** *(blocked on every gap repair)*
 
-- [ ] 02-21-PLAN.md — Revalidate the complete slice and record truthful phase status
+- [x] 02-21-PLAN.md — Revalidate the complete slice and record truthful phase status
 
-**Verification:** Original assessment remains `gaps_found`; new repair tests are pending. See `02-GAP-COVERAGE.md` for all seven gap groups and nine review findings.
+**Verification:** All 22 plans executed and local repair acceptance passed. Independent code review is clean and the security audit has zero open threats. Goal-verification handoff is `human_needed`: hosted GitHub Actions remains pending, and the verifier hit provider quota before writing its report. The root preserved its audit findings with explicit provenance in `02-VERIFICATION.md`; original failing reports remain in dated snapshots. See `02-HUMAN-UAT.md` for the remaining check.
 
 **Research**: Complete (02-RESEARCH.md, 2026-10-12); plan verification passed (02-PLAN-CHECK.md). Read-time dedupe, native ClickHouse, Kafka timeout/manual commits and Redis Lua behavior have implementation guidance.
 **Note**: GEN-02 (scenario injection) lands with detection fixtures in Phase 3.
@@ -227,7 +227,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 21/22 | In Progress|  |
+| 2. Ingestion & Durable Event Storage | 22/22 | Needs Review | Hosted CI pending |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
