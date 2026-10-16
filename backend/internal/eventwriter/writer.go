@@ -63,7 +63,7 @@ func New(
 }
 
 // Run polls no more than one in-memory batch, stops polling during storage
-// retries, and commits only after the entire batch is durably inserted.
+// retries, and commits only partition-contiguous durable effect prefixes.
 func (w *Writer) Run(ctx context.Context) error {
 	if _, err := config.ComputeWriterBudgets(w.settings); err != nil {
 		return err

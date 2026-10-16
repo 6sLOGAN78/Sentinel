@@ -39,6 +39,7 @@ type slowRealDLQ struct {
 	second       chan struct{}
 	mu           sync.Mutex
 	started      int
+	startedAt    time.Time
 	acknowledged map[poisonOrigin]bool
 	failFirst    bool
 }
@@ -46,6 +47,9 @@ type slowRealDLQ struct {
 func (p *slowRealDLQ) Publish(ctx context.Context, record *kgo.Record, reason kafkax.DLQReason) error {
 	p.mu.Lock()
 	p.started++
+	if p.started == 1 {
+		p.startedAt = time.Now()
+	}
 	if p.started == 2 {
 		close(p.second)
 	}
@@ -79,6 +83,12 @@ func (p *slowRealDLQ) acknowledgedOrigins() map[poisonOrigin]bool {
 	return out
 }
 
+func (p *slowRealDLQ) elapsed() time.Duration {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return time.Since(p.startedAt)
+}
+
 type releaseConsumer struct {
 	*kafkax.Consumer
 	released chan struct{}
@@ -96,7 +106,7 @@ type observedDLQ struct {
 	err     error
 }
 
-func startObservedDLQ(t *testing.T, ctx context.Context, kafka config.KafkaConfig, topic string) *observedDLQ {
+func startObservedDLQ(ctx context.Context, t *testing.T, kafka config.KafkaConfig, topic string) *observedDLQ {
 	t.Helper()
 	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topic: {0: kgo.NewOffset().AtStart()}}))
@@ -109,8 +119,8 @@ func startObservedDLQ(t *testing.T, ctx context.Context, kafka config.KafkaConfi
 		for readCtx.Err() == nil {
 			fetches := client.PollRecords(readCtx, 100)
 			observed.mu.Lock()
-			if err = fetches.Err(); err != nil && readCtx.Err() == nil {
-				observed.err = err
+			if pollErr := fetches.Err(); pollErr != nil && readCtx.Err() == nil {
+				observed.err = pollErr
 			}
 			for _, record := range fetches.Records() {
 				partition, partitionErr := strconv.ParseInt(testHeaderValue(record.Headers, "dlq.origin.partition"), 10, 32)
@@ -158,10 +168,11 @@ type poisonFixture struct {
 	observed *observedDLQ
 }
 
-func newPoisonFixture(t *testing.T, ctx context.Context, failedFirst bool) *poisonFixture {
+func newPoisonFixture(ctx context.Context, t *testing.T, failedFirst bool) *poisonFixture {
 	t.Helper()
 	store, _ := newDedupeStore(t)
-	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafkaCfg.Brokers, ",")...), kgo.RecordPartitioner(kgo.ManualPartitioner()))
+	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafkaCfg.Brokers, ",")...),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()))
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 	admin := kadm.NewClient(client)
@@ -176,9 +187,10 @@ func newPoisonFixture(t *testing.T, ctx context.Context, failedFirst bool) *pois
 	settings.OperationTimeout = time.Second
 	settings.ShutdownTimeout = time.Second
 	settings.FlushInterval = 100 * time.Millisecond
-	f := &poisonFixture{kafka: kafka, settings: settings, admin: admin, store: store, poison: make(map[poisonOrigin]*kgo.Record)}
+	f := &poisonFixture{kafka: kafka, settings: settings, admin: admin, store: store,
+		poison: make(map[poisonOrigin]*kgo.Record)}
 	f.dlq = integrationDLQPublisher(t, kafka, dlqTopic, settings)
-	f.observed = startObservedDLQ(t, ctx, kafka, dlqTopic)
+	f.observed = startObservedDLQ(ctx, t, kafka, dlqTopic)
 	f.events = canonicalWriterEvents(4, time.Now().UTC().Add(-time.Minute))
 	for partition := range int32(2) {
 		for offset := range int64(14) {
@@ -209,7 +221,7 @@ func newPoisonFixture(t *testing.T, ctx context.Context, failedFirst bool) *pois
 	return f
 }
 
-func startPoisonWriter(t *testing.T, ctx context.Context, consumer eventwriter.Consumer, f *poisonFixture,
+func startPoisonWriter(ctx context.Context, t *testing.T, consumer eventwriter.Consumer, f *poisonFixture,
 	dlq eventwriter.QuarantinePublisher) (<-chan struct{}, *error) {
 	t.Helper()
 	runCtx, cancel := context.WithCancel(ctx)
@@ -230,10 +242,11 @@ func startPoisonWriter(t *testing.T, ctx context.Context, consumer eventwriter.C
 	return done, &runErr
 }
 
-func joinRebalanceMember(t *testing.T, ctx context.Context, kafka config.KafkaConfig) <-chan struct{} {
+func joinRebalanceMember(ctx context.Context, t *testing.T, kafka config.KafkaConfig) (<-chan struct{}, func()) {
 	t.Helper()
 	assigned := make(chan struct{}, 1)
-	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...), kgo.ConsumerGroup(kafka.EventWriterGroup),
+	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...),
+		kgo.ConsumerGroup(kafka.EventWriterGroup),
 		kgo.ConsumeTopics(kafka.EventsTopic), kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()), kgo.DisableAutoCommit(),
 		kgo.OnPartitionsAssigned(func(context.Context, *kgo.Client, map[string][]int32) {
 			select {
@@ -250,45 +263,80 @@ func joinRebalanceMember(t *testing.T, ctx context.Context, kafka config.KafkaCo
 			client.PollRecords(pollCtx, 100)
 		}
 	}()
-	t.Cleanup(func() {
-		cancel()
-		client.Close()
-		select {
-		case <-done:
-		case <-time.After(3 * time.Second):
-			t.Error("second member did not stop")
-		}
-	})
-	return assigned
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			closed := make(chan struct{})
+			go func() { defer close(closed); client.CloseAllowingRebalance() }()
+			select {
+			case <-closed:
+			case <-time.After(5 * time.Second):
+				t.Error("second member close exceeded deadline")
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Error("second member poll did not stop")
+			}
+		})
+	}
+	t.Cleanup(stop)
+	return assigned, stop
 }
 
 func TestWriterSlowPoisonRebalance(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	f := newPoisonFixture(t, ctx, false)
+	for _, tc := range []struct {
+		name                      string
+		failedFirst, cancelDuring bool
+	}{
+		{name: "success_prefix_exhaustion_mixed_partitions"},
+		{name: "failed_earliest_poison", failedFirst: true},
+		{name: "cancellation_during_slow_publication", cancelDuring: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) { runSlowPoisonRebalance(ctx, t, tc.failedFirst, tc.cancelDuring) })
+	}
+}
+
+func runSlowPoisonRebalance(ctx context.Context, t *testing.T, failedFirst, cancelDuring bool) {
+	t.Helper()
+	f := newPoisonFixture(ctx, t, failedFirst)
 	consumer, err := kafkax.NewConsumer(ctx, f.kafka, f.settings)
 	require.NoError(t, err)
 	t.Cleanup(func() { closeWriterConsumer(t, consumer) })
 	owned := &releaseConsumer{Consumer: consumer, released: make(chan struct{})}
-	delayed := &slowRealDLQ{inner: f.dlq, second: make(chan struct{}), acknowledged: make(map[poisonOrigin]bool)}
-	done, runErr := startPoisonWriter(t, ctx, owned, f, delayed)
+	delayed := &slowRealDLQ{inner: f.dlq, second: make(chan struct{}),
+		acknowledged: make(map[poisonOrigin]bool), failFirst: failedFirst}
+	runCtx, cancelWriter := context.WithCancel(ctx)
+	defer cancelWriter()
+	done, runErr := startPoisonWriter(runCtx, t, owned, f, delayed)
 	select {
 	case <-delayed.second:
 	case <-time.After(15 * time.Second):
 		t.Fatal("second real poison publication did not enter")
 	}
 	started := time.Now()
-	assigned := joinRebalanceMember(t, ctx, f.kafka)
+	assigned, stopMember := joinRebalanceMember(ctx, t, f.kafka)
 	require.Eventually(t, func() bool {
 		groups, describeErr := f.admin.DescribeGroups(ctx, f.kafka.EventWriterGroup)
 		return describeErr == nil && groups[f.kafka.EventWriterGroup].State == "PreparingRebalance"
 	}, 3*time.Second, 10*time.Millisecond, "second member never initiated an actual group rebalance")
+	canceledAt := time.Now()
+	if cancelDuring {
+		cancelWriter()
+	}
 	select {
 	case <-owned.released:
 	case <-time.After(6 * time.Second):
 		t.Fatal("aggregate poison work did not release ownership within six seconds")
 	}
 	t.Logf("poison handoff released after %s", time.Since(started))
+	require.Less(t, delayed.elapsed(), 6*time.Second, "bound starts at the first poison publication")
+	if cancelDuring {
+		require.Less(t, time.Since(canceledAt), f.settings.ShutdownTimeout+250*time.Millisecond)
+	}
 	select {
 	case <-done:
 	case <-time.After(time.Second):
@@ -300,10 +348,77 @@ func TestWriterSlowPoisonRebalance(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("joining member never received actual assignment")
 	}
-	assertPoisonPrefixes(t, ctx, f, delayed)
+	assertPoisonPrefixes(ctx, t, f, delayed)
+	assertInitialPoisonCommits(ctx, t, f, failedFirst)
+	stopMember()
+	closeWriterConsumer(t, consumer)
+	recoverPoisonFixture(ctx, t, f)
 }
 
-func assertPoisonPrefixes(t *testing.T, ctx context.Context, f *poisonFixture, delayed *slowRealDLQ) {
+func assertInitialPoisonCommits(ctx context.Context, t *testing.T, f *poisonFixture, failedFirst bool) {
+	t.Helper()
+	offsets, err := f.admin.FetchOffsets(ctx, f.kafka.EventWriterGroup)
+	require.NoError(t, err)
+	first, ok := offsets.Lookup(f.kafka.EventsTopic, 0)
+	if failedFirst {
+		require.True(t, !ok || first.At <= 0, "failed earliest poison must leave partition zero replayable")
+	} else {
+		require.True(t, ok)
+		require.GreaterOrEqual(t, first.At, int64(1), "durable valid prefix did not commit")
+	}
+	independent, ok := offsets.Lookup(f.kafka.EventsTopic, 1)
+	require.True(t, ok)
+	require.GreaterOrEqual(t, independent.At, int64(1), "independently durable partition did not commit")
+}
+
+func recoverPoisonFixture(ctx context.Context, t *testing.T, f *poisonFixture) {
+	t.Helper()
+	consumer, err := kafkax.NewConsumer(ctx, f.kafka, f.settings)
+	require.NoError(t, err)
+	t.Cleanup(func() { closeWriterConsumer(t, consumer) })
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done, runErr := startPoisonWriter(runCtx, t, consumer, f, f.dlq)
+	// Read the full durable origin set before accepting any final offset claim.
+	require.Eventually(t, func() bool {
+		records, readErr := f.observed.snapshot()
+		if readErr != nil {
+			return false
+		}
+		for origin := range f.poison {
+			if records[origin] == nil {
+				return false
+			}
+		}
+		return true
+	}, 15*time.Second, 20*time.Millisecond, "recovered writer did not publish every original poison origin")
+	require.Eventually(t, func() bool {
+		offsets, fetchErr := f.admin.FetchOffsets(ctx, f.kafka.EventWriterGroup)
+		if fetchErr != nil {
+			return false
+		}
+		for partition := range int32(2) {
+			offset, ok := offsets.Lookup(f.kafka.EventsTopic, partition)
+			if !ok || offset.Err != nil || offset.At != 14 {
+				return false
+			}
+		}
+		return true
+	}, 5*time.Second, 20*time.Millisecond, "recovered group did not commit both complete durable prefixes")
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("recovered writer did not stop")
+	}
+	require.NoError(t, *runErr)
+	assertPoisonPrefixes(ctx, t, f, &slowRealDLQ{acknowledged: make(map[poisonOrigin]bool)})
+	count, countErr := f.store.CountUnique(ctx, "demo", time.Time{})
+	require.NoError(t, countErr)
+	require.Equal(t, uint64(len(f.events)), count, "replay must remain immediately duplicate-safe")
+}
+
+func assertPoisonPrefixes(ctx context.Context, t *testing.T, f *poisonFixture, delayed *slowRealDLQ) {
 	t.Helper()
 	acknowledged := delayed.acknowledgedOrigins()
 	require.Eventually(t, func() bool {
@@ -323,23 +438,38 @@ func assertPoisonPrefixes(t *testing.T, ctx context.Context, f *poisonFixture, d
 	durable, err := f.observed.snapshot()
 	require.NoError(t, err)
 	for partition := range int32(2) {
-		prefix := int64(0)
-		for _, source := range f.records {
-			if source.Partition != partition {
-				continue
-			}
-			origin := poisonOrigin{partition, source.Offset}
-			if _, isPoison := f.poison[origin]; isPoison && durable[origin] == nil {
-				break
-			}
-			prefix = source.Offset + 1
-		}
+		prefix := observedDurablePrefix(f, partition, durable)
 		offset, ok := offsets.Lookup(f.kafka.EventsTopic, partition)
 		if ok && offset.At >= 0 {
 			require.NoError(t, offset.Err)
 			require.LessOrEqual(t, offset.At, prefix, "partition %d committed beyond independently observed effects", partition)
 		}
 	}
+	assertObservedPoisonPayloads(t, f, durable)
+	for _, event := range f.events {
+		got, getErr := f.store.Get(ctx, "demo", event.EventID)
+		require.NoError(t, getErr)
+		require.Equal(t, event.EventID, got.EventID)
+	}
+}
+
+func observedDurablePrefix(f *poisonFixture, partition int32, durable map[poisonOrigin]*kgo.Record) int64 {
+	var prefix int64
+	for _, source := range f.records {
+		if source.Partition != partition {
+			continue
+		}
+		origin := poisonOrigin{partition, source.Offset}
+		if _, isPoison := f.poison[origin]; isPoison && durable[origin] == nil {
+			break
+		}
+		prefix = source.Offset + 1
+	}
+	return prefix
+}
+
+func assertObservedPoisonPayloads(t *testing.T, f *poisonFixture, durable map[poisonOrigin]*kgo.Record) {
+	t.Helper()
 	for origin, record := range durable {
 		source := f.poison[origin]
 		require.NotNil(t, source)
@@ -348,10 +478,5 @@ func assertPoisonPrefixes(t *testing.T, ctx context.Context, f *poisonFixture, d
 		require.Equal(t, f.kafka.EventsTopic, testHeaderValue(record.Headers, "dlq.origin.topic"))
 		require.Equal(t, "decode_error", testHeaderValue(record.Headers, "dlq.reason"))
 		require.Equal(t, "rebalance-proof", testHeaderValue(record.Headers, "request_id"))
-	}
-	for _, event := range f.events {
-		got, getErr := f.store.Get(ctx, "demo", event.EventID)
-		require.NoError(t, getErr)
-		require.Equal(t, event.EventID, got.EventID)
 	}
 }
