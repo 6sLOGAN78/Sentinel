@@ -105,3 +105,14 @@ Root will create byte-identical immutable copies at [02-VERIFICATION-2026-10-16-
 ### Pending independent and external verdicts
 
 Local repair acceptance: **passed**. Independent goal re-verification, security assessment and code review: **pending**, orchestrator-owned. Hosted GitHub Actions: **pending**, with no push authorized/performed. Overall phase status must remain pending independent assessment; neither this implementer evidence nor 22 SUMMARY files establishes an independent verdict. User-owned `.planning/config.json`, `.serena/`, root environment, local keys and persistent data were preserved.
+
+## Independent review follow-up — 2026-10-17
+
+The fresh reviewer found a residual directory-preparation defect in the seed wrapper and a stale README liveness path. The original generator manifest repair remains valid; the separate wrapper had still followed `.local` or `keys` symlinks before chmod.
+
+- Behavioral RED commit `537e073`: both symlink-directory cases failed because preparation did not reject the path. Fixtures were isolated temporary directories; no real external directory was changed.
+- The repair opens the root and each managed directory using `O_DIRECTORY|O_NOFOLLOW`, creates directories relative to opened descriptors, and validates the entire chain before descriptor-relative permission repair. External symlink targets are refused without mutation; repeated real-directory preparation retains the same inode and private modes.
+- The complete script suite passed with **27 tests** after repair. The README now uses `/healthz`; a bounded request to the running listener returned `{"status":"live"}` and HTTP 200.
+- No Go/service source changed in this follow-up, so the already-passing complete integration gate was not repeated. Two additional bounded live seed runs check the changed credential-preparation path; their outcomes are recorded in the follow-up closeout below.
+
+Follow-up closeout: repair commit `428604a`; both consecutive `timeout 10m make seed` invocations exited 0 and each reported sent=accepted=visible=1000, api_spotchecks=3, tenant_isolation=1 and retries=0. No reset or volume removal occurred. Logs: `/tmp/sentinel-seed-followup-1.log` and `/tmp/sentinel-seed-followup-2.log`. The reviewer will reassess both findings before issuing its new canonical verdict. Hosted CI remains pending.
