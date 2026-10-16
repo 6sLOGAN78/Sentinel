@@ -20,7 +20,6 @@ func TestRunReturnsSuccessOnlyForHTTP200(t *testing.T) {
 		{name: "ready", code: http.StatusOK, want: 0},
 		{name: "unavailable", code: http.StatusServiceUnavailable, want: 1},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
