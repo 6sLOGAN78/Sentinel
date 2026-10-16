@@ -1,0 +1,13 @@
+.git
+.github
+.planning
+.serena
+.env
+**/.env
+.local
+**/.local
+web/node_modules
+generator/.venv
+**/.DS_Store
+**/*.log
+**/coverage.out
