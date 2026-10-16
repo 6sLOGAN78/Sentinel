@@ -446,3 +446,23 @@ func TestWriterBudgetRejectsDirectInvalidSettings(t *testing.T) {
 	err = newWriter(nil, nil, nil, settings, contracts.DefaultLimits()).Run(t.Context())
 	require.ErrorContains(t, err, "writer config")
 }
+
+type closingConsumer struct{ *scriptedConsumer }
+
+func (c closingConsumer) PollRecords(ctx context.Context, maximum int) ([]*kgo.Record, error) {
+	if len(c.records) > 0 {
+		return c.scriptedConsumer.PollRecords(ctx, maximum)
+	}
+	return nil, kafkax.ErrConsumerClosed
+}
+
+func TestWriterConsumerCloseDoesNotStartShutdownTransfer(t *testing.T) {
+	now := time.Now().UTC()
+	consumer := closingConsumer{&scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, now, now)}}}
+	store := &recordingStore{}
+	err := newWriter(consumer, store, &recordingDLQ{}, writerSettings(2, time.Second), contracts.DefaultLimits()).Run(t.Context())
+	require.ErrorIs(t, err, kafkax.ErrConsumerClosed)
+	require.Zero(t, store.attempts, "only genuine parent cancellation may start fresh shutdown processing")
+	require.Empty(t, consumer.commits)
+	require.Equal(t, 1, consumer.allowRebalance)
+}
