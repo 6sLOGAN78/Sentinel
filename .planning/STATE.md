@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-09-PLAN.md; continue Phase 2 with 02-11
-last_updated: "2026-10-16T02:05:30.972Z"
-last_activity: 2026-10-14 -- Phase 02 execution started
+stopped_at: Completed 02-11-PLAN.md; continue Phase 2 with 02-12
+last_updated: "2026-10-16T02:25:45.689Z"
+last_activity: 2026-10-16
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 27
-  completed_plans: 24
-  percent: 89
+  completed_plans: 25
+  percent: 93
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-10)
 ## Current Position
 
 Phase: 02 — EXECUTING
-Plan: 12 of 14
-Status: Ready to execute 02-11
-Last activity: 2026-10-16 -- Completed 02-09 operational health and graceful draining
+Plan: 13 of 14
+Status: Ready to execute
+Last activity: 2026-10-16
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 24
+- Total plans completed: 25
 - Average duration: -
 - Total execution time: -
 
@@ -59,9 +59,10 @@ Progress: [█████████░] 89%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 13 | - | - |
-| 2 | 11 | 33 h 22 min elapsed | - |
+| 2 | 12 | 33 h 42 min elapsed | - |
 | Phase 02 P08 | 14min | 3 tasks | 12 files |
 | Phase 02 P09 | 26h 33m | 3 tasks | 15 files |
+| Phase 02 P11 | 20 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,9 @@ Progress: [█████████░] 89%
 - [Phase 02]: 02-09: Expose dependency state only on a separately bound ops listener with loopback defaults and sanitized states.
 - [Phase 02]: 02-09: Register ops shutdown first and draining last so LIFO cleanup advertises not-ready before stopping work and closes ops last.
 - [Phase 02]: 02-09: Use real protocol checks for Kafka, PostgreSQL, Redis, and ClickHouse rather than TCP reachability.
+- [Phase 02]: 02-11: Compile failure controls only with the integration tag; default builds contain unconditional no-ops and read no failure environment settings.
+- [Phase 02]: 02-11: Use private once-only file barriers to prove exact durable boundaries before pausing or killing test-owned resources.
+- [Phase 02]: 02-11: Treat Kafka topic-leader metadata, not broker-only Ping, as producer readiness after an outage.
 
 ### Pending Todos
 
@@ -112,7 +116,7 @@ None yet.
 - All 14 plans (02-00 through 02-13) are saved across 10 dependency waves, with 41 concrete tasks. Plans 02-00 through 02-07 and 02-10 are implemented and committed; 5 Phase 2 plans remain.
 - Initial checker found two blockers and one warning: missing fail-open counter, oversized intake plan, and bind-field compile ordering. Revisions add prerequisite 02-00 and the atomic bypass counter, reducing intake scope and resolving declaration order. Independent recheck passed with no remaining issues.
 - Structural gates pass; all 14 requirements and 30 decisions covered; no same-wave modified-file conflicts. Validation task bindings and roadmap updated.
-- Next: execute 02-11 crash-recovery proofs, followed by 02-12 Compose wiring and 02-13 end-to-end seed/CI guards. Preserve unrelated configuration/.serena edits and existing user volumes.
+- Next: execute 02-12 Compose full-path wiring, then 02-13 end-to-end seed/CI guards. Preserve unrelated configuration/.serena edits and existing user volumes.
 
 ### Blockers/Concerns
 
@@ -121,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-16T02:05:30.960Z
-Stopped at: Completed 02-09-PLAN.md; continue Phase 2 with 02-11
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-11-PLAN.md
+Last session: 2026-10-16T02:25:45.670Z
+Stopped at: Completed 02-11-PLAN.md; continue Phase 2 with 02-12
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-12-PLAN.md
