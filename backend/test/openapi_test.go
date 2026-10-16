@@ -123,6 +123,7 @@ func TestOpenAPISecurity(t *testing.T) {
 	require.NotNil(t, api)
 	assert.Equal(t, "apiKey", api.Type)
 	assert.Equal(t, "header", api.In)
+	assert.Equal(t, "X-API-Key", api.Name)
 
 	bearer := doc.Components.SecuritySchemes["BearerAuth"].Value
 	require.NotNil(t, bearer)
@@ -142,12 +143,11 @@ func TestOpenAPISecurity(t *testing.T) {
 		case "POST " + pathBatch:
 			assert.Equal(t, []string{"ApiKeyAuth"}, names, key)
 		case "GET /api/v1/events/{event_id}":
-			assert.Equal(t, []string{"ApiKeyAuth", "BearerAuth"}, names, key)
+			assert.Equal(t, []string{"ApiKeyAuth"}, names, key)
 			require.NotNil(t, op.Security)
-			require.Len(t, *op.Security, 2, "credentials must be alternatives")
-			for _, alternative := range *op.Security {
-				assert.Len(t, alternative, 1, "each security alternative must require one scheme")
-			}
+			require.Len(t, *op.Security, 1, "lookup currently implements only API-key authentication")
+			assert.Equal(t, openapi3.SecurityRequirement{"ApiKeyAuth": []string{}}, (*op.Security)[0])
+			assert.Contains(t, op.Description, "events:read")
 		case "GET /healthz", "GET /readyz":
 			assert.Empty(t, names, key)
 		case "GET /metrics":
