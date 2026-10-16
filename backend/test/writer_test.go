@@ -107,7 +107,9 @@ func committedNextOffset(t *testing.T, kafka config.KafkaConfig, group, topic st
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	offsets, err := client.FetchOffsets(ctx, group)
-	require.NoError(t, err)
+	if err != nil {
+		return 0, false
+	}
 	offset, ok := offsets.Lookup(topic, 0)
 	if !ok || offset.Err != nil || offset.At < 0 {
 		return 0, false

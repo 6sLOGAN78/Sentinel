@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -51,10 +53,36 @@ func NewProducer(_ context.Context, cfg config.KafkaConfig) (*Producer, error) {
 	return &Producer{client: client, topic: cfg.EventsTopic, timeout: cfg.ProduceTimeout}, nil
 }
 
-// Ping verifies that at least one configured broker is reachable.
+// Ping verifies that a broker is reachable and the producer topic has usable
+// partition leaders. A broker-only metadata response is not sufficient for
+// publication readiness after an outage.
 func (p *Producer) Ping(ctx context.Context) error {
 	if err := p.client.Ping(ctx); err != nil {
 		return fmt.Errorf("ping Kafka: %w", err)
+	}
+	req := kmsg.NewPtrMetadataRequest()
+	req.Topics = []kmsg.MetadataRequestTopic{{Topic: kmsg.StringPtr(p.topic)}}
+	response, err := req.RequestWith(ctx, p.client)
+	if err != nil {
+		return fmt.Errorf("read Kafka topic metadata: %w", err)
+	}
+	if len(response.Topics) != 1 || response.Topics[0].Topic == nil || *response.Topics[0].Topic != p.topic {
+		return fmt.Errorf("read Kafka topic metadata: topic %q missing", p.topic)
+	}
+	topic := response.Topics[0]
+	if err = kerr.ErrorForCode(topic.ErrorCode); err != nil {
+		return fmt.Errorf("read Kafka topic metadata: %w", err)
+	}
+	if len(topic.Partitions) == 0 {
+		return fmt.Errorf("read Kafka topic metadata: topic %q has no partitions", p.topic)
+	}
+	for _, partition := range topic.Partitions {
+		if err = kerr.ErrorForCode(partition.ErrorCode); err != nil {
+			return fmt.Errorf("read Kafka topic metadata: partition %d unavailable: %w", partition.Partition, err)
+		}
+		if partition.Leader < 0 {
+			return fmt.Errorf("read Kafka topic metadata: partition %d has no leader", partition.Partition)
+		}
 	}
 
 	return nil
