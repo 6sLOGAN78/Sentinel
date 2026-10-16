@@ -2,12 +2,54 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+type recordingTransport func(*http.Request) (*http.Response, error)
+
+func (f recordingTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRunRejectsRedirects(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{301, 302, 303, 307, 308} {
+		for _, location := range []string{"http://192.0.2.1/private", "http://127.0.0.1:1/other"} {
+			t.Run(strconv.Itoa(status)+location, func(t *testing.T) {
+				t.Parallel()
+
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					http.Redirect(w, r, location, status)
+				}))
+				t.Cleanup(server.Close)
+				requests := 0
+				client := &http.Client{Timeout: time.Second, Transport: recordingTransport(func(r *http.Request) (*http.Response, error) {
+					requests++
+					if r.URL.String() == server.URL {
+						return http.DefaultTransport.RoundTrip(r)
+					}
+
+					return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("ready")), Request: r}, nil
+				})}
+				var stderr bytes.Buffer
+				if got := run([]string{server.URL}, client, &stderr); got != exitFailure {
+					t.Errorf("redirect returned %d, want failure", got)
+				}
+				if requests != 1 {
+					t.Errorf("made %d requests, want exactly one", requests)
+				}
+				if client.CheckRedirect != nil {
+					t.Error("run mutated supplied client")
+				}
+			})
+		}
+	}
+}
 
 func TestRunReturnsSuccessOnlyForHTTP200(t *testing.T) {
 	t.Parallel()
