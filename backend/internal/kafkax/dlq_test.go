@@ -1,6 +1,8 @@
 package kafkax_test
 
 import (
+	"encoding/binary"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +13,77 @@ import (
 
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 )
+
+func TestBuildDLQRecordEncodedHeaderFlood(t *testing.T) {
+	const valueCap = 64
+	cases := map[string][]kgo.RecordHeader{
+		"nil values":        make([]kgo.RecordHeader, 10_000),
+		"empty values":      make([]kgo.RecordHeader, 10_000),
+		"mixed spoofing":    make([]kgo.RecordHeader, 10_000),
+		"varint boundaries": {},
+	}
+	for i := range cases["empty values"] {
+		cases["empty values"][i].Value = []byte{}
+	}
+	for i := range cases["mixed spoofing"] {
+		if i%2 == 0 {
+			cases["mixed spoofing"][i] = kgo.RecordHeader{Key: "DlQ.reason", Value: []byte("spoofed")}
+		}
+	}
+	for _, n := range []int{0, 1, 63, 64, 127, 128, 8191, 8192} {
+		for range 150 {
+			cases["varint boundaries"] = append(cases["varint boundaries"], kgo.RecordHeader{
+				Key: strings.Repeat("k", n), Value: []byte(strings.Repeat("v", n)),
+			})
+		}
+	}
+	for name, headers := range cases {
+		t.Run(name, func(t *testing.T) {
+			record, err := kafkax.BuildDLQRecord(&kgo.Record{
+				Topic: "events", Key: []byte("tenant"), Value: []byte("poison"), Headers: headers,
+			}, kafkax.DLQReasonDecode, time.Unix(0, 0), valueCap)
+			require.NoError(t, err)
+			require.LessOrEqual(t, encodedDLQBytes(record), valueCap+8192, "encoded record exceeds bound")
+			require.LessOrEqual(t, len(record.Headers), 128, "trusted metadata counts toward the header cap")
+			require.Equal(t, "decode_error", headerValue(record.Headers, "dlq.reason"))
+		})
+	}
+}
+
+// encodedDLQBytes serializes record-v2 fields independently of the production
+// accounting. Worst-case deltas plus batch and Produce request framing make the
+// oracle conservative even when the producer batches this record with others.
+func encodedDLQBytes(record *kgo.Record) int {
+	body := []byte{0} // attributes
+	var scratch [binary.MaxVarintLen64]byte
+	appendVarint := func(value int64) {
+		n := binary.PutVarint(scratch[:], value)
+		body = append(body, scratch[:n]...)
+	}
+	appendBytes := func(value []byte) {
+		if value == nil {
+			appendVarint(-1)
+			return
+		}
+		appendVarint(int64(len(value)))
+		body = append(body, value...)
+	}
+	appendVarint(math.MaxInt64) // timestamp delta
+	appendVarint(math.MaxInt32) // offset delta
+	appendBytes(record.Key)
+	appendBytes(record.Value)
+	appendVarint(int64(len(record.Headers)))
+	for _, header := range record.Headers {
+		appendVarint(int64(len(header.Key)))
+		body = append(body, header.Key...)
+		appendBytes(header.Value)
+	}
+	n := binary.PutVarint(scratch[:], int64(len(body)))
+	// 61-byte record batch; 128 bytes cover request/header, transactional ID,
+	// acks, timeout, arrays, partition and record-set lengths/tags. The topic
+	// itself is additional, including its int16 length (or compact equivalent).
+	return 61 + 128 + 2 + len(record.Topic) + n + len(body)
+}
 
 func TestBuildDLQRecordPreservesSmallOrigin(t *testing.T) {
 	original := &kgo.Record{
