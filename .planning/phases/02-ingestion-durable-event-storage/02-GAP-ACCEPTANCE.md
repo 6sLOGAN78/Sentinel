@@ -74,4 +74,34 @@ Before this gate, root fixed four pre-existing integration-test style findings a
 
 ## Task 3 — evidence handoff
 
-Pending observed gate results and repair-to-regression mapping. Independent goal verification, security assessment and code review are orchestrator-owned and pending. Hosted CI is separately pending.
+The table connects every structured verification gap and all nine review findings to the repair and observed evidence. RED evidence belongs to the committed repair summaries linked below; 02-21 is an acceptance/metadata plan and does not invent a new RED run or replay unsafe old production code. Fresh GREEN evidence is the Task 2 gate above, with additional detailed behavioral results in each repair summary.
+
+| Original source / finding | Repair task and files | Named regression and observed outcome |
+|---|---|---|
+| Verification gap 1; premature completion metadata | 02-21 Task 1; canonical ROADMAP/STATE owned by root | `user-story.validate` returned **valid=true**, persisted exact goal/mvp/five criteria retained; root's registered state patch restored executing/pending status. Task 1 is metadata verification, with no claimed RED. |
+| Verification gap 2 / CR-03: encoded DLQ bound | [02-14 Tasks 1–2](02-14-SUMMARY.md); `backend/internal/kafkax/dlq.go` | `TestBuildDLQRecordEncodedHeaderFlood` and destination-topic/boundary variants: owning-plan behavioral overflow RED then GREEN. Default race tests and integration/DLQ final gates passed. Encoded-size oracle and header cap address cardinality/varint/actual-topic bounds. |
+| Verification gap 2 / CR-05: aggregate poison ownership | [02-15 Tasks 1–3](02-15-SUMMARY.md); writer, consumer, shared config | `TestWriterAggregatePoisonBudget`, `TestRebalanceTimeoutCoversWorstProcessingBudget`, `TestWriterBudget*`, `TestWriterConsumerCloseDoesNotStartShutdownTransfer`: owning-plan behavioral RED then GREEN. Real `TestWriterSlowPoisonRebalance` passed freshly at **32.403s**, plus all writer/recovery groups. Its exhaustion, failed-earliest-poison and cancellation cases recover every original poison origin, all four valid IDs, immediate unique count and final offsets. |
+| Verification gap 3 / CR-04: advertised runtime auth | [02-16 Tasks 1–2](02-16-SUMMARY.md); OpenAPI, generated web types, runtime contract tests | `TestOpenAPIGetEventRuntimeSecurity/BearerAuth` reproduced advertised success versus actual 401 before repair; contract/handler regressions then passed. Full final suites and real `TestEventLookupTenantScope` group passed. `getEvent` is API-key-only; JWT remains Phase 4. |
+| Verification gap 4 / CR-01: redirect escape | [02-17 Tasks 1–2](02-17-SUMMARY.md); `backend/tools/healthprobe/main.go` | `TestRunRejectsRedirects` observed inherited ten-case behavioral RED, then fresh GREEN with exactly one request for 301/302/303/307/308. Final default race, integration readiness and temporary production healthprobe build passed. |
+| Verification gap 5 / CR-02: existing parent chmod | [02-18 Task 1](02-18-SUMMARY.md); generator manifest writer | `test_manifest_preserves_existing_parent_mode` observed four actual mode-change failures before repair; all manifest/precedence regressions then passed. Final **54 generator tests** passed, preserving existing parents, descriptor anchoring, symlink refusal and private atomic output. |
+| Verification gap 6 / WR-03: credential build context | [02-19 Task 1](02-19-SUMMARY.md); `.dockerignore`, Docker checker/tests | `test_current_policy_excludes_private_material_in_real_export` failed on actual fixture leakage before repair. Final real Docker checker and four context tests, including exclusion-removal detection, passed. Only synthetic harmless material was exported. |
+| Verification gap 7 / WR-01: ambient seed key | [02-18 Task 2](02-18-SUMMARY.md); `scripts/seed.py` | `test_generator_environment_ignores_ambient_key` failed because child env was inherited; repaired regression and all **11 seed unittests** passed in the final 25-script suite. Two real seed runs each verified exactly 1000 intended IDs and tenant isolation. |
+| Verification gap 7 / WR-04: tag-only dependencies | [02-19 Task 2](02-19-SUMMARY.md); dual graph checker and CI | `test_integration_only_banned_import_fails` observed policy-bypass RED; all five checker regressions and both actual `go list` graph enumerations passed. Enumeration failures propagate before matching; pins were unchanged. |
+| Review WR-02: creation-only retention/checker defaults | [02-20 Tasks 1–2](02-20-SUMMARY.md); Compose topic-init and `scripts/check-stack.sh` | `TestTopicRetentionOverridesReapply` observed old-retention RED then GREEN. Exact fresh real regression passed at **64.612s**; all five `test_stack_config.py` tests passed. Normal stack check accepted effective configured policies; partitions and named volumes survived. |
+
+### D-28 supersession and scope
+
+The original D-28 `getEvent` ApiKeyAuth-or-BearerAuth alternative is superseded for the live Phase 2 operation by 02-16's API-key-only contract, consistent with D-03/D-13 and the existing Phase 4 JWT/RBAC boundary. The general bearer scheme/future contracts, error/type work and literal-colon decision remain intact. This repairs the published alternative; it does not add a new authentication implementation or advance deferred dashboard work. The source decision/mapping is recorded in `02-GAP-COVERAGE.md` and `02-16-SUMMARY.md`.
+
+### Historical report preservation
+
+Before and after this acceptance gate, original report bytes were unchanged:
+
+- `02-VERIFICATION.md`: SHA-256 `f8d0b5d37a52deaf8fd1b6041b8b8e6ca2c8120f3e6c24fe9791b88ffc496144`, historical status `gaps_found`.
+- `02-REVIEW.md`: SHA-256 `bf47694073b07e184251e5c68af7ef90ef3c633f88f9af732b7f26b868931d49`, historical status `issues_found`.
+
+Root will create byte-identical immutable copies at [02-VERIFICATION-2026-10-16-PRE-GAPS.md](02-VERIFICATION-2026-10-16-PRE-GAPS.md) and [02-REVIEW-2026-10-16-PRE-GAPS.md](02-REVIEW-2026-10-16-PRE-GAPS.md) after this executor finishes and **before** canonical reports are replaced by independent assessments. At this implementer handoff, those archival writes and independent verdicts are root-owned pending work. All original 02-00..13 plans/SUMMARYs and 41 historical passed validation rows remain preserved.
+
+### Pending independent and external verdicts
+
+Local repair acceptance: **passed**. Independent goal re-verification, security assessment and code review: **pending**, orchestrator-owned. Hosted GitHub Actions: **pending**, with no push authorized/performed. Overall phase status must remain pending independent assessment; neither this implementer evidence nor 22 SUMMARY files establishes an independent verdict. User-owned `.planning/config.json`, `.serena/`, root environment, local keys and persistent data were preserved.

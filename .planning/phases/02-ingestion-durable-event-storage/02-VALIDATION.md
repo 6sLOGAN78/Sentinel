@@ -2,6 +2,9 @@
 phase: 2
 slug: ingestion-durable-event-storage
 status: pending
+local_repair_acceptance: passed
+independent_reverification: pending
+hosted_ci: pending
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-10-12
@@ -129,9 +132,9 @@ Quick feedback is the unit/static part of the task command (target <=60s). Real-
 
 **Historical approval:** local Phase 2 validation passed on 2026-10-16 with real Docker-backed integration and two exact seed runs. Hosted GitHub Actions remains pending until a branch is pushed. The later verification/review findings require the pending repairs and fresh acceptance below.
 
-## Gap-Closure Validation — Pending Repairs
+## Gap-Closure Validation — Local Acceptance Passed; Independent Assessment Pending
 
-The original local gate and 41 passed task rows above remain valid historical observations at the pre-review revision. They do not establish the repaired boundaries. Overall status is pending until the eight new plans execute and independent assessment evaluates the original gaps. No new test or gate has been run during gap planning.
+The original local gate and 41 passed task rows above remain valid historical observations at the pre-review revision. They do not establish the repaired boundaries. The seven code-repair plans now have committed behavioral RED/GREEN evidence, and 02-21's fresh local acceptance passed on 2026-10-17 Asia/Kolkata. The complete gate exited 0 in 809 seconds, including all seven independently nonempty CI integration groups and two complete 1000-ID seeds. Overall status remains pending until independent assessment evaluates the original gaps; hosted CI is a separate pending check. See [02-GAP-ACCEPTANCE.md](02-GAP-ACCEPTANCE.md) for actual commands, exits, timings, source-to-repair mappings and preserved-volume evidence.
 
 | Task ID | Wave | Requirements | Threat Ref | Test Type | Automated Command | Test Availability | Status |
 |---------|------|--------------|------------|-----------|-------------------|-------------------|--------|
@@ -150,21 +153,23 @@ The original local gate and 41 passed task rows above remain valid historical ob
 | 02-19-02 | 13 | GEN-03, ING-07 | T-02-19 | dual Go graph | `python3 -B -m unittest discover -s scripts -p test_go_dependencies.py && scripts/check-go-dependencies.sh` | Observed RED/GREEN; see 02-19-SUMMARY | ✅ passed |
 | 02-20-01 | 11 | GEN-03, STOR-04 | T-02-20 | real Kafka topic config | `cd backend && go test -tags=integration ./test -run TestTopicRetentionOverridesReapply -count=1 -timeout 3m -p 1` | Observed RED/GREEN; see plan SUMMARY and Wave 11 gate | ✅ passed |
 | 02-20-02 | 11 | GEN-03, STOR-04 | T-02-20 | config + real Kafka | `python3 -B -m unittest discover -s scripts -p test_stack_config.py` | Observed RED/GREEN; see plan SUMMARY and Wave 11 gate | ✅ passed |
-| 02-21-01 | 14 | all Phase 2 IDs | T-02-21 | canonical/status | `gsd-sdk query roadmap.get-phase 2 && gsd-sdk query state.load` | Planned; first task supplies behavioral RED | ⏳ pending |
-| 02-21-02 | 14 | all Phase 2 IDs | T-02-21 | full gate + exact e2e | `make lint test && make test-integ && timeout 10m make seed && timeout 10m make seed` | Planned; first task supplies behavioral RED | ⏳ pending |
-| 02-21-03 | 14 | all Phase 2 IDs | T-02-21 | evidence/tracking | `test -s .planning/phases/02-ingestion-durable-event-storage/02-GAP-ACCEPTANCE.md && git diff --check` | Planned; first task supplies behavioral RED | ⏳ pending |
+| 02-21-01 | 14 | all Phase 2 IDs | T-02-21 | canonical/status | `gsd-sdk query user-story.validate --story '<canonical story>' && gsd-sdk query roadmap.get-phase 2 && gsd-sdk query state.load` | Observed valid=true, exact persisted goal and executing/pending status; metadata task has no fabricated RED | ✅ passed |
+| 02-21-02 | 14 | all Phase 2 IDs | T-02-21 | full gate + exact e2e | `make lint test && make test-integ && timeout 10m make seed && timeout 10m make seed` | Observed outer 45m gate exit 0 in 809s; all additional static, script, exact and nonempty groups in GAP-ACCEPTANCE passed | ✅ passed |
+| 02-21-03 | 14 | all Phase 2 IDs | T-02-21 | evidence/tracking | `test -s .planning/phases/02-ingestion-durable-event-storage/02-GAP-ACCEPTANCE.md && git diff --check` | Observed additive mapping/evidence; original report hashes unchanged; independent/hosted verdict pending | ✅ passed |
 
 Full command details, extra static gates and exact nonempty groups live in the corresponding PLAN tasks. Each defect must first fail a behavioral regression, then the same test must pass; missing executables, compile errors and empty selections are not RED/GREEN evidence.
 
-New test scaffolds created by the owning tasks (pending):
+New test scaffolds created and exercised by the owning tasks and final acceptance:
 
-- [ ] 02-14: independent encoded-header bound cases in kafkax/dlq_test.go.
-- [ ] 02-15: aggregate unit cases and integration writer_rebalance_test.go.
-- [ ] 02-16: YAML-driven openapi_runtime_auth_test.go plus handler negatives.
-- [ ] 02-17: redirect no-second-request regressions.
-- [ ] 02-18: parent-mode/symlink and ambient-seed-key regressions.
-- [ ] 02-19: real Docker context fixture/mutation and dual-tag/fail-closed checker tests.
-- [ ] 02-20: topic_retention_test.go and test_stack_config.py.
-- [ ] 02-21: additive GAP-ACCEPTANCE with canonical validator, full local gate, two exact seed runs, preserved volumes and true status.
+- [x] 02-14: independent encoded-header bound cases in kafkax/dlq_test.go.
+- [x] 02-15: aggregate unit cases and integration writer_rebalance_test.go.
+- [x] 02-16: YAML-driven openapi_runtime_auth_test.go plus handler negatives.
+- [x] 02-17: redirect no-second-request regressions.
+- [x] 02-18: parent-mode/symlink and ambient-seed-key regressions.
+- [x] 02-19: real Docker context fixture/mutation and dual-tag/fail-closed checker tests.
+- [x] 02-20: topic_retention_test.go and test_stack_config.py.
+- [x] 02-21: additive GAP-ACCEPTANCE with canonical validator, full local gate, two exact seed runs, preserved volumes and true status.
+
+**Observed local repair sign-off:** the new 18 task bindings passed their observed owning-plan/final gates. This records local execution only. Original 2026-10-16 verification/review findings remain historical evidence, and the orchestrator must archive them before independent reassessment. Hosted GitHub Actions is pending because no push occurred. No requirement or overall phase completion is inferred from SUMMARY counts.
 
 Quick loops target <=60s; real rebalance/retention tests have <=3m command ceilings, related replay gate <=6m, full integration <=10m, each seed <=10m and complete final local gate <=45m. Hosted GitHub Actions remains pending; no push is included. Preserve dated original VERIFICATION/REVIEW snapshots before updating canonical assessment reports. Coverage mapping: 02-GAP-COVERAGE.md.
