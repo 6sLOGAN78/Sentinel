@@ -138,12 +138,29 @@ def secure_key_file(path: Path) -> None:
 
 
 def _prepare_key_directory() -> None:
+    descriptors: list[int] = []
     try:
-        KEY_DIRECTORY.mkdir(mode=0o700, parents=True, exist_ok=True)
-        (ROOT / ".local").chmod(0o700)
-        KEY_DIRECTORY.chmod(0o700)
+        if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+            raise SeedError("safe credential directory handling is unavailable")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        parent = os.open(ROOT, flags)
+        descriptors.append(parent)
+        for name in (".local", "keys"):
+            try:
+                os.mkdir(name, mode=0o700, dir_fd=parent)
+            except FileExistsError:
+                pass
+            parent = os.open(name, flags, dir_fd=parent)
+            descriptors.append(parent)
+        # Validate the entire chain before changing permissions. Descriptor-based
+        # chmod cannot follow a swapped symlink to an unrelated directory.
+        for descriptor in descriptors[1:]:
+            os.fchmod(descriptor, 0o700)
     except OSError as error:
         raise SeedError("cannot prepare private credential directory") from error
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 def load_manifest(path: Path, *, expected: int) -> RunManifest:

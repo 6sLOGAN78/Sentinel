@@ -126,7 +126,7 @@ Readiness is dependency-aware and returns HTTP 200 only when a service can do
 useful work. Liveness remains process-local:
 
 ```sh
-curl --fail --max-time 5 http://127.0.0.1:9101/livez
+curl --fail --max-time 5 http://127.0.0.1:9101/healthz
 curl --fail --max-time 5 http://127.0.0.1:9101/readyz
 ```
 
