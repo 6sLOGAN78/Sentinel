@@ -410,7 +410,9 @@ def test_manifest_creates_private_nested_directories_and_replaces_atomically(
     assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o775
 
 
-@pytest.mark.parametrize("kind", ["parent", "ancestor", "output", "file-parent", "directory-output"])
+@pytest.mark.parametrize(
+    "kind", ["parent", "ancestor", "output", "file-parent", "directory-output"]
+)
 def test_manifest_rejects_unsafe_paths_without_mutating_targets(
     kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

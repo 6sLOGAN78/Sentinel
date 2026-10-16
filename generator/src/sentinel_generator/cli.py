@@ -7,9 +7,9 @@ import json
 import os
 import random
 import re
+import secrets
 import stat
 import sys
-import tempfile
 import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -115,12 +115,71 @@ def _load_api_key(*, tenant: str, key_file: Path | None) -> str:
     return _read_private_key(key_file or Path(".local/keys") / f"{tenant}.key")
 
 
-def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path.parent.chmod(0o700)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    temporary_path = Path(temporary_name)
+def _manifest_directory(path: Path) -> int:
+    """Walk without symlinks and retain an anchor despite concurrent path renames."""
+    if (
+        not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or not {os.open, os.mkdir, os.stat, os.unlink, os.rename} <= os.supports_dir_fd
+        or os.stat not in os.supports_follow_symlinks
+    ):
+        raise SendError("safe manifest directory handling is unavailable")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor = os.open(path.anchor or ".", flags)
     try:
+        components = path.parts[1:] if path.anchor else path.parts
+        for component in components:
+            created = False
+            try:
+                os.mkdir(component, mode=0o700, dir_fd=descriptor)
+                created = True
+            except FileExistsError:
+                pass
+            child = os.open(component, flags, dir_fd=descriptor)
+            if created:
+                try:
+                    # Never chmod by path (or chmod an inode swapped in after mkdir).
+                    # A restrictive umask or changed directory must fail closed.
+                    if stat.S_IMODE(os.fstat(child).st_mode) != 0o700:
+                        raise SendError("new manifest directory is not private")
+                    os.fsync(descriptor)
+                except BaseException:
+                    os.close(child)
+                    raise
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _manifest_destination(directory: int, name: str) -> None:
+    try:
+        info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(info.st_mode):
+        raise SendError("manifest destination must be a regular file")
+
+
+def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
+    directory = -1
+    descriptor = -1
+    temporary_name: str | None = None
+    try:
+        if not path.name or path.name in {".", ".."}:
+            raise SendError("manifest destination must name a file")
+        directory = _manifest_directory(path.parent)
+        _manifest_destination(directory, path.name)
+        candidate = f".{path.name}.{secrets.token_hex(16)}"
+        descriptor = os.open(
+            candidate,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=directory,
+        )
+        temporary_name = candidate
         os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             descriptor = -1
@@ -128,17 +187,23 @@ def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
             output.write("\n")
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary_path, path)
-        path.chmod(0o600)
-        directory_descriptor = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
+        _manifest_destination(directory, path.name)
+        os.replace(temporary_name, path.name, src_dir_fd=directory, dst_dir_fd=directory)
+        temporary_name = None
+        os.fsync(directory)
+    except OSError:
+        raise SendError("cannot safely write the private send manifest") from None
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-        temporary_path.unlink(missing_ok=True)
+        try:
+            if temporary_name is not None:
+                os.unlink(temporary_name, dir_fd=directory)
+        except OSError:
+            raise SendError("cannot clean up the private send manifest") from None
+        finally:
+            if directory >= 0:
+                os.close(directory)
 
 
 def _parser() -> argparse.ArgumentParser:
