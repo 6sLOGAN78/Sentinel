@@ -135,7 +135,7 @@ Plans:
 
 **Wave 12** *(blocked on 02-14)*
 
-- [ ] 02-15-PLAN.md — Bound aggregate poison processing and prove safe rebalance recovery
+- [x] 02-15-PLAN.md — Bound aggregate poison processing and prove safe rebalance recovery
 
 **Wave 13** *(blocked on 02-15's named rebalance regression)*
 
@@ -227,7 +227,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 19/22 | In Progress|  |
+| 2. Ingestion & Durable Event Storage | 20/22 | In Progress|  |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
