@@ -176,6 +176,18 @@ func TestLoadRejectsPublicOpsPortCollision(t *testing.T) {
 	require.ErrorContains(t, err, "ports must differ")
 }
 
+func TestLoadAllowsEphemeralPublicPortOnlyInTests(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_SERVER.PORT", "0")
+
+	_, err := config.Load(config.ServiceDetector)
+	require.NoError(t, err)
+
+	t.Setenv("SENTINEL_PRIMARY.ENV", "production")
+	_, err = config.Load(config.ServiceDetector)
+	require.ErrorContains(t, err, "server")
+}
+
 func TestLoadEventWriterDefaults(t *testing.T) {
 	setCompleteEnv(t)
 

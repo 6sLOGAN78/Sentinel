@@ -398,7 +398,7 @@ func validateFor(cfg *Config, sections []string) error {
 	if err := v.Struct(cfg.Ops); err != nil {
 		return fmt.Errorf("validate ops config: %w", err)
 	}
-	if err := validateListenerPorts(cfg.Server.Port, cfg.Ops.Port); err != nil {
+	if err := validateListenerPorts(cfg.Server.Port, cfg.Ops.Port, cfg.Primary.Env == testEnvironment); err != nil {
 		return err
 	}
 
@@ -467,12 +467,12 @@ func defaultOpsPort(service string) string {
 	}
 }
 
-func validateListenerPorts(publicPort, opsPort string) error {
-	public, err := parsePort(publicPort)
+func validateListenerPorts(publicPort, opsPort string, allowEphemeralPublic bool) error {
+	public, err := parsePort(publicPort, allowEphemeralPublic)
 	if err != nil {
 		return fmt.Errorf("validate server config: %w", err)
 	}
-	ops, err := parsePort(opsPort)
+	ops, err := parsePort(opsPort, false)
 	if err != nil {
 		return fmt.Errorf("validate ops config: %w", err)
 	}
@@ -483,9 +483,9 @@ func validateListenerPorts(publicPort, opsPort string) error {
 	return nil
 }
 
-func parsePort(raw string) (uint64, error) {
+func parsePort(raw string, allowZero bool) (uint64, error) {
 	port, err := strconv.ParseUint(raw, 10, 16)
-	if err != nil || port == 0 {
+	if err != nil || (port == 0 && !allowZero) {
 		return 0, fmt.Errorf("port %q must be between 1 and 65535", raw)
 	}
 
