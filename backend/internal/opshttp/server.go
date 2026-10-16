@@ -65,6 +65,11 @@ type handler struct {
 	sem      chan struct{}
 }
 
+type checkResult struct {
+	name  string
+	state string
+}
+
 // NewHandler returns the fixed /healthz and /readyz routes. Readiness admits
 // at most sixteen concurrent requests; saturation launches no checks.
 func NewHandler(timeout time.Duration, draining *Draining, checks []Check) http.Handler {
@@ -97,7 +102,6 @@ func (h *handler) readyz(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case h.sem <- struct{}{}:
-		defer func() { <-h.sem }()
 	default:
 		writeJSON(w, http.StatusServiceUnavailable, response{Status: statusNotReady})
 
@@ -108,15 +112,26 @@ func (h *handler) readyz(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	states := make(map[string]string, len(h.checks))
-	ready := true
 	for _, check := range h.checks {
-		state := stateUnavailable
-		if check.Fn != nil && ctx.Err() == nil && check.Fn(ctx) == nil {
-			state = stateOK
-		} else {
-			ready = false
+		states[check.Name] = stateUnavailable
+	}
+	results := make(chan checkResult, len(h.checks))
+	go h.runChecks(ctx, results)
+
+	for range h.checks {
+		select {
+		case result, ok := <-results:
+			if ok {
+				states[result.name] = result.state
+			}
+		case <-ctx.Done():
+			writeJSON(w, http.StatusServiceUnavailable, response{Status: statusNotReady, Dependencies: states})
+			return
 		}
-		states[check.Name] = state
+	}
+	ready := ctx.Err() == nil
+	for _, state := range states {
+		ready = ready && state == stateOK
 	}
 
 	if !ready {
@@ -128,6 +143,28 @@ func (h *handler) readyz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response{Status: statusReady, Dependencies: states})
+}
+
+// Retain admission until the actual checks finish, even after the response
+// deadline. A client ignoring cancellation can consume at most sixteen workers.
+func (h *handler) runChecks(ctx context.Context, results chan<- checkResult) {
+	defer func() {
+		// Keep dependency panics isolated as they were in the HTTP handler.
+		_ = recover()
+		<-h.sem
+		close(results)
+	}()
+	for _, check := range h.checks {
+		state := stateUnavailable
+		if check.Fn != nil && ctx.Err() == nil {
+			if err := check.Fn(ctx); err == nil && ctx.Err() == nil {
+				state = stateOK
+			}
+		}
+		// Buffered for every declared check: completion cannot block on a
+		// response that has already timed out or disconnected.
+		results <- checkResult{name: check.Name, state: state}
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, body response) {

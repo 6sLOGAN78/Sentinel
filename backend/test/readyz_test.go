@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -122,6 +123,7 @@ func assertOutageRecovery(
 		}
 	})
 	for _, service := range services {
+		t.Logf("checking %s during %s outage", service, name)
 		requireStatusEventually(t, fixtures[service].opsURL+"/healthz", http.StatusOK)
 		requireDependencyEventually(t, fixtures[service].opsURL+"/readyz", name, "unavailable")
 	}
@@ -146,8 +148,21 @@ func requireStatusEventually(t *testing.T, url string, want int) {
 
 func requireDependencyEventually(t *testing.T, url, dependency, want string) {
 	t.Helper()
+	var lastMu sync.Mutex
+	var lastStates map[string]string
+	var lastError error
+	defer func() {
+		if t.Failed() {
+			lastMu.Lock()
+			defer lastMu.Unlock()
+			t.Logf("last dependency states: %v; request error: %v", lastStates, lastError)
+		}
+	}()
 	require.Eventually(t, func() bool {
 		response, err := (&http.Client{Timeout: 3 * time.Second}).Get(url)
+		lastMu.Lock()
+		lastError = err
+		lastMu.Unlock()
 		if err != nil {
 			return false
 		}
@@ -158,6 +173,9 @@ func requireDependencyEventually(t *testing.T, url, dependency, want string) {
 		if json.NewDecoder(response.Body).Decode(&body) != nil {
 			return false
 		}
+		lastMu.Lock()
+		lastStates = body.Dependencies
+		lastMu.Unlock()
 		return body.Dependencies[dependency] == want
 	}, readinessWait, 50*time.Millisecond, "%s did not report %s=%s", url, dependency, want)
 }
