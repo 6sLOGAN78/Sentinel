@@ -28,14 +28,20 @@ func TestRunRejectsRedirects(t *testing.T) {
 				}))
 				t.Cleanup(server.Close)
 				requests := 0
-				client := &http.Client{Timeout: time.Second, Transport: recordingTransport(func(r *http.Request) (*http.Response, error) {
+				transport := recordingTransport(func(r *http.Request) (*http.Response, error) {
 					requests++
 					if r.URL.String() == server.URL {
 						return http.DefaultTransport.RoundTrip(r)
 					}
 
-					return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("ready")), Request: r}, nil
-				})}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     make(http.Header),
+						Body:       io.NopCloser(strings.NewReader("ready")),
+						Request:    r,
+					}, nil
+				})
+				client := &http.Client{Timeout: time.Second, Transport: transport}
 				var stderr bytes.Buffer
 				if got := run([]string{server.URL}, client, &stderr); got != exitFailure {
 					t.Errorf("redirect returned %d, want failure", got)

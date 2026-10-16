@@ -48,8 +48,12 @@ func run(args []string, client *http.Client, stderr io.Writer) int {
 		return exitFailure
 	}
 
-	// #nosec G704 -- target is restricted above to a literal loopback IP.
-	response, err := client.Do(request)
+	probeClient := *client
+	probeClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	// #nosec G704 -- literal loopback target above; redirects are prohibited.
+	response, err := probeClient.Do(request)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "health probe failed: request unsuccessful")
 
