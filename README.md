@@ -38,7 +38,17 @@ scripts/check-stack.sh
 PostgreSQL, and Redis; creates the declared topics; applies PostgreSQL and
 ClickHouse migrations; then builds and waits for `ingest`, `event-writer`, and
 `query-api`. Repeating it preserves existing volumes and reapplies the current
-ClickHouse TTL safely.
+ClickHouse TTL and Kafka topic retention policies. `EVENTS_RETENTION_MS`,
+`ALERTS_RETENTION_MS`, and `DLQ_RETENTION_MS` in `.env` (or overriding shell
+environment values) apply to existing topics on every `make dev-up`.
+Reducing retention can permanently delete data already eligible under the new
+policy, so choose these values deliberately. `scripts/check-stack.sh` checks
+the same effective Compose values, including environment precedence.
+
+Existing topic partition counts are never changed by startup. Changing
+`EVENTS_PARTITIONS` or `ALERTS_PARTITIONS` leaves the current layout in place
+and makes stack acceptance report the mismatch; a fresh layout requires a
+separately authorized destructive reset (`make reset CONFIRM=1`).
 
 Migrations can also be rerun independently, including after changing
 `SENTINEL_CLICKHOUSE_EVENTS_TTL_DAYS` in `.env`:

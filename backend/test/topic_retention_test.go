@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -28,17 +27,20 @@ func TestTopicRetentionOverridesReapply(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	require.NoError(t, err)
 	envFile := filepath.Join(t.TempDir(), "fixture.env")
-	require.NoError(t, os.WriteFile(envFile, []byte("SENTINEL_POSTGRES_PASSWORD=fixture-only\nSENTINEL_CLICKHOUSE_PASSWORD=fixture-only\n"), 0o600))
+	fixtureEnv := "SENTINEL_POSTGRES_PASSWORD=fixture-only\nSENTINEL_CLICKHOUSE_PASSWORD=fixture-only\n"
+	require.NoError(t, os.WriteFile(envFile, []byte(fixtureEnv), 0o600))
 	composeEnv := make([]string, 0, len(os.Environ()))
 	for _, value := range os.Environ() {
 		name, _, _ := strings.Cut(value, "=")
 		switch name {
-		case "EVENTS_PARTITIONS", "ALERTS_PARTITIONS", "EVENTS_RETENTION_MS", "ALERTS_RETENTION_MS", "DLQ_RETENTION_MS", "SENTINEL_POSTGRES_PASSWORD", "SENTINEL_CLICKHOUSE_PASSWORD":
+		case "EVENTS_PARTITIONS", "ALERTS_PARTITIONS", "EVENTS_RETENTION_MS", "ALERTS_RETENTION_MS", "DLQ_RETENTION_MS",
+			"SENTINEL_POSTGRES_PASSWORD", "SENTINEL_CLICKHOUSE_PASSWORD":
 			continue
 		}
 		composeEnv = append(composeEnv, value)
 	}
-	cmd := exec.CommandContext(ctx, "docker", "compose", "-f", filepath.Join(root, "deployments/compose/docker-compose.yml"), "--env-file", envFile, "config", "--format", "json")
+	cmd := exec.CommandContext(ctx, "docker", "compose", "-f",
+		filepath.Join(root, "deployments/compose/docker-compose.yml"), "--env-file", envFile, "config", "--format", "json")
 	cmd.Env = composeEnv
 	resolved, err := cmd.Output()
 	require.NoError(t, err, "resolve synthetic Compose configuration")
@@ -59,7 +61,9 @@ func TestTopicRetentionOverridesReapply(t *testing.T) {
 	runInit := func() {
 		t.Helper()
 		args := []string{"exec"}
-		for _, name := range []string{"EVENTS_PARTITIONS", "ALERTS_PARTITIONS", "EVENTS_RETENTION_MS", "ALERTS_RETENTION_MS", "DLQ_RETENTION_MS"} {
+		for _, name := range []string{
+			"EVENTS_PARTITIONS", "ALERTS_PARTITIONS", "EVENTS_RETENTION_MS", "ALERTS_RETENTION_MS", "DLQ_RETENTION_MS",
+		} {
 			args = append(args, "-e", name+"="+init.Environment[name])
 		}
 		args = append(args, broker.GetContainerID(), "/bin/bash", "-c", program)
@@ -73,10 +77,13 @@ func TestTopicRetentionOverridesReapply(t *testing.T) {
 			{"security.alerts.v1", init.Environment["ALERTS_PARTITIONS"], init.Environment["ALERTS_RETENTION_MS"]},
 			{"security.events.dlq.v1", "1", init.Environment["DLQ_RETENTION_MS"]},
 		} {
-			out, describeErr := exec.CommandContext(ctx, "docker", "exec", broker.GetContainerID(), "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--describe", "--topic", topic.name).CombinedOutput()
+			out, describeErr := exec.CommandContext(ctx, "docker", "exec", broker.GetContainerID(),
+				"/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092",
+				"--describe", "--topic", topic.name).CombinedOutput()
 			require.NoError(t, describeErr, "describe topic: %s", out)
-			require.Regexp(t, regexp.MustCompile(`PartitionCount:\s*`+topic.partitions+`\b`), string(out), topic.name)
-			require.Regexp(t, regexp.MustCompile(`retention\.ms=`+topic.retention+`(?:,|\s|$)`), string(out), topic.name+" must use current retention")
+			require.Regexp(t, `PartitionCount:\s*`+topic.partitions+`\b`, string(out), topic.name)
+			require.Regexp(t, `retention\.ms=`+topic.retention+`(?:,|\s|$)`, string(out),
+				topic.name+" must use current retention")
 		}
 	}
 	runInit()

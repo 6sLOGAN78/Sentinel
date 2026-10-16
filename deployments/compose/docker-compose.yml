@@ -43,7 +43,7 @@ services:
       retries: 20
       start_period: 15s
 
-  # One-shot, idempotent topic creation (--if-not-exists). Run by `make dev-up`.
+  # One-shot creation and policy reapplication. Run by `make dev-up`.
   topic-init:
     image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
     depends_on:
@@ -60,11 +60,14 @@ services:
     command:
       - |
         set -euo pipefail
-        B=kafka:9092; T=/opt/kafka/bin/kafka-topics.sh
-        $$T --bootstrap-server $$B --create --if-not-exists --topic security.events.v1 --partitions $${EVENTS_PARTITIONS:-6} --replication-factor 1 --config retention.ms=$${EVENTS_RETENTION_MS:-86400000}
-        $$T --bootstrap-server $$B --create --if-not-exists --topic security.alerts.v1 --partitions $${ALERTS_PARTITIONS:-3} --replication-factor 1 --config retention.ms=$${ALERTS_RETENTION_MS:-604800000}
-        $$T --bootstrap-server $$B --create --if-not-exists --topic security.events.dlq.v1 --partitions 1 --replication-factor 1 --config retention.ms=$${DLQ_RETENTION_MS:-604800000}
-        $$T --bootstrap-server $$B --list
+        B=kafka:9092; T=/opt/kafka/bin/kafka-topics.sh; C=/opt/kafka/bin/kafka-configs.sh
+        "$$T" --bootstrap-server "$$B" --create --if-not-exists --topic security.events.v1 --partitions "$${EVENTS_PARTITIONS}" --replication-factor 1 --config "retention.ms=$${EVENTS_RETENTION_MS}"
+        "$$C" --bootstrap-server "$$B" --entity-type topics --entity-name security.events.v1 --alter --add-config "retention.ms=$${EVENTS_RETENTION_MS}"
+        "$$T" --bootstrap-server "$$B" --create --if-not-exists --topic security.alerts.v1 --partitions "$${ALERTS_PARTITIONS}" --replication-factor 1 --config "retention.ms=$${ALERTS_RETENTION_MS}"
+        "$$C" --bootstrap-server "$$B" --entity-type topics --entity-name security.alerts.v1 --alter --add-config "retention.ms=$${ALERTS_RETENTION_MS}"
+        "$$T" --bootstrap-server "$$B" --create --if-not-exists --topic security.events.dlq.v1 --partitions 1 --replication-factor 1 --config "retention.ms=$${DLQ_RETENTION_MS}"
+        "$$C" --bootstrap-server "$$B" --entity-type topics --entity-name security.events.dlq.v1 --alter --add-config "retention.ms=$${DLQ_RETENTION_MS}"
+        "$$T" --bootstrap-server "$$B" --list
 
   clickhouse:
     image: clickhouse/clickhouse-server:26.3.47.6@sha256:55a55347b1b959ae51d40373901e81aa671d7fc9e6d05d0603d1e0ad3ac22c6d

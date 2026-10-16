@@ -11,6 +11,29 @@ topics=/opt/kafka/bin/kafka-topics.sh
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
+# Resolve exactly the settings used by startup, including shell-over-dotenv
+# precedence. Keep the full (secret-bearing) configuration only in memory and
+# propagate Compose failures before parsing; emit only these nonsecret values.
+topic_settings="$(python3 -c '
+import json, re, subprocess, sys
+result = subprocess.run(sys.argv[1:], capture_output=True, check=False)
+if result.returncode:
+    print("FAIL: cannot resolve Compose topic settings", file=sys.stderr)
+    sys.exit(result.returncode)
+try:
+    environment = json.loads(result.stdout)["services"]["topic-init"]["environment"]
+    names = ("EVENTS_PARTITIONS", "ALERTS_PARTITIONS", "EVENTS_RETENTION_MS",
+             "ALERTS_RETENTION_MS", "DLQ_RETENTION_MS")
+    values = [str(environment[name]) for name in names]
+    if not all(re.fullmatch(r"-?[0-9]+", value) for value in values):
+        raise ValueError("nonnumeric topic setting")
+    print(" ".join(values))
+except (KeyError, TypeError, ValueError):
+    print("FAIL: invalid Compose topic settings", file=sys.stderr)
+    sys.exit(1)
+' "${compose[@]}" config --format json)"
+read -r events_parts alerts_parts events_retention alerts_retention dlq_retention <<<"$topic_settings"
+
 for svc in kafka clickhouse postgres redis; do
   health="$("${compose[@]}" ps --format '{{.Health}}' "$svc")"
   [ "$health" = "healthy" ] || fail "$svc health is '$health', expected healthy"
@@ -27,15 +50,15 @@ check_topic() {
   local name="$1" parts="$2" retention="$3" out
   out="$("${compose[@]}" exec -T kafka "$topics" --bootstrap-server kafka:9092 --describe --topic "$name")" \
     || fail "cannot describe $name"
-  echo "$out" | grep -q "PartitionCount: $parts" || fail "$name PartitionCount != $parts"
-  echo "$out" | grep -q "ReplicationFactor: 1" || fail "$name ReplicationFactor != 1"
-  echo "$out" | grep -q "retention.ms=$retention" || fail "$name retention.ms != $retention"
+  echo "$out" | grep -Eq "PartitionCount:[[:space:]]*$parts([[:space:]]|$)" || fail "$name PartitionCount != $parts"
+  echo "$out" | grep -Eq 'ReplicationFactor:[[:space:]]*1([[:space:]]|$)' || fail "$name ReplicationFactor != 1"
+  echo "$out" | grep -Eq "(^|[[:space:],])retention\.ms=$retention([[:space:],]|$)" || fail "$name retention.ms != $retention"
   pass "topic $name partitions=$parts retention.ms=$retention RF=1"
 }
 
-check_topic security.events.v1 6 86400000
-check_topic security.alerts.v1 3 604800000
-check_topic security.events.dlq.v1 1 604800000
+check_topic security.events.v1 "$events_parts" "$events_retention"
+check_topic security.alerts.v1 "$alerts_parts" "$alerts_retention"
+check_topic security.events.dlq.v1 1 "$dlq_retention"
 
 # Auto-create must be off: producing to an undeclared topic must fail or time out
 # and must not create the topic. The producer exit status is irrelevant here.
