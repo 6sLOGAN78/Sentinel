@@ -123,12 +123,9 @@ func TestShutdownStopsServe(t *testing.T) {
 	require.NoError(t, s.Shutdown(ctx))
 	require.NoError(t, <-done)
 
-	conn, err := net.DialTimeout("tcp", l.Addr().String(), time.Second)
-	if err == nil {
-		_ = conn.Close()
-	}
-
-	require.Error(t, err)
+	// Check the original listener, not a released ephemeral port that another
+	// parallel test or connection may have reused after Shutdown returned.
+	require.ErrorIs(t, l.Close(), net.ErrClosed, "Shutdown must already have closed the listener")
 }
 
 func TestHTTPXTimeouts(t *testing.T) {
