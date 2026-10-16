@@ -127,11 +127,11 @@ Plans:
 
 **Wave 11** *(gap repairs; depends on executed 02-13)*
 
-- [ ] 02-14-PLAN.md — Bound encoded DLQ records and adversarial headers
-- [ ] 02-16-PLAN.md — Match event-lookup authentication contract to runtime
-- [ ] 02-17-PLAN.md — Reject healthprobe redirects
-- [ ] 02-18-PLAN.md — Preserve manifest parent permissions and isolate seed credentials
-- [ ] 02-20-PLAN.md — Reapply configured topic retention on repeat startup
+- [x] 02-14-PLAN.md — Bound encoded DLQ records and adversarial headers
+- [x] 02-16-PLAN.md — Match event-lookup authentication contract to runtime
+- [x] 02-17-PLAN.md — Reject healthprobe redirects
+- [x] 02-18-PLAN.md — Preserve manifest parent permissions and isolate seed credentials
+- [x] 02-20-PLAN.md — Reapply configured topic retention on repeat startup
 
 **Wave 12** *(blocked on 02-14)*
 
@@ -227,7 +227,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 14/22 | In Progress|  |
+| 2. Ingestion & Durable Event Storage | 19/22 | In Progress|  |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
