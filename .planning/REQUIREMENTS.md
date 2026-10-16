@@ -90,7 +90,7 @@
 
 - [x] **GEN-01**: A tester can run a seeded Python generator that produces reproducible benign traffic using only reserved documentation IP ranges and pseudonymous principals [FR-09, §10]
 - [ ] **GEN-02**: A tester can inject scenarios (auth brute force, port scan, request flood, deny spike) via generator flags, with expected rule hits recorded [FR-09, §17]
-- [ ] **GEN-03**: `make seed` publishes deterministic benign plus threat demo fixtures through the ingest API [§16]
+- [x] **GEN-03**: `make seed` publishes deterministic benign plus threat demo fixtures through the ingest API [§16]
 
 ### Observability (OBS)
 
@@ -178,7 +178,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STOR-03 | Phase 2 | Complete |
 | STOR-04 | Phase 2 | Complete |
 | GEN-01 | Phase 2 | Complete |
-| GEN-03 | Phase 2 | Pending |
+| GEN-03 | Phase 2 | Complete |
 | OBS-01 | Phase 2 | Complete |
 | DET-01 | Phase 3 | Pending |
 | DET-02 | Phase 3 | Pending |

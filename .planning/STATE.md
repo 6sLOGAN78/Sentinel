@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-11-PLAN.md; continue Phase 2 with 02-12
-last_updated: "2026-10-16T02:25:45.689Z"
+stopped_at: Completed 02-12-PLAN.md; continue Phase 2 with 02-13
+last_updated: "2026-10-16T02:37:04.350Z"
 last_activity: 2026-10-16
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 27
-  completed_plans: 25
-  percent: 93
+  completed_plans: 26
+  percent: 17
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-10)
 ## Current Position
 
 Phase: 02 — EXECUTING
-Plan: 13 of 14
+Plan: 14 of 14
 Status: Ready to execute
 Last activity: 2026-10-16
 
-Progress: [█████████░] 93%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [█████████░] 93%
 | Phase 02 P08 | 14min | 3 tasks | 12 files |
 | Phase 02 P09 | 26h 33m | 3 tasks | 15 files |
 | Phase 02 P11 | 20 min | 3 tasks | 9 files |
+| Phase 02 P12 | 8 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,9 @@ Progress: [█████████░] 93%
 - [Phase 02]: 02-11: Compile failure controls only with the integration tag; default builds contain unconditional no-ops and read no failure environment settings.
 - [Phase 02]: 02-11: Use private once-only file barriers to prove exact durable boundaries before pausing or killing test-owned resources.
 - [Phase 02]: 02-11: Treat Kafka topic-leader metadata, not broker-only Ping, as producer readiness after an outage.
+- [Phase 02]: 02-12: Build all service binaries once into a digest-pinned distroless image and select each process with a Compose entrypoint.
+- [Phase 02]: 02-12: Restrict the static health probe to literal loopback HTTP URLs so container probes cannot become an SSRF primitive.
+- [Phase 02]: 02-12: Complete topics and migrations before starting the three Phase 2 application services.
 
 ### Pending Todos
 
@@ -125,6 +129,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-16T02:25:45.670Z
-Stopped at: Completed 02-11-PLAN.md; continue Phase 2 with 02-12
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-12-PLAN.md
+Last session: 2026-10-16T02:37:04.338Z
+Stopped at: Completed 02-12-PLAN.md; continue Phase 2 with 02-13
+Resume file: .planning/phases/02-ingestion-durable-event-storage/02-13-PLAN.md
