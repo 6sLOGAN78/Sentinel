@@ -111,7 +111,7 @@ Plans:
 
 **Wave 7** *(blocked on prior dependency waves)*
 
-- [ ] 02-09-PLAN.md — Expose real health/readiness and drain all five services
+- [x] 02-09-PLAN.md — Expose real health/readiness and drain all five services
 
 **Wave 8** *(blocked on prior dependency waves)*
 
@@ -205,7 +205,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 10/14 | In Progress|  |
+| 2. Ingestion & Durable Event Storage | 11/14 | In Progress|  |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
