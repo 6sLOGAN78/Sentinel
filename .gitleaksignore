@@ -1,0 +1,6 @@
+# Historical TestAPIKeyRejectMalformed fixtures: the synthetic secret is
+# base64.RawURLEncoding.EncodeToString(make([]byte, 32)), not a credential.
+# Ignore only these exact commit/path/rule/line fingerprints; future findings
+# (including elsewhere in this test file) remain subject to the full scan.
+6a88f9e6b2610d67104500a37048a2725c22e4ea:backend/internal/apikeys/keys_test.go:generic-api-key:34
+996d2d610df8eb020423de3caa980bab3332fce6:backend/internal/apikeys/keys_test.go:generic-api-key:35
