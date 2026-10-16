@@ -441,7 +441,7 @@ def test_manifest_rejects_unsafe_paths_without_mutating_targets(
     assert sorted(item.name for item in target.iterdir()) == ["existing.json"]
 
 
-@pytest.mark.parametrize("operation", ["json.dump", "os.replace"])
+@pytest.mark.parametrize("operation", ["json.dump", "os.fsync", "os.replace"])
 def test_manifest_failure_preserves_existing_file_modes_and_cleans_owned_temp(
     operation: str,
     tmp_path: Path,
@@ -493,6 +493,64 @@ def test_manifest_fails_closed_without_no_follow_support(
     monkeypatch.delattr(os, "O_NOFOLLOW")
     assert _send_manifest(tmp_path / "manifest.json", monkeypatch) == 1
     assert list(tmp_path.iterdir()) == []
+
+
+def test_manifest_creation_swap_does_not_chmod_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
+    replacement.chmod(0o775)
+    real_mkdir = os.mkdir
+
+    def mkdir_then_swap(name: str, *, mode: int, dir_fd: int) -> None:
+        real_mkdir(name, mode=mode, dir_fd=dir_fd)
+        if name == "new":
+            (tmp_path / "new").rename(tmp_path / "original")
+            replacement.rename(tmp_path / "new")
+
+    monkeypatch.setattr("sentinel_generator.cli.os.mkdir", mkdir_then_swap)
+    # Patching mkdir changes its identity in the platform capability set.
+    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {mkdir_then_swap})
+    assert _send_manifest(tmp_path / "new" / "manifest.json", monkeypatch) == 1
+    assert stat.S_IMODE((tmp_path / "new").stat().st_mode) == 0o775
+    assert list((tmp_path / "new").iterdir()) == []
+
+
+def test_standalone_manifest_send_retains_environment_key_precedence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("SENTINEL_API_KEY", API_KEY)
+    file_key = "standalone-file-test-credential"
+    key = tmp_path / "demo.key"
+    key.write_text(file_key)
+    key.chmod(0o600)
+    output = tmp_path / "manifest.json"
+
+    def authenticated(request: httpx.Request) -> httpx.Response:
+        assert request.headers["X-API-Key"] == API_KEY
+        return _accepted(request)
+
+    assert (
+        main(
+            [
+                "send",
+                "--tenant",
+                "demo",
+                "--count",
+                "1",
+                "--key-file",
+                str(key),
+                "--output",
+                str(output),
+            ],
+            transport=httpx.MockTransport(authenticated),
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    for secret in (API_KEY, file_key):
+        assert secret not in output.read_text() + captured.out + captured.err
 
 
 @pytest.mark.parametrize(
