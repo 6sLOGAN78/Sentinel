@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 )
 
@@ -175,6 +178,57 @@ func TestReadyzUsesOneBoundedRequestContext(t *testing.T) {
 	require.Equal(t, "unavailable", body.Dependencies["slow"])
 	require.Equal(t, "unavailable", body.Dependencies["after"])
 	require.False(t, secondCalled)
+}
+
+func TestServerBindConflictFailsSynchronously(t *testing.T) {
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, listener.Close()) })
+
+	_, err = opshttp.Start(config.OpsConfig{
+		BindAddress:  "127.0.0.1",
+		Port:         strconv.Itoa(listener.Addr().(*net.TCPAddr).Port),
+		CheckTimeout: time.Second,
+	}, &opshttp.Draining{}, nil)
+	require.ErrorContains(t, err, "listen")
+}
+
+func TestServerShutdownIsIdempotentAndReleasesListener(t *testing.T) {
+	server, err := opshttp.Start(config.OpsConfig{
+		BindAddress:  "127.0.0.1",
+		Port:         "0",
+		CheckTimeout: time.Second,
+	}, &opshttp.Draining{}, nil)
+	require.NoError(t, err)
+	addr := server.Addr()
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, server.Shutdown(ctx))
+	require.NoError(t, server.Shutdown(ctx))
+	select {
+	case <-server.Done():
+	case <-time.After(time.Second):
+		t.Fatal("serve goroutine did not stop")
+	}
+	require.NoError(t, server.Err())
+
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", addr)
+	require.NoError(t, err, "ops listener leaked after shutdown")
+	require.NoError(t, listener.Close())
+}
+
+func TestDrainCloserIsIdempotentAndBounded(t *testing.T) {
+	draining := &opshttp.Draining{}
+	closer := opshttp.DrainCloser(draining, time.Millisecond)
+	require.NoError(t, closer(t.Context()))
+	require.True(t, draining.Active())
+	require.NoError(t, closer(t.Context()))
+
+	bounded := opshttp.DrainCloser(&opshttp.Draining{}, time.Second)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, bounded(ctx), context.Canceled)
 }
 
 type readinessBody struct {
