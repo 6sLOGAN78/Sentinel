@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import stat
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -117,6 +119,78 @@ class PollingTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
+    def test_generator_environment_ignores_ambient_key(self) -> None:
+        ambient = "ambient-conflicting-test-credential"
+        ensured = "ensured-demo-test-credential"
+        original_verify = seed.verify_api
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            keys = root / ".local/keys"
+            manifest = root / ".local/last-send.json"
+            (root / ".env").write_text("SENTINEL_POSTGRES_PASSWORD=local-test-password\n")
+            generator_environments: list[dict[str, str]] = []
+            argv: list[list[str]] = []
+            payload = {
+                "run_start": "2026-10-16T00:00:00.000Z",
+                "sent": 2,
+                "accepted": 2,
+                "rejected": 0,
+                "retries": 0,
+                "event_ids": [
+                    "00000000-0000-4000-8000-000000000001",
+                    "00000000-0000-4000-8000-000000000002",
+                ],
+            }
+
+            def external(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                argv.append(command)
+                if command[0] == "go":
+                    key = Path(command[command.index("--out") + 1])
+                    if not key.exists():
+                        key.write_text(ensured if key.name == "demo.key" else "other-tenant-key")
+                        key.chmod(0o600)
+                else:
+                    child_env = kwargs.get("env")
+                    self.assertIsNotNone(child_env, "generator requires an explicit environment")
+                    self.assertIsInstance(child_env, dict)
+                    generator_environments.append(dict(child_env))
+                    self.assertEqual(command[command.index("--key-file") + 1], str(keys / "demo.key"))
+                    manifest.write_text(json.dumps(payload))
+                    manifest.chmod(0o600)
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+            output = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, {"SENTINEL_API_KEY": ambient, "SEED_TEST_VALUE": "retained"}),
+                mock.patch.multiple(seed, ROOT=root, KEY_DIRECTORY=keys, MANIFEST_PATH=manifest, EVENT_COUNT=2),
+                mock.patch.object(seed, "run_checked", side_effect=external),
+                mock.patch.object(seed, "_clickhouse_query", return_value=(2, set(payload["event_ids"]))),
+                mock.patch.object(seed, "_request_status", side_effect=lambda _event, key: 200 if key == ensured else 404),
+                redirect_stdout(output),
+                redirect_stderr(output),
+            ):
+                parent_env = dict(os.environ)
+                # verify_api's default callable is bound at definition time.
+                with mock.patch.object(seed, "verify_api", wraps=lambda ids, **kwargs: original_verify(ids, status=seed._request_status, **kwargs)):
+                    self.assertEqual(seed.execute()["accepted"], 2)
+                    first_inode = (keys / "demo.key").stat().st_ino
+                    self.assertEqual(seed.execute()["accepted"], 2)
+                self.assertEqual(dict(os.environ), parent_env)
+                self.assertEqual((keys / "demo.key").stat().st_ino, first_inode)
+                for child_env in generator_environments:
+                    self.assertNotIn("SENTINEL_API_KEY", child_env)
+                    self.assertEqual(child_env["PATH"], parent_env["PATH"])
+                    self.assertEqual(child_env["SEED_TEST_VALUE"], "retained")
+
+            self.assertEqual(len(generator_environments), 2)
+            for secret in (ambient, ensured):
+                self.assertNotIn(secret, output.getvalue())
+                self.assertNotIn(secret, manifest.read_text())
+                self.assertNotIn(secret, repr(argv))
+            self.assertEqual(stat.S_IMODE(keys.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE((keys / "demo.key").stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(manifest.stat().st_mode), 0o600)
+
     def test_command_failure_is_sanitized(self) -> None:
         secret = "snt_secret_material"
         failure = subprocess.CalledProcessError(1, ["keyctl"], stderr=secret)
