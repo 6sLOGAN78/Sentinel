@@ -1,5 +1,5 @@
 ---
-status: partial
+status: complete
 phase: 02-ingestion-durable-event-storage
 source: [02-VERIFICATION.md]
 started: 2026-10-17
@@ -8,13 +8,13 @@ updated: 2026-10-17
 
 ## Current Test
 
-Final repeat exposed Kafka readiness deadline regression; awaiting fresh hosted acceptance after repair.
+All tests complete. Hosted acceptance after the readiness repair passed at 5e6a82684019e92333c4af90eb3a46468ed9df8a.
 
 ## Tests
 
 ### 1. Hosted GitHub Actions at the repaired revision
 expected: After an authorized branch push, every required job in .github/workflows/ci.yml passes, including Docker-backed integration and all seven nonempty behavior groups. Record the run URL and tested commit. Local full acceptance, independent clean review and zero-open-threat audit already passed.
-result: [pending] — prior run 38970203760 passed all eight jobs, but repeat 38972246356 at f02c4bd failed Kafka outage readiness after passing the full suite and six nonempty groups. Current repair adds an independently enforced response deadline with bounded retained check workers; fresh hosted acceptance is required.
+result: passed — https://github.com/6sLOGAN78/Sentinel/actions/runs/38974983287 completed successfully at 2026-10-16T22:33:23Z, exact SHA 5e6a82684019e92333c4af90eb3a46468ed9df8a. All eight jobs, full real integration, all seven nonempty groups, causal contracts and Compose passed after bounded readiness repair eb7f6e4. Prior repeat failure 38972246356 is preserved in the closeout chronology.
 
 The user authorized pushing `main`, then explicitly authorized every necessary Phase 2 repair and closeout. The first hosted run at `9ea275f` failed module tidy and reported two synthetic malformed-key fixtures in historical test commits; integration and Compose were skipped. The fixes at `444d47e` classify the existing pinned kmsg import as direct and ignore only the two verified synthetic commit/path/rule/line fingerprints. No scan rule, test, history or integration gate was disabled.
 
@@ -27,12 +27,12 @@ The first repair run passed tidy and secret scanning, then exposed `TestShutdown
 ## Summary
 
 total: 1
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-Readiness deadline repair eb7f6e4 passed deterministic RED/GREEN regressions, full make test, twenty ops race repetitions and three complete real readiness/lifecycle group repetitions. Fresh hosted CI must pass before current UAT is complete. Earlier failed and quota-limited audit evidence remains preserved.
+None. Readiness repair passed deterministic regressions, local stress and all hosted gates. Earlier failed and quota-limited audit evidence remains preserved.

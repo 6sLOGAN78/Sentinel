@@ -1,14 +1,14 @@
 ---
 phase: 02-ingestion-durable-event-storage
-status: in_progress
+status: passed
 date: 2026-10-17
-code_revision: 36bba7cfefbe8955879d6b402c39495eeef999ad
-hosted_run: 38970203760
+code_revision: 5e6a82684019e92333c4af90eb3a46468ed9df8a
+hosted_run: 38974983287
 ---
 
 # Phase 2 — Hosted CI closeout
 
-**Reopened after the documentation-only repeat:** hosted run 38972246356 at f02c4bd passed seven jobs, the full integration suite and six nonempty groups, but failed the readiness group: Kafka outage never yielded its unavailable state before the test deadline. Phase completion is suspended pending a deterministic bounded-readiness repair and fresh hosted proof. The earlier green run below remains valid historical evidence, not a claim that the repeat passed.
+**Final status: passed after readiness repair.** Hosted run 38972246356 at f02c4bd had passed seven jobs, the full integration suite and six nonempty groups, then failed Kafka outage readiness. Root reopened completion and added the deterministic repair below. Fresh hosted run 38974983287 at 5e6a82684019e92333c4af90eb3a46468ed9df8a completed successfully at 2026-10-16T22:33:23Z: all eight jobs, full integration, seven nonempty groups, causal contracts and Compose passed. The separate readiness group passed from 22:32:15Z to 22:33:19Z. Earlier green and failed runs below remain historical evidence.
 
 Readiness repair: RED commit `2afe6b8` deterministically failed with a stuck dependency and client timeout despite a configured 20ms response deadline. GREEN `eb7f6e4420d49b4d848379c1c1f6d5f10b032c07` adds one check worker per admitted request, retains the sixteen-slot admission until actual check completion, bounds the HTTP response independently, buffers only the fixed check-result count, and sanitizes panic/late results. New regressions verify deadline response, no seventeenth stuck call, independent liveness, recovery after release and panic admission cleanup. Twenty full ops race repetitions and targeted integration-tag lint passed; fresh make test passed; the exact readiness/lifecycle group passed three race-enabled repetitions in 138.221s. Five old real outage repetitions had passed (220.252s), so those are not falsely described as reproducing the hosted timing failure. Root reviewed the affected code and rechecked T-02-09-1/2/3 explicitly in the canonical review/security reports. Fresh hosted proof is still required.
 
@@ -21,6 +21,8 @@ The user authorized pushing main, then explicitly requested all necessary repair
 | `9ea275f` | [38967685112](https://github.com/6sLOGAN78/Sentinel/actions/runs/38967685112) | Failed Go module tidy and two historical synthetic-key scan findings. Integration and Compose skipped. |
 | `444d47e` | [38969711858](https://github.com/6sLOGAN78/Sentinel/actions/runs/38969711858) | Original failures fixed; HTTP shutdown test redialed a released ephemeral port and failed. Integration and Compose skipped. |
 | `36bba7c` | [38970203760](https://github.com/6sLOGAN78/Sentinel/actions/runs/38970203760) | Completed successfully at 2026-10-16T21:46:23Z. All eight jobs passed, including full integration, all seven nonempty groups and explicit causal contracts. |
+| `f02c4bd` | [38972246356](https://github.com/6sLOGAN78/Sentinel/actions/runs/38972246356) | Documentation-only repeat exposed Kafka readiness deadline gap after full integration and six groups passed; completion reopened. |
+| `5e6a826` | [38974983287](https://github.com/6sLOGAN78/Sentinel/actions/runs/38974983287) | All eight jobs and seven groups passed after bounded readiness repair, including the separate readiness repeat. Final acceptance. |
 
 Hosted integration ran from 21:36:47Z to 21:46:23Z; Compose from 21:36:47Z to 21:39:44Z. Every integration group step and the causal-contract step reported success. Compose startup, stack checker, repeat migration and teardown all passed. These are observed hosted outcomes, not local-equivalence claims.
 

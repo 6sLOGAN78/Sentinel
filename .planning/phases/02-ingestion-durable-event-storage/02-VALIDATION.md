@@ -1,18 +1,20 @@
 ---
 phase: 2
 slug: ingestion-durable-event-storage
-status: pending
+status: passed
 local_repair_acceptance: passed
 independent_reverification: local_audits_passed_root_closeout_complete
-hosted_ci: readiness_repeat_failed_repair_pending
-hosted_ci_run: 38970203760
-hosted_ci_revision: 36bba7cfefbe8955879d6b402c39495eeef999ad
+hosted_ci: passed
+hosted_ci_run: 38974983287
+hosted_ci_revision: 5e6a82684019e92333c4af90eb3a46468ed9df8a
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-10-12
 ---
 
 # Phase 2 — Validation Strategy
+
+**Final readiness follow-up:** after the documentation-only repeat exposed an unbounded response, RED 2afe6b8 / GREEN eb7f6e4 added independently bounded responses with retained sixteen-worker admission. Twenty ops race repetitions, full make test, targeted lint and three complete real readiness/lifecycle race repetitions passed. Hosted run 38974983287 at 5e6a826 then passed all eight jobs and seven groups, including the readiness repeat, at 2026-10-16T22:33:23Z. This is the final acceptance and supersedes earlier approvals/pending notes below.
 
 > Per-phase validation contract for feedback sampling during execution.
 > Source: `02-RESEARCH.md` § Validation Architecture.

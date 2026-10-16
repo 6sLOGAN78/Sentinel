@@ -9,7 +9,7 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 ## Phases
 
 - [x] **Phase 1: Foundations & Contracts** - Clean Go module with five binaries, Compose stack, schemas, OpenAPI skeleton, ADRs, CI skeleton (completed 2026-10-11)
-- [ ] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (22/22 plans; final CI repeat readiness regression under repair)
+- [x] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (22/22 plans; verified complete 2026-10-17)
 - [ ] **Phase 3: Detection & Alert Pipeline** - Four event-time rules, deterministic alerts, crash-safe recovery, alert persistence
 - [ ] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
 - [ ] **Phase 5: Observability, Resilience & Scale** - Metrics, tracing, Grafana, failure suites, overload behavior, benchmark report
@@ -145,7 +145,7 @@ Plans:
 
 - [x] 02-21-PLAN.md — Revalidate the complete slice and record truthful phase status
 
-**Verification:** Reopened after documentation-only hosted repeat 38972246356 exposed Kafka readiness deadline failure. Repair eb7f6e4 independently bounds the response while retaining a sixteen-worker admission cap; unit race regressions, full local make test, targeted integration-tag lint and three complete real readiness/lifecycle group repetitions passed. Fresh hosted acceptance is pending. Earlier run 38970203760 passed all eight jobs at 36bba7c and remains historical evidence. Current reports supersede that completion; original failed assessments remain byte-identical. Phase 3 execution has not started.
+**Verification:** Passed: 5/5 roadmap criteria and 14/14 requirements. After repeat 38972246356 exposed a readiness deadline gap, RED 2afe6b8 / repair eb7f6e4 independently bounded responses with retained sixteen-worker admission. Unit stress, full make test, lint and three real readiness/lifecycle race repetitions passed. Hosted [run 38974983287](https://github.com/6sLOGAN78/Sentinel/actions/runs/38974983287) then passed all eight jobs, full integration, seven nonempty groups and Compose at 5e6a826, including the previously failing readiness repeat. Root final verification/delta review and zero-open-threat records are explicit; original failed reports remain preserved. UAT is complete. Phase 3 execution has not started.
 
 **Research**: Complete (02-RESEARCH.md, 2026-10-12); plan verification passed (02-PLAN-CHECK.md). Read-time dedupe, native ClickHouse, Kafka timeout/manual commits and Redis Lua behavior have implementation guidance.
 **Note**: GEN-02 (scenario injection) lands with detection fixtures in Phase 3.
@@ -227,7 +227,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
-| 2. Ingestion & Durable Event Storage | 22/22 | Verifying readiness regression | - |
+| 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
 | 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |

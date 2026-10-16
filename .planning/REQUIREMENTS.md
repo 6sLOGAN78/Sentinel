@@ -94,7 +94,7 @@
 
 ### Observability (OBS)
 
-- [ ] **OBS-01**: Every service exposes `/healthz` (liveness) and `/readyz`, which reflects real dependency capability (Kafka, ClickHouse, Postgres, Redis as applicable) [FR-10, §11.1]
+- [x] **OBS-01**: Every service exposes `/healthz` (liveness) and `/readyz`, which reflects real dependency capability (Kafka, ClickHouse, Postgres, Redis as applicable) [FR-10, §11.1]
 - [ ] **OBS-02**: Services expose the spec-required Prometheus metrics (ingest events/requests/duration, consumer lag, detection alerts, detection delay, ClickHouse write duration, DLQ events, SSE clients) on an internal `/metrics` with no high-cardinality labels. Consumer lag is position-based [FR-10, §11.2]
 - [ ] **OBS-03**: Services emit JSON logs with service, timestamp, level, request_id and trace_id, scrub sensitive fields, and never log secrets or request bodies [§11.3]
 - [ ] **OBS-04**: OpenTelemetry spans cover ingestion, publishing, detection and storage, propagate through Kafka headers, and use configurable sampling [§11.3]
@@ -179,7 +179,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STOR-04 | Phase 2 | Complete |
 | GEN-01 | Phase 2 | Complete |
 | GEN-03 | Phase 2 | Complete |
-| OBS-01 | Phase 2 | Readiness deadline repair under verification |
+| OBS-01 | Phase 2 | Complete |
 | DET-01 | Phase 3 | Pending |
 | DET-02 | Phase 3 | Pending |
 | DET-03 | Phase 3 | Pending |

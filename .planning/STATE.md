@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
-status: verifying
-stopped_at: Final closeout CI repeat exposed Kafka readiness deadline gap; repairing Phase 2
-last_updated: 2026-10-16T21:49:39.123Z
-last_activity: 2026-10-17 -- Bounded readiness repair eb7f6e4 passed local stress; fresh hosted acceptance pending
+status: ready_to_plan
+stopped_at: Phase 2 complete (22/22) — ready to discuss Phase 3
+last_updated: 2026-10-16T22:34:19.650Z
+last_activity: 2026-10-17 -- Phase 2 complete after bounded readiness repair and green hosted CI
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 35
   completed_plans: 35
-  percent: 17
+  percent: 33
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-17)
 
 **Core value:** The end-to-end flow (generator → ingest → Kafka → detector → ClickHouse/PostgreSQL → API → live dashboard) works and is provably correct under failure, with deterministic, deduplicated alerts and no loss of acknowledged events.
-**Current focus:** Phase 2 — final hosted readiness regression
+**Current focus:** Phase 3 — detection & alert pipeline
 
 ## Current Position
 
-Phase: 02
-Plan: 22 of 22 — closeout regression repair
-Status: Verifying readiness deadline regression exposed by final CI repeat
-Last activity: 2026-10-17 — Final repeat readiness regression repaired; hosted re-acceptance pending
+Phase: 3
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-17 — Phase 2 closed; Phase 3 not started
 
-Progress: [██░░░░░░░░] 17% (1 of 6 phases complete; Phase 2 verification reopened)
+Progress: [███░░░░░░░] 33% (2 of 6 phases complete)
 
 ## Performance Metrics
 
@@ -120,23 +120,23 @@ None yet.
 
 ### Planning Continuation
 
-- Current superseding status: documentation-only repeat 38972246356 failed the Kafka readiness outage check. RED 2afe6b8 proves a dependency ignoring cancellation could exceed the response deadline. Repair eb7f6e4 retains at most sixteen actual check workers while independently bounding the response. Full make test, twenty ops race repetitions, integration-tag lint and three race-enabled real readiness/lifecycle group repetitions passed (138.221s). Fresh hosted acceptance is required before reclosing Phase 2. Earlier completion statements below are historical.
+- Final status: readiness RED 2afe6b8 / repair eb7f6e4 passed full make test, twenty ops race repetitions, lint and three real readiness/lifecycle race repetitions (138.221s). Hosted run 38974983287 passed all eight jobs and seven guarded groups at 5e6a82684019e92333c4af90eb3a46468ed9df8a; the previously failing separate readiness group passed. Phase 2 is verified complete.
 
 - User authorized all repairs and Phase 2 closeout; Phase 3 execution remains outside this authorization.
 - All 22 plans (02-00..21) across 14 waves are implemented and summarized. Final verdict passed: 5/5 roadmap criteria, 14/14 requirements, 61/61 artifacts and 30/30 decisions accounted for.
-- Hosted run 38970203760 passed all eight jobs at 36bba7cfefbe8955879d6b402c39495eeef999ad, including full integration, seven nonempty groups and Compose. See 02-CI-CLOSEOUT.md for failed attempts, repairs and final proof.
-- Independent code review is clean and the registered threat audit has zero open threats. Root completed the final inline goal verification; the previous quota-limited handoff remains byte-identical in a dated snapshot.
+- Hosted run 38974983287 passed all eight jobs at 5e6a82684019e92333c4af90eb3a46468ed9df8a, including full integration, seven nonempty groups and Compose. See 02-CI-CLOSEOUT.md for failed attempts, repairs and final proof.
+- Independent local code review is clean and the registered threat audit has zero open threats; root explicitly reviewed the readiness delta and rechecked affected threats. Root completed final inline goal verification; the quota-limited handoff remains byte-identical in a dated snapshot.
 - Registered phase.complete 02 was run. Its zero-padded lookup left unpadded roadmap rows unchanged and added completed-plan counts twice; root reconciled actual checkboxes/progress and the 35 summaries explicitly. Its two debt warnings refer only to intentionally preserved historical PRE-GAPS/PRE-CI snapshots, not the passed canonical verification or complete UAT.
 - Next action, only when requested: discuss Phase 3. Preserve unrelated configuration/.serena edits and existing user volumes.
 
 ### Blockers/Concerns
 
-- Current Phase 2 gate: fresh hosted CI after readiness deadline repair eb7f6e4. No Phase 3 work authorized or started.
+- No current Phase 2 blocker. Fresh hosted acceptance after readiness repair passed. No Phase 3 work authorized or started.
 - Upcoming Phase 3 decisions: tumbling-window straddle and rule-version semantics under replay. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-16T21:49:39.123Z
-Stopped at: Final hosted repeat exposed readiness deadline gap; repaired bounded workers under verification
+Last session: 2026-10-16T22:34:19.650Z
+Stopped at: Phase 2 verified complete after readiness repair; Phase 3 ready for discussion, not executed
 Resume file: .planning/phases/02-ingestion-durable-event-storage/02-CI-CLOSEOUT.md

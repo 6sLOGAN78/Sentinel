@@ -1,34 +1,33 @@
 ---
 phase: 02-ingestion-durable-event-storage
 verified: 2026-10-17
-status: gaps_found
-score: 4/5 roadmap success criteria verified; final repeat exposed readiness deadline gap
-requirements_satisfied: 13/14; readiness deadline repair under verification
-implementation_gaps: 1
+status: passed
+score: 5/5 roadmap success criteria verified
+requirements_satisfied: 14/14
+implementation_gaps: 0
 overrides_applied: 0
 report_completion: root_inline_goal_verification_after_hosted_ci
-hosted_ci_run: 38970203760
-hosted_ci_revision: 36bba7cfefbe8955879d6b402c39495eeef999ad
+hosted_ci_run: 38974983287
+hosted_ci_revision: 5e6a82684019e92333c4af90eb3a46468ed9df8a
 decision_coverage:
   honored: 30
   total: 30
   not_honored: []
-gaps:
-  - "Final hosted repeat 38972246356 failed to observe Kafka unavailable within the readiness deadline; enforcing deadline independently of client cancellation."
+gaps: []
 human_verification: []
 ---
 
 # Phase 2: Ingestion & Durable Event Storage — Final Verification
 
-**Reopened during final closeout repeat:** run 38972246356 at f02c4bd passed the full integration suite and six independently guarded groups, then failed Kafka outage readiness. The earlier passed assessment below remains evidence at its stated revision; current completion is suspended until the readiness boundary is repaired and fresh hosted acceptance passes. Root is adding deterministic uncooperative-client/deadline/admission regression coverage, not merely retrying the hosted job.
+**Final repeat regression resolved:** run 38972246356 at f02c4bd exposed Kafka outage readiness response delay. RED 2afe6b8 independently proved that synchronous dependency calls could exceed the response deadline. Repair eb7f6e4 independently enforces the response deadline while retaining at most sixteen actual check workers, with bounded result buffers and panic cleanup. Twenty ops race repetitions, full make test, targeted integration-tag lint and three race-enabled real readiness/lifecycle group repetitions (138.221s) passed. Hosted run 38974983287 then passed all eight jobs, including the full suite and the separately guarded readiness repeat. No deadline was relaxed and no test was bypassed.
 
 **Goal:** As a producer with a scoped API key, I want to submit event batches acknowledged only after Kafka accepts them, so that my events become queryable and duplicate-safe in ClickHouse.
 
-**Verdict: passed.** All 22 plans are implemented; the five roadmap success criteria and all 14 Phase 2 requirements have implementation and behavioral evidence. Hosted [CI run 38970203760](https://github.com/6sLOGAN78/Sentinel/actions/runs/38970203760) completed successfully at `2026-10-16T21:46:23Z` on exact SHA `36bba7cfefbe8955879d6b402c39495eeef999ad`. All eight jobs passed, including the full real integration suite, all seven separately nonempty behavior groups, explicit causal contracts and Compose.
+**Verdict: passed.** All 22 plans are implemented; the five roadmap success criteria and all 14 Phase 2 requirements have implementation and behavioral evidence. Hosted [CI run 38974983287](https://github.com/6sLOGAN78/Sentinel/actions/runs/38974983287) completed successfully at `2026-10-16T22:33:23Z` on exact SHA `5e6a82684019e92333c4af90eb3a46468ed9df8a`. All eight jobs passed, including the full real integration suite, all seven separately nonempty behavior groups, explicit causal contracts and Compose.
 
 ## Verification provenance
 
-This is the root agent's completed inline goal-backward closeout, not a fabricated signature from the earlier independent verifier. The GSD skill's no-automatic-spawn fallback was used. Root reran declared artifact/key-link and decision checks, traced the authentication/intake/storage/commit path, spot-checked requirement-linked assertions and skip patterns, ran fresh local regressions, reviewed the three-file hosted delta, and observed hosted success through the GitHub API.
+This is the root agent's completed inline goal-backward closeout, not a fabricated signature from the earlier independent verifier. The GSD skill's no-automatic-spawn fallback was used. Root reran declared artifact/key-link and decision checks, traced the authentication/intake/storage/commit path, spot-checked requirement-linked assertions and skip patterns, ran fresh local regressions, reviewed the original three-file hosted delta plus the bounded readiness repair, and observed hosted success through the GitHub API. Artifact/link checks were rerun after the readiness repair: 61/61 artifacts, with the same manually traced key-link false negative.
 
 The previous independent goal verifier inspected implementation and raw local evidence but reached provider quota before signing its final report. Its recovered `human_needed` handoff is retained byte-identically in `02-VERIFICATION-2026-10-17-PRE-CI.md` (Git blob `d80208726b7ad08ce93b19c41fec5d37c76daa39`). Independent code review did complete as clean (`c16a784`), and the independent security audit verified all 90 registered threat dispositions with zero open (`6c09a58`). Root's subsequent delta review is explicitly identified in `02-REVIEW.md`. Original failing assessments remain unchanged in dated PRE-GAPS snapshots.
 
@@ -39,7 +38,7 @@ Roadmap success criteria take precedence over individual plan declarations.
 | # | Observable truth | Result | Evidence |
 |---|---|---|---|
 | 1 | A scoped producer receives ordered 202 acceptance only after Kafka acknowledgement; invalid batches publish nothing and errors have the required envelope | Verified | `Handler.PostBatch` authenticates and validates before `PublishBatch`; producer uses all-ISR synchronous results. Real `TestIngestAcceptedAfterAck`, authentication/status/invalid-batch and Kafka-timeout cases passed in hosted integration. Invalid cases assert no Kafka record. |
-| 2 | A 1,000-event seed traverses the real application and becomes queryable | Verified | Four bounded actual seed runs in `02-GAP-ACCEPTANCE.md`, each sent=accepted=visible=1000, API spotchecks=3, tenant isolation=1, retries=0. Exact current-run ID sets and time/tenant bounds prevent old rows satisfying acceptance. Runtime code is unchanged during CI closeout. Hosted Compose independently started and checked the pipeline. |
+| 2 | A 1,000-event seed traverses the real application and becomes queryable | Verified | Four bounded actual seed runs in `02-GAP-ACCEPTANCE.md`, each sent=accepted=visible=1000, API spotchecks=3, tenant isolation=1, retries=0. Exact current-run ID sets and time/tenant bounds prevent old rows satisfying acceptance. Ingestion, writer, store and generator behavior are unchanged; the later runtime repair is confined to ops readiness. Hosted Compose and full integration revalidated the current pipeline. |
 | 3 | Retries and replay never expose duplicate identities immediately, without OPTIMIZE | Verified | Native store binds tenant/ID and uses single-ID lookup plus `uniqExact(event_id)`. `TestDedupeDoubleInsertNoOptimize` proves twice the physical rows but one visible identity per event; different timestamps, tenant scope, retry and writer crash/replay cases passed on hosted real dependencies. |
 | 4 | Quotas return 429/Retry-After, Redis outage policy is explicit, and overload does not buffer without bound | Verified | Bounded HTTP admission, capped Kafka buffers and Redis TIME/token-bucket operations are wired. Real quota/concurrency, validation accounting, fail-closed/fail-open and load-shedding cases passed in the separately guarded hosted rate-limit/ingest groups. |
 | 5 | Poison reaches DLQ before source commit and readiness reflects actual dependencies | Verified | Writer inserts valid events, obtains acknowledged DLQ effects and commits only per-partition contiguous durable prefixes. Encoded/header bounds and aggregate deadlines are tested. Hosted poison/DLQ-failure/slow-rebalance/recovery tests and five-service dependency outage/draining/liveness cases passed. |
@@ -104,6 +103,7 @@ Fresh registered check: all **30/30** trackable CONTEXT decisions honored; no mi
 | Fresh local `make test` | All Go race packages, 6 web tests and 54 generator tests passed before the test-only shutdown repair |
 | Shutdown repair validation | All HTTP tests passed 200 race-enabled repetitions after repair; focused lint zero issues; final hosted full race suite passed |
 | Script regressions | All 27 passed |
+| Readiness boundary repair | Deterministic RED 2afe6b8; bounded worker GREEN eb7f6e4; 20 ops race repetitions, 3 real readiness/lifecycle race repetitions and final hosted readiness group passed |
 | Module/scanner regressions | Tidy no diff; original two findings reproduced in isolated clone, exact exceptions pass, new synthetic positive control still fails |
 | Earlier complete local acceptance | 809-second gate, full real integration, seven guarded groups and four actual 1,000-ID seeds; see GAP-ACCEPTANCE |
 
@@ -115,7 +115,7 @@ The hosted delta did not disable any test, scan rule or workflow step. The shutd
 
 ## Anti-patterns, security and scope
 
-No blocking placeholder/TODO/FIXME or stub pattern was found in the inspected Phase 2 intake, credential, Kafka, writer, query, ops and seed paths. Code review remains clean; the completed registered threat audit has zero open threats. No new runtime code, dependency pin or risk acceptance was introduced during closeout.
+No blocking placeholder/TODO/FIXME or stub pattern was found in the inspected Phase 2 intake, credential, Kafka, writer, query, ops and seed paths. Code review remains clean; the completed registered threat audit has zero open threats. The readiness runtime delta was explicitly reviewed and T-02-09-1/2/3 rechecked inline in the canonical reports. No dependency pin or risk acceptance changed.
 
 The dated original reports and recovered verifier handoff are preserved. User-owned configuration/Serena changes, local environment/keys and persistent volumes were not staged, reset or deleted. No OPTIMIZE, force push or history rewrite was used.
 
