@@ -62,7 +62,7 @@ Canonical Kafka alerts now become immediately visible ClickHouse evidence and in
 1. **03-02-T01: Expose missing persistence and immutable workflow replay** — `366770b` (`test`)
 2. **03-02-T02: Persist alerts before workflows and source commit** — `d9350ff` (`feat`)
 
-## Verification Evidence
+## Recorded Test Results
 
 Each required selector was executed separately, with a six-minute Go ceiling and external `timeout 360s`; no short-circuit chain substituted for independent RED or GREEN results. TestMain retained all five default binaries and four real dependency containers.
 
@@ -89,7 +89,7 @@ No full Phase 3 integration, hosted CI, concurrent conflict/ambiguous commit, po
 
 - New real pipeline/replay and schema tests use the existing driver/pool fixtures without new store imports in RED.
 - New `003_alerts.sql` and `003_alert_workflows.sql` migrations are additive through the existing embedded runners.
-- New `internal/alertwriter/writer.go` contains the initial cohesive worker, identity/fingerprint and concrete native helpers for immediate 03-17 extraction.
+- New `backend/internal/alertwriter/writer.go` contains the initial cohesive worker, identity/fingerprint and concrete native helpers for immediate 03-17 extraction.
 - New alert consumer adapter and updated alert-writer main connect the default binary to the real stores and lifecycle.
 
 ## Decisions Made

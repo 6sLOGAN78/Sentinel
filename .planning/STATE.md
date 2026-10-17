@@ -37,8 +37,7 @@ Progress: [███████░░░] 68%
 **Velocity:**
 
 - Total plans completed: 38 (13 Phase 1 + 22 Phase 2 + 3 Phase 3)
-- Average duration: -
-- Total execution time: -
+- Timing averages/totals: pending.
 
 **Per Plan:**
 
