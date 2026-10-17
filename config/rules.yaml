@@ -1,4 +1,33 @@
-# Placeholder rule configuration. Phase 3 defines the schema and the rules
-# AUTH_BRUTE_FORCE, PORT_SCAN, REQUEST_FLOOD and DENY_SPIKE.
+# Rules are immutable for the process lifetime; changes require restart and
+# a drained configuration handover (ADR 0007). Later rule slices enable the
+# remaining definitions after their live paths and tests are implemented.
 schema_version: 1
-rules: []
+rules:
+  - id: AUTH_BRUTE_FORCE
+    version: 1
+    enabled: true
+    threshold: 10
+    window: 300s
+    severity: high
+    cooldown: 60s
+  - id: PORT_SCAN
+    version: 1
+    enabled: false
+    threshold: 20
+    window: 60s
+    severity: medium
+    cooldown: 30s
+  - id: REQUEST_FLOOD
+    version: 1
+    enabled: false
+    threshold: 300
+    window: 60s
+    severity: high
+    cooldown: 30s
+  - id: DENY_SPIKE
+    version: 1
+    enabled: false
+    threshold: 30
+    window: 120s
+    severity: medium
+    cooldown: 60s

@@ -5,6 +5,7 @@ package test_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -89,10 +91,43 @@ func TestDetectionPipelineAuth(t *testing.T) {
 	require.Equal(t, start.Add(5*time.Minute), alert.WindowEnd.Time)
 	require.Equal(t, alert.WindowEnd, alert.CreatedAt)
 	require.Nil(t, alert.DetectedAt)
+	require.Len(t, alert.SampleEventIDs, 10)
 	for i := range 10 {
 		require.Equal(t, events[i].EventID, alert.SampleEventIDs[i])
 	}
-	require.Len(t, alert.SampleEventIDs, 10)
+	// Independently inspect the real broker checkpoint: the live fired window
+	// must retain its first source offset even after the output is durable.
+	var metadata struct {
+		Format        int              `json:"format"`
+		ProcessedNext int64            `json:"processed_next"`
+		Prefix        *int64           `json:"prefix_max_event_time"`
+		Sealed        *int64           `json:"sealed_through"`
+		Versions      map[string]int   `json:"rule_versions"`
+		Effective     map[string]int64 `json:"rule_effective_from"`
+		Frontier      struct {
+			None bool `json:"none"`
+		} `json:"decision_frontier"`
+		Drained bool `json:"drained"`
+	}
+	admin := kadm.NewClient(observer)
+	require.Eventually(t, func() bool {
+		fetchCtx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		offsets, fetchErr := admin.FetchOffsets(fetchCtx, group)
+		if fetchErr != nil {
+			return false
+		}
+		offset, ok := offsets.Lookup(topic, 0)
+		return ok && offset.Err == nil && offset.At == 0 && len(offset.Metadata) <= 1024 &&
+			json.Unmarshal([]byte(offset.Metadata), &metadata) == nil && metadata.ProcessedNext == 10
+	}, 10*time.Second, 50*time.Millisecond, "missing acknowledged live state pin")
+	require.Equal(t, 2, metadata.Format)
+	require.Nil(t, metadata.Prefix, "first source record has an empty pre-pin prefix")
+	require.NotNil(t, metadata.Sealed)
+	require.Len(t, metadata.Versions, 4)
+	require.Len(t, metadata.Effective, 4)
+	require.True(t, metadata.Frontier.None)
+	require.False(t, metadata.Drained)
 	require.NoError(t, producer.PublishBatch(t.Context(), events[10:], uuid.NewString()))
 	quietCtx, cancelQuiet = context.WithTimeout(t.Context(), 2*time.Second)
 	after := observer.PollRecords(quietCtx, 10)

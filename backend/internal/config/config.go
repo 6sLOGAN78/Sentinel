@@ -25,6 +25,7 @@ const (
 	sectionDatabase    = "database"
 	sectionIngest      = "ingest"
 	sectionWriter      = "writer"
+	sectionDetector    = "detector"
 	levelInfo          = "info"
 	envPrefix          = "SENTINEL_"
 	envKeyPrimaryEnv   = "SENTINEL_PRIMARY.ENV"
@@ -107,6 +108,13 @@ type Config struct {
 	Contracts     ContractsConfig      `koanf:"contracts"`
 	Ingest        IngestConfig         `koanf:"ingest"`
 	Writer        WriterConfig         `koanf:"writer"`
+	Detector      DetectorConfig       `koanf:"detector"`
+}
+
+// DetectorConfig loads immutable startup rules and bounds one owned batch.
+type DetectorConfig struct {
+	RulesPath string       `koanf:"rules_path" validate:"required"`
+	Writer    WriterConfig `koanf:"writer"`
 }
 
 // OpsConfig controls the private liveness/readiness listener.
@@ -170,6 +178,9 @@ type KafkaConfig struct {
 	EventsTopic        string        `koanf:"events_topic" validate:"required"`
 	DLQTopic           string        `koanf:"dlq_topic" validate:"required"`
 	EventWriterGroup   string        `koanf:"event_writer_group" validate:"required"`
+	AlertsTopic        string        `koanf:"alerts_topic" validate:"required"`
+	DetectorGroup      string        `koanf:"detector_group" validate:"required"`
+	AlertWriterGroup   string        `koanf:"alert_writer_group" validate:"required"`
 	ProduceTimeout     time.Duration `koanf:"produce_timeout" validate:"gt=0"`
 	RecordRetries      int           `koanf:"record_retries" validate:"min=0"`
 	MaxBufferedRecords int           `koanf:"max_buffered_records" validate:"min=1"`
@@ -283,7 +294,7 @@ type ContractsConfig struct {
 func requiredSections() map[string][]string {
 	return map[string][]string{
 		ServiceIngest:      {sectionRedis, sectionKafka, sectionDatabase, sectionIngest},
-		ServiceDetector:    {sectionKafka},
+		ServiceDetector:    {sectionKafka, sectionDetector},
 		ServiceEventWriter: {sectionKafka, sectionClickHouse, sectionWriter},
 		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse},
 		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis},
@@ -414,6 +425,10 @@ func setDefaults(k *koanf.Koanf) {
 		"kafka.events_topic":                         defaultEventTopic,
 		"kafka.dlq_topic":                            defaultDLQTopic,
 		"kafka.event_writer_group":                   defaultWriterGroup,
+		"kafka.alerts_topic":                         "security.alerts.v1",
+		"kafka.detector_group":                       "sentinel-detector",
+		"kafka.alert_writer_group":                   "sentinel-alert-writer",
+		"detector.rules_path":                        "../config/rules.yaml",
 		"kafka.produce_timeout":                      defaultProduceWait,
 		"kafka.record_retries":                       defaultRetries,
 		"kafka.max_buffered_records":                 defaultRecordCap,
@@ -439,6 +454,9 @@ func setDefaults(k *koanf.Koanf) {
 	for key, val := range defaults {
 		// Set only fails on invalid paths, which cannot happen for literals.
 		_ = k.Set(key, val)
+		if strings.HasPrefix(key, "writer.") {
+			_ = k.Set("detector."+key, val)
+		}
 	}
 }
 
@@ -487,6 +505,8 @@ func validateFor(cfg *Config, sections []string) error {
 			target = cfg.Ingest
 		case sectionWriter:
 			target = cfg.Writer
+		case sectionDetector:
+			target = cfg.Detector
 		default:
 			return fmt.Errorf("unknown config section %q", section)
 		}
@@ -569,6 +589,8 @@ func validateSection(cfg *Config, section string) error {
 		return nil
 	case sectionWriter:
 		return validateWriterConfig(cfg.Writer)
+	case sectionDetector:
+		return validateWriterConfig(cfg.Detector.Writer)
 	case sectionRedis:
 		return validateRedisSecurity(cfg.Primary.Env, cfg.Redis)
 	default:
