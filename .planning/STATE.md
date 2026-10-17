@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md; 1/21 Phase 3 plans complete, next Wave 1 plan 03-06
-last_updated: "2026-10-17T06:20:44.977Z"
+stopped_at: Completed 03-06-PLAN.md; 2/21 Phase 3 plans complete, next orchestration Wave 2
+last_updated: "2026-10-17T06:31:47.101Z"
 last_activity: 2026-10-17
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 36
-  percent: 64
+  completed_plans: 37
+  percent: 66
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 2 of 21
+Plan: 3 of 21
 Status: Ready to execute
 Last activity: 2026-10-17
 
-Progress: [██████░░░░] 64%
+Progress: [███████░░░] 66%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 35 (13 Phase 1 + 22 Phase 2)
+- Total plans completed: 37 (13 Phase 1 + 22 Phase 2 + 2 Phase 3)
 - Average duration: -
 - Total execution time: -
 
@@ -59,6 +59,7 @@ Progress: [██████░░░░] 64%
 | Phase 02 P12 | 8 min | 3 tasks | 10 files |
 | Phase 02 P13 | 22 min | 3 tasks | 7 files |
 | Phase 03 P01 | 9 min | 2 tasks | 8 files |
+| Phase 03 P06 | ~10 min | 2 tasks | 5 files |
 
 **By Phase:**
 
@@ -116,6 +117,8 @@ Progress: [██████░░░░] 64%
 - [Phase 02]: Guard each Phase 2 integration behavior family independently in CI and preserve go-list failures before policy matching.
 - [Phase 03]: 03-01: AUTH retains fired-window pins and commits format-2 metadata only after acknowledged alert publication.
 - [Phase 03]: 03-01: Final cross-window cooldown depends on the later PostgreSQL decision ledger; the initial AUTH slice does not certify DET-08.
+- [Phase 03]: 03-06: Live scenarios require a private caught-up schedule; plan 03-21 owns snapshot acquisition and clock waiting.
+- [Phase 03]: 03-06: All-mode drains share the latest relevant window end plus 30 seconds to avoid partition-watermark regression.
 
 ### Pending Todos
 
@@ -123,7 +126,7 @@ None yet.
 
 ### Planning Continuation
 
-- Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. No implementation or SUMMARYs exist yet; automatic execution is the next authorized step, stopping before Phase 4.
+- Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. Wave 1 plans 03-01 and 03-06 are implemented with committed SUMMARYs. Automatic execution continues at Wave 2, stopping before Phase 4.
 - User chose option 1: actual alert-level cooldown across nearby windows, rejecting candidate-only throttling. See 03-COOLDOWN-DECISION.md and amended research: durable PG allow/suppress decisions/cursors/fences, checkpoint decision_frontier consistency, event-time expiry, unchanged canonical IDs and Kafka window replay. Initial and R1 checker failures remain preserved; their issues are resolved by R2. Planning approval is not production proof. Preserve unrelated configuration/.serena edits and existing user volumes.
 - Phase 2 closeout evidence below is historical and remains valid; it is not the current Phase 3 authorization boundary.
 
@@ -138,12 +141,12 @@ None yet.
 
 ### Blockers/Concerns
 
-- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has approved plans, not executed code; all behavioral/security/CI proofs remain pending execution.
+- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 2/21 plans implemented; the remaining rule, persistence, cooldown, recovery, live scheduling and phase-wide security/CI proofs remain pending.
 - Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-17T06:20:44.962Z
-Stopped at: Completed 03-01-PLAN.md; 1/21 Phase 3 plans complete, next Wave 1 plan 03-06
-Resume file: .planning/phases/03-detection-alert-pipeline/03-06-PLAN.md
+Last session: 2026-10-17T06:31:47.087Z
+Stopped at: Completed 03-06-PLAN.md; 2/21 Phase 3 plans complete, next orchestration Wave 2
+Resume file: .planning/phases/03-detection-alert-pipeline/03-02-PLAN.md

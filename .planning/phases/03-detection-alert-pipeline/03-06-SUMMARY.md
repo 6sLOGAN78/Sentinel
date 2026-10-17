@@ -118,6 +118,8 @@ Total deviations: one scoped bug fix. No schema, alert encoding, dependency, arc
 
 Routine new-code lint/import formatting and test type narrowing were corrected before final verification. No authentication gate or package installation occurred. User-owned `.planning/config.json` and `.serena/` remain unstaged and untouched.
 
+After the summary commit, serialized SDK tracking counted 37/56 plans correctly but a later resync wrote 33% into frontmatter and the metric handler appended the plan row to the By Phase table. The closeout explicitly reconciled frontmatter/body to 66% and moved the row into Per Plan. Phase 3 remains 2/21, In Progress; requirements checkboxes were not advanced.
+
 ## Known Stubs
 
 None preventing this plan's goal. Empty snapshots/batches, null deadline and zero sent/accepted counts in dry-run manifests explicitly mean no live run occurred. Future-batch refusal is the required boundary to plan 03-21, not an implemented clock-wait scheduler.
