@@ -117,7 +117,30 @@ func (f *alertPipelineFixture) waitStored(t *testing.T, offset int64) {
 // Omitting either native write or committing before their acknowledgements must fail.
 func TestAlertWriterPipeline(t *testing.T) {
 	f := newAlertPipelineFixture(t)
+	// SHARE permits the preflight SELECT but blocks workflow INSERT. The real
+	// worker must acknowledge CH and wait here without committing its source.
+	lockCtx, cancelLock := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancelLock()
+	lock, err := f.db.Pool.Begin(lockCtx)
+	require.NoError(t, err)
+	defer lock.Rollback(t.Context())
+	_, err = lock.Exec(lockCtx, `LOCK TABLE alert_workflows IN SHARE MODE`)
+	require.NoError(t, err)
 	f.publish(t)
+	require.Eventually(t, func() bool {
+		var count uint64
+		return f.ch.QueryRow(lockCtx, `SELECT count() FROM alerts WHERE alert_id={id:String}`,
+			driverclickhouse.Named("id", f.alert.AlertID)).Scan(&count) == nil && count == 1
+	}, 3*time.Second, 20*time.Millisecond, "CH must precede the blocked workflow INSERT")
+	var workflows int
+	require.NoError(t, f.db.Pool.QueryRow(lockCtx,
+		`SELECT count(*) FROM alert_workflows WHERE alert_id=$1`, f.alert.AlertID).Scan(&workflows))
+	require.Zero(t, workflows)
+	offsets, err := f.admin.FetchOffsets(lockCtx, f.kafka.AlertWriterGroup)
+	require.NoError(t, err)
+	committed, exists := offsets.Lookup(f.kafka.AlertsTopic, 0)
+	require.True(t, !exists || committed.At <= 0, "source advanced before workflow persistence")
+	require.NoError(t, lock.Rollback(lockCtx))
 	f.waitStored(t, 1)
 	var status, rule, severity, summary, entity, fingerprint string
 	var assignee *string
@@ -126,13 +149,14 @@ func TestAlertWriterPipeline(t *testing.T) {
 	require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT status,assignee,version,seq,
 		created_at,updated_at,rule_id,severity,summary,entity_key,event_count,immutable_fingerprint
 		FROM alert_workflows WHERE tenant_id=$1 AND alert_id=$2`, f.alert.TenantID, f.alert.AlertID).
-		Scan(&status, &assignee, &version, &seq, &created, &updated, &rule, &severity, &summary, &entity, &count, &fingerprint))
+		Scan(&status, &assignee, &version, &seq, &created, &updated, &rule,
+			&severity, &summary, &entity, &count, &fingerprint))
 	require.Equal(t, "open", status)
 	require.Nil(t, assignee)
 	require.Equal(t, int64(1), version)
 	require.Positive(t, seq)
-	require.Equal(t, f.alert.CreatedAt.Time, created)
-	require.Equal(t, created, updated)
+	require.Equal(t, f.alert.CreatedAt.Time, created.UTC())
+	require.Equal(t, created.UTC(), updated.UTC())
 	require.Equal(t, f.alert.RuleID, rule)
 	require.Equal(t, f.alert.Severity, severity)
 	require.Equal(t, f.alert.Summary, summary)
@@ -161,7 +185,8 @@ func TestAlertWorkflowReplay(t *testing.T) {
 		FROM alert_workflows w WHERE alert_id=$1`, f.alert.AlertID).Scan(&after))
 	require.JSONEq(t, before, after, "replay must preserve all workflow fields including seq and timestamps")
 	var count int
-	require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT count(*) FROM alert_workflows WHERE alert_id=$1`, f.alert.AlertID).Scan(&count))
+	require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT count(*) FROM alert_workflows
+		WHERE alert_id=$1`, f.alert.AlertID).Scan(&count))
 	require.Equal(t, 1, count)
 	require.Zero(t, f.process.terminate(t), f.process.output.String())
 }

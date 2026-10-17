@@ -1,4 +1,4 @@
-// Command alert-writer is the Sentinel alert persistence process skeleton.
+// Command alert-writer persists immutable evidence and insert-only workflows.
 package main
 
 import (
@@ -8,12 +8,13 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/6sLOGAN78/sentinel/internal/alertwriter"
 	"github.com/6sLOGAN78/sentinel/internal/app"
-	"github.com/6sLOGAN78/sentinel/internal/chmigrate"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/database"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
+	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
 
 func main() {
@@ -30,25 +31,20 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return opsServer.Shutdown(closeCtx)
 	})
 
-	kafkaClient, err := kafkax.NewProducer(ctx, cfg.Kafka)
+	consumer, err := kafkax.NewAlertConsumer(ctx, cfg.Kafka, cfg.Writer)
 	if err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
-	lc.Add("kafka", kafkaClient.Close)
-	if err = kafkaClient.Ping(ctx); err != nil {
+	lc.Add("kafka-consumer", consumer.Close)
+	if err = consumer.Ping(ctx); err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
 
-	clickhouse := chmigrate.New(
-		cfg.ClickHouse.HTTPAddress,
-		cfg.ClickHouse.User,
-		cfg.ClickHouse.Password,
-		cfg.ClickHouse.Database,
-		nil,
-	)
-	if err = clickhouse.Ping(ctx); err != nil {
+	clickhouse, err := storageclickhouse.Open(ctx, cfg.ClickHouse)
+	if err != nil {
 		return fmt.Errorf("clickhouse: %w", err)
 	}
+	lc.Add("clickhouse", func(context.Context) error { return clickhouse.Close() })
 
 	db, err := database.New(ctx, cfg.Database, log)
 	if err != nil {
@@ -60,10 +56,11 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 
 		return nil
 	})
+	startWriter(ctx, cfg, log, lc, consumer, clickhouse, db)
 
 	draining := &opshttp.Draining{}
 	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
-		{Name: "kafka", Fn: kafkaClient.Ping},
+		{Name: "kafka", Fn: consumer.Ping},
 		{Name: "clickhouse", Fn: clickhouse.Ping},
 		{Name: "postgres", Fn: db.Pool.Ping},
 	})
@@ -79,4 +76,29 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
+}
+
+func startWriter(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle,
+	consumer *kafkax.Consumer, conn storageclickhouse.Conn, db *database.Database) {
+	worker := alertwriter.New(consumer, alertwriter.NewAlertStore(conn),
+		alertwriter.NewPostgresStore(db.Pool, cfg.Writer.OperationTimeout), cfg.Writer, log)
+	workerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		err := worker.Run(workerCtx)
+		if err != nil {
+			log.Error().Err(err).Msg("alert writer stopped")
+			lc.Fail(err)
+		}
+		done <- err
+	}()
+	lc.Add("alert-writer", func(closeCtx context.Context) error {
+		cancel()
+		select {
+		case err := <-done:
+			return err
+		case <-closeCtx.Done():
+			return closeCtx.Err()
+		}
+	})
 }
