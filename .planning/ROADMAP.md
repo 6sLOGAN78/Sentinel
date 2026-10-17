@@ -168,7 +168,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Let an operator consume a real AUTH_BRUTE_FORCE alert from Kafka after ten authenticated failure events
+- [x] 03-01-PLAN.md — Let an operator consume a real AUTH_BRUTE_FORCE alert from Kafka after ten authenticated failure events
 - [ ] 03-06-PLAN.md — Generate exact seeded malicious, benign, edge and late scenarios with a current-run expected-alert manifest
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -292,7 +292,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
-| 3. Detection & Alert Pipeline | 0/TBD | Not started | - |
+| 3. Detection & Alert Pipeline | 1/21 | In Progress|  |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 3 execution starting at Wave 1 / plan 03-01 after independent plan approval; 0/21 complete
-last_updated: "2026-10-17T06:09:17.265Z"
-last_activity: 2026-10-17 -- Phase 3 execution started
+stopped_at: Completed 03-01-PLAN.md; 1/21 Phase 3 plans complete, next Wave 1 plan 03-06
+last_updated: "2026-10-17T06:20:44.977Z"
+last_activity: 2026-10-17
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 35
-  percent: 33
+  completed_plans: 36
+  percent: 64
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 1 of 21
-Status: Executing Phase 3
-Last activity: 2026-10-17 -- Phase 3 execution started
+Plan: 2 of 21
+Status: Ready to execute
+Last activity: 2026-10-17
 
-Progress: [███░░░░░░░] 33% (2 of 6 phases complete)
+Progress: [██████░░░░] 64%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [███░░░░░░░] 33% (2 of 6 phases complete)
 | Phase 02 P11 | 20 min | 3 tasks | 9 files |
 | Phase 02 P12 | 8 min | 3 tasks | 10 files |
 | Phase 02 P13 | 22 min | 3 tasks | 7 files |
+| Phase 03 P01 | 9 min | 2 tasks | 8 files |
 
 **By Phase:**
 
@@ -113,6 +114,8 @@ Progress: [███░░░░░░░] 33% (2 of 6 phases complete)
 - [Phase 02]: Verify the exact current-run manifest ID set under tenant and run-start bounds so historical rows cannot satisfy seed acceptance.
 - [Phase 02]: Keep demo keys in private local files and pass secrets only through child environment, never argv or logs.
 - [Phase 02]: Guard each Phase 2 integration behavior family independently in CI and preserve go-list failures before policy matching.
+- [Phase 03]: 03-01: AUTH retains fired-window pins and commits format-2 metadata only after acknowledged alert publication.
+- [Phase 03]: 03-01: Final cross-window cooldown depends on the later PostgreSQL decision ledger; the initial AUTH slice does not certify DET-08.
 
 ### Pending Todos
 
@@ -141,6 +144,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-17T06:09:17.254Z
-Stopped at: Phase 3 execution starting at Wave 1 / plan 03-01 after independent plan approval; 0/21 complete
-Resume file: .planning/phases/03-detection-alert-pipeline/03-01-PLAN.md
+Last session: 2026-10-17T06:20:44.962Z
+Stopped at: Completed 03-01-PLAN.md; 1/21 Phase 3 plans complete, next Wave 1 plan 03-06
+Resume file: .planning/phases/03-detection-alert-pipeline/03-06-PLAN.md
