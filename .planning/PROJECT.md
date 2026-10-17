@@ -59,13 +59,14 @@ Validated in Phase 2: Ingestion & Durable Event Storage (2026-10-17):
 
 ## Context
 
-- **Current state (Phase 2 verified complete, 2026-10-17):** all 22 plans deliver the scoped producer → ingest → Kafka → event-writer → ClickHouse → tenant lookup slice. Readiness repair eb7f6e4 passed deterministic regressions, repeated real lifecycle/outage tests and hosted run 38974983287 at 5e6a826; all eight jobs and seven guarded groups passed. Phase 3 remains unstarted.
+- **Current state (Phase 3 planned, 2026-10-17):** 21 plans / 52 tasks / 14 waves passed independent plan verification in 03-PLAN-CHECK-R2.md, with zero open planning blockers/warnings. The user selected actual cross-window alert suppression with durable replay-safe decisions. Phase 3 implementation has not started; approved plans are not implementation, test or security evidence. See STATE.md and the Phase 3 planning artifacts.
+- **Verified Phase 2 baseline (2026-10-17):** all 22 plans deliver the scoped producer → ingest → Kafka → event-writer → ClickHouse → tenant lookup slice. Readiness repair eb7f6e4 passed deterministic regressions, repeated real lifecycle/outage tests and hosted run 38974983287 at 5e6a826; all eight jobs and seven guarded groups passed.
   - One Go 1.26 module builds five binaries; ingest, event-writer and minimal query lookup are live application paths. Detection and alert business logic remain Phase 3 work.
   - The seeded Python sender has bounded identical-byte retries and private manifests. Four real 1,000-ID seed runs verified exact visible identities and tenant isolation; this is not a throughput benchmark.
   - Hosted [CI run 38970203760](https://github.com/6sLOGAN78/Sentinel/actions/runs/38970203760) passed all eight jobs at `36bba7c`, including full integration, seven nonempty groups and Compose. Local review is clean, and the registered threat audit has zero open threats.
   - Public HTTP safety, strict schema/duplicate-key validation, database-aware migrations, Redis AUTH/TLS and integration CI hand-offs from Phase 1 are implemented and tested.
   - `web/` remains a React/TypeScript shell; JWT, complete query APIs, SSE/dashboard and triage remain Phase 4. Scenario injection is Phase 3; health endpoints are delivered, while full metrics/benchmarks remain later work.
-  - Phase 3 has not been planned or executed by this closeout. See `02-VERIFICATION.md` and `02-CI-CLOSEOUT.md` for final evidence and transparent audit provenance.
+  - This Phase 2 closeout did not plan or execute Phase 3; subsequent planning is tracked separately above. See `02-VERIFICATION.md` and `02-CI-CLOSEOUT.md` for final Phase 2 evidence and transparent audit provenance.
 - **Codebase map is stale:** `.planning/codebase/` describes the pre-Phase-1 boilerplate. Refresh it with `/gsd:map-codebase` before relying on it.
 - **Source of truth:** `spec.md` (v1.0) defines the contracts (event/alert schemas, Kafka topics, HTTP API, ClickHouse/Postgres storage, metrics names), the phase plan (§14), the testing strategy (§15) and the Definition of Done (§18).
 - **Claim discipline:** "Millions of events" means synthetic load volume, not a guaranteed rate. Never invent throughput, latency, test results or security guarantees.

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 2 complete (22/22) — ready to discuss Phase 3
-last_updated: 2026-10-16T22:34:19.650Z
-last_activity: 2026-10-17 -- Phase 2 complete after bounded readiness repair and green hosted CI
+status: executing
+stopped_at: "Phase 3 revision saved: 21 plans / 52 tasks / 14 waves; actual cooldown approved; independent recheck next; no implementation"
+last_updated: "2026-10-17T06:08:20.498Z"
+last_activity: 2026-10-17 -- Phase 3 planning complete
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 35
+  total_plans: 56
   completed_plans: 35
   percent: 33
 ---
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-17 — Phase 2 closed; Phase 3 not started
+Plan: 21 revised draft plans; 0 executed
+Status: Ready to execute
+Last activity: 2026-10-17 -- Phase 3 planning complete
 
 Progress: [███░░░░░░░] 33% (2 of 6 phases complete)
 
@@ -120,23 +120,27 @@ None yet.
 
 ### Planning Continuation
 
+- Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. No implementation or SUMMARYs exist yet; automatic execution is the next authorized step, stopping before Phase 4.
+- User chose option 1: actual alert-level cooldown across nearby windows, rejecting candidate-only throttling. See 03-COOLDOWN-DECISION.md and amended research: durable PG allow/suppress decisions/cursors/fences, checkpoint decision_frontier consistency, event-time expiry, unchanged canonical IDs and Kafka window replay. Initial and R1 checker failures remain preserved; their issues are resolved by R2. Planning approval is not production proof. Preserve unrelated configuration/.serena edits and existing user volumes.
+- Phase 2 closeout evidence below is historical and remains valid; it is not the current Phase 3 authorization boundary.
+
 - Final status: readiness RED 2afe6b8 / repair eb7f6e4 passed full make test, twenty ops race repetitions, lint and three real readiness/lifecycle race repetitions (138.221s). Hosted run 38974983287 passed all eight jobs and seven guarded groups at 5e6a82684019e92333c4af90eb3a46468ed9df8a; the previously failing separate readiness group passed. Phase 2 is verified complete.
 
-- User authorized all repairs and Phase 2 closeout; Phase 3 execution remains outside this authorization.
+- At the Phase 2 closeout, authorization covered Phase 2 only. The later Phase 3 --auto request now authorizes its workflow, subject to unresolved decision and verification gates above.
 - All 22 plans (02-00..21) across 14 waves are implemented and summarized. Final verdict passed: 5/5 roadmap criteria, 14/14 requirements, 61/61 artifacts and 30/30 decisions accounted for.
 - Hosted run 38974983287 passed all eight jobs at 5e6a82684019e92333c4af90eb3a46468ed9df8a, including full integration, seven nonempty groups and Compose. See 02-CI-CLOSEOUT.md for failed attempts, repairs and final proof.
 - Independent local code review is clean and the registered threat audit has zero open threats; root explicitly reviewed the readiness delta and rechecked affected threats. Root completed final inline goal verification; the quota-limited handoff remains byte-identical in a dated snapshot.
 - Registered phase.complete 02 was run. Its zero-padded lookup left unpadded roadmap rows unchanged and added completed-plan counts twice; root reconciled actual checkboxes/progress and the 35 summaries explicitly. Its two debt warnings refer only to intentionally preserved historical PRE-GAPS/PRE-CI snapshots, not the passed canonical verification or complete UAT.
-- Next action, only when requested: discuss Phase 3. Preserve unrelated configuration/.serena edits and existing user volumes.
+- The old next-action suggestion to discuss Phase 3 was superseded by the user's explicit planning request; no new discuss-phase decision document was fabricated.
 
 ### Blockers/Concerns
 
-- No current Phase 2 blocker. Fresh hosted acceptance after readiness repair passed. No Phase 3 work authorized or started.
-- Upcoming Phase 3 decisions: tumbling-window straddle and rule-version semantics under replay. Dashboard login flow belongs to Phase 4.
+- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has approved plans, not executed code; all behavioral/security/CI proofs remain pending execution.
+- Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-16T22:34:19.650Z
-Stopped at: Phase 2 verified complete after readiness repair; Phase 3 ready for discussion, not executed
-Resume file: .planning/phases/02-ingestion-durable-event-storage/02-CI-CLOSEOUT.md
+Last session: 2026-10-17T06:00:52.125Z
+Stopped at: Phase 3 revision saved: 21 plans / 52 tasks / 14 waves; actual cooldown approved; independent recheck next; no implementation
+Resume file: .planning/phases/03-detection-alert-pipeline/03-SOURCE-AUDIT.md

@@ -80,7 +80,6 @@ Plans:
 
 **Plans**: 22 plans across 14 dependency waves (22 executed; final verification and hosted CI passed)
 
-
 **Wave 1**
 
 - [x] 02-00-PLAN.md — Harden public HTTP defaults and configure listener binds
@@ -152,7 +151,7 @@ Plans:
 
 ### Phase 3: Detection & Alert Pipeline
 
-**Goal**: Malicious traffic produces exactly one deterministic, evidence-backed alert per dedupe key, and that holds across detector crashes, restarts and replays
+**Goal**: As a system operator, I want to receive deterministic, evidence-backed alerts from malicious traffic, so that crashes, restarts and replay cannot lose or duplicate detections.
 **Mode:** mvp
 **Depends on**: Phase 2
 **Requirements**: DET-01, DET-02, DET-03, DET-04, DET-05, DET-06, DET-07, DET-08, DET-09, ALRT-01, ALRT-02, ALRT-03, ALRT-04, GEN-02
@@ -164,8 +163,73 @@ Plans:
   4. Failpoint tests at each crash boundary (before publish, between publish and offset commit, after commit) show exactly one visible alert per dedupe key. A replayed detection never reopens or duplicates a resolved alert
   5. Alerts reach `security.alerts.v1`, immutable detections land in ClickHouse, and a workflow row with unique `alert_id`, `seq` and denormalized list fields exists in PostgreSQL. Rule thresholds load from `config/rules.yaml` at startup
 
-**Plans**: TBD
-**Research flag**: Deepest research need. Window and state-pin ADR, list-source ADR (write both before rule code), `CommitOffsetsSync` signature, failpoint mechanism.
+**Plans**: 21 plans in 14 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Let an operator consume a real AUTH_BRUTE_FORCE alert from Kafka after ten authenticated failure events
+- [ ] 03-06-PLAN.md — Generate exact seeded malicious, benign, edge and late scenarios with a current-run expected-alert manifest
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-02-PLAN.md — Persist the live AUTH alert into immutable ClickHouse evidence and one PostgreSQL workflow row
+- [ ] 03-15-PLAN.md — Extract and test the strict AUTH rules loader without changing the real Kafka slice
+- [ ] 03-16-PLAN.md — Extract the live Kafka detector adapters and test acknowledgements/metadata before adding other rules
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-03-PLAN.md — Detect a port scan as twenty exact distinct destination ports in one event-time minute
+- [ ] 03-17-PLAN.md — Extract and prove native alert stores immediately after the first two-store path
+- [ ] 03-18-PLAN.md — Make real PostgreSQL capability part of detector startup, shutdown and local worker readiness before cooldown activation
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03-04-PLAN.md — Add request-flood and deny-spike alerts to the live detector
+- [ ] 03-10-PLAN.md — Repair partial alert writes and quarantine conflicting immutable identities under concurrency
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03-05-PLAN.md — Freeze evidence and first-threshold candidate source/clock for durable cross-window decisions
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 03-19-PLAN.md — Deliver actual cross-window alert cooldown through durable PG decisions on the existing events→alerts path
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 03-07-PLAN.md — Prove checkpoint reconstruction across arbitrary restart cuts and advancing state pins
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 03-08-PLAN.md — Allow rule changes only through a strict startup config and drained version handover
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 03-09-PLAN.md — Bound detector state and expose deterministic late drops without weakening readiness
+- [ ] 03-21-PLAN.md — Schedule live scenarios after a private caught-up partition snapshot within legal ingest skew
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 03-11-PLAN.md — Quarantine detector and writer poison within one owned-batch budget without skipping durable prefixes
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 03-12-PLAN.md — Prove mid-window restart, actual third-replica ownership transfer and all three crash boundaries
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 03-20-PLAN.md — Prove cooldown decisions across PG failure, stale ownership and all four PG/Kafka checkpoint crash cuts
+
+**Wave 13** *(blocked on Wave 12 completion)*
+
+- [ ] 03-13-PLAN.md — Run a healthy preserved-volume Compose detector/writer stack and verify exact current-run scenario alerts
+
+**Wave 14** *(blocked on Wave 13 completion)*
+
+- [ ] 03-14-PLAN.md — Guard every Phase 3 acceptance family in CI and document verified operator/replay behavior
+
+**Research**: Complete targeted amendment (03-RESEARCH.md, 2026-10-17). USER option1 actual cross-window cooldown is planned through durable PG decisions/cursors/ownership fences, format2 state-pin metadata, aligned config handover and private watermark-aware live scheduling. Decision-frontier restore-behind proof is assigned; independent revision checking and all execution results remain pending. Original checker report is historical; both ADRs precede rule code in03-01-T01.
 
 ### Phase 4: Query API & Analyst Dashboard
 
