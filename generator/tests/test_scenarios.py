@@ -69,7 +69,11 @@ def test_builder_matches_independent_static_fixture(case: dict[str, Any]) -> Non
         item["canonical_payload"].encode() for item in case["expected_alerts"]
     )
     for field in (
-        "accepted_source_ids", "dropped_late_ids", "duplicate_ids", "marker_ids", "source_keys"
+        "accepted_source_ids",
+        "dropped_late_ids",
+        "duplicate_ids",
+        "marker_ids",
+        "source_keys",
     ):
         assert list(getattr(result, field)) == case[field]
     assert result == build_scenario(
@@ -89,6 +93,8 @@ def test_seed_timebase_safety_and_markers(name: str) -> None:
     markers = set(result.marker_ids)
     first_marker = next(i for i, event in enumerate(result.events) if event["event_id"] in markers)
     assert all(event["event_id"] in markers for event in result.events[first_marker:])
+    marker_times = [str(event["occurred_at"]) for event in result.events[first_marker:]]
+    assert marker_times == sorted(marker_times), "drains must not move partition time backwards"
     for event in result.events:
         assert event["tenant_id"] == "other"
         for field in ("source_ip", "destination_ip"):
@@ -115,20 +121,35 @@ def _main(arguments: list[str], **kwargs: Any) -> int:
     try:
         return main(arguments, **kwargs)
     except SystemExit as error:
-        return int(error.code)
+        assert isinstance(error.code, int)
+        return error.code
 
 
 @pytest.mark.parametrize("name", SCENARIO_NAMES)
 def test_dry_run_writes_only_private_exact_manifest(
-    name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.delenv("SENTINEL_API_KEY", raising=False)
     output = tmp_path / "private" / "run.json"
-    code = _main([
-        "send", "--scenario", name, "--dry-run", "--tenant", "demo", "--seed", "42",
-        "--run-start", "2026-10-17T00:00:01.123Z", "--output", str(output),
-    ])
+    code = _main(
+        [
+            "send",
+            "--scenario",
+            name,
+            "--dry-run",
+            "--tenant",
+            "demo",
+            "--seed",
+            "42",
+            "--run-start",
+            "2026-10-17T00:00:01.123Z",
+            "--output",
+            str(output),
+        ]
+    )
     assert code == 0
     manifest = json.loads(output.read_text())
     case = next(case for case in CASES if case["name"] == name)
@@ -150,10 +171,22 @@ def test_live_refuses_historical_or_unscheduled_injection(
 ) -> None:
     monkeypatch.delenv("SENTINEL_API_KEY", raising=False)
     output = tmp_path / "manifest.json"
-    assert _main([
-        "send", "--scenario", "auth-brute-force", "--tenant", "demo",
-        "--run-start", "2026-10-17T00:00:01.123Z", "--output", str(output),
-    ]) == 1
+    assert (
+        _main(
+            [
+                "send",
+                "--scenario",
+                "auth-brute-force",
+                "--tenant",
+                "demo",
+                "--run-start",
+                "2026-10-17T00:00:01.123Z",
+                "--output",
+                str(output),
+            ]
+        )
+        == 1
+    )
     assert "caught-up schedule" in capsys.readouterr().err
     assert not output.exists()
 
@@ -161,16 +194,29 @@ def test_live_refuses_historical_or_unscheduled_injection(
 def _schedule(tmp_path: Path, name: str = "auth-brute-force") -> Path:
     case = next(case for case in CASES if case["name"] == name)
     schedule = {
-        "schema_version": 1, "scenario": name, "seed": 42, "tenant": "demo",
-        "base": case["timebase"], "snapshot_at": case["timebase"],
-        "deadline": "2026-10-17T00:15:01.123Z", "producers_quiescent": True,
+        "schema_version": 1,
+        "scenario": name,
+        "seed": 42,
+        "tenant": "demo",
+        "base": case["timebase"],
+        "snapshot_at": case["timebase"],
+        "deadline": "2026-10-17T00:15:01.123Z",
+        "producers_quiescent": True,
         "source_snapshots": [
-            {"partition": index, "snapshot_end": 0, "processed_next": 0, "empty": True,
-             "max_event_time": None} for index in range(6)
+            {
+                "partition": index,
+                "snapshot_end": 0,
+                "processed_next": 0,
+                "empty": True,
+                "max_event_time": None,
+            }
+            for index in range(6)
         ],
         "batches": [
-            {"event_ids": [event["event_id"] for event in case["events"][offset:offset+10]],
-             "send_not_before": "2026-10-17T00:00:01.123Z"}
+            {
+                "event_ids": [event["event_id"] for event in case["events"][offset : offset + 10]],
+                "send_not_before": "2026-10-17T00:00:01.123Z",
+            }
             for offset in range(0, len(case["events"]), 10)
         ],
     }
@@ -180,12 +226,15 @@ def _schedule(tmp_path: Path, name: str = "auth-brute-force") -> Path:
     return path
 
 
+@pytest.mark.parametrize("name", SCENARIO_NAMES)
 def test_ready_schedule_reuses_authenticated_identical_retry_bytes_per_batch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    secret = "scenario-test-credential"
+    secret = "scenario-test-credential"  # noqa: S105 - synthetic test key
     monkeypatch.setenv("SENTINEL_API_KEY", secret)
-    schedule = _schedule(tmp_path)
+    schedule = _schedule(tmp_path, name)
+    case = next(case for case in CASES if case["name"] == name)
+    batch_count = (len(case["events"]) + 9) // 10
     output = tmp_path / "run.json"
     bodies: list[bytes] = []
     calls: dict[bytes, int] = {}
@@ -198,23 +247,46 @@ def test_ready_schedule_reuses_authenticated_identical_retry_bytes_per_batch(
         if calls[request.content] == 1:
             return httpx.Response(503, headers={"Retry-After": "120"})
         events = json.loads(request.content)["events"]
-        return httpx.Response(202, json={
-            "accepted_count": len(events), "rejected_count": 0,
-            "event_ids": [event["event_id"] for event in events], "request_id": "test",
-        })
+        return httpx.Response(
+            202,
+            json={
+                "accepted_count": len(events),
+                "rejected_count": 0,
+                "event_ids": [event["event_id"] for event in events],
+                "request_id": "test",
+            },
+        )
 
-    assert _main([
-        "send", "--scenario", "auth-brute-force", "--tenant", "demo", "--seed", "42",
-        "--batch-size", "10", "--schedule", str(schedule), "--output", str(output),
-    ], transport=httpx.MockTransport(handle), sleeper=sleeps.append,
-        utc_now=lambda: BASE + timedelta(minutes=6)) == 0
-    assert len(bodies) == 8 and bodies[::2] == bodies[1::2]
-    assert sleeps == [120.0] * 4  # independent existing budget for each actual batch
+    assert (
+        _main(
+            [
+                "send",
+                "--scenario",
+                name,
+                "--tenant",
+                "demo",
+                "--seed",
+                "42",
+                "--batch-size",
+                "10",
+                "--schedule",
+                str(schedule),
+                "--output",
+                str(output),
+            ],
+            transport=httpx.MockTransport(handle),
+            sleeper=sleeps.append,
+            utc_now=lambda: BASE + timedelta(minutes=6),
+        )
+        == 0
+    )
+    assert len(bodies) == batch_count * 2 and bodies[::2] == bodies[1::2]
+    assert sleeps == [120.0] * batch_count  # independent existing budget per actual batch
     manifest = json.loads(output.read_text())
-    assert manifest["sent"] == manifest["accepted"] == 36
-    assert manifest["retries"] == 4
+    assert manifest["sent"] == manifest["accepted"] == len(case["events"])
+    assert manifest["retries"] == batch_count
     assert manifest["source_snapshots"] == json.loads(schedule.read_text())["source_snapshots"]
-    assert manifest["event_ids"] == [event["event_id"] for event in CASES[0]["events"]]
+    assert manifest["event_ids"] == [event["event_id"] for event in case["events"]]
     assert secret not in output.read_text() + capsys.readouterr().out
 
 
@@ -240,8 +312,23 @@ def test_schedule_refuses_before_injection(
         link = tmp_path / "link.json"
         link.symlink_to(path)
         path = link
-    assert _main([
-        "send", "--scenario", "auth-brute-force", "--tenant", "demo", "--schedule", str(path),
-        "--output", str(tmp_path / "run.json"), "--batch-size", "10",
-    ], utc_now=lambda: BASE + timedelta(minutes=6)) == 1
+    assert (
+        _main(
+            [
+                "send",
+                "--scenario",
+                "auth-brute-force",
+                "--tenant",
+                "demo",
+                "--schedule",
+                str(path),
+                "--output",
+                str(tmp_path / "run.json"),
+                "--batch-size",
+                "10",
+            ],
+            utc_now=lambda: BASE + timedelta(minutes=6),
+        )
+        == 1
+    )
     assert not (tmp_path / "run.json").exists()

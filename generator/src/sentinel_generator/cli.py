@@ -12,12 +12,13 @@ import stat
 import sys
 import time
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
 import httpx
 
+from sentinel_generator.scenarios import SCENARIO_NAMES, Scenario, build_scenario, format_time
 from sentinel_generator.send import MAX_BATCH_SIZE, MAX_EVENT_COUNT, SendError, generate_events
 from sentinel_generator.send import send_events as deliver_events
 
@@ -211,7 +212,13 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     send = commands.add_parser("send", help="send deterministic benign event batches")
     send.add_argument("--seed", type=int, default=42)
-    send.add_argument("--count", type=_bounded_int("count", 1, MAX_EVENT_COUNT), default=1000)
+    mode = send.add_mutually_exclusive_group()
+    mode.add_argument("--count", type=_bounded_int("count", 1, MAX_EVENT_COUNT), default=1000)
+    mode.add_argument("--scenario", choices=SCENARIO_NAMES)
+    send.add_argument("--dry-run", action="store_true", help="write isolated scenario expectations")
+    send.add_argument(
+        "--schedule", type=Path, help="private caught-up schedule from operator helper"
+    )
     send.add_argument(
         "--batch-size", type=_bounded_int("batch-size", 1, MAX_BATCH_SIZE), default=100
     )
@@ -223,6 +230,197 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _schedule_time(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise SendError("invalid caught-up schedule timestamp")
+    try:
+        return _parse_run_start(value)
+    except ValueError:
+        raise SendError("invalid caught-up schedule timestamp") from None
+
+
+def _read_schedule(args: argparse.Namespace, now: datetime) -> dict[str, object]:
+    """Validate the ready-only input contract; 03-21 owns snapshots and clock waits.
+
+    schema_version=1 binds scenario/seed/tenant/base, snapshot_at, a deadline no
+    more than 15 minutes later, six caught-up source_snapshots, and batches with
+    exact ordered event_ids/send_not_before. Source maxima are processed maxima,
+    never pre-pin maxima. Empty partitions carry max_event_time=null explicitly.
+    """
+    path = cast(Path | None, args.schedule)
+    if path is None or args.run_start is not None:
+        raise SendError(
+            "live scenario requires a caught-up schedule; historical run-start is dry-run only"
+        )
+    if path.lstat().st_size > 1024 * 1024:
+        raise SendError("caught-up schedule exceeds 1 MiB")
+    try:
+        raw: object = json.loads(_read_private_key(path))
+    except ValueError:
+        raise SendError("invalid caught-up schedule JSON") from None
+    if not isinstance(raw, dict):
+        raise SendError("invalid caught-up schedule")
+    schedule = cast(dict[str, object], raw)
+    if (
+        schedule.get("schema_version") != 1
+        or schedule.get("scenario") != args.scenario
+        or schedule.get("seed") != args.seed
+        or schedule.get("tenant") != args.tenant
+        or schedule.get("producers_quiescent") is not True
+    ):
+        raise SendError("caught-up schedule does not match this run")
+    base = _schedule_time(schedule.get("base"))
+    snapshot_at = _schedule_time(schedule.get("snapshot_at"))
+    deadline = _schedule_time(schedule.get("deadline"))
+    if base < snapshot_at or not snapshot_at <= now < deadline <= snapshot_at + timedelta(
+        minutes=15
+    ):
+        raise SendError("caught-up schedule is expired or exceeds the 15-minute deadline")
+    snapshots = schedule.get("source_snapshots")
+    if not isinstance(snapshots, list) or len(snapshots) != 6:
+        raise SendError("caught-up schedule requires all six source partition snapshots")
+    partitions: set[int] = set()
+    for raw_snapshot in snapshots:
+        if not isinstance(raw_snapshot, dict):
+            raise SendError("invalid caught-up source snapshot")
+        snapshot = cast(dict[str, object], raw_snapshot)
+        partition = snapshot.get("partition")
+        end = snapshot.get("snapshot_end")
+        processed = snapshot.get("processed_next")
+        if (
+            type(partition) is not int
+            or partition not in range(6)
+            or partition in partitions
+            or type(end) is not int
+            or end < 0
+            or type(processed) is not int
+            or processed != end
+        ):
+            raise SendError("source partitions are not caught up")
+        partitions.add(partition)
+        if snapshot.get("empty") is True:
+            if end != 0 or snapshot.get("max_event_time") is not None:
+                raise SendError("invalid explicit empty source snapshot")
+        elif snapshot.get("empty") is False:
+            if base <= _schedule_time(snapshot.get("max_event_time")):
+                raise SendError("scenario base must exceed every processed partition maximum")
+        else:
+            raise SendError("source snapshot must explicitly declare empty state")
+    return schedule
+
+
+def _scheduled_batches(
+    schedule: dict[str, object],
+    scenario: Scenario,
+    batch_size: int,
+    now: datetime,
+) -> list[tuple[dict[str, object], ...]]:
+    raw_batches = schedule.get("batches")
+    expected = [
+        scenario.events[index : index + batch_size]
+        for index in range(0, len(scenario.events), batch_size)
+    ]
+    if not isinstance(raw_batches, list) or len(raw_batches) != len(expected):
+        raise SendError("caught-up schedule batch layout does not match the run")
+    for raw, events in zip(raw_batches, expected, strict=True):
+        if not isinstance(raw, dict):
+            raise SendError("invalid scheduled batch")
+        batch = cast(dict[str, object], raw)
+        if batch.get("event_ids") != [event["event_id"] for event in events]:
+            raise SendError("scheduled batch event IDs do not match the run")
+        if _schedule_time(batch.get("send_not_before")) > now:
+            raise SendError("scheduled batch requires the operator clock-wait scheduler")
+        # Ingest defaults: future <=5m, past <=168h. Keep a 1s clock margin.
+        times = [_schedule_time(event["occurred_at"]) for event in events]
+        if max(times) > now + timedelta(seconds=299) or min(times) < now - timedelta(hours=168):
+            raise SendError("scheduled event times are outside the ingest clock bounds")
+    return expected
+
+
+def _run_scenario(
+    args: argparse.Namespace,
+    *,
+    transport: httpx.BaseTransport | None,
+    sleeper: Callable[[float], None],
+    jitter: Callable[[], float],
+    utc_now: Callable[[], datetime],
+) -> int:
+    schedule: dict[str, object] = {}
+    now = _utc_milliseconds(utc_now())
+    if args.dry_run:
+        if args.run_start is None or args.schedule is not None:
+            raise SendError("dry-run scenario requires run-start and no live schedule")
+        base = cast(datetime, args.run_start)
+    else:
+        schedule = _read_schedule(args, now)
+        base = _schedule_time(schedule["base"])
+    scenario = build_scenario(name=args.scenario, seed=args.seed, tenant=args.tenant, timebase=base)
+    sent = accepted = rejected = retries = 0
+    accepted_ids: list[str] = []
+    if not args.dry_run:
+        batches = _scheduled_batches(schedule, scenario, args.batch_size, now)
+        api_key = _load_api_key(tenant=args.tenant, key_file=args.key_file)
+        with httpx.Client(timeout=httpx.Timeout(10.0, connect=3.0), transport=transport) as client:
+            for batch in batches:
+                batch_now = _utc_milliseconds(utc_now())
+                if batch_now >= _schedule_time(schedule["deadline"]):
+                    raise SendError("scenario scheduling deadline exceeded")
+                result = deliver_events(
+                    batch,
+                    url=args.url,
+                    api_key=api_key,
+                    batch_size=args.batch_size,
+                    client=client,
+                    sleeper=sleeper,
+                    jitter=jitter,
+                    utc_now=utc_now,
+                )
+                sent += result.sent
+                accepted += result.accepted
+                rejected += result.rejected
+                retries += result.retries
+                accepted_ids.extend(result.event_ids)
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "scenario": args.scenario,
+        "seed": args.seed,
+        "tenant": args.tenant,
+        "timebase": format_time(base),
+        "run_start": format_time(base),
+        "base": format_time(base),
+        "dry_run": args.dry_run,
+        "sent": sent,
+        "accepted": accepted,
+        "rejected": rejected,
+        "retries": retries,
+        "event_ids": accepted_ids,
+        "expected_alerts": [json.loads(payload) for payload in scenario.expected_alerts],
+        "expected_alert_bytes": [payload.decode() for payload in scenario.expected_alerts],
+        "accepted_source_ids": list(scenario.accepted_source_ids),
+        "dropped_late_ids": list(scenario.dropped_late_ids),
+        "duplicate_ids": list(scenario.duplicate_ids),
+        "source_keys": list(scenario.source_keys),
+        "final_marker_ids": list(scenario.marker_ids),
+        "source_snapshots": schedule.get("source_snapshots", []),
+        "batches": schedule.get("batches", []),
+        "deadline": schedule.get("deadline"),
+    }
+    _write_manifest(args.output, manifest)
+    print(
+        json.dumps(
+            {
+                "scenario": args.scenario,
+                "dry_run": args.dry_run,
+                "sent": sent,
+                "accepted": accepted,
+                "rejected": rejected,
+                "retries": retries,
+            }
+        )
+    )
+    return 0
+
+
 def _run_send(
     args: argparse.Namespace,
     *,
@@ -231,6 +429,12 @@ def _run_send(
     jitter: Callable[[], float],
     utc_now: Callable[[], datetime],
 ) -> int:
+    if args.scenario is not None:
+        return _run_scenario(
+            args, transport=transport, sleeper=sleeper, jitter=jitter, utc_now=utc_now
+        )
+    if args.dry_run or args.schedule is not None:
+        raise SendError("dry-run and schedule require an explicit scenario")
     tenant = cast(str, args.tenant)
     run_start_arg = cast(datetime | None, args.run_start)
     run_start = run_start_arg if run_start_arg else _utc_milliseconds(utc_now())
