@@ -26,13 +26,14 @@ import (
 //
 //nolint:gochecknoglobals // TestMain fixtures are shared by every test in the package
 var (
-	pgCfg          config.DatabaseConfig
-	redisCfg       config.RedisConfig
-	kafkaCfg       config.KafkaConfig
-	chCfg          config.ClickHouseConfig
-	binDir         string
-	lifecycleTopic string
-	lifecycleGroup string
+	pgCfg                config.DatabaseConfig
+	redisCfg             config.RedisConfig
+	kafkaCfg             config.KafkaConfig
+	chCfg                config.ClickHouseConfig
+	binDir               string
+	lifecycleTopic       string
+	lifecycleGroup       string
+	lifecycleAlertsTopic string
 )
 
 //nolint:gochecknoglobals // read-only service list shared by the integration tests
@@ -147,6 +148,11 @@ func run(m *testing.M) int {
 		return 1
 	}
 	lifecycleGroup = "lifecycle-" + uuid.NewString()
+	lifecycleAlertsTopic, err = sentineltesting.CreateUniqueTopic(migrateCtx, kafkaCfg, "lifecycle-alerts")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "create lifecycle alerts topic:", err)
+		return 1
+	}
 
 	return m.Run()
 }

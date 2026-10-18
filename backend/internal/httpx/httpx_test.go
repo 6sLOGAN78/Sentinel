@@ -40,6 +40,9 @@ func TestHTTPXBindAddress(t *testing.T) {
 		t.Run(host, func(t *testing.T) {
 			t.Setenv("SENTINEL_PRIMARY.ENV", "test")
 			t.Setenv("SENTINEL_KAFKA.BROKERS", "127.0.0.1:9092")
+			t.Setenv("SENTINEL_DATABASE.HOST", "127.0.0.1")
+			t.Setenv("SENTINEL_DATABASE.USER", "sentinel")
+			t.Setenv("SENTINEL_DATABASE.NAME", "sentinel")
 			t.Setenv("SENTINEL_SERVER.BIND_ADDRESS", host)
 			t.Setenv("SENTINEL_SERVER.PORT", "0")
 			cfg, loadErr := config.Load(config.ServiceDetector)

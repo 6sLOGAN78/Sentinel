@@ -144,6 +144,70 @@ services:
       retries: 20
       start_period: 10s
 
+  # Same pinned Go build stage and existing tern tool as `make migrate`.
+  # Worker activation stays in 03-13; explicit detector startup runs its own
+  # one-shot migration prerequisite without putting secrets in arguments.
+  postgres-migrate:
+    profiles: [workers]
+    build:
+      <<: *app-build
+      target: build
+    entrypoint: ["go", "tool", "-modfile=tools.mod", "tern"]
+    command: ["migrate", "--migrations", "migrations/postgres", "--host", "postgres", "--port", "5432", "--user", "sentinel", "--database", "sentinel", "--sslmode", "disable"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${SENTINEL_POSTGRES_PASSWORD:?set in .env}
+
+  detector:
+    profiles: [workers]
+    build: *app-build
+    entrypoint: ["/app/detector"]
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      postgres-migrate:
+        condition: service_completed_successfully
+      topic-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:9102:9102"
+    volumes:
+      - "../../config/rules.yaml:/etc/sentinel/rules.yaml:ro"
+    environment:
+      SENTINEL_PRIMARY.ENV: local
+      SENTINEL_OPS.BIND_ADDRESS: 0.0.0.0
+      SENTINEL_OPS.PORT: "9102"
+      SENTINEL_DATABASE.HOST: postgres
+      SENTINEL_DATABASE.PORT: "5432"
+      SENTINEL_DATABASE.USER: sentinel
+      SENTINEL_DATABASE.PASSWORD: ${SENTINEL_POSTGRES_PASSWORD:?set in .env}
+      SENTINEL_DATABASE.NAME: sentinel
+      SENTINEL_DATABASE.SSL_MODE: disable
+      SENTINEL_DATABASE.MAX_OPEN_CONNS: "25"
+      SENTINEL_DATABASE.MAX_IDLE_CONNS: "25"
+      SENTINEL_KAFKA.BROKERS: kafka:9092
+      SENTINEL_KAFKA.EVENTS_TOPIC: security.events.v1
+      SENTINEL_KAFKA.ALERTS_TOPIC: security.alerts.v1
+      SENTINEL_KAFKA.DETECTOR_GROUP: sentinel-detector
+      SENTINEL_DETECTOR.RULES_PATH: /etc/sentinel/rules.yaml
+      SENTINEL_DETECTOR.PG.ACQUIRE_TIMEOUT: 2s
+      SENTINEL_DETECTOR.PG.TRANSACTION_TIMEOUT: 5s
+      SENTINEL_DETECTOR.PG.LOCK_TIMEOUT: 1s
+      SENTINEL_DETECTOR.PG.STATEMENT_TIMEOUT: 2s
+      SENTINEL_DETECTOR.PG.CLEANUP_TIMEOUT: 1s
+    healthcheck:
+      test: ["CMD", "/app/healthprobe", "http://127.0.0.1:9102/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
   event-writer:
     build: *app-build
     entrypoint: ["/app/event-writer"]

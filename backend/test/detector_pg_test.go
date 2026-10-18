@@ -23,7 +23,7 @@ func TestDetectorPGDependency(t *testing.T) {
 	t.Run("healthy", func(t *testing.T) {
 		env, _ := detectorPGEnv(t, pgCfg)
 		p := startProc(t, "detector", "", env)
-		url := "http://127.0.0.1:" + envValue(t, env, "SENTINEL_OPS.PORT")
+		url := "http://127.0.0.1:" + opsPort(t, env)
 		requireStatusEventually(t, url+"/readyz", http.StatusOK)
 		requireDependencyEventually(t, url+"/readyz", "postgres", "ok")
 		require.Zero(t, p.terminate(t), p.output.String())
@@ -49,7 +49,7 @@ func TestDetectorPGDependency(t *testing.T) {
 		t.Cleanup(handle.Close)
 		env, kafka := detectorPGEnv(t, pg)
 		p := startProc(t, "detector", "", env)
-		url := "http://127.0.0.1:" + envValue(t, env, "SENTINEL_OPS.PORT")
+		url := "http://127.0.0.1:" + opsPort(t, env)
 		requireStatusEventually(t, url+"/readyz", http.StatusOK)
 		require.NoError(t, handle.Pause(t.Context()))
 		t.Cleanup(func() {

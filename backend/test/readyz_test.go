@@ -12,9 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
+	"github.com/6sLOGAN78/sentinel/internal/database"
 	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
 )
 
@@ -25,7 +27,7 @@ func TestHealthz(t *testing.T) {
 		t.Run(service, func(t *testing.T) {
 			env := serviceEnv(t, service)
 			p := startProc(t, service, "", env)
-			opsURL := "http://127.0.0.1:" + envValue(t, env, "SENTINEL_OPS.PORT")
+			opsURL := "http://127.0.0.1:" + opsPort(t, env)
 			requireStatusEventually(t, opsURL+"/healthz", http.StatusOK)
 			requireStatusEventually(t, opsURL+"/readyz", http.StatusOK)
 			require.Equal(t, 0, p.terminate(t), p.output.String())
@@ -37,6 +39,9 @@ func TestReadyzDependencies(t *testing.T) {
 	pg, pgHandle, err := sentineltesting.StartPostgresFaultContainer(t.Context())
 	require.NoError(t, err)
 	t.Cleanup(pgHandle.Close)
+	migrateCtx, cancelMigrations := context.WithTimeout(t.Context(), readinessWait)
+	defer cancelMigrations()
+	require.NoError(t, database.Migrate(migrateCtx, pg, zerolog.Nop()))
 	redis, redisHandle, err := sentineltesting.StartRedisFaultContainer(t.Context())
 	require.NoError(t, err)
 	t.Cleanup(redisHandle.Close)
@@ -49,10 +54,11 @@ func TestReadyzDependencies(t *testing.T) {
 
 	kafka.EventsTopic = sentineltesting.RequireUniqueTopic(t, kafka, "ready-events")
 	kafka.DLQTopic = sentineltesting.RequireUniqueTopic(t, kafka, "ready-dlq")
+	kafka.AlertsTopic = sentineltesting.RequireUniqueTopic(t, kafka, "ready-alerts")
 	kafka.EventWriterGroup = "readyz-writer"
 
 	fixtures := startReadinessProcesses(t, pg, redis, kafka, clickhouse)
-	assertOutageRecovery(t, pgHandle, "postgres", fixtures, "ingest", "alert-writer", "query-api")
+	assertOutageRecovery(t, pgHandle, "postgres", fixtures, "ingest", "detector", "alert-writer", "query-api")
 	assertOutageRecovery(t, redisHandle, "redis", fixtures, "ingest", "query-api")
 	assertOutageRecovery(t, kafkaHandle, "kafka", fixtures, "ingest", "detector", "event-writer", "alert-writer")
 	assertOutageRecovery(t, clickhouseHandle, "clickhouse", fixtures, "event-writer", "alert-writer", "query-api")
@@ -63,7 +69,7 @@ func TestReadyzDraining(t *testing.T) {
 		t.Run(service, func(t *testing.T) {
 			env := append(serviceEnv(t, service), "SENTINEL_OPS.DRAIN_HOLD=250ms")
 			p := startProc(t, service, "", env)
-			opsURL := "http://127.0.0.1:" + envValue(t, env, "SENTINEL_OPS.PORT")
+			opsURL := "http://127.0.0.1:" + opsPort(t, env)
 			requireStatusEventually(t, opsURL+"/readyz", http.StatusOK)
 			require.NoError(t, p.cmd.Process.Signal(terminateSignal))
 			requireStatusEventually(t, opsURL+"/readyz", http.StatusServiceUnavailable)
@@ -90,7 +96,7 @@ func startReadinessProcesses(
 	for _, service := range services {
 		env := serviceEnvWithDependencies(t, service, pg, redis, kafka, clickhouse)
 		p := startProc(t, service, "", env)
-		opsURL := "http://127.0.0.1:" + envValue(t, env, "SENTINEL_OPS.PORT")
+		opsURL := "http://127.0.0.1:" + opsPort(t, env)
 		requireStatusEventually(t, opsURL+"/readyz", http.StatusOK)
 		fixtures[service] = readinessProcess{proc: p, opsURL: opsURL}
 	}
@@ -196,10 +202,12 @@ func serviceEnvWithDependencies(
 		"SENTINEL_DATABASE.USER":             pg.User,
 		"SENTINEL_DATABASE.PASSWORD":         pg.Password,
 		"SENTINEL_DATABASE.NAME":             pg.Name,
+		"SENTINEL_DATABASE.SSL_MODE":         pg.SSLMode,
 		"SENTINEL_REDIS.ADDRESS":             redis.Address,
 		"SENTINEL_KAFKA.BROKERS":             kafka.Brokers,
 		"SENTINEL_KAFKA.EVENTS_TOPIC":        kafka.EventsTopic,
 		"SENTINEL_KAFKA.DLQ_TOPIC":           kafka.DLQTopic,
+		"SENTINEL_KAFKA.ALERTS_TOPIC":        kafka.AlertsTopic,
 		"SENTINEL_KAFKA.EVENT_WRITER_GROUP":  kafka.EventWriterGroup,
 		"SENTINEL_CLICKHOUSE.HTTP_ADDRESS":   clickhouse.HTTPAddress,
 		"SENTINEL_CLICKHOUSE.NATIVE_ADDRESS": clickhouse.NativeAddress,
@@ -215,9 +223,10 @@ func serviceEnvWithDependencies(
 	return env
 }
 
-func envValue(t *testing.T, env []string, key string) string {
+func opsPort(t *testing.T, env []string) string {
 	t.Helper()
-	prefix := key + "="
+	const key = "SENTINEL_OPS.PORT"
+	const prefix = key + "="
 	for _, value := range env {
 		if strings.HasPrefix(value, prefix) {
 			return strings.TrimPrefix(value, prefix)

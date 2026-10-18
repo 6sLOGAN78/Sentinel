@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
 )
 
@@ -45,6 +47,9 @@ func serviceEnv(t *testing.T, service string) []string {
 		"SENTINEL_KAFKA.BROKERS=" + kafkaCfg.Brokers,
 		"SENTINEL_KAFKA.EVENTS_TOPIC=" + lifecycleTopic,
 		"SENTINEL_KAFKA.EVENT_WRITER_GROUP=" + lifecycleGroup,
+		"SENTINEL_KAFKA.ALERTS_TOPIC=" + lifecycleAlertsTopic,
+		"SENTINEL_KAFKA.DETECTOR_GROUP=lifecycle-detector-" + uuid.NewString(),
+		"SENTINEL_KAFKA.ALERT_WRITER_GROUP=lifecycle-alert-writer-" + uuid.NewString(),
 	}
 	ch := []string{
 		"SENTINEL_CLICKHOUSE.HTTP_ADDRESS=" + chCfg.HTTPAddress,
@@ -76,6 +81,12 @@ func serviceEnv(t *testing.T, service string) []string {
 		env = append(env, pg...)
 	case "detector":
 		env = append(env, kafka...)
+		env = append(env, pg...)
+		rules, rulesErr := filepath.Abs("../../config/rules.yaml")
+		if rulesErr != nil {
+			t.Fatalf("resolve detector rules: %v", rulesErr)
+		}
+		env = append(env, "SENTINEL_DETECTOR.RULES_PATH="+rules)
 	case "event-writer":
 		env = append(env, kafka...)
 		env = append(env, ch...)
