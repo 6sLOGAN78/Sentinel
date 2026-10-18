@@ -86,8 +86,13 @@ func TestDetectorCommitMetadata(t *testing.T) {
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
 			}
-			require.Equal(t, int64(7), c.assignments[tp0].Checkpoint.Offset)
-			require.Equal(t, "previous successful", c.assignments[tp0].Checkpoint.Metadata)
+			if tc.wantErr {
+				require.Equal(t, previous, c.assignments[tp0].Checkpoint)
+			} else {
+				require.Equal(t, checkpoints[tp0], *c.assignments[tp0].Checkpoint,
+					"only successful complete callback records the acknowledged checkpoint")
+				require.Equal(t, checkpoints[tp1], *c.assignments[tp1].Checkpoint)
+			}
 		})
 	}
 	t.Run("metadata attached atomically to every requested partition", func(t *testing.T) {
@@ -124,6 +129,12 @@ func TestDetectorCommitMetadata(t *testing.T) {
 		require.NoError(t, c.restorePartition(tp0,
 			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: -1}, starts, ends))
 		require.Nil(t, c.Assignments()[tp0].Checkpoint)
+		require.Error(t, c.restorePartition(tp0,
+			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: -1}, nil, ends),
+			"fresh group must still establish a verified retained history boundary")
+		require.Error(t, c.restorePartition(tp0,
+			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: -2}, starts, ends),
+			"only the exact Kafka absent-offset sentinel means fresh group")
 		require.Error(t, c.restorePartition(tp0,
 			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: 11}, starts, ends))
 		require.Error(t, c.restorePartition(tp0,
