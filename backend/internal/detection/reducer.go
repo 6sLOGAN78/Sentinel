@@ -4,8 +4,6 @@ package detection
 import (
 	"encoding/json"
 	"errors"
-	"io"
-	"strings"
 	"time"
 
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -34,34 +32,6 @@ const (
 type TopicPartition struct {
 	Topic     string
 	Partition int32
-}
-
-// Checkpoint couples an exact resume pin with its recovery metadata.
-type Checkpoint struct {
-	Offset   int64
-	Metadata string
-}
-
-// DecisionFrontier identifies the last fully effected durable candidate.
-type DecisionFrontier struct {
-	None        bool   `json:"none"`
-	Offset      int64  `json:"offset,omitempty"`
-	RuleOrdinal int    `json:"rule_ordinal,omitempty"`
-	AlertID     string `json:"alert_id,omitempty"`
-	Fingerprint string `json:"fingerprint,omitempty"`
-}
-
-// Metadata is the bounded format-2 recovery envelope.
-type Metadata struct {
-	Format             int              `json:"format"`
-	ConfigFingerprint  string           `json:"config_fingerprint"`
-	RuleVersions       map[string]int   `json:"rule_versions"`
-	PrefixMaxEventTime *int64           `json:"prefix_max_event_time"`
-	SealedThrough      *int64           `json:"sealed_through"`
-	ProcessedNext      int64            `json:"processed_next"`
-	RuleEffectiveFrom  map[string]int64 `json:"rule_effective_from"`
-	DecisionFrontier   DecisionFrontier `json:"decision_frontier"`
-	Drained            bool             `json:"drained"`
 }
 
 // Outcome contains frozen first-threshold alerts and lateness classification.
@@ -307,15 +277,9 @@ func (s *PartitionState) Restore(cp Checkpoint) error {
 	if cp.Offset < 0 || len(cp.Metadata) == 0 || len(cp.Metadata) > MaxMetadataBytes {
 		return errors.New("invalid checkpoint bounds")
 	}
-	d := json.NewDecoder(strings.NewReader(cp.Metadata))
-	d.DisallowUnknownFields()
-	var m Metadata
-	if err := d.Decode(&m); err != nil {
-		return errors.New("invalid checkpoint metadata")
-	}
-	var extra any
-	if !errors.Is(d.Decode(&extra), io.EOF) {
-		return errors.New("trailing checkpoint data")
+	m, err := decodeCheckpointMetadata(cp.Metadata)
+	if err != nil {
+		return err
 	}
 	if m.Format != metadataFormat || m.ConfigFingerprint != s.rules.Fingerprint() || m.ProcessedNext < cp.Offset ||
 		len(m.RuleVersions) != ruleCount || len(m.RuleEffectiveFrom) != ruleCount ||
@@ -339,6 +303,10 @@ func (s *PartitionState) Restore(cp Checkpoint) error {
 	}
 	if m.Drained && m.ProcessedNext != cp.Offset {
 		return errors.New("invalid drained checkpoint")
+	}
+	if !m.Drained && (m.ProcessedNext == cp.Offset || m.SealedThrough == nil) ||
+		m.PrefixMaxEventTime != nil && *m.SealedThrough < *m.PrefixMaxEventTime-Lateness.Milliseconds() {
+		return errors.New("inconsistent checkpoint prefix")
 	}
 	s.maximum = cloneTime(m.PrefixMaxEventTime)
 	s.sealed = cloneTime(m.SealedThrough)
