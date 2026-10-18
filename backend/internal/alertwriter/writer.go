@@ -257,6 +257,7 @@ func (w *Writer) persist(ctx context.Context, alert *contracts.Alert, fingerprin
 	if err == nil && (tenant != alert.TenantID || winner != fingerprint) {
 		return ErrConflict
 	}
+	hasWinner := err == nil
 	retained, getErr := w.detections.Get(ctx, alert.TenantID, alert.AlertID)
 	if getErr != nil && !errors.Is(getErr, storageclickhouse.ErrNotFound) {
 		return getErr
@@ -272,8 +273,12 @@ func (w *Writer) persist(ctx context.Context, alert *contracts.Alert, fingerprin
 	} else if err = w.detections.InsertBatch(ctx, []*contracts.Alert{alert}); err != nil {
 		return err
 	}
-	if err = w.workflows.Ensure(ctx, tx, alert, fingerprint); err != nil {
-		return err
+	// Equal winners already own the workflow. Avoid even ON CONFLICT INSERT:
+	// defaults allocate seq before conflict detection, and replay needs no write.
+	if !hasWinner {
+		if err = w.workflows.Ensure(ctx, tx, alert, fingerprint); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

@@ -84,7 +84,9 @@ func TestImmutableFingerprint(t *testing.T) {
 		{"entity", func(a *contracts.Alert) { a.EntityKey += "|δ" }},
 		{"summary", func(a *contracts.Alert) { a.Summary += " changed" }},
 		{"count", func(a *contracts.Alert) { a.EventCount++ }},
-		{"window start", func(a *contracts.Alert) { a.WindowStart = contracts.NewTimestamp(a.WindowStart.Add(time.Millisecond)) }},
+		{"window start", func(a *contracts.Alert) {
+			a.WindowStart = contracts.NewTimestamp(a.WindowStart.Add(time.Millisecond))
+		}},
 		{"window end", func(a *contracts.Alert) { a.WindowEnd = contracts.NewTimestamp(a.WindowEnd.Add(time.Millisecond)) }},
 		{"created", func(a *contracts.Alert) { a.CreatedAt = contracts.NewTimestamp(a.CreatedAt.Add(time.Millisecond)) }},
 		{"evidence order", func(a *contracts.Alert) {

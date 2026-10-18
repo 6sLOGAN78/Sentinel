@@ -31,7 +31,8 @@ func (s *failedAlertWorkflow) Ensure(ctx context.Context, tx pgx.Tx, a *contract
 // hidden, simulating response loss without a production fault configuration.
 type lostAlertAckConn struct{ storageclickhouse.Conn }
 
-func (c *lostAlertAckConn) PrepareBatch(ctx context.Context, query string, opts ...driver.PrepareBatchOption) (driver.Batch, error) {
+func (c *lostAlertAckConn) PrepareBatch(ctx context.Context, query string,
+	opts ...driver.PrepareBatchOption) (driver.Batch, error) {
 	batch, err := c.Conn.PrepareBatch(ctx, query, opts...)
 	if err != nil {
 		return nil, err
@@ -66,16 +67,22 @@ func TestAlertWriterPartialStorage(t *testing.T) {
 			require.Error(t, err, "the ambiguous/partial attempt must fail without source commit")
 			require.NotContains(t, err.Error(), f.alert.EntityKey)
 			require.Zero(t, f.committed(t), "CH alone is not a durable source effect")
-			f.rows(t, 1, 0)
+			ends, err := f.admin.ListEndOffsets(t.Context(), f.kafka.DLQTopic)
+			require.NoError(t, err)
+			end, ok := ends.Lookup(f.kafka.DLQTopic, 0)
+			require.True(t, ok)
+			require.NoError(t, end.Err)
+			require.Zero(t, end.Offset, "runtime storage failures must never be classified as poison")
+			f.rows(t, 0)
 			// A new real consumer in the same group must replay the same offset.
 			require.NoError(t, f.run(t, detections, workflows))
 			require.Equal(t, int64(1), f.committed(t))
-			f.rows(t, 1, 1)
+			f.rows(t, 1)
 			before := f.workflow(t)
 			f.publish(t, f.alert)
 			require.NoError(t, f.run(t, detections, workflows))
 			require.Equal(t, int64(2), f.committed(t))
-			f.rows(t, 1, 1)
+			f.rows(t, 1)
 			require.JSONEq(t, before, f.workflow(t))
 		})
 	}
