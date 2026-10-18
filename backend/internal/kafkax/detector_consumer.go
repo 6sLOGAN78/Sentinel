@@ -17,8 +17,10 @@ import (
 
 // DetectorAssignment couples restored metadata to one ownership incarnation.
 type DetectorAssignment struct {
-	Token      uint64
-	Checkpoint *detection.Checkpoint
+	Token         uint64
+	Checkpoint    *detection.Checkpoint
+	Group, Member string
+	Generation    int32
 }
 
 type detectorClient interface {
@@ -40,6 +42,7 @@ type DetectorConsumer struct {
 	mu          sync.Mutex
 	assignments map[detection.TopicPartition]DetectorAssignment
 	sequence    uint64
+	group       string
 	fatal       error
 	onFatal     func(error)
 	lifetime    context.Context
@@ -64,7 +67,7 @@ func NewDetectorConsumer(
 	lifetime, cancel := context.WithCancel(ctx)
 	c := &DetectorConsumer{
 		rules: rules, settings: settings, assignments: make(map[detection.TopicPartition]DetectorAssignment),
-		onFatal: onFatal, lifetime: lifetime, cancel: cancel, closeDone: make(chan struct{}),
+		onFatal: onFatal, lifetime: lifetime, cancel: cancel, closeDone: make(chan struct{}), group: kafka.DetectorGroup,
 	}
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...), kgo.ConsumeTopics(kafka.EventsTopic), kgo.ConsumerGroup(kafka.DetectorGroup),
@@ -101,12 +104,15 @@ func (c *DetectorConsumer) fail(err error) error {
 }
 
 func (c *DetectorConsumer) assigned(_ context.Context, _ *kgo.Client, topics map[string][]int32) {
+	member, generation := c.client.GroupMetadata()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for topic, partitions := range topics {
 		for _, id := range partitions {
 			c.sequence++
-			c.assignments[detection.TopicPartition{Topic: topic, Partition: id}] = DetectorAssignment{Token: c.sequence}
+			c.assignments[detection.TopicPartition{Topic: topic, Partition: id}] = DetectorAssignment{
+				Token: c.sequence, Group: c.group, Member: member, Generation: generation,
+			}
 		}
 	}
 }

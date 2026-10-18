@@ -1,4 +1,4 @@
-package postgres
+package postgres //nolint:testpackage // inject the transaction boundary and inspect SQL order.
 
 import (
 	"context"
@@ -32,6 +32,9 @@ type decisionTx struct {
 	candidate         detection.Candidate
 	queries           []string
 	committed, rolled bool
+	allowed           bool
+	commitErr         error
+	storedGroup       string
 }
 
 func (tx *decisionTx) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
@@ -46,17 +49,29 @@ func (tx *decisionTx) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row 
 		return decisionRow{[]any{tx.owner.Incarnation, tx.owner.Member, tx.owner.Generation, int64(tx.owner.Token),
 			tx.owner.Config, int64(99), 3}}
 	case strings.Contains(sql, "FROM detection_decisions"):
-		return decisionRow{[]any{true, tx.candidate.CanonicalBytes(), tx.candidate.Fingerprint(),
+		group := tx.owner.Group
+		if tx.storedGroup != "" {
+			group = tx.storedGroup
+		}
+		return decisionRow{[]any{tx.allowed, tx.candidate.CanonicalBytes(), tx.candidate.Fingerprint(),
 			tx.owner.Config, tx.candidate.Source().Topic, tx.candidate.Source().Partition,
-			tx.candidate.Offset(), tx.candidate.RuleOrdinal(), tx.candidate.TriggerOccurredAt().Time}}
+			tx.candidate.Offset(), tx.candidate.RuleOrdinal(), tx.candidate.TriggerOccurredAt().Time, group}}
 	default:
 		tx.t.Fatalf("matching replay consulted mutable state: %s", sql)
 		return nil
 	}
 }
 
-func (tx *decisionTx) Commit(context.Context) error   { tx.committed = true; return nil }
-func (tx *decisionTx) Rollback(context.Context) error { tx.rolled = true; return nil }
+func (tx *decisionTx) Commit(context.Context) error { tx.committed = true; return tx.commitErr }
+func (tx *decisionTx) Rollback(ctx context.Context) error {
+	tx.rolled = true
+	require.NoError(tx.t, ctx.Err(), "cleanup must have an independent live context")
+	deadline, ok := ctx.Deadline()
+	require.True(tx.t, ok)
+	require.Positive(tx.t, time.Until(deadline))
+	require.LessOrEqual(tx.t, time.Until(deadline), time.Second)
+	return nil
+}
 
 func transactionCandidate(t *testing.T) (*detection.Rules, detection.Candidate) {
 	t.Helper()
@@ -76,18 +91,45 @@ func transactionCandidate(t *testing.T) (*detection.Rules, detection.Candidate) 
 // Matching replay must return before any mutable cooldown cursor access.
 func TestDetectionDecisionTransaction(t *testing.T) {
 	rules, candidate := transactionCandidate(t)
-	owner := DetectionOwnership{Group: "detector", Incarnation: "stable", Member: "member", Generation: 3, Token: 1,
+	owner := DetectionOwnership{Group: "detector", Incarnation: DetectionGroupIncarnation("detector"),
+		Member: "member", Generation: 3, Token: 1,
 		Source: candidate.Source(), Config: rules.Fingerprint()}
-	tx := &decisionTx{t: t, owner: owner, candidate: candidate}
+	allowTx := &decisionTx{t: t, owner: owner, candidate: candidate, allowed: true}
 	store := NewDetectionDecisionStore(nil, config.DetectorPGConfig{AcquireTimeout: time.Second,
 		TransactionTimeout: 5 * time.Second, LockTimeout: time.Second, StatementTimeout: 2 * time.Second,
 		CleanupTimeout: time.Second}, rules)
-	store.begin = func(context.Context) (pgx.Tx, func(), error) { return tx, func() {}, nil }
-	decision, err := store.Decide(t.Context(), owner, candidate)
-	require.NoError(t, err, "durable immutable decision replay is absent")
-	require.True(t, decision.Allowed)
-	require.Equal(t, candidate.CanonicalBytes(), decision.Canonical)
-	require.True(t, tx.committed)
-	require.True(t, tx.rolled, "explicit bounded rollback finalizer must run even after commit")
-	require.Len(t, tx.queries, 3, "timeouts, locked fence, immutable decision only")
+	store.begin = func(context.Context) (pgx.Tx, func(), error) { return allowTx, func() {}, nil }
+	allowedDecision, allowErr := store.Decide(t.Context(), owner, candidate)
+	require.NoError(t, allowErr, "durable immutable decision replay is absent")
+	require.True(t, allowedDecision.Allowed)
+	require.Equal(t, candidate.CanonicalBytes(), allowedDecision.Canonical)
+	require.True(t, allowTx.committed)
+	require.True(t, allowTx.rolled, "explicit bounded rollback finalizer must run even after commit")
+	require.Len(t, allowTx.queries, 3, "timeouts, locked fence, immutable decision only")
+	t.Run("old suppression does not become allow", func(t *testing.T) {
+		tx := &decisionTx{t: t, owner: owner, candidate: candidate}
+		store.begin = func(context.Context) (pgx.Tx, func(), error) { return tx, func() {}, nil }
+		decision, err := store.Decide(t.Context(), owner, candidate)
+		require.NoError(t, err)
+		require.False(t, decision.Allowed)
+		require.Equal(t, candidate.CanonicalBytes(), decision.Canonical)
+		require.Len(t, tx.queries, 3)
+	})
+	t.Run("uncertain commit returns no successful decision", func(t *testing.T) {
+		tx := &decisionTx{t: t, owner: owner, candidate: candidate, allowed: true, commitErr: context.DeadlineExceeded}
+		store.begin = func(context.Context) (pgx.Tx, func(), error) { return tx, func() {}, nil }
+		decision, err := store.Decide(t.Context(), owner, candidate)
+		require.ErrorContains(t, err, "commit uncertain")
+		require.Empty(t, decision.Canonical)
+		require.True(t, tx.rolled)
+	})
+	t.Run("globally existing foreign group fails before cursor", func(t *testing.T) {
+		tx := &decisionTx{t: t, owner: owner, candidate: candidate, allowed: true, storedGroup: "another-group"}
+		store.begin = func(context.Context) (pgx.Tx, func(), error) { return tx, func() {}, nil }
+		_, err := store.Decide(t.Context(), owner, candidate)
+		require.Error(t, err)
+		require.Len(t, tx.queries, 3)
+		require.False(t, tx.committed)
+		require.True(t, tx.rolled)
+	})
 }

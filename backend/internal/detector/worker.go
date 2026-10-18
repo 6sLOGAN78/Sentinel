@@ -14,6 +14,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/storage/postgres"
 )
 
 const stateAdmissionBytes = 4096
@@ -26,16 +27,18 @@ type Consumer interface {
 	PollRecords(context.Context, int) ([]*kgo.Record, error)
 	CommitCheckpoints(context.Context, map[detection.TopicPartition]detection.Checkpoint) error
 	Assignments() map[detection.TopicPartition]Assignment
+	GroupMetadata() (string, int32)
 	AllowRebalance()
 }
 
 // Publisher acknowledges every frozen alert before returning success.
 type Publisher interface {
-	Publish(context.Context, []*contracts.Alert) error
+	PublishCanonical(context.Context, []byte) error
 }
 type partition struct {
 	token uint64
 	state *detection.PartitionState
+	owner postgres.DetectionOwnership
 }
 
 // Worker serializes source records and their durable effects.
@@ -48,6 +51,7 @@ type Worker struct {
 	partitions map[detection.TopicPartition]partition
 	pool       *pgxpool.Pool
 	pg         config.DetectorPGConfig
+	decisions  *postgres.DetectionDecisionStore
 }
 
 // New constructs a worker from explicit dependencies and startup settings.
@@ -76,6 +80,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	if w.pool == nil {
 		return errors.New("detector requires postgres pool")
 	}
+	w.decisions = postgres.NewDetectionDecisionStore(w.pool, pg, w.rules)
 	for ctx.Err() == nil {
 		records, pollErr := w.consumer.PollRecords(ctx, w.settings.BatchSize)
 		if ctx.Err() != nil {
@@ -121,7 +126,7 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 			return ctx.Err()
 		}
 		tp := detection.TopicPartition{Topic: record.Topic, Partition: record.Partition}
-		state, err := w.partitionState(tp, assigned)
+		state, err := w.partitionState(ctx, tp, assigned)
 		if err != nil {
 			return err
 		}
@@ -140,6 +145,11 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 	if len(checkpoints) == 0 {
 		return nil
 	}
+	for tp := range checkpoints {
+		if err := w.validateOwnership(w.partitions[tp].owner); err != nil {
+			return err
+		}
+	}
 	if err := w.consumer.CommitCheckpoints(ctx, checkpoints); err != nil {
 		return err
 	}
@@ -150,7 +160,7 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 }
 
 func (w *Worker) partitionState(
-	tp detection.TopicPartition, assigned map[detection.TopicPartition]Assignment,
+	ctx context.Context, tp detection.TopicPartition, assigned map[detection.TopicPartition]Assignment,
 ) (*detection.PartitionState, error) {
 	a, owned := assigned[tp]
 	if !owned {
@@ -158,15 +168,45 @@ func (w *Worker) partitionState(
 	}
 	p, ok := w.partitions[tp]
 	if !ok || p.token != a.Token {
-		p = partition{token: a.Token, state: detection.NewPartitionState(w.rules)}
-		if a.Checkpoint != nil {
-			if err := p.state.Restore(*a.Checkpoint); err != nil {
-				return nil, err
-			}
+		var err error
+		p, err = w.restorePartition(ctx, tp, a)
+		if err != nil {
+			return nil, err
 		}
 		w.partitions[tp] = p
 	}
+	if err := w.validateOwnership(p.owner); err != nil {
+		return nil, err
+	}
 	return p.state, nil
+}
+
+func (w *Worker) restorePartition(ctx context.Context, tp detection.TopicPartition, a Assignment) (partition, error) {
+	p := partition{token: a.Token, state: detection.NewPartitionState(w.rules)}
+	p.owner = postgres.DetectionOwnership{Group: a.Group, Incarnation: postgres.DetectionGroupIncarnation(a.Group),
+		Member: a.Member, Generation: a.Generation, Token: a.Token, Source: tp, Config: w.rules.Fingerprint()}
+	if a.Checkpoint != nil {
+		if err := p.state.Restore(*a.Checkpoint); err != nil {
+			return partition{}, err
+		}
+	}
+	if err := w.validateOwnership(p.owner); err != nil {
+		return partition{}, err
+	}
+	if err := w.decisions.Register(ctx, p.owner, p.state.DecisionFrontier()); err != nil {
+		return partition{}, err
+	}
+	return p, nil
+}
+
+func (w *Worker) validateOwnership(o postgres.DetectionOwnership) error {
+	a, ok := w.consumer.Assignments()[o.Source]
+	member, generation := w.consumer.GroupMetadata()
+	if !ok || a.Token != o.Token || a.Group != o.Group || a.Member != o.Member || a.Generation != o.Generation ||
+		member != o.Member || generation != o.Generation {
+		return errors.New("detector partition ownership lost")
+	}
+	return nil
 }
 
 func (w *Worker) admit() error {
@@ -204,8 +244,24 @@ func (w *Worker) applyRecord(ctx context.Context, state *detection.PartitionStat
 	if err != nil {
 		return err
 	}
-	if len(outcome.Alerts) > 0 {
-		if err = w.publisher.Publish(ctx, outcome.Alerts); err != nil {
+	owner := w.partitions[source].owner
+	for _, candidate := range outcome.Candidates {
+		if err = w.validateOwnership(owner); err != nil {
+			return err
+		}
+		decision, decisionErr := w.decisions.Decide(ctx, owner, candidate)
+		if decisionErr != nil {
+			return decisionErr
+		}
+		if err = w.validateOwnership(owner); err != nil {
+			return err
+		}
+		if decision.Allowed {
+			if err = w.publisher.PublishCanonical(ctx, decision.Canonical); err != nil {
+				return err
+			}
+		}
+		if err = state.EffectDecision(candidate); err != nil {
 			return err
 		}
 	}

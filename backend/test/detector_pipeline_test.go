@@ -13,11 +13,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
+	"github.com/6sLOGAN78/sentinel/internal/database"
+	"github.com/6sLOGAN78/sentinel/internal/detection"
 	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
 )
 
@@ -98,16 +101,14 @@ func TestDetectionPipelineAuth(t *testing.T) {
 	// Independently inspect the real broker checkpoint: the live fired window
 	// must retain its first source offset even after the output is durable.
 	var metadata struct {
-		Format        int              `json:"format"`
-		ProcessedNext int64            `json:"processed_next"`
-		Prefix        *int64           `json:"prefix_max_event_time"`
-		Sealed        *int64           `json:"sealed_through"`
-		Versions      map[string]int   `json:"rule_versions"`
-		Effective     map[string]int64 `json:"rule_effective_from"`
-		Frontier      struct {
-			None bool `json:"none"`
-		} `json:"decision_frontier"`
-		Drained bool `json:"drained"`
+		Format        int                        `json:"format"`
+		ProcessedNext int64                      `json:"processed_next"`
+		Prefix        *int64                     `json:"prefix_max_event_time"`
+		Sealed        *int64                     `json:"sealed_through"`
+		Versions      map[string]int             `json:"rule_versions"`
+		Effective     map[string]int64           `json:"rule_effective_from"`
+		Frontier      detection.DecisionFrontier `json:"decision_frontier"`
+		Drained       bool                       `json:"drained"`
 	}
 	admin := kadm.NewClient(observer)
 	require.Eventually(t, func() bool {
@@ -126,7 +127,19 @@ func TestDetectionPipelineAuth(t *testing.T) {
 	require.NotNil(t, metadata.Sealed)
 	require.Len(t, metadata.Versions, 4)
 	require.Len(t, metadata.Effective, 4)
-	require.True(t, metadata.Frontier.None)
+	require.False(t, metadata.Frontier.None)
+	require.Equal(t, int64(9), metadata.Frontier.Offset)
+	require.Zero(t, metadata.Frontier.RuleOrdinal)
+	require.Equal(t, id, metadata.Frontier.AlertID)
+	db, err := database.New(t.Context(), pgCfg, zerolog.Nop())
+	require.NoError(t, err)
+	defer db.Close()
+	var fingerprint string
+	var allowed bool
+	require.NoError(t, db.Pool.QueryRow(t.Context(), `SELECT immutable_fingerprint,allowed
+		FROM detection_decisions WHERE alert_id=$1`, id).Scan(&fingerprint, &allowed))
+	require.True(t, allowed)
+	require.Equal(t, fingerprint, metadata.Frontier.Fingerprint)
 	require.False(t, metadata.Drained)
 	require.NoError(t, producer.PublishBatch(t.Context(), events[10:], uuid.NewString()))
 	quietCtx, cancelQuiet = context.WithTimeout(t.Context(), 2*time.Second)

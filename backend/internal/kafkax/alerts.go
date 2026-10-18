@@ -1,6 +1,7 @@
 package kafkax
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,27 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 )
+
+// PublishCanonical publishes the exact stored bytes, preserving replay evidence.
+func (p *AlertProducer) PublishCanonical(ctx context.Context, canonical []byte) error {
+	if len(canonical) == 0 || len(canonical) > 64<<10 {
+		return errors.New("canonical alert exceeds size bound")
+	}
+	alert, err := contracts.DecodeAlert(bytes.NewReader(canonical))
+	if err != nil {
+		return errors.New("invalid canonical alert")
+	}
+	if err = alert.Validate(); err != nil {
+		return errors.New("invalid canonical alert")
+	}
+	publishCtx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+	record := &kgo.Record{Topic: p.topic, Key: []byte(alert.TenantID + "|" + alert.AlertID), Value: bytes.Clone(canonical)}
+	if err = p.client.ProduceSync(publishCtx, record).FirstErr(); err != nil {
+		return errors.New("publish detector alerts failed")
+	}
+	return nil
+}
 
 const maxAlertsPerRecord = 4
 

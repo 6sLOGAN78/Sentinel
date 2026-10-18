@@ -42,7 +42,7 @@ type Checkpoint struct {
 	Metadata string
 }
 
-// DecisionFrontier is explicit none until the durable PG decision slice.
+// DecisionFrontier identifies the last fully effected durable candidate.
 type DecisionFrontier struct {
 	None        bool   `json:"none"`
 	Offset      int64  `json:"offset,omitempty"`
@@ -93,6 +93,7 @@ type PartitionState struct {
 	last, processedNext int64
 	acknowledged        int64
 	effective           map[string]int64
+	frontier            DecisionFrontier
 }
 
 // NewPartitionState creates an empty partition with explicit effective gates.
@@ -103,7 +104,7 @@ func NewPartitionState(rules *Rules) *PartitionState {
 	}
 	return &PartitionState{
 		rules: rules, windows: make(map[windowKey]*windowState), prefix: make(map[int64]*int64),
-		last: -1, acknowledged: -1, effective: e,
+		last: -1, acknowledged: -1, effective: e, frontier: DecisionFrontier{None: true},
 	}
 }
 
@@ -292,7 +293,7 @@ func (s *PartitionState) Checkpoint() (Checkpoint, error) {
 	m := Metadata{
 		Format: metadataFormat, ConfigFingerprint: s.rules.Fingerprint(), RuleVersions: s.rules.Versions(),
 		PrefixMaxEventTime: prefix, SealedThrough: s.sealed, ProcessedNext: s.processedNext,
-		RuleEffectiveFrom: s.effective, DecisionFrontier: DecisionFrontier{None: true}, Drained: len(s.windows) == 0,
+		RuleEffectiveFrom: s.effective, DecisionFrontier: s.frontier, Drained: len(s.windows) == 0,
 	}
 	b, err := json.Marshal(m)
 	if err != nil || len(b) > MaxMetadataBytes {
@@ -318,8 +319,7 @@ func (s *PartitionState) Restore(cp Checkpoint) error {
 	}
 	if m.Format != metadataFormat || m.ConfigFingerprint != s.rules.Fingerprint() || m.ProcessedNext < cp.Offset ||
 		len(m.RuleVersions) != ruleCount || len(m.RuleEffectiveFrom) != ruleCount ||
-		!m.DecisionFrontier.None || m.DecisionFrontier.Offset != 0 || m.DecisionFrontier.RuleOrdinal != 0 ||
-		m.DecisionFrontier.AlertID != "" || m.DecisionFrontier.Fingerprint != "" {
+		!validDecisionFrontier(m.DecisionFrontier, m.ProcessedNext) {
 		return errors.New("checkpoint configuration mismatch")
 	}
 	for id, v := range s.rules.Versions() {
@@ -344,6 +344,7 @@ func (s *PartitionState) Restore(cp Checkpoint) error {
 	s.sealed = cloneTime(m.SealedThrough)
 	s.effective = m.RuleEffectiveFrom
 	s.processedNext = m.ProcessedNext
+	s.frontier = m.DecisionFrontier
 	s.last = cp.Offset - 1
 	s.acknowledged = s.last
 	return nil

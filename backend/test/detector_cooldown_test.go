@@ -40,6 +40,7 @@ type cooldownFixture struct {
 	ip, principal string
 	offset        int64
 	candidates    []detection.Candidate
+	env           []string
 }
 
 func newCooldownFixture(t *testing.T, short bool) *cooldownFixture {
@@ -75,7 +76,8 @@ func newCooldownFixture(t *testing.T, short bool) *cooldownFixture {
 	t.Cleanup(observer.Close)
 	return &cooldownFixture{kafka: kafka, db: db, ch: ch, process: process, observer: observer,
 		admin: kadm.NewClient(observer), rules: rules, state: detection.NewPartitionState(rules),
-		start: time.Now().UTC().Truncate(5 * time.Minute), ip: "192.0.2.19", principal: "cooldown|" + uuid.NewString()}
+		start: time.Now().UTC().Truncate(5 * time.Minute), ip: "192.0.2.19",
+		principal: "cooldown|" + uuid.NewString(), env: env}
 }
 
 func (f *cooldownFixture) send(t *testing.T, seconds int) {
@@ -156,6 +158,7 @@ func (f *cooldownFixture) stored(t *testing.T, allowed, suppressed int) {
 func TestDetectorCooldownVisible(t *testing.T) {
 	f := newCooldownFixture(t, false)
 	f.send(t, 299)
+	f.stored(t, 1, 0)
 	f.send(t, 301)
 	records := f.alerts(t)
 	require.Len(t, records, 1, "adjacent AUTH windows two seconds apart require real visible suppression")
@@ -165,6 +168,23 @@ func TestDetectorCooldownVisible(t *testing.T) {
 	require.Len(t, records, 2)
 	require.NotEqual(t, string(records[0].Key), string(records[1].Key))
 	f.stored(t, 2, 1)
+	require.Zero(t, f.process.terminate(t), f.process.output.String())
+	var generation int32
+	require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT generation FROM detection_partition_fences
+		WHERE group_id=$1 AND topic=$2 AND partition_id=0`, f.kafka.DetectorGroup, f.kafka.EventsTopic).Scan(&generation))
+	f.process = startProc(t, "detector", "", f.env)
+	requireOutputEventually(t, f.process, "service started")
+	require.Eventually(t, func() bool {
+		var current int32
+		return f.db.Pool.QueryRow(t.Context(), `SELECT generation FROM detection_partition_fences
+			WHERE group_id=$1 AND topic=$2 AND partition_id=0`, f.kafka.DetectorGroup, f.kafka.EventsTopic).
+			Scan(&current) == nil && current > generation
+	}, 15*time.Second, 25*time.Millisecond,
+		"restarted detector never verified durable frontier: %s", f.process.output.String())
+	replayed := f.alerts(t)
+	require.Len(t, replayed, 1, "observe full active-window replay before terminating restarted detector")
+	require.Equal(t, f.candidates[2].CanonicalBytes(), replayed[0].Value)
+	f.waitSource(t)
 	require.Zero(t, f.process.terminate(t), f.process.output.String())
 }
 
@@ -198,7 +218,8 @@ func TestDetectorCooldownReplay(t *testing.T) {
 		Scan(&owner.Incarnation, &owner.Member, &owner.Generation, &token))
 	owner.Token = uint64(token)
 	store := postgres.NewDetectionDecisionStore(f.db.Pool, config.DetectorPGConfig{AcquireTimeout: time.Second,
-		TransactionTimeout: 5 * time.Second, LockTimeout: time.Second, StatementTimeout: 2 * time.Second, CleanupTimeout: time.Second}, f.rules)
+		TransactionTimeout: 5 * time.Second, LockTimeout: time.Second,
+		StatementTimeout: 2 * time.Second, CleanupTimeout: time.Second}, f.rules)
 	var before, after string
 	query := `SELECT row_to_json(c)::text FROM detection_cooldown_cursors c WHERE topic=$1`
 	require.NoError(t, f.db.Pool.QueryRow(t.Context(), query, owner.Source.Topic).Scan(&before))
@@ -210,6 +231,11 @@ func TestDetectorCooldownReplay(t *testing.T) {
 	}
 	require.NoError(t, f.db.Pool.QueryRow(t.Context(), query, owner.Source.Topic).Scan(&after))
 	require.Equal(t, before, after, "old allow/suppress replay must not consult or mutate newer cursor")
+	var first contracts.Alert
+	require.NoError(t, json.Unmarshal(f.candidates[0].CanonicalBytes(), &first))
+	_, mutationErr := f.db.Pool.Exec(t.Context(),
+		"UPDATE detection_decisions SET allowed=NOT allowed WHERE alert_id=$1", first.AlertID)
+	require.ErrorContains(t, mutationErr, "immutable", "first decision cannot be rewritten through SQL")
 	t.Run("monotone clock and identity isolation", func(t *testing.T) {
 		for _, tc := range []struct {
 			tenant, ip, principal, rule string
@@ -234,8 +260,8 @@ func TestDetectorCooldownReplay(t *testing.T) {
 			FROM detection_cooldown_cursors WHERE topic=$1 AND tenant_id='demo'
 			AND rule_id='AUTH_BRUTE_FORCE' AND entity_components=$2`, owner.Source.Topic,
 			`["`+f.ip+`","`+f.principal+`"]`).Scan(&maximum, &next))
-		require.Equal(t, f.start.Add(time.Minute), maximum.UTC())
-		require.Equal(t, f.start.Add(2*time.Minute), next.UTC())
+		require.Equal(t, f.candidates[2].TriggerOccurredAt().Time, maximum.UTC())
+		require.Equal(t, f.candidates[2].TriggerOccurredAt().Add(time.Minute), next.UTC())
 	})
 	t.Run("divergent reconstruction and missing older decision", func(t *testing.T) {
 		candidate := cooldownCandidate(t, f.rules, owner.Source, 0, f.start, "demo", f.ip, f.principal, "AUTH_BRUTE_FORCE")
@@ -260,6 +286,80 @@ func TestDetectorCooldownReplay(t *testing.T) {
 			_, err := store.Decide(t.Context(), stale, f.candidates[0])
 			require.Error(t, err)
 		}
+		advanced := owner
+		advanced.Token++
+		require.NoError(t, store.Register(t.Context(), advanced, frontier))
+		require.Error(t, store.Register(t.Context(), owner, frontier), "delayed lower token must not steal current fence")
+		_, err := store.Decide(t.Context(), owner, f.candidates[0])
+		require.Error(t, err, "superseded assignment must not make even replay decisions")
+		owner = advanced
+	})
+	t.Run("restore requires matching decision and fence; PG ahead allowed", func(t *testing.T) {
+		last := f.candidates[2]
+		var alert contracts.Alert
+		require.NoError(t, json.Unmarshal(last.CanonicalBytes(), &alert))
+		frontier := detection.DecisionFrontier{Offset: last.Offset(), RuleOrdinal: last.RuleOrdinal(),
+			AlertID: alert.AlertID, Fingerprint: last.Fingerprint()}
+		require.NoError(t, store.Register(t.Context(), owner, frontier), "legitimate newer PG frontier must restore")
+		wrong := frontier
+		wrong.AlertID = strings.Repeat("f", 64)
+		require.Error(t, store.Register(t.Context(), owner, wrong), "missing checkpoint ledger row must fail closed")
+		wrong = frontier
+		wrong.Fingerprint = strings.Repeat("f", 64)
+		require.Error(t, store.Register(t.Context(), owner, wrong), "different checkpoint fingerprint must fail closed")
+		var oldOffset int64
+		var oldOrdinal int
+		require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT frontier_offset,frontier_ordinal
+			FROM detection_partition_fences WHERE group_id=$1 AND topic=$2 AND partition_id=0`, owner.Group, owner.Source.Topic).
+			Scan(&oldOffset, &oldOrdinal))
+		_, err := f.db.Pool.Exec(t.Context(), `UPDATE detection_partition_fences SET frontier_offset=-1,frontier_ordinal=-1
+			WHERE group_id=$1 AND topic=$2 AND partition_id=0`, owner.Group, owner.Source.Topic)
+		require.NoError(t, err)
+		require.Error(t, store.Register(t.Context(), owner, frontier), "restore-behind fence must fail closed")
+		_, err = f.db.Pool.Exec(t.Context(), `UPDATE detection_partition_fences SET frontier_offset=$3,frontier_ordinal=$4
+			WHERE group_id=$1 AND topic=$2 AND partition_id=0`, owner.Group, owner.Source.Topic, oldOffset, oldOrdinal)
+		require.NoError(t, err)
+	})
+	t.Run("PG lock failure retains last successful checkpoint", func(t *testing.T) {
+		blocked := newCooldownFixture(t, true)
+		blocked.send(t, 0)
+		require.Len(t, blocked.alerts(t), 1)
+		events := canonicalWriterEvents(10, blocked.start.Add(2*time.Second))
+		for _, event := range events {
+			event.EventType, event.SourceIP, event.Principal = "auth.failure", &blocked.ip, &blocked.principal
+		}
+		producer := newWriterProducer(t, blocked.kafka)
+		require.NoError(t, producer.PublishBatch(t.Context(), events[:9], uuid.NewString()))
+		blocked.offset += 9
+		blocked.waitSource(t)
+		before, err := blocked.admin.FetchOffsets(t.Context(), blocked.kafka.DetectorGroup)
+		require.NoError(t, err)
+		checkpoint, ok := before.Lookup(blocked.kafka.EventsTopic, 0)
+		require.True(t, ok)
+		lock, err := blocked.db.Pool.Begin(t.Context())
+		require.NoError(t, err)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			require.NoError(t, lock.Rollback(ctx))
+		}()
+		_, err = lock.Exec(t.Context(), `SELECT 1 FROM detection_partition_fences
+			WHERE group_id=$1 AND topic=$2 AND partition_id=0 FOR UPDATE`,
+			blocked.kafka.DetectorGroup, blocked.kafka.EventsTopic)
+		require.NoError(t, err)
+		require.NoError(t, producer.PublishBatch(t.Context(), events[9:], uuid.NewString()))
+		require.NotZero(t, blocked.process.requireExit(t, 5*time.Second), "lock timeout must terminate boundedly")
+		after, err := blocked.admin.FetchOffsets(t.Context(), blocked.kafka.DetectorGroup)
+		require.NoError(t, err)
+		retained, ok := after.Lookup(blocked.kafka.EventsTopic, 0)
+		require.True(t, ok)
+		require.Equal(t, checkpoint.At, retained.At)
+		require.Equal(t, checkpoint.Metadata, retained.Metadata, "PG failure must preserve exact last successful metadata")
+		require.Empty(t, blocked.alerts(t), "failed decision must not publish")
+		var decisions int
+		require.NoError(t, blocked.db.Pool.QueryRow(t.Context(), "SELECT count(*) FROM detection_decisions WHERE topic=$1",
+			blocked.kafka.EventsTopic).Scan(&decisions))
+		require.Equal(t, 1, decisions, "failed decision must not mutate durable ledger")
 	})
 }
 
