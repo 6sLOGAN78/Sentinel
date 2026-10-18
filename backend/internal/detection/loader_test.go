@@ -25,16 +25,15 @@ func loadAuthRules(t *testing.T) *detection.Rules {
 	return rules
 }
 
-// Enabling the shipped SCAN rule must reach its reducer; unimplemented rules
-// and unknown IDs must still fail closed at startup.
+// All four implemented built-ins must load; unknown IDs still fail closed.
 func TestRulesLoaderScan(t *testing.T) {
 	for _, tt := range []struct {
 		id    string
 		valid bool
 	}{
 		{"PORT_SCAN", true},
-		{"REQUEST_FLOOD", false},
-		{"DENY_SPIKE", false},
+		{"REQUEST_FLOOD", true},
+		{"DENY_SPIKE", true},
 	} {
 		t.Run(tt.id, func(t *testing.T) {
 			input := strings.Replace(authRulesYAML, "id: "+tt.id+", version: 1, enabled: false",
@@ -50,6 +49,18 @@ func TestRulesLoaderScan(t *testing.T) {
 	}
 	_, err := detection.LoadRules(strings.NewReader(strings.Replace(authRulesYAML, "PORT_SCAN", "UNKNOWN_RULE", 1)))
 	require.Error(t, err)
+}
+
+func TestRulesLoaderVolume(t *testing.T) {
+	input := strings.ReplaceAll(authRulesYAML, "enabled: false", "enabled: true")
+	rules, err := detection.LoadRules(strings.NewReader(input))
+	require.NoError(t, err, "all implemented built-ins must reach the reducer")
+	require.Len(t, rules.Rules, 4)
+	for _, rule := range rules.Rules {
+		require.True(t, rule.Enabled)
+	}
+	_, err = detection.LoadRules(strings.NewReader(strings.Replace(input, "REQUEST_FLOOD", "UNKNOWN_RULE", 1)))
+	require.Error(t, err, "unknown enabled predicates must remain rejected")
 }
 
 // Removing KnownFields, the second-document EOF check or the bounded read must
