@@ -24,7 +24,7 @@ func TestCandidateFreeze(t *testing.T) {
 		out := applySource(t, state, 41, trigger)
 		require.Len(t, out.Candidates, 1, "freeze a candidate at first crossing")
 		c := out.Candidates[0]
-		require.Equal(t, candidateSource, c.Source())
+		require.Equal(t, candidateSource(), c.Source())
 		require.Equal(t, int64(41), c.Offset())
 		require.Equal(t, 0, c.RuleOrdinal())
 		require.Equal(t, trigger.OccurredAt, c.TriggerOccurredAt(), "cooldown uses crossing event time even out of order")
@@ -49,11 +49,13 @@ func TestCandidateFreeze(t *testing.T) {
 		}
 		slices.Reverse(rules.Rules)
 		state := detection.NewPartitionState(rules)
-		for ordinal, event := range []*contracts.Event{authEvent(1), scanEvent(2, 443), volumeEvent(3, "REQUEST_FLOOD"), volumeEvent(4, "DENY_SPIKE")} {
-			// volumeRules enables volume rules; explicitly enable SCAN below.
-			for i := range rules.Rules {
-				rules.Rules[i].Enabled = true
-			}
+		for i := range rules.Rules {
+			rules.Rules[i].Enabled = true
+		}
+		events := []*contracts.Event{
+			authEvent(1), scanEvent(2, 443), volumeEvent(3, "REQUEST_FLOOD"), volumeEvent(4, "DENY_SPIKE"),
+		}
+		for ordinal, event := range events {
 			out := applySource(t, state, int64(ordinal), event)
 			require.Len(t, out.Candidates, 1)
 			require.Equal(t, ordinal, out.Candidates[0].RuleOrdinal(), "AUTH/SCAN/FLOOD/DENY ordinals are 0/1/2/3")
@@ -91,7 +93,7 @@ func TestCandidateFreeze(t *testing.T) {
 		require.Empty(t, out.Alerts)
 	})
 	t.Run("invalid source rejected before state changes", func(t *testing.T) {
-		for _, source := range []detection.TopicPartition{{Partition: 1}, {Topic: candidateSource.Topic, Partition: -1}} {
+		for _, source := range []detection.TopicPartition{{Partition: 1}, {Topic: candidateSource().Topic, Partition: -1}} {
 			state := detection.NewPartitionState(loadAuthRules(t))
 			_, err := state.ApplySource(source, 0, authEvent(1))
 			require.Error(t, err)

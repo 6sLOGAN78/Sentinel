@@ -199,7 +199,8 @@ func (w *Worker) applyRecord(ctx context.Context, state *detection.PartitionStat
 	if string(record.Key) != key {
 		return errors.New("detector source key mismatch")
 	}
-	outcome, err := state.Apply(record.Offset, event)
+	source := detection.TopicPartition{Topic: record.Topic, Partition: record.Partition}
+	outcome, err := state.ApplySource(source, record.Offset, event)
 	if err != nil {
 		return err
 	}

@@ -11,11 +11,15 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 )
 
-var candidateSource = detection.TopicPartition{Topic: "security.events.v1", Partition: 3}
+func candidateSource() detection.TopicPartition {
+	return detection.TopicPartition{Topic: "security.events.v1", Partition: 3}
+}
 
-func applySource(t *testing.T, state *detection.PartitionState, offset int64, event *contracts.Event) detection.Outcome {
+func applySource(
+	t *testing.T, state *detection.PartitionState, offset int64, event *contracts.Event,
+) detection.Outcome {
 	t.Helper()
-	out, err := state.ApplySource(candidateSource, offset, event)
+	out, err := state.ApplySource(candidateSource(), offset, event)
 	require.NoError(t, err)
 	require.NoError(t, state.Acknowledge(offset))
 	return out
@@ -24,43 +28,10 @@ func applySource(t *testing.T, state *detection.PartitionState, offset int64, ev
 func TestFrozenEvidence(t *testing.T) {
 	for _, kind := range []string{"AUTH", "SCAN"} {
 		t.Run(kind, func(t *testing.T) {
-			rules := scanRules(t)
-			threshold, crossing := 25, 25
-			if kind == "AUTH" {
-				rules.Rules[0].Threshold = threshold
-			} else {
-				threshold, crossing = 20, 26
-			}
-			state := detection.NewPartitionState(rules)
-			var samples []string
-			var frozen *contracts.Alert
-			var candidates []detection.Candidate
-			var before []byte
-			for i := range crossing {
-				event := authEvent(100 - i)
-				if kind == "SCAN" {
-					port := i % 19
-					if i == crossing-1 {
-						port = 19
-					}
-					event = scanEvent(100-i, port)
-				}
-				event.OccurredAt = contracts.NewTimestamp(event.OccurredAt.Add(time.Duration(crossing-i) * time.Millisecond))
-				if i < 20 {
-					samples = append(samples, event.EventID)
-				}
-				out := applySource(t, state, int64(i), event)
-				if i < crossing-1 {
-					require.Empty(t, out.Alerts)
-					require.Empty(t, out.Candidates)
-				} else {
-					require.Len(t, out.Alerts, 1)
-					frozen, candidates = out.Alerts[0], out.Candidates
-					var err error
-					before, err = json.Marshal(frozen)
-					require.NoError(t, err)
-				}
-			}
+			state, out, samples, crossing := evidenceCrossing(t, kind)
+			frozen, candidates := out.Alerts[0], out.Candidates
+			before, err := json.Marshal(frozen)
+			require.NoError(t, err)
 			require.NoError(t, frozen.Validate())
 			require.Equal(t, crossing, frozen.EventCount, "SCAN counts matching unique events, not predicate ports")
 			require.Equal(t, samples, frozen.SampleEventIDs, "first twenty unique IDs follow Kafka order")
@@ -68,14 +39,16 @@ func TestFrozenEvidence(t *testing.T) {
 			require.Equal(t, "open", frozen.Status)
 			require.Equal(t, 1, frozen.RuleVersion)
 			require.NotContains(t, string(before), "detected_at")
-			require.Contains(t, string(before), `"created_at":"2026-10-17T12:0`)
+			end := "2026-10-17T12:05:00.000Z"
 			if kind == "AUTH" {
 				require.Equal(t, "high", frozen.Severity)
 				require.Equal(t, "Repeated failed logins against one user", frozen.Summary)
 			} else {
+				end = "2026-10-17T12:01:00.000Z"
 				require.Equal(t, "medium", frozen.Severity)
 				require.Equal(t, "Distinct destination ports on one host", frozen.Summary)
 			}
+			require.Contains(t, string(before), `"created_at":"`+end+`"`)
 			for i := range 6 {
 				event := authEvent(200 + i)
 				if kind == "SCAN" {
@@ -85,9 +58,9 @@ func TestFrozenEvidence(t *testing.T) {
 					event.EventID = samples[0]
 				}
 				event.OccurredAt = frozen.WindowStart
-				out := applySource(t, state, int64(crossing+i), event)
-				require.Empty(t, out.Alerts)
-				require.Empty(t, out.Candidates)
+				later := applySource(t, state, int64(crossing+i), event)
+				require.Empty(t, later.Alerts)
+				require.Empty(t, later.Candidates)
 			}
 			after, err := json.Marshal(frozen)
 			require.NoError(t, err)
@@ -96,6 +69,44 @@ func TestFrozenEvidence(t *testing.T) {
 			require.Equal(t, before, candidates[0].CanonicalBytes())
 		})
 	}
+}
+
+func evidenceCrossing(t *testing.T, kind string) (*detection.PartitionState, detection.Outcome, []string, int) {
+	t.Helper()
+	rules := scanRules(t)
+	crossing := 26
+	if kind == "AUTH" {
+		rules.Rules[0].Threshold, crossing = 25, 25
+	}
+	state := detection.NewPartitionState(rules)
+	var samples []string
+	var out detection.Outcome
+	for i := range crossing {
+		event := evidenceEvent(kind, i, crossing)
+		if i < 20 {
+			samples = append(samples, event.EventID)
+		}
+		out = applySource(t, state, int64(i), event)
+		if i < crossing-1 {
+			require.Empty(t, out.Alerts)
+			require.Empty(t, out.Candidates)
+		}
+	}
+	require.Len(t, out.Alerts, 1)
+	return state, out, samples, crossing
+}
+
+func evidenceEvent(kind string, index, crossing int) *contracts.Event {
+	event := authEvent(100 - index)
+	if kind == "SCAN" {
+		port := index % 19
+		if index == crossing-1 {
+			port = 19
+		}
+		event = scanEvent(100-index, port)
+	}
+	event.OccurredAt = contracts.NewTimestamp(event.OccurredAt.Add(time.Duration(crossing-index) * time.Millisecond))
+	return event
 }
 
 func TestEntityIdentity(t *testing.T) {
@@ -111,8 +122,10 @@ func TestEntityIdentity(t *testing.T) {
 			require.Len(t, out.Alerts, 1)
 			a := out.Alerts[0]
 			require.Equal(t, ip+"|"+principal, a.EntityKey)
-			require.Equal(t, contracts.DedupeKey("demo", "AUTH_BRUTE_FORCE", []string{ip, principal}, a.WindowStart.Time), a.AlertID)
-			require.NotEqual(t, contracts.DedupeKey("demo", "AUTH_BRUTE_FORCE", []string{a.EntityKey}, a.WindowStart.Time), a.AlertID)
+			want := contracts.DedupeKey("demo", "AUTH_BRUTE_FORCE", []string{ip, principal}, a.WindowStart.Time)
+			require.Equal(t, want, a.AlertID)
+			displayHash := contracts.DedupeKey("demo", "AUTH_BRUTE_FORCE", []string{a.EntityKey}, a.WindowStart.Time)
+			require.NotEqual(t, displayHash, a.AlertID)
 		})
 	}
 	t.Run("IPv6 SCAN components", func(t *testing.T) {
@@ -128,6 +141,7 @@ func TestEntityIdentity(t *testing.T) {
 		out := applyAuthEvent(t, detection.NewPartitionState(rules), 0, event)
 		require.Len(t, out.Alerts, 1)
 		a := out.Alerts[0]
-		require.Equal(t, contracts.DedupeKey("demo", "PORT_SCAN", []string{source, destination}, a.WindowStart.Time), a.AlertID)
+		want := contracts.DedupeKey("demo", "PORT_SCAN", []string{source, destination}, a.WindowStart.Time)
+		require.Equal(t, want, a.AlertID)
 	})
 }

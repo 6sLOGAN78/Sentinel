@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"slices"
 	"strings"
 	"time"
 
@@ -80,7 +79,7 @@ type windowState struct {
 	ids        map[string]struct{}
 	ports      map[int]struct{}
 	samples    []string
-	fired      bool
+	frozen     string
 }
 
 // PartitionState is used serially by one owner. Prefix entries retain only time
@@ -121,7 +120,8 @@ func (s *PartitionState) Usage() (int, int, int) {
 	windows, ledger := len(s.windows), len(s.prefix)
 	bytes := ledger * ledgerEntryBytes
 	for k, w := range s.windows {
-		bytes += windowBaseBytes + len(k.tenant) + len(k.rule) + len(k.ip) + len(k.principal) + len(w.ports)*portEntryBytes
+		bytes += windowBaseBytes + len(k.tenant) + len(k.rule) + len(k.ip) + len(k.principal)
+		bytes += len(w.frozen) + len(w.ports)*portEntryBytes
 		for id := range w.ids {
 			bytes += eventEntryBytes + len(id)
 		}
@@ -129,8 +129,13 @@ func (s *PartitionState) Usage() (int, int, int) {
 	return windows, ledger, bytes
 }
 
-// Apply accepts one ordered source record; effects must be acknowledged next.
+// Apply preserves the source-less reducer API for pure callers. It returns
+// legacy alerts only; runtime callers use ApplySource to freeze source identity.
 func (s *PartitionState) Apply(offset int64, event *contracts.Event) (Outcome, error) {
+	return s.apply(nil, offset, event)
+}
+
+func (s *PartitionState) apply(source *TopicPartition, offset int64, event *contracts.Event) (Outcome, error) {
 	if offset < 0 || offset <= s.last || s.last > s.acknowledged {
 		return Outcome{}, errors.New("invalid source effect order")
 	}
@@ -148,34 +153,51 @@ func (s *PartitionState) Apply(offset int64, event *contracts.Event) (Outcome, e
 	if late {
 		return Outcome{Late: true}, nil
 	}
-	return s.applyRules(offset, event)
+	return s.applyRules(source, offset, event)
 }
 
-func (s *PartitionState) applyRules(offset int64, event *contracts.Event) (Outcome, error) {
-	for _, r := range s.rules.Rules {
-		if !r.Enabled {
-			continue
-		}
-		switch r.ID {
-		case authRuleID:
-			if event.EventType == "auth.failure" && event.SourceIP != nil && event.Principal != nil && *event.Principal != "" {
-				return s.applyWindow(offset, event, r, *event.Principal, nil)
+func (s *PartitionState) applyRules(source *TopicPartition, offset int64, event *contracts.Event) (Outcome, error) {
+	var outcome Outcome
+	// Evaluate in the canonical ordinal order, never YAML order. Aggregate every
+	// matching rule so a source frontier can order multiple decisions at an offset.
+	for ordinal, id := range ruleIDs() {
+		for _, r := range s.rules.Rules {
+			if r.ID != id || !r.Enabled {
+				continue
 			}
-		case scanRuleID:
-			if scanMatches(event) {
-				return s.applyWindow(offset, event, r, *event.DestinationIP, event.DestinationPort)
+			second, port, matched := ruleGroup(event, r.ID)
+			if !matched {
+				continue
 			}
-		case floodRuleID, denyRuleID:
-			if volumeMatches(event, r.ID) {
-				return s.applyWindow(offset, event, r, "", nil)
+			out, err := s.applyWindow(source, offset, ordinal, event, r, second, port)
+			if err != nil {
+				return Outcome{}, err
 			}
+			outcome.Alerts = append(outcome.Alerts, out.Alerts...)
+			outcome.Candidates = append(outcome.Candidates, out.Candidates...)
 		}
 	}
-	return Outcome{}, nil
+	return outcome, nil
+}
+
+func ruleGroup(event *contracts.Event, ruleID string) (string, *int, bool) {
+	switch ruleID {
+	case authRuleID:
+		if event.EventType == "auth.failure" && event.SourceIP != nil && event.Principal != nil && *event.Principal != "" {
+			return *event.Principal, nil, true
+		}
+	case scanRuleID:
+		if scanMatches(event) {
+			return *event.DestinationIP, event.DestinationPort, true
+		}
+	case floodRuleID, denyRuleID:
+		return "", nil, volumeMatches(event, ruleID)
+	}
+	return "", nil, false
 }
 
 func (s *PartitionState) applyWindow(
-	offset int64, event *contracts.Event, r Rule, second string, port *int,
+	source *TopicPartition, offset int64, ordinal int, event *contracts.Event, r Rule, second string, port *int,
 ) (Outcome, error) {
 	t := event.OccurredAt.UnixMilli()
 	start := t / r.Window.Milliseconds() * r.Window.Milliseconds()
@@ -212,40 +234,22 @@ func (s *PartitionState) applyWindow(
 	if port != nil {
 		count = len(w.ports)
 	}
-	if w.fired || count < r.Threshold {
+	if w.frozen != "" || count < r.Threshold {
 		return Outcome{}, nil
 	}
-	a := windowAlert(key, w, r)
-	if err := a.Validate(); err != nil {
-		return Outcome{}, errors.New("invalid canonical alert")
+	a, raw, fingerprint, err := freezeEvidence(key, w, r)
+	if err != nil {
+		return Outcome{}, err
 	}
-	w.fired = true
-	return Outcome{Alerts: []*contracts.Alert{a}}, nil
-}
-
-func windowAlert(key windowKey, w *windowState, r Rule) *contracts.Alert {
-	start := time.UnixMilli(key.start).UTC()
-	end := contracts.NewTimestamp(time.UnixMilli(w.end))
-	entity := []string{key.ip, key.principal}
-	summary := "Repeated failed logins against one user"
-	switch r.ID {
-	case scanRuleID:
-		summary = "Distinct destination ports on one host"
-	case floodRuleID:
-		entity = []string{key.ip}
-		summary = "Excessive network request volume"
-	case denyRuleID:
-		entity = []string{key.ip}
-		summary = "Burst of denied policy decisions"
+	w.frozen = string(raw)
+	out := Outcome{Alerts: []*contracts.Alert{a}}
+	if source != nil {
+		out.Candidates = []Candidate{{
+			source: *source, offset: offset, ordinal: ordinal,
+			trigger: contracts.NewTimestamp(event.OccurredAt.Time), canonical: w.frozen, fingerprint: fingerprint,
+		}}
 	}
-	display := strings.Join(entity, "|")
-	return &contracts.Alert{
-		SchemaVersion: 1, AlertID: contracts.DedupeKey(key.tenant, r.ID, entity, start),
-		TenantID: key.tenant, RuleID: r.ID, RuleVersion: r.Version, Severity: r.Severity, Status: "open",
-		CreatedAt: end, WindowStart: contracts.NewTimestamp(start), WindowEnd: end, EntityKey: display,
-		Summary: summary, EventCount: len(w.ids), SampleEventIDs: slices.Clone(w.samples),
-		DedupeKey: key.tenant + "|" + r.ID + "|" + display + "|" + start.Format(time.RFC3339Nano),
-	}
+	return out, nil
 }
 
 // Acknowledge seals only after all effects through this source offset succeed.
