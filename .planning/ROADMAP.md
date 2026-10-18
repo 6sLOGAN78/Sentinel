@@ -180,7 +180,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 03-03-PLAN.md — Detect a port scan as twenty exact distinct destination ports in one event-time minute
-- [ ] 03-17-PLAN.md — Extract and prove native alert stores immediately after the first two-store path
+- [x] 03-17-PLAN.md — Extract and prove native alert stores immediately after the first two-store path
 - [ ] 03-18-PLAN.md — Make real PostgreSQL capability part of detector startup, shutdown and local worker readiness before cooldown activation
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -292,7 +292,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
-| 3. Detection & Alert Pipeline | 6/21 | In Progress|  |
+| 3. Detection & Alert Pipeline | 7/21 | In Progress|  |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |

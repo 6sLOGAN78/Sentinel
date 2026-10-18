@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-03-PLAN.md; 6/21 Phase 3 plans complete, Wave 3 continues with 03-17/03-18
-last_updated: "2026-10-18T22:25:40.731Z"
+stopped_at: Completed 03-17-PLAN.md; 7/21 Phase 3 plans complete, Wave 3 continues with 03-18
+last_updated: "2026-10-18T22:32:13.874Z"
 last_activity: 2026-10-18
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 41
-  percent: 73
+  completed_plans: 42
+  percent: 75
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 7 of 21
+Plan: 8 of 21
 Status: Ready to execute
 Last activity: 2026-10-18
 
-Progress: [███████░░░] 73%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 41 (13 Phase 1 + 22 Phase 2 + 6 Phase 3)
+- Total plans completed: 42 (13 Phase 1 + 22 Phase 2 + 7 Phase 3)
 - Timing averages/totals: pending.
 
 **Per Plan:**
@@ -63,8 +63,9 @@ Progress: [███████░░░] 73%
 | Phase 03 P15 | 3 min | 2 tasks | 5 files |
 | Phase 03 P16 | 5 min | 2 tasks | 5 files |
 | Phase 03 P03 | 6 min | 2 tasks | 7 files |
+| Phase 03 P17 | ~6 min | 2 tasks | 6 files |
 
-**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 6 plans (timing aggregates pending).
+**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 7 plans (timing aggregates pending).
 
 ## Accumulated Context
 
@@ -123,6 +124,8 @@ Progress: [███████░░░] 73%
 - [Phase 03]: 03-16: Extract existing Kafka adapters through explicit transport interfaces and detector compatibility wrappers; detection retains checkpoint/topic type ownership.
 - [Phase 03]: 03-03: Rule-qualified shared windows count exact distinct ports separately from accepted unique-event evidence; fired SCAN state retains replay pins until event-time expiry.
 - [Phase 03]: 03-03: Enable startup SCAN only alongside implemented AUTH; configured 30s cooldown is retained while durable cross-window suppression remains the 03-19 obligation.
+- [Phase 03]: 03-17: Extract native stores without changing global alert-ID preflight lock, immutable winner, CH acknowledgement, insert-only PG commit or durable source-prefix order.
+- [Phase 03]: 03-17: Share immutable fingerprint and conflict identity through the immutable storage adapter; storage accepts contracts.Alert and never imports the writer.
 
 ### Pending Todos
 
@@ -130,7 +133,7 @@ None yet.
 
 ### Planning Continuation
 
-- Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. Wave 1 plans 03-01/03-06 and Wave 2 plans 03-02/03-15/03-16 are implemented with committed SUMMARYs; both cross-plan gates passed. Wave 3 SCAN plan 03-03 is implemented with committed RED/GREEN/SUMMARY evidence. Automatic Wave 3 continuation covers 03-17/03-18 next, stopping before Phase 4.
+- Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. Wave 1 plans 03-01/03-06 and Wave 2 plans 03-02/03-15/03-16 are implemented with committed SUMMARYs; both cross-plan gates passed. Wave 3 SCAN plan 03-03 and native store extraction 03-17 are implemented with committed proof/SUMMARY evidence. Automatic Wave 3 continuation covers 03-18 next, stopping before Phase 4.
 - User chose option 1: actual alert-level cooldown across nearby windows, rejecting candidate-only throttling. See 03-COOLDOWN-DECISION.md and amended research: durable PG allow/suppress decisions/cursors/fences, checkpoint decision_frontier consistency, event-time expiry, unchanged canonical IDs and Kafka window replay. Initial and R1 checker failures remain preserved; their issues are resolved by R2. Planning approval is not production proof. Preserve unrelated configuration/.serena edits and existing user volumes.
 - Phase 2 closeout evidence below is historical and remains valid; it is not the current Phase 3 authorization boundary.
 
@@ -145,12 +148,12 @@ None yet.
 
 ### Blockers/Concerns
 
-- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 6/21 plans implemented, including exact SCAN publication; remaining rule, native/failure persistence, poison, cooldown, recovery, live scheduling and phase-wide security/CI proofs remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14.
+- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 7/21 plans implemented, including exact SCAN publication and native store extraction; remaining rule, adversarial persistence, poison, cooldown, recovery, live scheduling and phase-wide security/CI proofs remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14.
 - Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-18T22:25:20.799Z
-Stopped at: Completed 03-03-PLAN.md; 6/21 Phase 3 plans complete, Wave 3 continues with 03-17/03-18
+Last session: 2026-10-18T22:32:13.861Z
+Stopped at: Completed 03-17-PLAN.md; 7/21 Phase 3 plans complete, Wave 3 continues with 03-18
 Resume file: None
