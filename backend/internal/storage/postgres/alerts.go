@@ -1,9 +1,12 @@
-// Package postgres provides bounded workflow persistence.
+// Package postgres provides bounded insert-only workflow storage.
 package postgres
 
 import (
 	"context"
-	"errors"
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,28 +15,68 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 )
 
-// AlertStore serializes immutable winners without updating workflow replays.
+const (
+	queryTimeout    = 5 * time.Second
+	rollbackTimeout = time.Second
+)
+
+// AlertStore creates workflows without mutating a winner on replay.
 type AlertStore struct {
 	pool    *pgxpool.Pool
 	timeout time.Duration
 }
 
-// NewAlertStore binds bounded workflow operations.
+// NewAlertStore bounds native transactions independently of caller behavior.
 func NewAlertStore(pool *pgxpool.Pool, timeout time.Duration) *AlertStore {
-	return &AlertStore{pool: pool, timeout: timeout}
+	return &AlertStore{pool: pool, timeout: min(max(timeout, time.Millisecond), queryTimeout)}
 }
 
-// BeginLocked locks the global alert ID before any immutable effect.
-func (*AlertStore) BeginLocked(context.Context, string) (pgx.Tx, error) {
-	return nil, errors.New("workflow store not implemented")
+// BeginLocked acquires a transaction-scoped per-ID lock before any CH effect.
+func (s *AlertStore) BeginLocked(ctx context.Context, id string) (pgx.Tx, error) {
+	beginCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	tx, err := s.pool.Begin(beginCtx)
+	if err != nil {
+		return nil, err
+	}
+	limit := fmt.Sprintf("%dms", max(int64(1), s.timeout.Milliseconds()))
+	if _, err = tx.Exec(beginCtx, `SELECT set_config('lock_timeout',$1,true),
+		set_config('statement_timeout',$1,true),set_config('idle_in_transaction_session_timeout',$1,true),
+		set_config('transaction_timeout',$1,true)`, limit); err != nil {
+		rollback(tx)
+		return nil, err
+	}
+	digest := sha256.Sum256([]byte(id))
+	// Hash collisions serialize unrelated identities; row uniqueness and full
+	// fingerprint validation remain authoritative, so collisions cannot alias data.
+	lockID := int64(binary.BigEndian.Uint64(digest[:8]) & math.MaxInt64)
+	if _, err = tx.Exec(beginCtx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
+		rollback(tx)
+		return nil, err
+	}
+	return tx, nil
 }
 
-// Find reads the winner within the locked transaction.
-func (*AlertStore) Find(context.Context, pgx.Tx, string) (string, string, error) {
-	return "", "", errors.New("workflow store not implemented")
+// Find reads the authoritative winner inside its already locked transaction.
+func (*AlertStore) Find(ctx context.Context, tx pgx.Tx, id string) (string, string, error) {
+	var tenant, fingerprint string
+	err := tx.QueryRow(ctx, `SELECT tenant_id,immutable_fingerprint
+		FROM alert_workflows WHERE alert_id=$1`, id).Scan(&tenant, &fingerprint)
+	return tenant, fingerprint, err
 }
 
-// Ensure inserts only, preserving all existing workflow fields.
-func (*AlertStore) Ensure(context.Context, pgx.Tx, *contracts.Alert, string) error {
-	return errors.New("workflow store not implemented")
+// Ensure is deliberately insert-only: resolved workflow metadata and seq survive.
+func (*AlertStore) Ensure(ctx context.Context, tx pgx.Tx, alert *contracts.Alert, fingerprint string) error {
+	_, err := tx.Exec(ctx, `INSERT INTO alert_workflows (alert_id,tenant_id,created_at,updated_at,
+		rule_id,rule_version,severity,entity_key,summary,event_count,window_start,window_end,immutable_fingerprint)
+		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (alert_id) DO NOTHING`,
+		alert.AlertID, alert.TenantID, alert.CreatedAt.Time, alert.RuleID, alert.RuleVersion, alert.Severity,
+		alert.EntityKey, alert.Summary, alert.EventCount, alert.WindowStart.Time, alert.WindowEnd.Time, fingerprint)
+	return err
+}
+
+func rollback(tx pgx.Tx) {
+	ctx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+	defer cancel()
+	_ = tx.Rollback(ctx)
 }

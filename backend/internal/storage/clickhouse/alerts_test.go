@@ -26,7 +26,8 @@ type alertConn struct {
 	query   func(context.Context, string, ...any) driver.Row
 }
 
-func (c *alertConn) PrepareBatch(ctx context.Context, query string, _ ...driver.PrepareBatchOption) (driver.Batch, error) {
+func (c *alertConn) PrepareBatch(ctx context.Context, query string,
+	_ ...driver.PrepareBatchOption) (driver.Batch, error) {
 	return c.prepare(ctx, query)
 }
 
@@ -146,7 +147,8 @@ func TestAlertStoreTenantQueries(t *testing.T) {
 			require.Contains(t, query, "uniqExact(immutable_fingerprint)")
 			require.NotContains(t, strings.ToUpper(query), "FINAL")
 			require.NotContains(t, query, alert.AlertID)
-			require.Equal(t, []any{driverclickhouse.Named("tenant", alert.TenantID), driverclickhouse.Named("id", alert.AlertID)}, args)
+			require.Equal(t, []any{driverclickhouse.Named("tenant", alert.TenantID),
+				driverclickhouse.Named("id", alert.AlertID)}, args)
 			return alertRow{values: []any{string(raw), fingerprint, uint64(1)}}
 		}}
 		got, getErr := storage.NewAlertStore(conn).Get(t.Context(), alert.TenantID, alert.AlertID)
@@ -176,7 +178,11 @@ func TestAlertStoreTenantQueries(t *testing.T) {
 		}
 	})
 	t.Run("absence and inconsistent retained content", func(t *testing.T) {
-		for _, row := range []alertRow{{err: sql.ErrNoRows}, {values: []any{string(raw), fingerprint, uint64(2)}}, {values: []any{string(raw), "wrong", uint64(1)}}} {
+		for _, row := range []alertRow{
+			{err: sql.ErrNoRows},
+			{values: []any{string(raw), fingerprint, uint64(2)}},
+			{values: []any{string(raw), "wrong", uint64(1)}},
+		} {
 			conn := &alertConn{query: func(context.Context, string, ...any) driver.Row { return row }}
 			got, getErr := storage.NewAlertStore(conn).Get(t.Context(), alert.TenantID, alert.AlertID)
 			require.Error(t, getErr)

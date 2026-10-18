@@ -1,4 +1,4 @@
-package alertwriter
+package alertwriter_test
 
 import (
 	"context"
@@ -12,20 +12,35 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
+	"github.com/6sLOGAN78/sentinel/internal/alertwriter"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	storage "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
 
 type orderConsumer struct {
-	Consumer
 	order     *[]string
 	committed []*kgo.Record
+	record    *kgo.Record
+	cancel    context.CancelFunc
 }
+
+func (c *orderConsumer) PollRecords(ctx context.Context, _ int) ([]*kgo.Record, error) {
+	if c.record != nil {
+		record := c.record
+		c.record = nil
+		return []*kgo.Record{record}, nil
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (*orderConsumer) AllowRebalance() {}
 
 func (c *orderConsumer) CommitRecords(_ context.Context, records ...*kgo.Record) error {
 	*c.order = append(*c.order, "source-commit")
 	c.committed = records
+	c.cancel()
 	return nil
 }
 
@@ -34,7 +49,6 @@ type orderTx struct {
 	t         *testing.T
 	order     *[]string
 	commitErr error
-	cancel    context.CancelFunc
 }
 
 func (tx *orderTx) Commit(context.Context) error {
@@ -68,10 +82,10 @@ func (s *orderWorkflows) Find(context.Context, pgx.Tx, string) (string, string, 
 	}
 	return "", "", pgx.ErrNoRows
 }
-func (s *orderWorkflows) Ensure(context.Context, pgx.Tx, *contracts.Alert, string) error {
+func (s *orderWorkflows) Ensure(ctx context.Context, _ pgx.Tx, _ *contracts.Alert, _ string) error {
 	*s.tx.order = append(*s.tx.order, "pg-ensure")
 	if s.ensureErr != nil {
-		s.tx.cancel()
+		<-ctx.Done()
 	}
 	return s.ensureErr
 }
@@ -98,25 +112,28 @@ func TestAlertWriterOrdering(t *testing.T) {
 		chErr, pgErr, commitErr, findErr error
 		want                             []string
 	}{
-		{"success", nil, nil, nil, nil, []string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "pg-commit", "rollback", "source-commit"}},
+		{"success", nil, nil, nil, nil,
+			[]string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "pg-commit", "rollback", "source-commit"}},
 		{"CH failure", failure, nil, nil, nil, []string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "rollback"}},
-		{"PG failure after CH", nil, failure, nil, nil, []string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "rollback"}},
-		{"PG commit failure", nil, nil, failure, nil, []string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "pg-commit", "rollback"}},
+		{"PG failure after CH", nil, failure, nil, nil,
+			[]string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "rollback"}},
+		{"PG commit failure", nil, nil, failure, nil,
+			[]string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "pg-commit", "rollback"}},
 		{"preflight failure", nil, nil, nil, failure, []string{"lock", "pg-preflight", "rollback"}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			order := []string{}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			tx := &orderTx{t: t, order: &order, commitErr: scenario.commitErr, cancel: cancel}
-			consumer := &orderConsumer{order: &order}
-			settings := config.WriterConfig{BatchSize: 1, FlushInterval: time.Millisecond, MaxAttempts: 1,
-				RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond, OperationTimeout: time.Second, ShutdownTimeout: time.Second}
-			writer := New(consumer, &orderDetections{order: &order, insertErr: scenario.chErr}, &orderWorkflows{tx: tx, ensureErr: scenario.pgErr, findErr: scenario.findErr}, settings, zerolog.Nop())
-			budgets, err := config.ComputeWriterBudgets(settings)
-			require.NoError(t, err)
+			tx := &orderTx{t: t, order: &order, commitErr: scenario.commitErr}
 			record := orderingRecord(t)
-			err = writer.process(ctx, []*kgo.Record{record}, budgets)
+			consumer := &orderConsumer{order: &order, record: record, cancel: cancel}
+			settings := config.WriterConfig{BatchSize: 1, FlushInterval: time.Millisecond, MaxAttempts: 1,
+				RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
+				OperationTimeout: 25 * time.Millisecond, ShutdownTimeout: time.Second}
+			writer := alertwriter.New(consumer, &orderDetections{order: &order, insertErr: scenario.chErr},
+				&orderWorkflows{tx: tx, ensureErr: scenario.pgErr, findErr: scenario.findErr}, settings, zerolog.Nop())
+			err := writer.Run(ctx)
 			if scenario.name == "success" {
 				require.NoError(t, err)
 				require.Equal(t, []*kgo.Record{record}, consumer.committed)
@@ -134,7 +151,8 @@ func orderingRecord(t *testing.T) *kgo.Record {
 	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	end := contracts.NewTimestamp(start.Add(time.Minute))
 	id := contracts.DedupeKey("tenant-a", "AUTH_BRUTE_FORCE", []string{"192.0.2.1", "alice"}, start)
-	alert := &contracts.Alert{SchemaVersion: 1, AlertID: id, TenantID: "tenant-a", RuleID: "AUTH_BRUTE_FORCE", RuleVersion: 1,
+	alert := &contracts.Alert{SchemaVersion: 1, AlertID: id, TenantID: "tenant-a",
+		RuleID: "AUTH_BRUTE_FORCE", RuleVersion: 1,
 		Severity: "high", Status: "open", CreatedAt: end, WindowStart: contracts.NewTimestamp(start), WindowEnd: end,
 		EntityKey: "192.0.2.1|alice", Summary: "Failed logins", EventCount: 5,
 		SampleEventIDs: []string{"00000000-0000-4000-8000-000000000001"}, DedupeKey: id}

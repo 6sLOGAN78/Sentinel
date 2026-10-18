@@ -15,6 +15,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
+	storagepostgres "github.com/6sLOGAN78/sentinel/internal/storage/postgres"
 )
 
 func main() {
@@ -80,8 +81,8 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 
 func startWriter(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle,
 	consumer *kafkax.Consumer, conn storageclickhouse.Conn, db *database.Database) {
-	worker := alertwriter.New(consumer, alertwriter.NewAlertStore(conn),
-		alertwriter.NewPostgresStore(db.Pool, cfg.Writer.OperationTimeout), cfg.Writer, log)
+	worker := alertwriter.New(consumer, storageclickhouse.NewAlertStore(conn),
+		storagepostgres.NewAlertStore(db.Pool, cfg.Writer.OperationTimeout), cfg.Writer, log)
 	workerCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() {

@@ -5,23 +5,14 @@ package alertwriter
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/binary"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"math"
 	"net/netip"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	driverclickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -31,14 +22,13 @@ import (
 )
 
 const (
-	queryTimeout      = 5 * time.Second
 	rollbackTimeout   = time.Second
 	maxPrincipalRunes = 128
 	backoffMultiplier = 2
 )
 
 // ErrConflict marks differing immutable content for an existing alert identity.
-var ErrConflict = errors.New("immutable alert conflict")
+var ErrConflict = storageclickhouse.ErrConflict
 
 // Consumer is the owned, manually committed Kafka batch lifecycle.
 type Consumer interface {
@@ -297,164 +287,5 @@ func validIP(value string) bool {
 
 // ImmutableFingerprint excludes workflow status and wall-clock detection time.
 func ImmutableFingerprint(alert *contracts.Alert) (string, error) {
-	if alert == nil {
-		return "", errors.New("nil immutable alert")
-	}
-	immutable := *alert
-	immutable.Status = ""
-	immutable.DetectedAt = nil
-	raw, err := json.Marshal(&immutable)
-	if err != nil {
-		return "", fmt.Errorf("encode immutable alert: %w", err)
-	}
-	digest := sha256.Sum256(raw)
-	return hex.EncodeToString(digest[:]), nil
-}
-
-// AlertStore uses fresh native blocks and tenant-scoped reads across all parts.
-// It remains cohesive here until the immediate 03-17 adapter extraction.
-type AlertStore struct{ conn storageclickhouse.Conn }
-
-// NewAlertStore binds the native immutable store.
-func NewAlertStore(conn storageclickhouse.Conn) *AlertStore { return &AlertStore{conn: conn} }
-
-// InsertBatch prepares a fresh block on every attempt and aborts unsent batches.
-func (s *AlertStore) InsertBatch(ctx context.Context, alerts []*contracts.Alert) error {
-	if len(alerts) == 0 {
-		return nil
-	}
-	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
-	defer cancel()
-	batch, err := s.conn.PrepareBatch(queryCtx, `INSERT INTO alerts
-		(tenant_id,alert_id,created_at,rule_id,rule_version,severity,window_start,window_end,
-		entity_key,summary,event_count,sample_event_ids,immutable_fingerprint,canonical_payload)`)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if !batch.IsSent() {
-			_ = batch.Abort()
-		}
-	}()
-	for _, alert := range alerts {
-		if alert == nil {
-			return errors.New("nil immutable alert")
-		}
-		fingerprint, fpErr := ImmutableFingerprint(alert)
-		if fpErr != nil {
-			return fpErr
-		}
-		raw, marshalErr := json.Marshal(alert)
-		if marshalErr != nil {
-			return marshalErr
-		}
-		if err = batch.Append(alert.TenantID, alert.AlertID, alert.CreatedAt.Time, alert.RuleID,
-			int64(alert.RuleVersion), alert.Severity, alert.WindowStart.Time, alert.WindowEnd.Time,
-			alert.EntityKey, alert.Summary, int64(alert.EventCount), alert.SampleEventIDs,
-			fingerprint, string(raw)); err != nil {
-			return err
-		}
-	}
-	return batch.Send()
-}
-
-// Get detects conflicting retained orphans and returns one visible identity
-// immediately, without FINAL, background merges or partition-local assumptions.
-func (s *AlertStore) Get(ctx context.Context, tenant, id string) (*contracts.Alert, error) {
-	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
-	defer cancel()
-	var raw, fingerprint string
-	var variants uint64
-	err := s.conn.QueryRow(queryCtx, `SELECT any(canonical_payload),any(immutable_fingerprint),
-		uniqExact(immutable_fingerprint) FROM alerts
-		WHERE tenant_id={tenant:String} AND alert_id={id:String} HAVING count()>0`,
-		driverclickhouse.Named("tenant", tenant), driverclickhouse.Named("id", id)).Scan(&raw, &fingerprint, &variants)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, storageclickhouse.ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	if variants != 1 {
-		return nil, ErrConflict
-	}
-	alert, err := contracts.DecodeAlert(strings.NewReader(raw))
-	if err != nil {
-		return nil, ErrConflict
-	}
-	actual, err := ImmutableFingerprint(alert)
-	if err != nil || actual != fingerprint || alert.TenantID != tenant || alert.AlertID != id {
-		return nil, ErrConflict
-	}
-	return alert, nil
-}
-
-// CountUnique deduplicates identity across partitions before asynchronous merges.
-func (s *AlertStore) CountUnique(ctx context.Context, tenant string, since time.Time) (uint64, error) {
-	queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
-	defer cancel()
-	query := `SELECT uniqExact(alert_id) FROM alerts WHERE tenant_id={tenant:String}`
-	args := []any{driverclickhouse.Named("tenant", tenant)}
-	if !since.IsZero() {
-		query += ` AND created_at >= {since:DateTime64(3)}`
-		args = append(args, driverclickhouse.Named("since", since))
-	}
-	var count uint64
-	err := s.conn.QueryRow(queryCtx, query, args...).Scan(&count)
-	return count, err
-}
-
-// PostgresStore creates workflows without mutating a winner on replay.
-type PostgresStore struct {
-	pool    *pgxpool.Pool
-	timeout time.Duration
-}
-
-// NewPostgresStore bounds native transactions independently of caller behavior.
-func NewPostgresStore(pool *pgxpool.Pool, timeout time.Duration) *PostgresStore {
-	return &PostgresStore{pool: pool, timeout: min(max(timeout, time.Millisecond), queryTimeout)}
-}
-
-// BeginLocked acquires a transaction-scoped per-ID lock before any CH effect.
-func (s *PostgresStore) BeginLocked(ctx context.Context, id string) (pgx.Tx, error) {
-	beginCtx, cancel := context.WithTimeout(ctx, s.timeout)
-	defer cancel()
-	tx, err := s.pool.Begin(beginCtx)
-	if err != nil {
-		return nil, err
-	}
-	limit := fmt.Sprintf("%dms", max(int64(1), s.timeout.Milliseconds()))
-	if _, err = tx.Exec(beginCtx, `SELECT set_config('lock_timeout',$1,true),
-		set_config('statement_timeout',$1,true),set_config('idle_in_transaction_session_timeout',$1,true),
-		set_config('transaction_timeout',$1,true)`, limit); err != nil {
-		rollback(tx)
-		return nil, err
-	}
-	digest := sha256.Sum256([]byte(id))
-	// Hash collisions serialize unrelated identities; row uniqueness and full
-	// fingerprint validation remain authoritative, so collisions cannot alias data.
-	lockID := int64(binary.BigEndian.Uint64(digest[:8]) & math.MaxInt64)
-	if _, err = tx.Exec(beginCtx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
-		rollback(tx)
-		return nil, err
-	}
-	return tx, nil
-}
-
-// Find reads the authoritative winner inside its already locked transaction.
-func (*PostgresStore) Find(ctx context.Context, tx pgx.Tx, id string) (string, string, error) {
-	var tenant, fingerprint string
-	err := tx.QueryRow(ctx, `SELECT tenant_id,immutable_fingerprint
-		FROM alert_workflows WHERE alert_id=$1`, id).Scan(&tenant, &fingerprint)
-	return tenant, fingerprint, err
-}
-
-// Ensure is deliberately insert-only: resolved workflow metadata and seq survive.
-func (*PostgresStore) Ensure(ctx context.Context, tx pgx.Tx, alert *contracts.Alert, fingerprint string) error {
-	_, err := tx.Exec(ctx, `INSERT INTO alert_workflows (alert_id,tenant_id,created_at,updated_at,
-		rule_id,rule_version,severity,entity_key,summary,event_count,window_start,window_end,immutable_fingerprint)
-		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (alert_id) DO NOTHING`,
-		alert.AlertID, alert.TenantID, alert.CreatedAt.Time, alert.RuleID, alert.RuleVersion, alert.Severity,
-		alert.EntityKey, alert.Summary, alert.EventCount, alert.WindowStart.Time, alert.WindowEnd.Time, fingerprint)
-	return err
+	return storageclickhouse.ImmutableFingerprint(alert)
 }
