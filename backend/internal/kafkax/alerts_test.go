@@ -70,9 +70,9 @@ func TestAlertPublisherBounds(t *testing.T) {
 		client := p.client.(*kgo.Client)
 		require.Equal(t, kgo.AllISRAcks(), client.OptValue(kgo.RequiredAcks))
 		require.Equal(t, time.Second, client.OptValue(kgo.RecordDeliveryTimeout))
-		require.Equal(t, 2, client.OptValue(kgo.RecordRetries))
-		require.Equal(t, 8, client.OptValue(kgo.MaxBufferedRecords))
-		require.Equal(t, 65536, client.OptValue(kgo.MaxBufferedBytes))
+		require.EqualValues(t, 2, client.OptValue(kgo.RecordRetries))
+		require.EqualValues(t, 8, client.OptValue(kgo.MaxBufferedRecords))
+		require.EqualValues(t, 65536, client.OptValue(kgo.MaxBufferedBytes))
 	})
 	t.Run("delivery failure", func(t *testing.T) {
 		p := &AlertProducer{timeout: time.Second, client: alertDriver{

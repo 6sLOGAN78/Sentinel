@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 
@@ -38,6 +39,8 @@ func (d commitDriver) CommitOffsetsSync(ctx context.Context, offsets map[string]
 func commitResponse(partitions ...kmsg.OffsetCommitResponseTopicPartition) *kmsg.OffsetCommitResponse {
 	return &kmsg.OffsetCommitResponse{Topics: []kmsg.OffsetCommitResponseTopic{{Topic: "events", Partitions: partitions}}}
 }
+
+func (d commitDriver) GroupMetadata() (string, int32) { return "member-7", 9 }
 
 // Ignoring callback errors or omitting any requested partition must prevent
 // success; corrupt fetched metadata must cancel ownership and report terminal failure.
@@ -112,5 +115,60 @@ func TestDetectorCommitMetadata(t *testing.T) {
 		require.ErrorIs(t, ctx.Err(), context.Canceled)
 		require.Error(t, c.fetched(ctx, nil, nil))
 		require.Equal(t, 1, calls)
+		require.ErrorIs(t, c.Ping(context.Background()), fatal)
+	})
+	t.Run("new groups differ from trimmed existing pins", func(t *testing.T) {
+		c := &DetectorConsumer{assignments: map[detection.TopicPartition]DetectorAssignment{tp0: {Token: 1}}}
+		starts := kadm.ListedOffsets{"events": {0: {Offset: 12}}}
+		ends := kadm.ListedOffsets{"events": {0: {Offset: 23}}}
+		require.NoError(t, c.restorePartition(tp0,
+			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: -1}, starts, ends))
+		require.Nil(t, c.Assignments()[tp0].Checkpoint)
+		require.Error(t, c.restorePartition(tp0,
+			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: 11}, starts, ends))
+		require.Error(t, c.restorePartition(tp0,
+			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: 24}, starts, ends))
+		require.Nil(t, c.Assignments()[tp0].Checkpoint)
+	})
+	t.Run("ownership changes clear affected partitions only", func(t *testing.T) {
+		c := &DetectorConsumer{client: commitDriver{},
+			assignments: make(map[detection.TopicPartition]DetectorAssignment)}
+		c.assigned(context.Background(), nil, map[string][]int32{"events": {0, 1}})
+		before := c.Assignments()
+		c.revoked(context.Background(), nil, map[string][]int32{"events": {0}})
+		require.Equal(t, before[tp1], c.Assignments()[tp1])
+		require.NotContains(t, c.Assignments(), tp0)
+		c.assigned(context.Background(), nil, map[string][]int32{"events": {0}})
+		require.Greater(t, c.Assignments()[tp0].Token, before[tp0].Token)
+		member, generation := c.GroupMetadata()
+		require.Equal(t, "member-7", member)
+		require.Equal(t, int32(9), generation)
+	})
+	t.Run("bounded owned polling with distinct start and reset policies", func(t *testing.T) {
+		settings := config.WriterConfig{BatchSize: 1, MaxAttempts: 1, OperationTimeout: time.Second,
+			RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
+			FlushInterval: time.Second, ShutdownTimeout: time.Second,
+			FetchMaxBytes: 1 << 20, FetchMaxPartitionBytes: 512 << 10, MaxConcurrentFetches: 2}
+		c, err := NewDetectorConsumer(context.Background(), config.KafkaConfig{
+			Brokers: "127.0.0.1:1", EventsTopic: "events", DetectorGroup: "detector-test",
+		}, settings, nil, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			require.NoError(t, c.Close(ctx))
+		})
+		client := c.client.(*kgo.Client)
+		require.Equal(t, true, client.OptValue(kgo.DisableAutoCommit))
+		require.Equal(t, true, client.OptValue(kgo.BlockRebalanceOnPoll))
+		require.Equal(t, kgo.NewOffset().AtStart(), client.OptValue(kgo.ConsumeStartOffset))
+		require.Equal(t, kgo.NoResetOffset(), client.OptValue(kgo.ConsumeResetOffset))
+		require.EqualValues(t, 1<<20, client.OptValue(kgo.FetchMaxBytes))
+		require.EqualValues(t, 512<<10, client.OptValue(kgo.FetchMaxPartitionBytes))
+		require.EqualValues(t, 2, client.OptValue(kgo.MaxConcurrentFetches))
+		require.Equal(t, 500*time.Millisecond, client.OptValue(kgo.FetchMaxWait))
+		budgets, err := config.ComputeWriterBudgets(settings)
+		require.NoError(t, err)
+		require.Equal(t, budgets.Rebalance, client.OptValue(kgo.RebalanceTimeout))
 	})
 }
