@@ -69,6 +69,7 @@ type orderWorkflows struct {
 	tx        *orderTx
 	ensureErr error
 	findErr   error
+	winner    *contracts.Alert
 }
 
 func (s *orderWorkflows) BeginLocked(context.Context, string) (pgx.Tx, error) {
@@ -79,6 +80,10 @@ func (s *orderWorkflows) Find(context.Context, pgx.Tx, string) (string, string, 
 	*s.tx.order = append(*s.tx.order, "pg-preflight")
 	if s.findErr != nil {
 		return "", "", s.findErr
+	}
+	if s.winner != nil {
+		fingerprint, err := alertwriter.ImmutableFingerprint(s.winner)
+		return s.winner.TenantID, fingerprint, err
 	}
 	return "", "", pgx.ErrNoRows
 }
@@ -93,10 +98,14 @@ func (s *orderWorkflows) Ensure(ctx context.Context, _ pgx.Tx, _ *contracts.Aler
 type orderDetections struct {
 	order     *[]string
 	insertErr error
+	retained  *contracts.Alert
 }
 
 func (s *orderDetections) Get(context.Context, string, string) (*contracts.Alert, error) {
 	*s.order = append(*s.order, "ch-preflight")
+	if s.retained != nil {
+		return s.retained, nil
+	}
 	return nil, storage.ErrNotFound
 }
 func (s *orderDetections) InsertBatch(context.Context, []*contracts.Alert) error {
@@ -144,6 +153,21 @@ func TestAlertWriterOrdering(t *testing.T) {
 			require.Equal(t, scenario.want, order)
 		})
 	}
+	t.Run("equal winner skips workflow INSERT", func(t *testing.T) {
+		order := []string{}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		winner := identityAlert(t)
+		tx := &orderTx{t: t, order: &order}
+		consumer := &orderConsumer{order: &order, record: orderingRecord(t), cancel: cancel}
+		settings := config.WriterConfig{BatchSize: 1, FlushInterval: time.Millisecond, MaxAttempts: 1,
+			RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
+			OperationTimeout: 25 * time.Millisecond, ShutdownTimeout: time.Second}
+		writer := alertwriter.New(consumer, &orderDetections{order: &order, retained: winner},
+			&orderWorkflows{tx: tx, winner: winner, ensureErr: errors.New("replay must not INSERT")}, settings, zerolog.Nop())
+		require.NoError(t, writer.Run(ctx), "an authoritative identical winner needs no new workflow INSERT")
+		require.Equal(t, []string{"lock", "pg-preflight", "ch-preflight", "pg-commit", "rollback", "source-commit"}, order)
+	})
 }
 
 func orderingRecord(t *testing.T) *kgo.Record {
