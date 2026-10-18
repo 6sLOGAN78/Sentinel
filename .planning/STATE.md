@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Session resumed; proceeding to interrupted 03-15, with 3/21 Phase 3 plans complete
-last_updated: "2026-10-18T22:04:54Z"
-last_activity: 2026-10-17
+stopped_at: Completed 03-15-PLAN.md; 4/21 Phase 3 plans complete, Wave 2 continues
+last_updated: "2026-10-18T22:09:53.262Z"
+last_activity: 2026-10-18
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 38
-  percent: 68
+  completed_plans: 39
+  percent: 70
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 4 of 21
+Plan: 5 of 21
 Status: Ready to execute
-Last activity: 2026-10-17
+Last activity: 2026-10-18
 
-Progress: [███████░░░] 68%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 38 (13 Phase 1 + 22 Phase 2 + 3 Phase 3)
+- Total plans completed: 39 (13 Phase 1 + 22 Phase 2 + 4 Phase 3)
 - Timing averages/totals: pending.
 
 **Per Plan:**
@@ -60,8 +60,9 @@ Progress: [███████░░░] 68%
 | Phase 03 P01 | 9 min | 2 tasks | 8 files |
 | Phase 03 P06 | ~10 min | 2 tasks | 5 files |
 | Phase 03 P02 | 7 min | 2 tasks | 7 files |
+| Phase 03 P15 | 3 min | 2 tasks | 5 files |
 
-**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 3 plans (timing aggregates pending).
+**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 4 plans (timing aggregates pending).
 
 ## Accumulated Context
 
@@ -116,6 +117,7 @@ Progress: [███████░░░] 68%
 - [Phase 03]: 03-06: All-mode drains share the latest relevant window end plus 30 seconds to avoid partition-watermark regression.
 - [Phase 03]: 03-02: Per-alert transaction locks cover PG winner and retained CH orphan preflight through CH acknowledgement and insert-only PG commit.
 - [Phase 03]: 03-02: Preserve the complete first-pipe AUTH principal suffix and keep native store helpers cohesive until immediate 03-17 extraction.
+- [Phase 03]: 03-15: Preserve existing AUTH and strict loader behavior with passing characterization guards before source-only extraction.
 
 ### Pending Todos
 
@@ -123,7 +125,7 @@ None yet.
 
 ### Planning Continuation
 
-- Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. Wave 1 plans 03-01/03-06 and Wave 2 plan 03-02 are implemented with committed SUMMARYs. Automatic execution continues at Wave 2, stopping before Phase 4.
+- Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. Wave 1 plans 03-01/03-06 and Wave 2 plans 03-02/03-15 are implemented with committed SUMMARYs. Automatic execution continues at Wave 2 plan 03-16, stopping before Phase 4.
 - User chose option 1: actual alert-level cooldown across nearby windows, rejecting candidate-only throttling. See 03-COOLDOWN-DECISION.md and amended research: durable PG allow/suppress decisions/cursors/fences, checkpoint decision_frontier consistency, event-time expiry, unchanged canonical IDs and Kafka window replay. Initial and R1 checker failures remain preserved; their issues are resolved by R2. Planning approval is not production proof. Preserve unrelated configuration/.serena edits and existing user volumes.
 - Phase 2 closeout evidence below is historical and remains valid; it is not the current Phase 3 authorization boundary.
 
@@ -138,12 +140,12 @@ None yet.
 
 ### Blockers/Concerns
 
-- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 3/21 plans implemented; remaining rule, native/failure persistence, poison, cooldown, recovery, live scheduling and phase-wide security/CI proofs remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14.
+- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 4/21 plans implemented; remaining rule, native/failure persistence, poison, cooldown, recovery, live scheduling and phase-wide security/CI proofs remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14.
 - Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-18T22:04:54Z
-Stopped at: Session resumed; proceeding to interrupted 03-15. Previous executor hit a usage limit before saving edits; HEAD and original local dirt were verified.
-Resume file: .planning/phases/03-detection-alert-pipeline/03-15-PLAN.md
+Last session: 2026-10-18T22:09:53.250Z
+Stopped at: Completed 03-15-PLAN.md; 4/21 Phase 3 plans complete, Wave 2 continues
+Resume file: .planning/phases/03-detection-alert-pipeline/03-16-PLAN.md

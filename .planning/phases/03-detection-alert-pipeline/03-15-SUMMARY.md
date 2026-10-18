@@ -103,6 +103,7 @@ None in application behavior or scope. The `tdd="true"` extraction task used the
 - The first tidy command also set `GOSUMDB=off`; Go rejected cached toolchain verification with exit 1 before changing modules. Retrying with only `GOPROXY=off` succeeded. This command-environment error is not a behavioral RED.
 - Scoped lint initially reported one 124-character helper signature; wrapping it and rerunning yielded 0 issues before the final Task 1 commit.
 - The pre-existing integration-tag `unparam` finding at `backend/test/recovery_test.go:162` was already recorded in `.planning/phases/03-detection-alert-pipeline/03-02-SUMMARY.md` for 03-14. It was not modified or rerun here, and no clean integration-lint claim is made.
+- After committing this summary, installed SDK advance/progress/metric/decision/session/roadmap handlers ran successfully. As previously observed, SDK metadata rewrites produced a stale phase-based percentage and placed the metric below the table; the tracking closeout reconciled these to actual 39/56 overall (70%), 4/21 Phase 3, and the proper Per Plan table. Overall requirement checkboxes remain pending.
 
 ## Known Stubs
 
