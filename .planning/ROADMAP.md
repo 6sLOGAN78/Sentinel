@@ -194,7 +194,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 03-19-PLAN.md — Deliver actual cross-window alert cooldown through durable PG decisions on the existing events→alerts path
+- [x] 03-19-PLAN.md — Deliver actual cross-window alert cooldown through durable PG decisions on the existing events→alerts path
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
@@ -292,7 +292,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
-| 3. Detection & Alert Pipeline | 11/21 | In Progress|  |
+| 3. Detection & Alert Pipeline | 12/21 | In Progress|  |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
