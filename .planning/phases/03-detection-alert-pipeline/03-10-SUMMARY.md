@@ -103,6 +103,8 @@ The extracted PG and CH stores already satisfy the global lock, parameterized wi
 
 Two formatting invocations used repository-prefixed paths while already in backend; those paths were absent, no files changed, and formatting was rerun successfully from repository root. Initial RED/fixture and lint failures are retained above rather than reported as predeclared successes.
 
+After the first committed SUMMARY, serialized SDK calls advanced the plan counter, recalculated 45/56 overall plans, recorded the 03-10 metric/decisions/session, and updated ROADMAP to 10/21. The known SDK placement bug appended the metric below the table and regenerated a stale 33% frontmatter value despite an 80% body; the row was moved into the table and frontmatter reconciled to 80%, preserving all history. PROJECT/current counts and only the three 03-10 validation rows were updated. The Wave 4 cross-plan gate remains pending for the parent; no global requirements or phase completion were marked.
+
 ## Deferred Issues and Remaining Dependencies
 
 - Existing integration lint `backend/test/recovery_test.go:162` unparam remains the recorded 03-14 obligation.

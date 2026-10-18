@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-04-PLAN.md; 9/21 Phase 3 plans complete, Wave 4 in progress
-last_updated: "2026-10-18T22:52:41.857Z"
+stopped_at: Completed 03-10-PLAN.md; 10/21 Phase 3 plans complete, Wave 4 cross-plan gate pending
+last_updated: "2026-10-18T23:08:24.416Z"
 last_activity: 2026-10-18
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 44
-  percent: 79
+  completed_plans: 45
+  percent: 80
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 10 of 21
-Status: Ready to execute
+Plan: 11 of 21
+Status: Executing — Wave 4 cross-plan gate pending
 Last activity: 2026-10-18
 
-Progress: [████████░░] 79%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 44 (13 Phase 1 + 22 Phase 2 + 9 Phase 3)
+- Total plans completed: 45 (13 Phase 1 + 22 Phase 2 + 10 Phase 3)
 - Timing averages/totals: pending.
 
 **Per Plan:**
@@ -66,8 +66,9 @@ Progress: [████████░░] 79%
 | Phase 03 P17 | ~6 min | 2 tasks | 6 files |
 | Phase 03 P18 | ~9 min | 3 tasks | 12 files |
 | Phase 03 P04 | 5 min | 2 tasks | 7 files |
+| Phase 03 P10 | 13 min | 3 tasks | 7 files |
 
-**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 9 plans (timing aggregates pending).
+**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 10 plans (timing aggregates pending).
 
 ## Accumulated Context
 
@@ -132,6 +133,8 @@ Progress: [████████░░] 79%
 - [Phase 03]: 03-18: Profile Compose workers and gate detector on existing pinned tern migrations; retain dev-up activation for 13.
 - [Phase 03]: 03-04: Enable exactly all four implemented built-ins; FLOOD/DENY reuse shared windows with source-only DedupeKey components.
 - [Phase 03]: 03-04: Cross-window alert suppression remains the durable 03-19 obligation; configured durations and one-per-window firing are not that proof.
+- [Phase 03]: 03-10: Preserve proven global-ID lock/native-store guards and skip workflow INSERT entirely for an equal authoritative winner.
+- [Phase 03]: 03-10: Inject the existing bounded DLQ publisher for permanent identity/content conflicts; infrastructure failures remain uncommitted and never poison.
 
 ### Pending Todos
 
@@ -140,7 +143,7 @@ None yet.
 ### Planning Continuation
 
 - Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. Wave 1 plans 03-01/03-06 and Wave 2 plans 03-02/03-15/03-16 are implemented with committed SUMMARYs; both cross-plan gates passed. Wave 3 plans 03-03 (SCAN), 03-17 (native stores) and 03-18 (real PG dependency/fixtures) have committed proof/SUMMARY evidence. Automatic execution continues after the parent Wave 3 gate, stopping before Phase 4.
-- Wave 4 is in progress: 03-04 adds exact FLOOD/DENY and enables all four built-ins, with committed independent RED/GREEN and real Kafka evidence. 9/21 summaries are committed; 03-10's adversarial persistence work and the Wave 4 cross-plan gate remain pending.
+- Wave 4 implementation is complete: 03-04 adds exact FLOOD/DENY and enables all four built-ins; 03-10 adds live bounded conflict quarantine and proves real concurrent/partial/ambiguous persistence. 10/21 summaries are committed; the parent Wave 4 cross-plan gate remains pending. 03-10 independent race families, full make test, standard lint, build and integration vet pass; only the recorded integration lint recovery_test.go:162 unparam remains for 03-14.
 - User chose option 1: actual alert-level cooldown across nearby windows, rejecting candidate-only throttling. See 03-COOLDOWN-DECISION.md and amended research: durable PG allow/suppress decisions/cursors/fences, checkpoint decision_frontier consistency, event-time expiry, unchanged canonical IDs and Kafka window replay. Initial and R1 checker failures remain preserved; their issues are resolved by R2. Planning approval is not production proof. Preserve unrelated configuration/.serena edits and existing user volumes.
 - Phase 2 closeout evidence below is historical and remains valid; it is not the current Phase 3 authorization boundary.
 
@@ -155,12 +158,12 @@ None yet.
 
 ### Blockers/Concerns
 
-- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 9/21 plans implemented, including all four exact predicates, native stores and real detector PG dependency; boundary/lateness refinement, adversarial persistence, poison, cooldown, recovery, live scheduling and phase-wide security/CI proofs remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14.
+- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 10/21 plans implemented, including all four exact predicates, native stores, real detector PG dependency and adversarial alert persistence. Boundary/lateness refinement, broader poison/prefix proofs, cooldown, detector recovery, live scheduling and phase-wide security/CI proofs remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14.
 - Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-18T22:52:41.846Z
-Stopped at: Completed 03-04-PLAN.md; 9/21 Phase 3 plans complete, Wave 4 in progress
+Last session: 2026-10-18T23:08:24.403Z
+Stopped at: Completed 03-10-PLAN.md; 10/21 Phase 3 plans complete, Wave 4 cross-plan gate pending
 Resume file: None
