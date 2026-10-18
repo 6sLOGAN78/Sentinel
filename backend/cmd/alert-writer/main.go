@@ -40,6 +40,11 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err = consumer.Ping(ctx); err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
+	dlq, err := kafkax.NewDLQPublisher(ctx, cfg.Kafka, cfg.Kafka.DLQTopic, cfg.Writer.DLQMaxBytes)
+	if err != nil {
+		return fmt.Errorf("kafka DLQ: %w", err)
+	}
+	lc.Add("kafka-dlq", dlq.Close)
 
 	clickhouse, err := storageclickhouse.Open(ctx, cfg.ClickHouse)
 	if err != nil {
@@ -57,7 +62,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 
 		return nil
 	})
-	startWriter(ctx, cfg, log, lc, consumer, clickhouse, db)
+	startWriter(ctx, cfg, log, lc, consumer, clickhouse, db, dlq)
 
 	draining := &opshttp.Draining{}
 	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
@@ -80,9 +85,9 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 }
 
 func startWriter(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle,
-	consumer *kafkax.Consumer, conn storageclickhouse.Conn, db *database.Database) {
+	consumer *kafkax.Consumer, conn storageclickhouse.Conn, db *database.Database, dlq *kafkax.DLQPublisher) {
 	worker := alertwriter.New(consumer, storageclickhouse.NewAlertStore(conn),
-		storagepostgres.NewAlertStore(db.Pool, cfg.Writer.OperationTimeout), cfg.Writer, log)
+		storagepostgres.NewAlertStore(db.Pool, cfg.Writer.OperationTimeout), cfg.Writer, log).WithQuarantine(dlq)
 	workerCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() {

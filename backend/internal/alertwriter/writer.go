@@ -6,11 +6,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"net/netip"
 	"sort"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
@@ -18,12 +15,12 @@ import (
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
+	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
 
 const (
 	rollbackTimeout   = time.Second
-	maxPrincipalRunes = 128
 	backoffMultiplier = 2
 )
 
@@ -50,6 +47,11 @@ type WorkflowStore interface {
 	Ensure(context.Context, pgx.Tx, *contracts.Alert, string) error
 }
 
+// QuarantinePublisher acknowledges the existing bounded, sanitized DLQ envelope.
+type QuarantinePublisher interface {
+	Publish(context.Context, *kgo.Record, kafkax.DLQReason) error
+}
+
 // Writer owns one finite alert batch at a time.
 type Writer struct {
 	consumer   Consumer
@@ -57,6 +59,14 @@ type Writer struct {
 	workflows  WorkflowStore
 	settings   config.WriterConfig
 	log        zerolog.Logger
+	dlq        QuarantinePublisher
+}
+
+// WithQuarantine binds the publisher before Run. Without it permanent failures
+// remain unacknowledged, allowing existing controlled callers to fail closed.
+func (w *Writer) WithQuarantine(publisher QuarantinePublisher) *Writer {
+	w.dlq = publisher
+	return w
 }
 
 // New binds explicit dependencies without creating alternate persistence paths.
@@ -165,12 +175,15 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record, budgets con
 }
 
 func (w *Writer) persistRecord(ctx context.Context, record *kgo.Record) error {
+	if ctx.Err() != nil {
+		return errors.New("alert persistence budget exhausted")
+	}
 	alert, err := contracts.DecodeAlert(bytes.NewReader(record.Value))
 	if err != nil {
-		return errors.New("invalid alert encoding")
+		return w.quarantine(ctx, record, kafkax.DLQReasonDecode)
 	}
 	if err = ValidateIdentity(alert, record.Key); err != nil {
-		return err
+		return w.quarantine(ctx, record, kafkax.DLQReasonValidation)
 	}
 	fingerprint, err := ImmutableFingerprint(alert)
 	if err != nil {
@@ -181,8 +194,11 @@ func (w *Writer) persistRecord(ctx context.Context, record *kgo.Record) error {
 		operationCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
 		err = w.persist(operationCtx, alert, fingerprint)
 		cancel()
-		if err == nil || errors.Is(err, ErrConflict) {
-			return err
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, ErrConflict) {
+			return w.quarantine(ctx, record, kafkax.DLQReasonValidation)
 		}
 		if attempt == w.settings.MaxAttempts || ctx.Err() != nil {
 			break
@@ -199,6 +215,33 @@ func (w *Writer) persistRecord(ctx context.Context, record *kgo.Record) error {
 	}
 	// Driver errors may contain payloads/SQL arguments; terminal logs are sanitized.
 	return errors.New("alert persistence failed within bounded attempts")
+}
+
+func (w *Writer) quarantine(ctx context.Context, record *kgo.Record, reason kafkax.DLQReason) error {
+	if w.dlq == nil {
+		return errors.New("alert quarantine unavailable")
+	}
+	backoff := w.settings.RetryMinBackoff
+	for attempt := 1; attempt <= w.settings.MaxAttempts && ctx.Err() == nil; attempt++ {
+		publishCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
+		err := w.dlq.Publish(publishCtx, record, reason)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if attempt == w.settings.MaxAttempts {
+			break
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.New("alert quarantine budget exhausted")
+		case <-timer.C:
+		}
+		backoff = min(backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
+	}
+	return errors.New("alert quarantine failed within bounded attempts")
 }
 
 func (w *Writer) persist(ctx context.Context, alert *contracts.Alert, fingerprint string) error {
@@ -239,53 +282,4 @@ func rollback(tx pgx.Tx) {
 	ctx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
 	defer cancel()
 	_ = tx.Rollback(ctx)
-}
-
-// ValidateIdentity preserves the entire first-pipe AUTH principal suffix; display
-// delimiters never replace the length-prefixed contracts.DedupeKey primitive.
-func ValidateIdentity(alert *contracts.Alert, key []byte) error {
-	if alert == nil {
-		return errors.New("nil alert")
-	}
-	if err := alert.Validate(); err != nil {
-		return errors.New("invalid alert schema")
-	}
-	first, second, hasPipe := strings.Cut(alert.EntityKey, "|")
-	entity := []string{first}
-	switch alert.RuleID {
-	case "AUTH_BRUTE_FORCE":
-		if !hasPipe || second == "" || utf8.RuneCountInString(second) > maxPrincipalRunes {
-			return errors.New("invalid AUTH entity")
-		}
-		entity = append(entity, second)
-	case "PORT_SCAN":
-		if !hasPipe || !validIP(second) {
-			return errors.New("invalid SCAN entity")
-		}
-		entity = append(entity, second)
-	case "REQUEST_FLOOD", "DENY_SPIKE":
-		if hasPipe {
-			return errors.New("invalid volume entity")
-		}
-	default:
-		return errors.New("unsupported alert rule")
-	}
-	id := contracts.DedupeKey(alert.TenantID, alert.RuleID, entity, alert.WindowStart.Time)
-	if !validIP(first) || id != alert.AlertID {
-		return errors.New("invalid canonical alert identity")
-	}
-	if string(key) != alert.TenantID+"|"+alert.AlertID {
-		return errors.New("invalid canonical alert source key")
-	}
-	return nil
-}
-
-func validIP(value string) bool {
-	addr, err := netip.ParseAddr(value)
-	return err == nil && addr.Zone() == "" && !addr.Is4In6() && (!addr.Is6() || !strings.Contains(value, "."))
-}
-
-// ImmutableFingerprint excludes workflow status and wall-clock detection time.
-func ImmutableFingerprint(alert *contracts.Alert) (string, error) {
-	return storageclickhouse.ImmutableFingerprint(alert)
 }
