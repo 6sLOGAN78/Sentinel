@@ -147,6 +147,10 @@ func (s *PartitionState) Apply(offset int64, event *contracts.Event) (Outcome, e
 	if late {
 		return Outcome{Late: true}, nil
 	}
+	return s.applyRules(offset, event)
+}
+
+func (s *PartitionState) applyRules(offset int64, event *contracts.Event) (Outcome, error) {
 	for _, r := range s.rules.Rules {
 		if !r.Enabled {
 			continue
@@ -159,6 +163,10 @@ func (s *PartitionState) Apply(offset int64, event *contracts.Event) (Outcome, e
 		case scanRuleID:
 			if scanMatches(event) {
 				return s.applyWindow(offset, event, r, *event.DestinationIP, event.DestinationPort)
+			}
+		case floodRuleID, denyRuleID:
+			if volumeMatches(event, r.ID) {
+				return s.applyWindow(offset, event, r, "", nil)
 			}
 		}
 	}
@@ -218,11 +226,18 @@ func windowAlert(key windowKey, w *windowState, r Rule) *contracts.Alert {
 	start := time.UnixMilli(key.start).UTC()
 	end := contracts.NewTimestamp(time.UnixMilli(w.end))
 	entity := []string{key.ip, key.principal}
-	display := strings.Join(entity, "|")
 	summary := "Repeated failed logins against one user"
-	if r.ID == scanRuleID {
+	switch r.ID {
+	case scanRuleID:
 		summary = "Distinct destination ports on one host"
+	case floodRuleID:
+		entity = []string{key.ip}
+		summary = "Excessive network request volume"
+	case denyRuleID:
+		entity = []string{key.ip}
+		summary = "Burst of denied policy decisions"
 	}
+	display := strings.Join(entity, "|")
 	return &contracts.Alert{
 		SchemaVersion: 1, AlertID: contracts.DedupeKey(key.tenant, r.ID, entity, start),
 		TenantID: key.tenant, RuleID: r.ID, RuleVersion: r.Version, Severity: r.Severity, Status: "open",

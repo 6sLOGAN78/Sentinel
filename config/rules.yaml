@@ -1,6 +1,5 @@
 # Rules are immutable for the process lifetime; changes require restart and
-# a drained configuration handover (ADR 0007). Later rule slices enable the
-# remaining definitions after their live paths and tests are implemented.
+# a drained configuration handover (ADR 0007).
 schema_version: 1
 rules:
   - id: AUTH_BRUTE_FORCE
@@ -19,14 +18,14 @@ rules:
     cooldown: 30s
   - id: REQUEST_FLOOD
     version: 1
-    enabled: false
+    enabled: true
     threshold: 300
     window: 60s
     severity: high
     cooldown: 30s
   - id: DENY_SPIKE
     version: 1
-    enabled: false
+    enabled: true
     threshold: 30
     window: 120s
     severity: medium

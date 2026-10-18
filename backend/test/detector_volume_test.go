@@ -71,7 +71,8 @@ func TestDetectionPipelineVolume(t *testing.T) {
 	}
 	for i, event := range scan {
 		port := 1000 + i
-		event.EventType, event.SourceIP, event.DestinationIP, event.DestinationPort = "net.connection", &scanSource, &destination, &port
+		event.EventType, event.SourceIP = "net.connection", &scanSource
+		event.DestinationIP, event.DestinationPort = &destination, &port
 	}
 	below := append([]*contracts.Event{}, requests[:299]...)
 	below = append(below, denies[:29]...)
@@ -105,8 +106,10 @@ func TestDetectionPipelineVolume(t *testing.T) {
 		require.False(t, seen[alert.RuleID], "no repeated rule hits")
 		seen[alert.RuleID] = true
 		source, count, window, severity, events := floodSource, 300, time.Minute, "high", requests
+		summary := "Excessive network request volume"
 		if alert.RuleID == "DENY_SPIKE" {
 			source, count, window, severity, events = denySource, 30, 2*time.Minute, "medium", denies
+			summary = "Burst of denied policy decisions"
 		} else {
 			require.Equal(t, "REQUEST_FLOOD", alert.RuleID, "AUTH/SCAN and unrelated predicates must not cross-hit")
 		}
@@ -116,6 +119,7 @@ func TestDetectionPipelineVolume(t *testing.T) {
 		require.Equal(t, "demo", alert.TenantID)
 		require.Equal(t, 1, alert.RuleVersion)
 		require.Equal(t, severity, alert.Severity)
+		require.Equal(t, summary, alert.Summary)
 		require.Equal(t, "open", alert.Status)
 		require.Equal(t, source, alert.EntityKey)
 		require.Equal(t, count, alert.EventCount)
