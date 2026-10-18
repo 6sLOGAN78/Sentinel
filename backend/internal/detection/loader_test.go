@@ -25,6 +25,32 @@ func loadAuthRules(t *testing.T) *detection.Rules {
 	return rules
 }
 
+// Enabling the shipped SCAN rule must reach its reducer; unimplemented rules
+// and unknown IDs must still fail closed at startup.
+func TestRulesLoaderScan(t *testing.T) {
+	for _, tt := range []struct {
+		id    string
+		valid bool
+	}{
+		{"PORT_SCAN", true},
+		{"REQUEST_FLOOD", false},
+		{"DENY_SPIKE", false},
+	} {
+		t.Run(tt.id, func(t *testing.T) {
+			input := strings.Replace(authRulesYAML, "id: "+tt.id+", version: 1, enabled: false", "id: "+tt.id+", version: 1, enabled: true", 1)
+			rules, err := detection.LoadRules(strings.NewReader(input))
+			if tt.valid {
+				require.NoError(t, err, "enabled SCAN must load before detection can run")
+				require.Len(t, rules.Rules, 4)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+	_, err := detection.LoadRules(strings.NewReader(strings.Replace(authRulesYAML, "PORT_SCAN", "UNKNOWN_RULE", 1)))
+	require.Error(t, err)
+}
+
 // Removing KnownFields, the second-document EOF check or the bounded read must
 // make the corresponding malformed-input case fail.
 func TestRulesLoaderShape(t *testing.T) {
