@@ -67,8 +67,9 @@ type Metadata struct {
 
 // Outcome contains frozen first-threshold alerts and lateness classification.
 type Outcome struct {
-	Alerts []*contracts.Alert
-	Late   bool
+	Alerts     []*contracts.Alert
+	Candidates []Candidate
+	Late       bool
 }
 type windowKey struct {
 	tenant, rule, ip, principal string
