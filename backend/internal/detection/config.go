@@ -65,7 +65,7 @@ func LoadRules(reader io.Reader) (*Rules, error) {
 			return nil, errors.New("invalid rule severity")
 		}
 		// Other predicates are enabled only by their subsequent feature plans.
-		if r.Enabled && r.ID != authRuleID {
+		if r.Enabled && r.ID != authRuleID && r.ID != scanRuleID {
 			return nil, errors.New("rule implementation not enabled")
 		}
 		seen[r.ID] = true

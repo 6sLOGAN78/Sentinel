@@ -12,7 +12,7 @@ rules:
     cooldown: 60s
   - id: PORT_SCAN
     version: 1
-    enabled: false
+    enabled: true
     threshold: 20
     window: 60s
     severity: medium

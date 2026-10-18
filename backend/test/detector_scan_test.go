@@ -77,7 +77,8 @@ func TestDetectionPipelineScan(t *testing.T) {
 		var metadata struct {
 			ProcessedNext int64 `json:"processed_next"`
 		}
-		return ok && offset.Err == nil && json.Unmarshal([]byte(offset.Metadata), &metadata) == nil && metadata.ProcessedNext == 23
+		return ok && offset.Err == nil && json.Unmarshal([]byte(offset.Metadata), &metadata) == nil &&
+			metadata.ProcessedNext == 23
 	}, 15*time.Second, 50*time.Millisecond, "SCAN fixture input was not processed: %s", process.output.String())
 	quietCtx, cancelQuiet := context.WithTimeout(t.Context(), 2*time.Second)
 	before := observer.PollRecords(quietCtx, 10)
@@ -109,7 +110,8 @@ func TestDetectionPipelineScan(t *testing.T) {
 		SchemaVersion: 1, AlertID: id, TenantID: "demo", RuleID: "PORT_SCAN", RuleVersion: 1,
 		Severity: "medium", Status: "open", CreatedAt: end, WindowStart: contracts.NewTimestamp(start), WindowEnd: end,
 		EntityKey: source + "|" + destination, Summary: "Distinct destination ports on one host",
-		EventCount: 24, SampleEventIDs: samples, DedupeKey: "demo|PORT_SCAN|" + source + "|" + destination + "|" + start.Format(time.RFC3339Nano),
+		EventCount: 24, SampleEventIDs: samples,
+		DedupeKey: "demo|PORT_SCAN|" + source + "|" + destination + "|" + start.Format(time.RFC3339Nano),
 	}, alert)
 	// The fired scan window retains its source pin after publication is durable.
 	require.Eventually(t, func() bool {
@@ -123,7 +125,8 @@ func TestDetectionPipelineScan(t *testing.T) {
 		var metadata struct {
 			ProcessedNext int64 `json:"processed_next"`
 		}
-		return ok && offset.Err == nil && offset.At == 0 && json.Unmarshal([]byte(offset.Metadata), &metadata) == nil && metadata.ProcessedNext == 24
+		return ok && offset.Err == nil && offset.At == 0 && json.Unmarshal([]byte(offset.Metadata), &metadata) == nil &&
+			metadata.ProcessedNext == 24
 	}, 10*time.Second, 50*time.Millisecond, "missing acknowledged fired SCAN pin")
 	require.NoError(t, producer.PublishBatch(t.Context(), events[24:], uuid.NewString()))
 	quietCtx, cancelQuiet = context.WithTimeout(t.Context(), 2*time.Second)

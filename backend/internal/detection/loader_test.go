@@ -37,7 +37,8 @@ func TestRulesLoaderScan(t *testing.T) {
 		{"DENY_SPIKE", false},
 	} {
 		t.Run(tt.id, func(t *testing.T) {
-			input := strings.Replace(authRulesYAML, "id: "+tt.id+", version: 1, enabled: false", "id: "+tt.id+", version: 1, enabled: true", 1)
+			input := strings.Replace(authRulesYAML, "id: "+tt.id+", version: 1, enabled: false",
+				"id: "+tt.id+", version: 1, enabled: true", 1)
 			rules, err := detection.LoadRules(strings.NewReader(input))
 			if tt.valid {
 				require.NoError(t, err, "enabled SCAN must load before detection can run")

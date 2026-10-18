@@ -27,6 +27,7 @@ const (
 	ledgerEntryBytes = 64
 	windowBaseBytes  = 512
 	eventEntryBytes  = 128
+	portEntryBytes   = 32
 	metadataFormat   = 2
 )
 
@@ -70,12 +71,13 @@ type Outcome struct {
 	Late   bool
 }
 type windowKey struct {
-	tenant, ip, principal string
-	start                 int64
+	tenant, rule, ip, principal string
+	start                       int64
 }
 type windowState struct {
 	first, end int64
 	ids        map[string]struct{}
+	ports      map[int]struct{}
 	samples    []string
 	fired      bool
 }
@@ -118,7 +120,7 @@ func (s *PartitionState) Usage() (int, int, int) {
 	windows, ledger := len(s.windows), len(s.prefix)
 	bytes := ledger * ledgerEntryBytes
 	for k, w := range s.windows {
-		bytes += windowBaseBytes + len(k.tenant) + len(k.ip) + len(k.principal)
+		bytes += windowBaseBytes + len(k.tenant) + len(k.rule) + len(k.ip) + len(k.principal) + len(w.ports)*portEntryBytes
 		for id := range w.ids {
 			bytes += eventEntryBytes + len(id)
 		}
@@ -146,29 +148,42 @@ func (s *PartitionState) Apply(offset int64, event *contracts.Event) (Outcome, e
 		return Outcome{Late: true}, nil
 	}
 	for _, r := range s.rules.Rules {
-		if !r.Enabled || r.ID != authRuleID || event.EventType != "auth.failure" ||
-			event.SourceIP == nil || event.Principal == nil || *event.Principal == "" {
+		if !r.Enabled {
 			continue
 		}
-		return s.applyAuth(offset, event, r)
+		switch r.ID {
+		case authRuleID:
+			if event.EventType == "auth.failure" && event.SourceIP != nil && event.Principal != nil && *event.Principal != "" {
+				return s.applyWindow(offset, event, r, *event.Principal, nil)
+			}
+		case scanRuleID:
+			if scanMatches(event) {
+				return s.applyWindow(offset, event, r, *event.DestinationIP, event.DestinationPort)
+			}
+		}
 	}
 	return Outcome{}, nil
 }
 
-func (s *PartitionState) applyAuth(offset int64, event *contracts.Event, r Rule) (Outcome, error) {
+func (s *PartitionState) applyWindow(
+	offset int64, event *contracts.Event, r Rule, second string, port *int,
+) (Outcome, error) {
 	t := event.OccurredAt.UnixMilli()
 	start := t / r.Window.Milliseconds() * r.Window.Milliseconds()
 	end := start + r.Window.Milliseconds()
 	if start < s.effective[r.ID] || s.sealed != nil && end <= *s.sealed {
 		return Outcome{}, nil
 	}
-	key := windowKey{event.TenantID, *event.SourceIP, *event.Principal, start}
+	key := windowKey{tenant: event.TenantID, rule: r.ID, ip: *event.SourceIP, principal: second, start: start}
 	w := s.windows[key]
 	if w == nil {
 		if len(s.windows) >= MaxWindows {
 			return Outcome{}, errors.New("detector window capacity exceeded")
 		}
 		w = &windowState{first: offset, end: end, ids: make(map[string]struct{})}
+		if port != nil {
+			w.ports = make(map[int]struct{})
+		}
 		s.windows[key] = w
 	}
 	if _, ok := w.ids[event.EventID]; ok {
@@ -178,13 +193,20 @@ func (s *PartitionState) applyAuth(offset int64, event *contracts.Event, r Rule)
 		return Outcome{}, errors.New("detector event capacity exceeded")
 	}
 	w.ids[event.EventID] = struct{}{}
+	if port != nil {
+		w.ports[*port] = struct{}{}
+	}
 	if len(w.samples) < maxSamples {
 		w.samples = append(w.samples, event.EventID)
 	}
-	if w.fired || len(w.ids) < r.Threshold {
+	count := len(w.ids)
+	if port != nil {
+		count = len(w.ports)
+	}
+	if w.fired || count < r.Threshold {
 		return Outcome{}, nil
 	}
-	a := authAlert(key, w, r)
+	a := windowAlert(key, w, r)
 	if err := a.Validate(); err != nil {
 		return Outcome{}, errors.New("invalid canonical alert")
 	}
@@ -192,16 +214,20 @@ func (s *PartitionState) applyAuth(offset int64, event *contracts.Event, r Rule)
 	return Outcome{Alerts: []*contracts.Alert{a}}, nil
 }
 
-func authAlert(key windowKey, w *windowState, r Rule) *contracts.Alert {
+func windowAlert(key windowKey, w *windowState, r Rule) *contracts.Alert {
 	start := time.UnixMilli(key.start).UTC()
 	end := contracts.NewTimestamp(time.UnixMilli(w.end))
 	entity := []string{key.ip, key.principal}
 	display := strings.Join(entity, "|")
+	summary := "Repeated failed logins against one user"
+	if r.ID == scanRuleID {
+		summary = "Distinct destination ports on one host"
+	}
 	return &contracts.Alert{
 		SchemaVersion: 1, AlertID: contracts.DedupeKey(key.tenant, r.ID, entity, start),
 		TenantID: key.tenant, RuleID: r.ID, RuleVersion: r.Version, Severity: r.Severity, Status: "open",
 		CreatedAt: end, WindowStart: contracts.NewTimestamp(start), WindowEnd: end, EntityKey: display,
-		Summary: "Repeated failed logins against one user", EventCount: len(w.ids), SampleEventIDs: slices.Clone(w.samples),
+		Summary: summary, EventCount: len(w.ids), SampleEventIDs: slices.Clone(w.samples),
 		DedupeKey: key.tenant + "|" + r.ID + "|" + display + "|" + start.Format(time.RFC3339Nano),
 	}
 }
