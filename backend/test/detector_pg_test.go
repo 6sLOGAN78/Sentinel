@@ -3,6 +3,7 @@
 package test_test
 
 import (
+	"context"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -41,6 +42,29 @@ func TestDetectorPGDependency(t *testing.T) {
 		require.Contains(t, p.output.String(), "postgres")
 		require.NotContains(t, p.output.String(), pg.Password)
 		require.NotContains(t, p.output.String(), "postgres://")
+	})
+	t.Run("outage before source processing", func(t *testing.T) {
+		pg, handle, err := sentineltesting.StartPostgresFaultContainer(t.Context())
+		require.NoError(t, err)
+		t.Cleanup(handle.Close)
+		env, kafka := detectorPGEnv(t, pg)
+		p := startProc(t, "detector", "", env)
+		url := "http://127.0.0.1:" + envValue(t, env, "SENTINEL_OPS.PORT")
+		requireStatusEventually(t, url+"/readyz", http.StatusOK)
+		require.NoError(t, handle.Pause(t.Context()))
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			require.NoError(t, handle.Unpause(ctx))
+		})
+		requireDependencyEventually(t, url+"/readyz", "postgres", "unavailable")
+		events := canonicalWriterEvents(1, time.Now().UTC().Add(-time.Minute))
+		require.NoError(t, newWriterProducer(t, kafka).PublishBatch(t.Context(), events, uuid.NewString()))
+		require.NotZero(t, p.requireExit(t, 5*time.Second), p.output.String())
+		_, committed := committedNextOffset(t, kafka, kafka.DetectorGroup, kafka.EventsTopic)
+		require.False(t, committed, "PG outage must leave source metadata untouched")
+		require.Contains(t, p.output.String(), "postgres unavailable")
+		require.NotContains(t, p.output.String(), pg.Password)
 	})
 }
 

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/app"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
+	"github.com/6sLOGAN78/sentinel/internal/database"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/detector"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
@@ -20,7 +22,7 @@ func main() {
 	os.Exit(app.Run(config.ServiceDetector, setup))
 }
 
-func setup(ctx context.Context, cfg *config.Config, _ zerolog.Logger, lc *app.Lifecycle) error {
+func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
 	var opsServer *opshttp.Server
 	lc.Add("ops-http", func(closeCtx context.Context) error {
 		if opsServer == nil {
@@ -29,6 +31,14 @@ func setup(ctx context.Context, cfg *config.Config, _ zerolog.Logger, lc *app.Li
 
 		return opsServer.Shutdown(closeCtx)
 	})
+	pgBudgets, err := config.ComputeDetectorPGBudgets(cfg.Detector.PG, cfg.Detector.Writer)
+	if err != nil {
+		return err
+	}
+	db, err := openPostgres(ctx, cfg.Database, log, lc, pgBudgets)
+	if err != nil {
+		return err
+	}
 
 	file, err := os.Open(cfg.Detector.RulesPath)
 	if err != nil {
@@ -58,7 +68,8 @@ func setup(ctx context.Context, cfg *config.Config, _ zerolog.Logger, lc *app.Li
 	if err = publisher.Ping(ctx); err != nil {
 		return err
 	}
-	worker := detector.New(consumer, publisher, rules, cfg.Detector.Writer, contracts.LimitsFromConfig(cfg.Contracts))
+	worker := detector.New(consumer, publisher, rules, cfg.Detector.Writer,
+		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets)
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
 	go func() {
@@ -81,6 +92,7 @@ func setup(ctx context.Context, cfg *config.Config, _ zerolog.Logger, lc *app.Li
 	draining := &opshttp.Draining{}
 	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
 		{Name: "kafka", Fn: consumer.Ping}, {Name: "alerts", Fn: publisher.Ping},
+		{Name: "postgres", Fn: db.Pool.Ping},
 	})
 	if err != nil {
 		return fmt.Errorf("ops http: %w", err)
@@ -95,4 +107,30 @@ func setup(ctx context.Context, cfg *config.Config, _ zerolog.Logger, lc *app.Li
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
+}
+
+func openPostgres(ctx context.Context, cfg config.DatabaseConfig, log zerolog.Logger,
+	lc *app.Lifecycle, budgets config.DetectorPGConfig,
+) (*database.Database, error) {
+	connectCtx, cancelConnect := context.WithTimeout(ctx, budgets.AcquireTimeout)
+	defer cancelConnect()
+	// Driver connection errors may carry user/database identifiers. Disable
+	// debug SQL tracing and expose only a stable dependency classification.
+	db, err := database.New(connectCtx, cfg, log.Level(zerolog.InfoLevel))
+	if err != nil {
+		return nil, errors.New("postgres unavailable")
+	}
+	lc.Add("postgres", func(closeCtx context.Context) error {
+		cleanupCtx, cancelCleanup := context.WithTimeout(closeCtx, budgets.CleanupTimeout)
+		defer cancelCleanup()
+		done := make(chan struct{})
+		go func() { defer close(done); db.Close() }()
+		select {
+		case <-done:
+			return nil
+		case <-cleanupCtx.Done():
+			return errors.New("postgres cleanup deadline exceeded")
+		}
+	})
+	return db, nil
 }

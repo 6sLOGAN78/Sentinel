@@ -3,6 +3,7 @@ package config_test
 import (
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -11,8 +12,10 @@ import (
 
 // Ignoring a decision deadline or permitting an unbounded pool must fail here.
 func TestDetectorPGSettings(t *testing.T) {
-	for _, key := range []string{"acquire_timeout", "transaction_timeout", "lock_timeout", "statement_timeout", "cleanup_timeout"} {
-		for _, value := range []string{"0s", "-1s", "2562048h", "31s"} {
+	for _, key := range []string{
+		"acquire_timeout", "transaction_timeout", "lock_timeout", "statement_timeout", "cleanup_timeout",
+	} {
+		for _, value := range []string{"0s", "-1s", "1ns", "2562048h", "31s"} {
 			t.Run(key+"/"+value, func(t *testing.T) {
 				setCompleteEnv(t)
 				t.Setenv("SENTINEL_DETECTOR.PG."+key, value)
@@ -41,6 +44,23 @@ func TestDetectorPGSettings(t *testing.T) {
 		cfg, err := config.Load(config.ServiceDetector)
 		require.NoError(t, err)
 		require.Equal(t, cfg.Writer, cfg.Detector.Writer)
+		pg, err := config.ComputeDetectorPGBudgets(cfg.Detector.PG, cfg.Detector.Writer)
+		require.NoError(t, err)
+		require.Equal(t, 5*time.Second, pg.TransactionTimeout)
+		require.Equal(t, time.Second, pg.LockTimeout)
+		require.Equal(t, 2*time.Second, pg.StatementTimeout)
+		require.Equal(t, time.Second, pg.CleanupTimeout)
+		writer := cfg.Detector.Writer
+		writer.MaxAttempts, writer.OperationTimeout, writer.ShutdownTimeout = 1, time.Second, time.Second
+		bounded, err := config.ComputeDetectorPGBudgets(cfg.Detector.PG, writer)
+		require.NoError(t, err)
+		// This writer owns exactly three seconds of processing. Acquisition and
+		// independent cleanup reserve 750ms each, leaving a 1500ms transaction.
+		require.Equal(t, 750*time.Millisecond, bounded.AcquireTimeout)
+		require.Equal(t, 1500*time.Millisecond, bounded.TransactionTimeout)
+		require.Equal(t, 750*time.Millisecond, bounded.CleanupTimeout)
+		require.Equal(t, 1500*time.Millisecond, bounded.StatementTimeout)
+		require.LessOrEqual(t, bounded.LockTimeout, bounded.StatementTimeout)
 	})
 	for name, values := range map[string]map[string]string{
 		"lock exceeds statement":        {"lock_timeout": "3s"},

@@ -373,7 +373,8 @@ func TestLoadRequiredSectionsPerService(t *testing.T) {
 		wantErr bool
 	}{
 		{"ingest", []string{"SENTINEL_KAFKA.BROKERS"}, true},
-		{"detector", []string{"SENTINEL_REDIS.ADDRESS", "SENTINEL_CLICKHOUSE.HTTP_ADDRESS", "SENTINEL_DATABASE.HOST"}, false},
+		{"detector", []string{"SENTINEL_REDIS.ADDRESS", "SENTINEL_CLICKHOUSE.HTTP_ADDRESS"}, false},
+		{"detector", []string{"SENTINEL_DATABASE.HOST"}, true},
 		{"detector", []string{"SENTINEL_KAFKA.BROKERS"}, true},
 		{"event-writer", []string{"SENTINEL_REDIS.ADDRESS", "SENTINEL_DATABASE.HOST"}, false},
 		{"event-writer", []string{"SENTINEL_CLICKHOUSE.HTTP_ADDRESS"}, true},
@@ -524,6 +525,7 @@ func writeEnvFile(t *testing.T, content string) string {
 }
 
 func TestDotenvLoadedWhenLocal(t *testing.T) {
+	setCompleteEnv(t)
 	t.Setenv("SENTINEL_PRIMARY.ENV", "local")
 	t.Setenv("SENTINEL_ENV_FILE", writeEnvFile(t, "SENTINEL_KAFKA.BROKERS=from-dotenv:9092\n"))
 	t.Setenv("SENTINEL_KAFKA.BROKERS", "")

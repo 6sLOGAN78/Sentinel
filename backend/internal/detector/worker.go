@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
@@ -44,16 +46,20 @@ type Worker struct {
 	settings   config.WriterConfig
 	limits     contracts.Limits
 	partitions map[detection.TopicPartition]partition
+	pool       *pgxpool.Pool
+	pg         config.DetectorPGConfig
 }
 
 // New constructs a worker from explicit dependencies and startup settings.
 func New(
 	consumer Consumer, publisher Publisher, rules *detection.Rules,
 	settings config.WriterConfig, limits contracts.Limits,
+	pool *pgxpool.Pool, pg config.DetectorPGConfig,
 ) *Worker {
 	return &Worker{
 		consumer: consumer, publisher: publisher, rules: rules, settings: settings, limits: limits,
 		partitions: make(map[detection.TopicPartition]partition),
+		pool:       pool, pg: pg,
 	}
 }
 
@@ -62,6 +68,13 @@ func (w *Worker) Run(ctx context.Context) error {
 	budgets, err := config.ComputeWriterBudgets(w.settings)
 	if err != nil {
 		return err
+	}
+	pg, err := config.ComputeDetectorPGBudgets(w.pg, w.settings)
+	if err != nil {
+		return err
+	}
+	if w.pool == nil {
+		return errors.New("detector requires postgres pool")
 	}
 	for ctx.Err() == nil {
 		records, pollErr := w.consumer.PollRecords(ctx, w.settings.BatchSize)
@@ -75,7 +88,17 @@ func (w *Worker) Run(ctx context.Context) error {
 			return pollErr
 		}
 		batchCtx, cancel := context.WithTimeout(ctx, budgets.Processing)
-		err = w.process(batchCtx, records)
+		if len(records) > 0 {
+			pingCtx, cancelPing := context.WithTimeout(batchCtx, pg.AcquireTimeout)
+			err = w.pool.Ping(pingCtx)
+			cancelPing()
+			if err != nil {
+				err = errors.New("postgres unavailable")
+			}
+		}
+		if err == nil {
+			err = w.process(batchCtx, records)
+		}
 		cancel()
 		w.consumer.AllowRebalance()
 		if err != nil {

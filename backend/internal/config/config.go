@@ -83,6 +83,9 @@ const (
 	maxFetches         = 8
 	maxDLQBytes        = 1 << 20
 	maxAggregateFetch  = 128 << 20
+	defaultPGAcquire   = 2 * time.Second
+	defaultPGTx        = 5 * time.Second
+	defaultPGStatement = 2 * time.Second
 )
 
 // Service names accepted by Load.
@@ -113,8 +116,60 @@ type Config struct {
 
 // DetectorConfig loads immutable startup rules and bounds one owned batch.
 type DetectorConfig struct {
-	RulesPath string       `koanf:"rules_path" validate:"required"`
-	Writer    WriterConfig `koanf:"writer"`
+	RulesPath string           `koanf:"rules_path" validate:"required"`
+	Writer    WriterConfig     `koanf:"writer"`
+	PG        DetectorPGConfig `koanf:"pg"`
+}
+
+// DetectorPGConfig bounds acquisition, decision transactions and independent
+// rollback cleanup. SQL lock and statement limits are transaction-local in
+// the decision store; merely opening the pool does not activate cooldown.
+type DetectorPGConfig struct {
+	AcquireTimeout     time.Duration `koanf:"acquire_timeout" validate:"gte=1ms,lte=30s"`
+	TransactionTimeout time.Duration `koanf:"transaction_timeout" validate:"gte=1ms,lte=30s"`
+	LockTimeout        time.Duration `koanf:"lock_timeout" validate:"gte=1ms,lte=30s"`
+	StatementTimeout   time.Duration `koanf:"statement_timeout" validate:"gte=1ms,lte=30s"`
+	CleanupTimeout     time.Duration `koanf:"cleanup_timeout" validate:"gte=1ms,lte=30s"`
+}
+
+// ComputeDetectorPGBudgets caps PG work within the existing aggregate owned
+// batch deadline, reserving independent cleanup time even after cancellation.
+func ComputeDetectorPGBudgets(pg DetectorPGConfig, writer WriterConfig) (DetectorPGConfig, error) {
+	const reserveFraction = 4
+	for _, d := range []time.Duration{pg.AcquireTimeout, pg.TransactionTimeout, pg.LockTimeout,
+		pg.StatementTimeout, pg.CleanupTimeout} {
+		if d < time.Millisecond || d > 30*time.Second {
+			return DetectorPGConfig{}, errors.New("validate detector postgres config: invalid deadline")
+		}
+	}
+	if pg.LockTimeout > pg.StatementTimeout || pg.StatementTimeout > pg.TransactionTimeout {
+		return DetectorPGConfig{}, errors.New("validate detector postgres config: invalid deadline order")
+	}
+	budget, err := ComputeWriterBudgets(writer)
+	if err != nil {
+		return DetectorPGConfig{}, err
+	}
+	pg.AcquireTimeout = min(pg.AcquireTimeout, budget.Processing/reserveFraction)
+	pg.CleanupTimeout = min(pg.CleanupTimeout, budget.Processing/reserveFraction, writer.ShutdownTimeout)
+	pg.TransactionTimeout = min(pg.TransactionTimeout, budget.Processing-pg.AcquireTimeout-pg.CleanupTimeout)
+	pg.StatementTimeout = min(pg.StatementTimeout, pg.TransactionTimeout)
+	pg.LockTimeout = min(pg.LockTimeout, pg.StatementTimeout)
+	if pg.AcquireTimeout < time.Millisecond || pg.CleanupTimeout < time.Millisecond || pg.LockTimeout < time.Millisecond {
+		return DetectorPGConfig{}, errors.New("validate detector postgres config: insufficient ownership budget")
+	}
+	return pg, nil
+}
+
+func validateDetectorPool(db DatabaseConfig) error {
+	const maxDetectorConns = 100
+	const maxLifetimeSeconds = int64(math.MaxInt64) / int64(time.Second)
+	if db.Port < 1 || db.Port > 65535 || db.MaxOpenConns < 1 || db.MaxOpenConns > maxDetectorConns ||
+		db.MaxIdleConns < 1 || db.MaxIdleConns > db.MaxOpenConns ||
+		db.ConnMaxLifetime < 1 || int64(db.ConnMaxLifetime) > maxLifetimeSeconds ||
+		db.ConnMaxIdleTime < 1 || int64(db.ConnMaxIdleTime) > maxLifetimeSeconds {
+		return errors.New("validate detector postgres config: invalid pool bounds")
+	}
+	return nil
 }
 
 // OpsConfig controls the private liveness/readiness listener.
@@ -294,7 +349,7 @@ type ContractsConfig struct {
 func requiredSections() map[string][]string {
 	return map[string][]string{
 		ServiceIngest:      {sectionRedis, sectionKafka, sectionDatabase, sectionIngest},
-		ServiceDetector:    {sectionKafka, sectionDetector},
+		ServiceDetector:    {sectionKafka, sectionDatabase, sectionDetector},
 		ServiceEventWriter: {sectionKafka, sectionClickHouse, sectionWriter},
 		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse},
 		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis},
@@ -429,6 +484,11 @@ func setDefaults(k *koanf.Koanf) {
 		"kafka.detector_group":                       "sentinel-detector",
 		"kafka.alert_writer_group":                   "sentinel-alert-writer",
 		"detector.rules_path":                        "../config/rules.yaml",
+		"detector.pg.acquire_timeout":                defaultPGAcquire,
+		"detector.pg.transaction_timeout":            defaultPGTx,
+		"detector.pg.lock_timeout":                   time.Second,
+		"detector.pg.statement_timeout":              defaultPGStatement,
+		"detector.pg.cleanup_timeout":                time.Second,
 		"kafka.produce_timeout":                      defaultProduceWait,
 		"kafka.record_retries":                       defaultRetries,
 		"kafka.max_buffered_records":                 defaultRecordCap,
@@ -590,7 +650,14 @@ func validateSection(cfg *Config, section string) error {
 	case sectionWriter:
 		return validateWriterConfig(cfg.Writer)
 	case sectionDetector:
-		return validateWriterConfig(cfg.Detector.Writer)
+		if err := validateWriterConfig(cfg.Detector.Writer); err != nil {
+			return err
+		}
+		if err := validateDetectorPool(cfg.Database); err != nil {
+			return err
+		}
+		_, err := ComputeDetectorPGBudgets(cfg.Detector.PG, cfg.Detector.Writer)
+		return err
 	case sectionRedis:
 		return validateRedisSecurity(cfg.Primary.Env, cfg.Redis)
 	default:
