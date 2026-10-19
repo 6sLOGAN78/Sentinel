@@ -70,7 +70,7 @@ func TestDetectorConfigRestart(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(changed), 0o600))
 	// A live old-config member, even drained, forbids a rolling handover.
 	f.process = startProc(t, "detector", "", f.env)
-	requireOutputEventually(t, f.process, "service started")
+	requireOutputEventually(t, f.process)
 	oldProcess := f.process
 	t.Cleanup(func() {
 		if t.Failed() {

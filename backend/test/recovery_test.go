@@ -42,7 +42,7 @@ func TestWriterCrashRestart(t *testing.T) {
 	preInsert := startRecoveryProc(
 		t, filepath.Join(binDir, "event-writer"), recoveryWriterEnv(t, preInsertKafka, clickhouse),
 	)
-	requireOutputEventually(t, preInsert, "service started")
+	requireOutputEventually(t, preInsert)
 	require.NoError(t, preInsert.cmd.Process.Signal(syscall.SIGKILL))
 	require.NotZero(t, preInsert.requireExit(t, failFastLimit))
 	require.NoError(t, newWriterProducer(t, kafka).PublishBatch(t.Context(), events, uuid.NewString()))
@@ -66,7 +66,7 @@ func TestWriterCrashRestart(t *testing.T) {
 	waitRecoveryOffset(t, kafka, group, topic, int64(len(events)), restart)
 	require.Zero(t, restart.terminate(t), restart.output.String())
 	repeated := startRecoveryProc(t, filepath.Join(binDir, "event-writer"), recoveryWriterEnv(t, kafka, clickhouse))
-	requireOutputEventually(t, repeated, "service started")
+	requireOutputEventually(t, repeated)
 	require.Zero(t, repeated.terminate(t), repeated.output.String())
 
 	store := storageclickhouse.NewEventStore(conn)
@@ -159,8 +159,9 @@ func requireFileEventually(t *testing.T, path string) {
 	}, 20*time.Second, 25*time.Millisecond, "barrier %s was not reached", path)
 }
 
-func requireOutputEventually(t *testing.T, process *proc, text string) {
+func requireOutputEventually(t *testing.T, process *proc) {
 	t.Helper()
+	const text = "service started"
 	require.Eventually(t, func() bool {
 		return strings.Contains(process.output.String(), text)
 	}, failFastLimit, 25*time.Millisecond, "process output never contained %q:\n%s", text, process.output.String())

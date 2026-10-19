@@ -57,7 +57,7 @@ func newAlertPipelineFixture(t *testing.T) *alertPipelineFixture {
 		env = append(without(env, key+"="), key+"="+value)
 	}
 	process := startProc(t, "alert-writer", "", env)
-	requireOutputEventually(t, process, "service started")
+	requireOutputEventually(t, process)
 	start := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	principal := "analyst|\u03b4|" + uuid.NewString()
 	alert := &contracts.Alert{

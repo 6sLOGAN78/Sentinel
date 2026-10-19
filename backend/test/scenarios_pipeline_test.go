@@ -107,14 +107,14 @@ func runStaticScenario(ctx context.Context, t *testing.T, root string, fixture s
 	}
 	for _, service := range []string{"detector", "event-writer", "alert-writer"} {
 		process := startProc(t, service, "", scenarioEnvironment(t, service, settings))
-		requireOutputEventually(t, process, "service started")
+		requireOutputEventually(t, process)
 	}
 	ingestEnv := scenarioEnvironment(t, "ingest", settings)
 	// Historical fixed fixtures exercise default binaries in an isolated group.
 	// Live operator acceptance below keeps the real production skew unchanged.
 	ingestEnv = append(ingestEnv, "SENTINEL_CONTRACTS.PAST_SKEW=876000h")
 	ingestProcess := startProc(t, "ingest", "", ingestEnv)
-	requireOutputEventually(t, ingestProcess, "service started")
+	requireOutputEventually(t, ingestProcess)
 	var port string
 	for _, value := range ingestEnv {
 		if strings.HasPrefix(value, "SENTINEL_SERVER.PORT=") {

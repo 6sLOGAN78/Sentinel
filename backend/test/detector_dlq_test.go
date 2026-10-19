@@ -37,7 +37,7 @@ func testDetectorRealPoison(t *testing.T) {
 		"SENTINEL_DETECTOR.WRITER.DLQ_MAX_BYTES=64")
 	observed := startObservedDLQ(t.Context(), t, kafka, kafka.DLQTopic)
 	p := startProc(t, "detector", "", env)
-	requireOutputEventually(t, p, "service started")
+	requireOutputEventually(t, p)
 	now := time.Now().UTC().Truncate(time.Second)
 	events := canonicalWriterEvents(3, now)
 	ip := "192.0.2.81"

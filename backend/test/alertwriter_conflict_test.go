@@ -114,7 +114,7 @@ func (f *alertReplayFixture) binary(t *testing.T) *proc {
 		env = append(without(env, key+"="), key+"="+value)
 	}
 	p := startProc(t, "alert-writer", "", env)
-	requireOutputEventually(t, p, "service started")
+	requireOutputEventually(t, p)
 	return p
 }
 

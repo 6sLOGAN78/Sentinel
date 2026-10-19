@@ -80,9 +80,9 @@ func newCooldownPGFixture(t *testing.T, short bool, pg config.DatabaseConfig) *c
 		writerEnv = append(without(writerEnv, key+"="), key+"="+value)
 	}
 	writer := startProc(t, "alert-writer", "", writerEnv)
-	requireOutputEventually(t, writer, "service started")
+	requireOutputEventually(t, writer)
 	process := startProc(t, "detector", "", env)
-	requireOutputEventually(t, process, "service started")
+	requireOutputEventually(t, process)
 	requireStatusEventually(t, "http://127.0.0.1:"+opsPort(t, env)+"/readyz", http.StatusOK)
 	observer, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{kafka.AlertsTopic: {0: kgo.NewOffset().AtStart()}}))
@@ -187,7 +187,7 @@ func TestDetectorCooldownVisible(t *testing.T) {
 	require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT generation FROM detection_partition_fences
 		WHERE group_id=$1 AND topic=$2 AND partition_id=0`, f.kafka.DetectorGroup, f.kafka.EventsTopic).Scan(&generation))
 	f.process = startProc(t, "detector", "", f.env)
-	requireOutputEventually(t, f.process, "service started")
+	requireOutputEventually(t, f.process)
 	require.Eventually(t, func() bool {
 		var current int32
 		return f.db.Pool.QueryRow(t.Context(), `SELECT generation FROM detection_partition_fences

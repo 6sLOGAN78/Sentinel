@@ -44,7 +44,7 @@ func TestDetectionPipelineScan(t *testing.T) {
 		env = append(without(env, key+"="), key+"="+value)
 	}
 	process := startProc(t, "detector", "", env)
-	requireOutputEventually(t, process, "service started")
+	requireOutputEventually(t, process)
 	observer, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafkaCfg.Brokers, ",")...),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{alertsTopic: {0: kgo.NewOffset().AtStart()}}))
 	require.NoError(t, err)
