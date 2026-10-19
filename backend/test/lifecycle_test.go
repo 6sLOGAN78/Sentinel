@@ -82,11 +82,7 @@ func serviceEnv(t *testing.T, service string) []string {
 	case "detector":
 		env = append(env, kafka...)
 		env = append(env, pg...)
-		rules, rulesErr := filepath.Abs("../../config/rules.yaml")
-		if rulesErr != nil {
-			t.Fatalf("resolve detector rules: %v", rulesErr)
-		}
-		env = append(env, "SENTINEL_DETECTOR.RULES_PATH="+rules)
+		env = append(env, "SENTINEL_DETECTOR.RULES_PATH="+lifecycleRulesPath)
 	case "event-writer":
 		env = append(env, kafka...)
 		env = append(env, ch...)

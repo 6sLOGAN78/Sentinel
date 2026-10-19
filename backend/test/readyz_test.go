@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
@@ -56,6 +57,8 @@ func TestReadyzDependencies(t *testing.T) {
 	kafka.DLQTopic = sentineltesting.RequireUniqueTopic(t, kafka, "ready-dlq")
 	kafka.AlertsTopic = sentineltesting.RequireUniqueTopic(t, kafka, "ready-alerts")
 	kafka.EventWriterGroup = "readyz-writer"
+	kafka.DetectorGroup = "readyz-detector-" + uuid.NewString()
+	kafka.AlertWriterGroup = "readyz-alert-writer-" + uuid.NewString()
 
 	fixtures := startReadinessProcesses(t, pg, redis, kafka, clickhouse)
 	assertOutageRecovery(t, pgHandle, "postgres", fixtures, "ingest", "detector", "alert-writer", "query-api")
@@ -217,6 +220,8 @@ func serviceEnvWithDependencies(
 		"SENTINEL_KAFKA.DLQ_TOPIC":           kafka.DLQTopic,
 		"SENTINEL_KAFKA.ALERTS_TOPIC":        kafka.AlertsTopic,
 		"SENTINEL_KAFKA.EVENT_WRITER_GROUP":  kafka.EventWriterGroup,
+		"SENTINEL_KAFKA.DETECTOR_GROUP":      kafka.DetectorGroup,
+		"SENTINEL_KAFKA.ALERT_WRITER_GROUP":  kafka.AlertWriterGroup,
 		"SENTINEL_CLICKHOUSE.HTTP_ADDRESS":   clickhouse.HTTPAddress,
 		"SENTINEL_CLICKHOUSE.NATIVE_ADDRESS": clickhouse.NativeAddress,
 		"SENTINEL_CLICKHOUSE.USER":           clickhouse.User,

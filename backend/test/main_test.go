@@ -34,6 +34,7 @@ var (
 	lifecycleTopic       string
 	lifecycleGroup       string
 	lifecycleAlertsTopic string
+	lifecycleRulesPath   string
 )
 
 //nolint:gochecknoglobals // read-only service list shared by the integration tests
@@ -59,6 +60,18 @@ func run(m *testing.M) int {
 	if err = buildBinaries(ctx, dir); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 
+		return 1
+	}
+	// Pin one private rules snapshot for the whole fixture lifetime. Every
+	// service process starts in a fresh directory and must use this absolute path.
+	rules, err := os.ReadFile("../../config/rules.yaml")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "read lifecycle rules:", err)
+		return 1
+	}
+	lifecycleRulesPath = filepath.Join(dir, "rules.yaml")
+	if err = os.WriteFile(lifecycleRulesPath, rules, 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, "pin lifecycle rules:", err)
 		return 1
 	}
 
@@ -151,6 +164,7 @@ func run(m *testing.M) int {
 	lifecycleAlertsTopic, err = sentineltesting.CreateUniqueTopic(migrateCtx, kafkaCfg, "lifecycle-alerts")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "create lifecycle alerts topic:", err)
+
 		return 1
 	}
 
