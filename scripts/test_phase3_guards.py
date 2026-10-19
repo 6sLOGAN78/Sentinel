@@ -115,6 +115,27 @@ class Phase3GuardTests(unittest.TestCase):
                 result, _ = self.run_guard(direct=True, **{option: "^TestExample$"})
                 self.assertNotEqual(result.returncode, 0)
 
+    def test_ci_requires_phase3_and_retains_phase2_with_live_prerequisites(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        integration = workflow.split("\n  integration:\n", 1)[1].split("\n  #", 1)[0]
+        self.assertIn("make test-integ", integration)
+        for group in ("API key", "ingest", "dedupe schema and TTL", "writer and DLQ",
+                      "recovery", "rate limit", "readiness"):
+            self.assertIn(group + " integration group is nonempty", integration)
+        self.assertIn("\n  phase3:\n", workflow, "Phase 3 behavior must be a required CI job")
+        phase3 = workflow.split("\n  phase3:\n", 1)[1].split("\n  #", 1)[0]
+        self.assertIn("bash scripts/check-phase3-tests.sh", phase3)
+        for job in (integration, phase3, workflow.split("\n  compose-smoke:\n", 1)[1]):
+            self.assertIn("timeout-minutes: 45", job)
+            self.assertIn("astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884", job)
+            self.assertIn("make dev-up", job)
+            self.assertIn("scripts/check-stack.sh", job)
+        self.assertIn("test_phase3_guards.py", workflow)
+        self.assertIn("test_seed_scenarios.py", workflow)
+        smoke = workflow.split("\n  compose-smoke:\n", 1)[1]
+        self.assertIn("timeout 32m", smoke)
+        self.assertIn("^TestDetectionScenariosPreservedRepeat$", smoke)
+
 
 if __name__ == "__main__":
     unittest.main()
