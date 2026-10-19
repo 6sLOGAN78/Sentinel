@@ -41,7 +41,7 @@ func windowAlert(key windowKey, w *windowState, r Rule) *contracts.Alert {
 	summary := "Repeated failed logins against one user"
 	switch r.ID {
 	case scanRuleID:
-		summary = "Distinct destination ports on one host"
+		summary = "Distinct destination ports probed"
 	case floodRuleID:
 		entity = []string{key.ip}
 		summary = "Excessive network request volume"

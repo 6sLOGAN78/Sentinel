@@ -40,11 +40,11 @@ for svc in kafka clickhouse postgres redis; do
 done
 pass "kafka, clickhouse, postgres, redis are healthy"
 
-for svc in ingest event-writer query-api; do
+for svc in ingest detector event-writer alert-writer query-api; do
   health="$("${compose[@]}" ps --format '{{.Health}}' "$svc")"
   [ "$health" = "healthy" ] || fail "$svc health is '$health', expected healthy"
 done
-pass "ingest, event-writer, query-api are healthy"
+pass "ingest, detector, event-writer, alert-writer, query-api are healthy"
 
 check_topic() {
   local name="$1" parts="$2" retention="$3" out
@@ -73,12 +73,12 @@ if echo "$listing" | grep -qx "undeclared.topic.check"; then
 fi
 pass "auto-create is off"
 
-for port in 8080 8081 9101 9103 9105 29092 15432 16379 18123 19000; do
+for port in 8080 8081 9101 9102 9103 9104 9105 29092 15432 16379 18123 19000; do
   (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || fail "TCP dial 127.0.0.1:$port failed"
 done
 pass "TCP dial ok on application, operations, and infrastructure ports"
 
-for port in 9101 9103 9105; do
+for port in 9101 9102 9103 9104 9105; do
   body="$(curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$port/readyz")" \
     || fail "readiness request on port $port failed"
   grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' <<<"$body" \

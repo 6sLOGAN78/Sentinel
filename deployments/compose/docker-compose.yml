@@ -145,10 +145,8 @@ services:
       start_period: 10s
 
   # Same pinned Go build stage and existing tern tool as `make migrate`.
-  # Worker activation stays in 03-13; explicit detector startup runs its own
-  # one-shot migration prerequisite without putting secrets in arguments.
+  # Explicit worker startup also has a migration prerequisite.
   postgres-migrate:
-    profiles: [workers]
     build:
       <<: *app-build
       target: build
@@ -162,10 +160,11 @@ services:
       PGPASSWORD: ${SENTINEL_POSTGRES_PASSWORD:?set in .env}
 
   detector:
-    profiles: [workers]
     build: *app-build
     entrypoint: ["/app/detector"]
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 1.0
     depends_on:
       kafka:
         condition: service_healthy
@@ -203,6 +202,50 @@ services:
       SENTINEL_DETECTOR.PG.CLEANUP_TIMEOUT: 1s
     healthcheck:
       test: ["CMD", "/app/healthprobe", "http://127.0.0.1:9102/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  alert-writer:
+    build: *app-build
+    entrypoint: ["/app/alert-writer"]
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 1.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      postgres-migrate:
+        condition: service_completed_successfully
+      topic-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:9104:9104"
+    environment:
+      SENTINEL_PRIMARY.ENV: local
+      SENTINEL_OPS.BIND_ADDRESS: 0.0.0.0
+      SENTINEL_OPS.PORT: "9104"
+      SENTINEL_KAFKA.BROKERS: kafka:9092
+      SENTINEL_KAFKA.ALERTS_TOPIC: security.alerts.v1
+      SENTINEL_KAFKA.ALERT_WRITER_GROUP: sentinel-alert-writer
+      SENTINEL_DATABASE.HOST: postgres
+      SENTINEL_DATABASE.PORT: "5432"
+      SENTINEL_DATABASE.USER: sentinel
+      SENTINEL_DATABASE.PASSWORD: ${SENTINEL_POSTGRES_PASSWORD:?set in .env}
+      SENTINEL_DATABASE.NAME: sentinel
+      SENTINEL_DATABASE.SSL_MODE: disable
+      SENTINEL_CLICKHOUSE.HTTP_ADDRESS: clickhouse:8123
+      SENTINEL_CLICKHOUSE.NATIVE_ADDRESS: clickhouse:9000
+      SENTINEL_CLICKHOUSE.USER: sentinel
+      SENTINEL_CLICKHOUSE.PASSWORD: ${SENTINEL_CLICKHOUSE_PASSWORD:?set in .env}
+      SENTINEL_CLICKHOUSE.DATABASE: sentinel
+    healthcheck:
+      test: ["CMD", "/app/healthprobe", "http://127.0.0.1:9104/readyz"]
       interval: 5s
       timeout: 5s
       retries: 20

@@ -16,17 +16,17 @@ PG_HOST ?= 127.0.0.1
 PG_PORT ?= 15432
 CH_ADDR ?= http://127.0.0.1:18123
 
-.PHONY: help dev-up dev-down reset migrate test test-integ lint seed bench run
+.PHONY: help dev-up dev-down reset migrate test test-integ lint seed seed-scenarios bench run
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
 
-dev-up: ## Start infrastructure, migrate, and launch the Phase 2 app stack
+dev-up: ## Start infrastructure, migrate, and launch all five application services
 	@if [ ! -f .env ]; then cp .env.example .env && echo "created .env from .env.example"; fi
 	$(COMPOSE) up -d --wait kafka clickhouse postgres redis
 	$(COMPOSE) run --rm topic-init
 	$(MAKE) migrate
-	$(COMPOSE) up -d --build --wait ingest event-writer query-api
+	$(COMPOSE) up -d --build --wait ingest detector event-writer alert-writer query-api
 
 dev-down: ## Stop the stack (volumes are preserved)
 	$(COMPOSE) down
@@ -72,6 +72,11 @@ run: ## Run a service: make run SVC=<ingest|detector|event-writer|alert-writer|q
 
 seed: dev-up ## Seed and verify 1000 events through the real application path
 	python3 -B scripts/seed.py
+
+# Scheduling and delivery share 15 minutes; reconciliation owns the final 60s.
+# The preserved repeat integration selector has a separate 32-minute ceiling.
+seed-scenarios: dev-up ## Verify exact current-run scenario alerts in Kafka, CH and PG
+	timeout 16m python3 -B scripts/seed_scenarios.py
 
 bench: ## Not available yet
 	@echo "bench is available from Phase 5" >&2
