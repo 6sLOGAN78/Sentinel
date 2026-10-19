@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Wave 9 build/test gate passed; 16/21 Phase 3 plans complete, 03-11 next
-last_updated: "2026-10-19T07:20:42.959Z"
+stopped_at: Completed 03-11-PLAN.md; parent Wave 10 gate next, then 03-12. Stop before Phase 4.
+last_updated: "2026-10-19T07:40:29.104Z"
 last_activity: 2026-10-19
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 51
-  percent: 91
+  completed_plans: 52
+  percent: 93
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 17 of 21
-Status: Executing — Wave 9 gate passed; Wave 10 plan 03-11 next
+Plan: 18 of 21
+Status: Executing — 03-11 verified; parent Wave 10 gate next, then 03-12
 Last activity: 2026-10-19
 
-Progress: [█████████░] 91%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 51 (13 Phase 1 + 22 Phase 2 + 16 Phase 3)
+- Total plans completed: 52 (13 Phase 1 + 22 Phase 2 + 17 Phase 3)
 - Timing averages/totals: pending.
 
 **Per Plan:**
@@ -73,8 +73,9 @@ Progress: [█████████░] 91%
 | Phase 03 P08 | 31 min | 3 tasks | 15 files |
 | Phase 03 P09 | 85 min elapsed incl quota pause | 3 tasks | 14 files |
 | Phase 03 P21 | approximately 18 min | 2 tasks | 7 files |
+| Phase 03 P11 | 15 min | 3 tasks | 10 files |
 
-**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 16 plans (timing aggregates pending).
+**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 17 plans (timing aggregates pending).
 
 ## Accumulated Context
 
@@ -161,6 +162,8 @@ Progress: [█████████░] 91%
 - [Phase 3]: 03-21: Retained-history scans reconstruct maxima only; nonempty live admission still requires compatible format-2 processed_next equal to stable source end.
 - [Phase 3]: 03-21: Use sealed_through plus lateness, explicit empty partitions, actual keyed partition mapping and private schema-2 live schedules; fixed fixtures remain unchanged.
 - [Phase 3]: 03-21: Reserve unchanged per-batch sender budgets and enforce one original 15-minute deadline with interruptible waits and a POSIX main-thread timer.
+- [Phase 3]: 03-11: Acknowledge poison source bookkeeping only after durable DLQ; preserve clocks, windows, evidence and strict replay pins.
+- [Phase 3]: 03-11: Share failed-attempt/backoff allowance and effects deadline across each owned batch; reserve independent final commit time under the original parent.
 
 ### Pending Todos
 
@@ -168,6 +171,7 @@ None yet.
 
 ### Planning Continuation
 
+- Plan 03-11 completed: assertion RED f37731d, detector GREEN a552d03, pending-effect guard 3acb983 and shared writer retry GREEN 27c3774; verified SUMMARY 3ee9366 committed before serialized tracking. Both real worker poison/outage families and 400-record aggregate proofs pass, as do the three independent retained Phase 2 poison/DLQ/slow-rebalance families, native partial/ambiguous storage, resolved workflow replay, real detector capacity/retained-owner and AUTH regressions. Full make test/race (web 6, Python 121), standard lint, bounded build and integration vet pass; integration lint retains only recovery_test.go:162. Parent approved one reducer.go extension for bounded event-free poison acknowledgement; no synthetic event clock was introduced. Seventeen of twenty-one Phase 3 summaries and 52/56 overall plans are complete (93%); parent Wave 10 gate is next, then 03-12. SDK regenerated 33% frontmatter and misplaced the metric; tracking reconciles both to actual artifacts. Global requirement and phase-completion checkboxes remain pending; stop before Phase 4.
 - Plan 03-21 completed: compiling declaration/assertion RED ae48ca8, private snapshot/live scheduler GREEN f404916 and verified SUMMARY abdd693 committed before serialized tracking. Stable source ends plus strict current format-2 processed_next, explicit empty/idle state, sealed maximum, bounded retained-history reconstruction and actual key/partition mapping pass. Missing metadata never fabricates detector effect completion. All 22 live fake-clock/protocol/sender/deadline tests and 112 focused Python tests pass; full make test/race (121 Python, six web), standard lint, build, integration compile/vet pass. Integration-tag lint has only the existing recovery_test.go:162 debt. TestDetectionScenariosPreservedRepeat is created but unexecuted: Plan 13 supplies the private --output/--preserve-manifest operator path and actual Kafka/CH/PG/prior-row/late/drain proof; the summary records its exact contract. Sixteen of twenty-one summaries exist; parent Wave 9 gate is next, then 03-11. SDK wrote 33% into frontmatter despite counting 51/56 correctly and appended the metric after the table; closeout reconciled both to actual artifact counts. Global requirement checkboxes remain pending; stop before Phase 4.
 - Plan 03-09 completed after the quota interruption: admission RED 91fa195, shared bounds a8c9bb8, scalar refinement 6cb4f89, runtime metric 5401b1a, inherited readiness RED 5dcaed2 and current-assignment/retained-state repair 433fb4b; verified SUMMARY 5076101 was committed before tracking. Actual aggregate 10k-window/100k same-time ledger/64 MiB/4096-ID proofs, exactly one internal late count, real terminal capacity with unchanged broker metadata, restored-assignment readiness, and nine-event checkpoint before join/leave then exact ten-event evidence pass. Untouched 945c972 archive independently reproduced the inherited early-ready PG restore race. Full make test/race, standard lint, build and integration vet pass; only known recovery_test.go:162 integration lint debt remains. Fifteen of twenty-one summaries exist; 03-21 is next, and the parent Wave 9 gate follows it. No global requirements or Phase 3 completion claim.
 - Wave 8 plan 03-08 is complete: e53d4b5 assertion RED, 29289eb strict rules/PG manifest authorization, e9d124e runtime/docs, and verified SUMMARY 90f4bb3 were committed before tracking. Corrected real baseline RED and final real restart (41.180s) prove active/equal-version rejection, acknowledged drain, pre-join stopped-member admission preserving old member identity, normal unchanged two-member coexistence, the intentional 300→600 gap and exact version-2 replay. Real PG handover proves saved semantic version checks, immutable allow/suppress retention and PG-before-Kafka gate recovery. Six named unit families, six affected real integration families, full make test/race, standard lint and bounded build/integration vet pass. The parent recorded the passing Wave 8 cross-plan gate at 945c972 before dispatching 03-09. Global requirements and Phase 3 completion remain unclaimed.
@@ -188,13 +192,13 @@ None yet.
 
 ### Blockers/Concerns
 
-- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 16/21 plans implemented, including exact checkpoint reconstruction, all four predicates, native stores, adversarial alert persistence, frozen candidates, durable cross-window cooldown, stopped-replica configuration handover, aggregate fail-closed state admission, internal late metrics, restored-assignment readiness and private caught-up live scheduling. Broader poison proofs, complete detector crash/rebalance/outage recovery, actual preserved-stack scenario acceptance and phase-wide security/CI remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14. Operational decision history has no automatic GC; deliberate group-generation reset requires stopped maintenance. Changed-config rolling handover is intentionally unsupported; use zero old members before startup and sole new membership.
+- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 17/21 plans implemented, including exact checkpoint reconstruction, all four predicates, native stores, adversarial alert persistence, frozen candidates, durable cross-window cooldown, stopped-replica configuration handover, aggregate fail-closed state admission, internal late metrics, restored-assignment readiness, private caught-up live scheduling and bounded poison/DLQ durable prefixes. Complete detector crash/rebalance/outage recovery, actual preserved-stack scenario acceptance and phase-wide security/CI remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14. Operational decision history has no automatic GC; deliberate group-generation reset requires stopped maintenance. Changed-config rolling handover is intentionally unsupported; use zero old members before startup and sole new membership.
 - Unresolved phase acceptance debt discovered by 03-07: shared scenarios.json expects SCAN summary `Distinct destination ports probed`, while runtime evidence.go emits `Distinct destination ports on one host`; complete static expected canonical fixture equality fails. Root retained reconciliation for 03-13/03-14. Checkpoint proofs compare all runtime bytes against uninterrupted output and exact independent fixture IDs; this is not a static canonical fixture pass. See phase deferred-items.md and 03-07-SUMMARY.md.
 - Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-19T07:20:42.948Z
-Stopped at: Wave 9 parent build/test gate passed; continue 03-11 sequentially. Stop before Phase 4.
+Last session: 2026-10-19T07:40:29.089Z
+Stopped at: Completed 03-11-PLAN.md; parent Wave 10 gate next, then 03-12. Stop before Phase 4.
 Resume file: None

@@ -211,7 +211,7 @@ Plans:
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 03-11-PLAN.md — Quarantine detector and writer poison within one owned-batch budget without skipping durable prefixes
+- [x] 03-11-PLAN.md — Quarantine detector and writer poison within one owned-batch budget without skipping durable prefixes
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
@@ -292,7 +292,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
-| 3. Detection & Alert Pipeline | 16/21 | In Progress|  |
+| 3. Detection & Alert Pipeline | 17/21 | In Progress|  |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
