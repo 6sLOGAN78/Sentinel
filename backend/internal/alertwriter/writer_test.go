@@ -15,6 +15,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/alertwriter"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
+	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	storage "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
 
@@ -183,4 +184,200 @@ func orderingRecord(t *testing.T) *kgo.Record {
 	raw, err := json.Marshal(alert)
 	require.NoError(t, err)
 	return &kgo.Record{Topic: "alerts", Key: []byte("tenant-a|" + id), Value: raw, Offset: 4}
+}
+
+type poisonBatchConsumer struct {
+	records   []*kgo.Record
+	committed []*kgo.Record
+	released  int
+	commitCtx error
+	cancel    context.CancelFunc
+}
+
+func (c *poisonBatchConsumer) PollRecords(ctx context.Context, _ int) ([]*kgo.Record, error) {
+	if len(c.records) > 0 {
+		records := c.records
+		c.records = nil
+		return records, nil
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (c *poisonBatchConsumer) CommitRecords(ctx context.Context, records ...*kgo.Record) error {
+	c.committed, c.commitCtx = records, ctx.Err()
+	c.cancel()
+	return ctx.Err()
+}
+
+func (c *poisonBatchConsumer) AllowRebalance() { c.released++ }
+
+type poisonDLQ struct {
+	publish func(context.Context, *kgo.Record, kafkax.DLQReason) error
+}
+
+func (p poisonDLQ) Publish(ctx context.Context, r *kgo.Record, reason kafkax.DLQReason) error {
+	return p.publish(ctx, r, reason)
+}
+
+func poisonAlertWriter(t *testing.T, records []*kgo.Record,
+	publish func(context.Context, *kgo.Record, kafkax.DLQReason) error,
+) (*alertwriter.Writer, *poisonBatchConsumer, context.Context, *[]string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	c := &poisonBatchConsumer{records: records, cancel: cancel}
+	order := []string{}
+	tx := &orderTx{t: t, order: &order}
+	settings := config.WriterConfig{BatchSize: 500, FlushInterval: time.Millisecond, MaxAttempts: 2,
+		RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
+		OperationTimeout: 50 * time.Millisecond, ShutdownTimeout: time.Second}
+	w := alertwriter.New(c, &orderDetections{order: &order}, &orderWorkflows{tx: tx}, settings, zerolog.Nop()).
+		WithQuarantine(poisonDLQ{publish})
+	return w, c, ctx, &order
+}
+
+func TestAlertWriterPoisonPrefix(t *testing.T) {
+	t.Run("failed poison partition and safe two-store prefix", func(t *testing.T) {
+		good := orderingRecord(t)
+		good.Offset = 0
+		bad := &kgo.Record{Topic: "alerts", Offset: 1, Value: []byte("{")}
+		later := *good
+		later.Offset = 2
+		safe := *good
+		safe.Partition = 1
+		calls := 0
+		w, c, ctx, order := poisonAlertWriter(t, []*kgo.Record{good, bad, &later, &safe},
+			func(context.Context, *kgo.Record, kafkax.DLQReason) error {
+				calls++
+				return errors.New("secret driver details")
+			})
+		_ = w.Run(ctx) // the commit observer cancels only after recording the durable prefixes
+		require.Equal(t, 2, calls)
+		require.Len(t, c.committed, 2)
+		for _, r := range c.committed {
+			require.Equal(t, int64(0), r.Offset)
+		}
+		require.Equal(t, 2, countOrder(*order, "ch-ack"))
+		require.Equal(t, 2, countOrder(*order, "pg-commit"))
+		require.Equal(t, 1, c.released)
+	})
+	t.Run("reject before sink and release winner lock before quarantine", func(t *testing.T) {
+		for _, kind := range []string{"decode", "schema", "key", "hash", "entity", "conflict"} {
+			t.Run(kind, func(t *testing.T) {
+				r := orderingRecord(t)
+				var a contracts.Alert
+				require.NoError(t, json.Unmarshal(r.Value, &a))
+				switch kind {
+				case "decode":
+					r.Value = []byte("{")
+				case "schema":
+					a.SchemaVersion = 9
+				case "key":
+					r.Key = []byte("other|" + a.AlertID)
+				case "hash":
+					a.AlertID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+					r.Key = []byte(a.TenantID + "|" + a.AlertID)
+				case "entity":
+					a.EntityKey = "broken"
+				}
+				if kind != "decode" {
+					r.Value, _ = json.Marshal(a)
+				}
+				var order *[]string
+				w, c, ctx, observed := poisonAlertWriter(t, []*kgo.Record{r},
+					func(_ context.Context, _ *kgo.Record, reason kafkax.DLQReason) error {
+						if kind == "conflict" {
+							require.Contains(t, *order, "rollback", "release global ID lock before delayed DLQ")
+						}
+						if kind == "decode" {
+							require.Equal(t, kafkax.DLQReasonDecode, reason)
+						} else {
+							require.Equal(t, kafkax.DLQReasonValidation, reason)
+						}
+						return nil
+					})
+				order = observed
+				if kind == "conflict" {
+					// Existing identity is authoritative; differing content may not reach CH.
+					winner := identityAlert(t)
+					winner.Summary = "original"
+					tx := &orderTx{t: t, order: order}
+					w = alertwriter.New(c, &orderDetections{order: order},
+						&orderWorkflows{tx: tx, winner: winner}, config.WriterConfig{
+							BatchSize: 1, FlushInterval: time.Millisecond, MaxAttempts: 1,
+							RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
+							OperationTimeout: 50 * time.Millisecond, ShutdownTimeout: time.Second}, zerolog.Nop()).
+						WithQuarantine(poisonDLQ{func(context.Context, *kgo.Record, kafkax.DLQReason) error {
+							require.Contains(t, *order, "rollback")
+							return nil
+						}})
+				}
+				require.NoError(t, w.Run(ctx))
+				require.Len(t, c.committed, 1)
+				require.Zero(t, countOrder(*order, "ch-ack"))
+			})
+		}
+	})
+}
+
+func countOrder(order []string, value string) int {
+	count := 0
+	for _, step := range order {
+		if step == value {
+			count++
+		}
+	}
+	return count
+}
+
+func TestWorkerAggregateBudget(t *testing.T) {
+	for _, mode := range []string{"slow", "shared retries", "parent cancellation"} {
+		t.Run(mode, func(t *testing.T) {
+			var records []*kgo.Record
+			for n := range int64(400) {
+				records = append(records, &kgo.Record{Topic: "alerts", Offset: n, Value: []byte("{")})
+			}
+			attempts := make(map[int64]int)
+			acks := 0
+			var c *poisonBatchConsumer
+			w, consumer, ctx, _ := poisonAlertWriter(t, records,
+				func(op context.Context, r *kgo.Record, _ kafkax.DLQReason) error {
+					attempts[r.Offset]++
+					if mode == "shared retries" && attempts[r.Offset] == 1 {
+						return errors.New("temporary failure")
+					}
+					if mode == "parent cancellation" {
+						c.cancel()
+						return op.Err()
+					}
+					if mode == "slow" {
+						timer := time.NewTimer(20 * time.Millisecond)
+						defer timer.Stop()
+						select {
+						case <-op.Done():
+							return op.Err()
+						case <-timer.C:
+						}
+					}
+					acks++
+					return nil
+				})
+			c = consumer
+			start := time.Now()
+			_ = w.Run(ctx)
+			require.Less(t, time.Since(start), 400*time.Millisecond)
+			require.Equal(t, 1, c.released)
+			if mode == "parent cancellation" {
+				require.Empty(t, c.committed)
+				return
+			}
+			require.Len(t, c.committed, 1)
+			require.NoError(t, c.commitCtx)
+			require.Equal(t, int64(acks-1), c.committed[0].Offset)
+			if mode == "shared retries" {
+				require.Equal(t, 1, acks, "poison success must not reset the aggregate retry allowance")
+			}
+		})
+	}
 }

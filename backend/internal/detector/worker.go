@@ -69,6 +69,11 @@ func (w *Worker) publishReadiness(assigned map[detection.TopicPartition]Assignme
 type Publisher interface {
 	PublishCanonical(context.Context, []byte) error
 }
+
+// QuarantinePublisher acknowledges the existing bounded DLQ envelope.
+type QuarantinePublisher interface {
+	Publish(context.Context, *kgo.Record, kafkax.DLQReason) error
+}
 type partition struct {
 	token uint64
 	state *detection.PartitionState
@@ -97,6 +102,13 @@ type Worker struct {
 	bounds     *detection.Bounds
 	metrics    *opshttp.DetectionMetrics
 	restored   atomic.Pointer[kafkax.DetectorReadiness]
+	dlq        QuarantinePublisher
+}
+
+// WithQuarantine binds the publisher before Run.
+func (w *Worker) WithQuarantine(publisher QuarantinePublisher) *Worker {
+	w.dlq = publisher
+	return w
 }
 
 // New constructs a worker from explicit dependencies and startup settings.
