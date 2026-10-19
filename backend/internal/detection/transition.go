@@ -8,6 +8,16 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 )
 
+// BeginAt initializes a new-group boundary from the verified retained log start.
+// It cannot reposition an existing state or discard an active replay pin.
+func (s *PartitionState) BeginAt(offset int64) error {
+	if offset < 0 || s.last != -1 || s.processedNext != 0 || len(s.windows) != 0 || len(s.prefix) != 0 {
+		return errors.New("invalid initial detector history boundary")
+	}
+	s.last, s.acknowledged, s.processedNext = offset-1, offset-1, offset
+	return nil
+}
+
 // CheckpointMetadata checks the complete bounded envelope without authorizing a
 // configuration change. Only PG's saved manifest and acknowledged drain can do that.
 func CheckpointMetadata(cp Checkpoint) (Metadata, error) {

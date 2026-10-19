@@ -196,11 +196,11 @@ func (s *DetectionDecisionStore) bindConfigManifest(ctx context.Context, o Detec
 			Scan(&manifest, &handover); err != nil {
 			return err
 		}
-		if len(manifest) > 0 {
-			var saved detection.Rules
-			if json.Unmarshal(manifest, &saved) != nil || saved.Fingerprint() != o.Config {
-				return errors.New("saved semantic manifest mismatch")
-			}
+		if cp == nil && (len(manifest) > 0 || f.offset != -1) {
+			return errors.New("existing detector group lost its Kafka checkpoint")
+		}
+		if len(manifest) > 0 && !matchingRulesManifest(manifest, o.Config) {
+			return errors.New("saved semantic manifest mismatch")
 		}
 		if len(handover) > 0 {
 			if cp == nil || !validHandoverGates(handover, *cp) {
@@ -215,6 +215,11 @@ func (s *DetectionDecisionStore) bindConfigManifest(ctx context.Context, o Detec
 			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition, data)
 		return err
 	})
+}
+
+func matchingRulesManifest(raw []byte, fingerprint string) bool {
+	var saved detection.Rules
+	return json.Unmarshal(raw, &saved) == nil && saved.Fingerprint() == fingerprint
 }
 
 func validHandoverGates(raw []byte, cp detection.Checkpoint) bool {
@@ -411,10 +416,8 @@ func (s *DetectionDecisionStore) CheckpointCommitted(ctx context.Context, o Dete
 			return err
 		}
 		var drain []byte
-		if m.Drained {
-			if !fullyEffectedConfig(configFence{decisionFence: f}, m, proof) {
-				return errors.New("pending allowed decision prevents drained marker")
-			}
+		drained := m.Drained && fullyEffectedConfig(configFence{decisionFence: f}, m, proof)
+		if drained {
 			drain, err = json.Marshal(cp)
 			if err != nil {
 				return err
@@ -427,7 +430,7 @@ func (s *DetectionDecisionStore) CheckpointCommitted(ctx context.Context, o Dete
 		}
 		_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET drained=$4,sealed_through=$5,drain_checkpoint=$6
 			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition,
-			m.Drained, sealed, drain)
+			drained, sealed, drain)
 		return err
 	})
 }

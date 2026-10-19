@@ -106,6 +106,10 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 		cancel()
 		w.consumer.AllowRebalance()
+		if ctx.Err() != nil {
+			//nolint:nilerr // Parent cancellation during idle PG restoration is normal shutdown.
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -115,10 +119,8 @@ func (w *Worker) Run(ctx context.Context) error {
 
 func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 	assigned := w.consumer.Assignments()
-	for tp := range w.partitions {
-		if _, ok := assigned[tp]; !ok {
-			delete(w.partitions, tp)
-		}
+	if err := w.syncAssignments(ctx, assigned); err != nil {
+		return err
 	}
 	checkpoints := make(map[detection.TopicPartition]detection.Checkpoint)
 	for _, record := range records {
@@ -142,6 +144,39 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 		}
 		checkpoints[tp] = cp
 	}
+	return w.commitEffects(ctx, checkpoints)
+}
+
+func (w *Worker) syncAssignments(ctx context.Context, assigned map[detection.TopicPartition]Assignment) error {
+	for tp := range w.partitions {
+		if _, ok := assigned[tp]; !ok {
+			delete(w.partitions, tp)
+		}
+	}
+	// Restore every assignment before processing any record. Changed-config
+	// adoption must also run on an idle drained partition.
+	for tp, assignment := range assigned {
+		if !w.assignmentCurrent(tp, assignment) {
+			continue
+		}
+		if _, err := w.partitionState(ctx, tp, assigned); err != nil && w.assignmentCurrent(tp, assignment) {
+			return err
+		}
+	}
+	return nil
+}
+
+// Empty polls do not hold Kafka's rebalance gate. Defer idle restoration when
+// the captured assignment actually changes; record-bearing polls retain their
+// strict ownership checks before any new decision or source commit.
+func (w *Worker) assignmentCurrent(tp detection.TopicPartition, assignment Assignment) bool {
+	current, owned := w.consumer.Assignments()[tp]
+	member, generation := w.consumer.GroupMetadata()
+	return owned && current.Token == assignment.Token && member == assignment.Member && generation == assignment.Generation
+}
+
+func (w *Worker) commitEffects(ctx context.Context,
+	checkpoints map[detection.TopicPartition]detection.Checkpoint) error {
 	if len(checkpoints) == 0 {
 		return nil
 	}
@@ -155,6 +190,9 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 	}
 	for tp, cp := range checkpoints {
 		w.partitions[tp].state.Committed(cp)
+		if err := w.decisions.CheckpointCommitted(ctx, w.partitions[tp].owner, cp); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -185,18 +223,44 @@ func (w *Worker) restorePartition(ctx context.Context, tp detection.TopicPartiti
 	p := partition{token: a.Token, state: detection.NewPartitionState(w.rules)}
 	p.owner = postgres.DetectionOwnership{Group: a.Group, Incarnation: postgres.DetectionGroupIncarnation(a.Group),
 		Member: a.Member, Generation: a.Generation, Token: a.Token, Source: tp, Config: w.rules.Fingerprint()}
-	if a.Checkpoint != nil {
-		if err := p.state.Restore(*a.Checkpoint); err != nil {
-			return partition{}, err
-		}
-	}
 	if err := w.validateOwnership(p.owner); err != nil {
 		return partition{}, err
 	}
-	if err := w.decisions.Register(ctx, p.owner, p.state.DecisionFrontier()); err != nil {
+	adopted, err := w.decisions.PrepareRestore(ctx, p.owner, a.Checkpoint, a.TransitionAllowed)
+	if err != nil {
+		return partition{}, err
+	}
+	if adopted == nil {
+		if err = p.state.BeginAt(a.HistoryStart); err != nil {
+			return partition{}, err
+		}
+		cp, checkpointErr := p.state.Checkpoint()
+		if checkpointErr != nil {
+			return partition{}, checkpointErr
+		}
+		adopted = &cp
+	}
+	if err = w.finishRestore(ctx, p, *adopted, a.Checkpoint); err != nil {
 		return partition{}, err
 	}
 	return p, nil
+}
+
+func (w *Worker) finishRestore(ctx context.Context, p partition,
+	cp detection.Checkpoint, previous *detection.Checkpoint) error {
+	if err := p.state.Restore(cp); err != nil {
+		return err
+	}
+	if previous == nil || cp != *previous {
+		if err := w.validateOwnership(p.owner); err != nil {
+			return err
+		}
+		checkpoints := map[detection.TopicPartition]detection.Checkpoint{p.owner.Source: cp}
+		if err := w.consumer.CommitCheckpoints(ctx, checkpoints); err != nil {
+			return err
+		}
+	}
+	return w.decisions.CheckpointCommitted(ctx, p.owner, cp)
 }
 
 func (w *Worker) validateOwnership(o postgres.DetectionOwnership) error {

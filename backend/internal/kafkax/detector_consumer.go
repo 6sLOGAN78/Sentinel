@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -17,11 +18,12 @@ import (
 
 // DetectorAssignment couples restored metadata to one ownership incarnation.
 type DetectorAssignment struct {
-	Token         uint64
-	Checkpoint    *detection.Checkpoint
-	HistoryStart  int64
-	Group, Member string
-	Generation    int32
+	Token             uint64
+	Checkpoint        *detection.Checkpoint
+	HistoryStart      int64
+	TransitionAllowed bool
+	Group, Member     string
+	Generation        int32
 }
 
 type detectorClient interface {
@@ -37,19 +39,54 @@ type detectorClient interface {
 // DetectorConsumer keeps callback state under a mutex; the reducer stays in the
 // worker. DetectorAssignment tokens distinguish identical partitions after a rebalance.
 type DetectorConsumer struct {
-	client      detectorClient
-	rules       *detection.Rules
-	settings    config.WriterConfig
-	mu          sync.Mutex
-	assignments map[detection.TopicPartition]DetectorAssignment
-	sequence    uint64
-	group       string
-	fatal       error
-	onFatal     func(error)
-	lifetime    context.Context
-	cancel      context.CancelFunc
-	closeOnce   sync.Once
-	closeDone   chan struct{}
+	client                detectorClient
+	rules                 *detection.Rules
+	settings              config.WriterConfig
+	mu                    sync.Mutex
+	assignments           map[detection.TopicPartition]DetectorAssignment
+	sequence              uint64
+	group                 string
+	allowConfigTransition bool
+	transitionVerified    bool
+	fatal                 error
+	onFatal               func(error)
+	lifetime              context.Context
+	cancel                context.CancelFunc
+	closeOnce             sync.Once
+	closeDone             chan struct{}
+}
+
+// EnableConfigTransition opts into a stopped-old-replica handover at startup.
+// A changed checkpoint still requires actual sole Kafka membership and PG proof.
+func (c *DetectorConsumer) EnableConfigTransition(allowed bool) {
+	c.allowConfigTransition = allowed
+}
+
+// VerifyStoppedDetectorGroup checks the deployment boundary before constructing
+// a consuming group member. An admin-only client cannot trigger a rebalance or
+// make an old owner leave while admission is being checked.
+func VerifyStoppedDetectorGroup(ctx context.Context, kafka config.KafkaConfig) error {
+	brokers, err := config.ParseBrokers(kafka.Brokers)
+	if err != nil {
+		return err
+	}
+	client, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
+	if err != nil {
+		return errors.New("configuration transition membership client unavailable")
+	}
+	defer client.Close()
+	groups, err := kadm.NewClient(client).DescribeGroups(ctx, kafka.DetectorGroup)
+	group, present := groups[kafka.DetectorGroup]
+	if errors.Is(group.Err, kerr.GroupIDNotFound) && err == nil {
+		return nil
+	}
+	if err != nil || !present || group.Err != nil {
+		return errors.New("configuration transition membership unavailable")
+	}
+	if len(group.Members) != 0 {
+		return errors.New("configuration transition requires exactly one detector member; stop old replicas before startup")
+	}
+	return nil
 }
 
 // NewDetectorConsumer configures owned polling and terminal metadata restoration.
@@ -151,8 +188,11 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 	for _, t := range partitions {
 		topics = append(topics, t.Topic)
 	}
-	if len(topics) == 0 {
+	if len(topics) == 0 && len(c.Assignments()) != 0 {
 		return c.fail(errors.New("detector offset response incomplete"))
+	}
+	if len(topics) == 0 {
+		return c.finishConfigRestore(checkCtx, client)
 	}
 	starts, err := admin.ListStartOffsets(checkCtx, topics...)
 	if err != nil {
@@ -180,7 +220,74 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 			return c.fail(errors.New("detector restore response incomplete"))
 		}
 	}
+	return c.finishConfigRestore(checkCtx, client)
+}
+
+func (c *DetectorConsumer) finishConfigRestore(ctx context.Context, client *kgo.Client) error {
+	if err := c.authorizeConfigTransition(ctx, client); err != nil {
+		return c.fail(err)
+	}
 	return nil
+}
+
+func (c *DetectorConsumer) authorizeConfigTransition(ctx context.Context, client *kgo.Client) error {
+	changed := make(map[detection.TopicPartition]DetectorAssignment)
+	for tp, assignment := range c.Assignments() {
+		if assignment.Checkpoint == nil {
+			continue
+		}
+		m, err := detection.CheckpointMetadata(*assignment.Checkpoint)
+		if err != nil {
+			return err
+		}
+		if m.ConfigFingerprint != c.rules.Fingerprint() {
+			changed[tp] = assignment
+		}
+	}
+	if len(changed) == 0 && !c.allowConfigTransition {
+		return nil
+	}
+	groups, err := kadm.NewClient(client).DescribeGroups(ctx, c.group)
+	group, present := groups[c.group]
+	member, _ := c.client.GroupMetadata()
+	if err != nil || !present || group.Err != nil || len(group.Members) != 1 || group.Members[0].MemberID != member {
+		return errors.New("configuration transition requires exactly one detector member; stop old replicas")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for tp, assignment := range changed {
+		current, owned := c.assignments[tp]
+		if !owned || current.Token != assignment.Token {
+			return errors.New("configuration transition assignment changed")
+		}
+		current.TransitionAllowed = true
+		c.assignments[tp] = current
+	}
+	c.transitionVerified = true
+	return nil
+}
+
+// A member with zero assigned partitions does not necessarily receive the
+// offset-fetch hook. Verify the explicit transition deployment after joining
+// even in that case, so an old-config peer cannot coexist unnoticed.
+func (c *DetectorConsumer) verifyTransitionOnPoll(ctx context.Context) error {
+	c.mu.Lock()
+	verified := c.transitionVerified
+	c.mu.Unlock()
+	if !c.allowConfigTransition || verified {
+		return nil
+	}
+	member, generation := c.client.GroupMetadata()
+	if member == "" || generation < 0 {
+		return nil
+	}
+	client, ok := c.client.(*kgo.Client)
+	if !ok {
+		return c.fail(errors.New("configuration transition requires real group membership"))
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, c.settings.OperationTimeout)
+	defer cancel()
+	return c.finishConfigRestore(checkCtx, client)
 }
 
 func fetchedTopics(response *kmsg.OffsetFetchResponse) ([]kmsg.OffsetFetchResponseTopic, error) {
@@ -230,7 +337,7 @@ func (c *DetectorConsumer) restorePartition(
 			return errors.New("detector checkpoint history lost")
 		}
 		cp := detection.Checkpoint{Offset: p.Offset, Metadata: *p.Metadata}
-		if err := detection.NewPartitionState(c.rules).Restore(cp); err != nil {
+		if err := c.validateConfigCheckpoint(cp); err != nil {
 			return err
 		}
 		assignment.Checkpoint = &cp
@@ -245,9 +352,25 @@ func (c *DetectorConsumer) restorePartition(
 	return nil
 }
 
+func (c *DetectorConsumer) validateConfigCheckpoint(cp detection.Checkpoint) error {
+	m, err := detection.CheckpointMetadata(cp)
+	if err != nil {
+		return err
+	}
+	if m.ConfigFingerprint == c.rules.Fingerprint() {
+		return detection.NewPartitionState(c.rules).Restore(cp)
+	}
+	if !c.allowConfigTransition || !m.Drained {
+		return errors.New("configuration change requires explicit drained restart")
+	}
+	return nil // Semantic/version authorization follows against the locked PG manifest.
+}
+
 // PollRecords returns bounded owned records and propagates terminal hook errors.
 func (c *DetectorConsumer) PollRecords(ctx context.Context, limit int) ([]*kgo.Record, error) {
-	pollCtx, cancel := context.WithCancel(ctx)
+	// Wake periodically to validate and adopt idle assigned checkpoints, even
+	// when no source record arrives after the old configuration drained.
+	pollCtx, cancel := context.WithTimeout(ctx, min(c.settings.OperationTimeout, time.Second))
 	stop := context.AfterFunc(c.lifetime, cancel)
 	defer stop()
 	defer cancel()
@@ -257,6 +380,12 @@ func (c *DetectorConsumer) PollRecords(ctx context.Context, limit int) ([]*kgo.R
 	c.mu.Unlock()
 	if fatal != nil {
 		return nil, fatal
+	}
+	if err := c.verifyTransitionOnPoll(ctx); err != nil {
+		return nil, err
+	}
+	if errors.Is(pollCtx.Err(), context.DeadlineExceeded) && fetches.NumRecords() == 0 {
+		return nil, nil
 	}
 	if err := fetches.Err(); err != nil {
 		return nil, fmt.Errorf("detector poll failed: %w", err)

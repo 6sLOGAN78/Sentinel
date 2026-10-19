@@ -39,7 +39,7 @@ func TestDetectorConfigRestart(t *testing.T) {
 	require.Zero(t, f.process.terminate(t))
 	raw, err := os.ReadFile("../../config/rules.yaml")
 	require.NoError(t, err)
-	changed := strings.Replace(string(raw), "version: 1", "version: 2", 1)
+	changed := strings.Replace(string(raw), "    version: 1", "    version: 2", 1)
 	changed = strings.Replace(changed, "window: 300s", "window: 600s", 1)
 	path := filepath.Join(t.TempDir(), "rules.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(changed), 0o600))
@@ -48,8 +48,7 @@ func TestDetectorConfigRestart(t *testing.T) {
 	active := startProc(t, "detector", "", env)
 	require.NotZero(t, active.requireExit(t, 10*time.Second), "increased version cannot adopt active old windows")
 	f.process = startProc(t, "detector", "", f.env)
-	f.send(t, 301) // durable old suppression must also survive the handover.
-	marker := canonicalWriterEvents(1, f.start.Add(630*time.Second))
+	marker := canonicalWriterEvents(1, f.start.Add(330*time.Second))
 	marker[0].EventType, marker[0].SourceIP = "auth.success", &f.ip
 	require.NoError(t, newWriterProducer(t, f.kafka).PublishBatch(t.Context(), marker, uuid.NewString()))
 	f.offset++
@@ -60,19 +59,72 @@ func TestDetectorConfigRestart(t *testing.T) {
 	require.True(t, old.Drained)
 	require.Equal(t, old.ProcessedNext, before.At)
 	require.Zero(t, f.process.terminate(t))
+	drainReplay := f.alerts(t)
+	require.Len(t, drainReplay, 1, "old-config drain restart replays its retained active window")
+	require.Equal(t, original[0].Value, drainReplay[0].Value)
 	// Equal-version drift fails even when the source is drained.
-	drift := strings.Replace(changed, "version: 2", "version: 1", 1)
+	drift := strings.Replace(changed, "    version: 2", "    version: 1", 1)
 	require.NoError(t, os.WriteFile(path, []byte(drift), 0o600))
 	bad := startProc(t, "detector", "", env)
 	require.NotZero(t, bad.requireExit(t, 10*time.Second))
 	require.NoError(t, os.WriteFile(path, []byte(changed), 0o600))
+	// A live old-config member, even drained, forbids a rolling handover.
+	f.process = startProc(t, "detector", "", f.env)
+	requireOutputEventually(t, f.process, "service started")
+	oldProcess := f.process
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("old member output: %s", oldProcess.output.String())
+		}
+	})
+	var oldMember string
+	require.Eventually(t, func() bool {
+		groups, describeErr := f.admin.DescribeGroups(t.Context(), f.kafka.DetectorGroup)
+		group, present := groups[f.kafka.DetectorGroup]
+		if describeErr != nil || !present || group.Err != nil || group.State != "Stable" || len(group.Members) != 1 {
+			return false
+		}
+		oldMember = group.Members[0].MemberID
+		return true
+	}, 30*time.Second, 100*time.Millisecond, "old replica must join before the mixed-member probe")
+	peerEnv := append(without(f.env, "SENTINEL_OPS.PORT="),
+		"SENTINEL_OPS.PORT="+opsPort(t, serviceEnv(t, "detector")))
+	peer := startProc(t, "detector", "", peerEnv)
+	require.Eventually(t, func() bool {
+		groups, describeErr := f.admin.DescribeGroups(t.Context(), f.kafka.DetectorGroup)
+		group, present := groups[f.kafka.DetectorGroup]
+		return describeErr == nil && present && group.Err == nil && group.State == "Stable" && len(group.Members) == 2
+	}, 30*time.Second, 100*time.Millisecond, "unchanged idle replicas must coexist")
+	f.process.requireRunningFor(t, time.Second)
+	peer.requireRunningFor(t, time.Second)
+	require.Zero(t, peer.terminate(t), peer.output.String())
+	require.Eventually(t, func() bool {
+		groups, describeErr := f.admin.DescribeGroups(t.Context(), f.kafka.DetectorGroup)
+		group, present := groups[f.kafka.DetectorGroup]
+		if describeErr != nil || !present || group.Err != nil || group.State != "Stable" || len(group.Members) != 1 {
+			return false
+		}
+		oldMember = group.Members[0].MemberID
+		return true
+	}, 30*time.Second, 100*time.Millisecond)
+	mixedEnv := append(without(env, "SENTINEL_OPS.PORT="),
+		"SENTINEL_OPS.PORT="+opsPort(t, serviceEnv(t, "detector")))
+	mixed := startProc(t, "detector", "", mixedEnv)
+	require.NotZero(t, mixed.requireExit(t, 30*time.Second))
+	require.Contains(t, mixed.output.String(), "exactly one detector member")
+	groups, err := f.admin.DescribeGroups(t.Context(), f.kafka.DetectorGroup)
+	require.NoError(t, err)
+	require.Len(t, groups[f.kafka.DetectorGroup].Members, 1, "rejected transition must not join/evict the old member")
+	require.Equal(t, oldMember, groups[f.kafka.DetectorGroup].Members[0].MemberID)
+	require.Zero(t, f.process.terminate(t))
 	f.process = startProc(t, "detector", "", env)
 	require.Eventually(t, func() bool {
 		cp := brokerCheckpoint(t, f.admin, f.kafka)
 		var m detection.Metadata
 		return json.Unmarshal([]byte(cp.Metadata), &m) == nil && m.RuleVersions["AUTH_BRUTE_FORCE"] == 2 &&
 			m.RuleEffectiveFrom["AUTH_BRUTE_FORCE"] == f.start.Add(600*time.Second).UnixMilli()
-	}, 12*time.Second, 100*time.Millisecond, "real drained restart must publish authorized gates: %s", f.process.output.String())
+	}, 12*time.Second, 100*time.Millisecond,
+		"real drained restart must publish authorized gates: %s", f.process.output.String())
 	var fingerprint string
 	var drained bool
 	require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT config_fingerprint,drained FROM detection_partition_fences
@@ -83,12 +135,46 @@ func TestDetectorConfigRestart(t *testing.T) {
 	require.Equal(t, current.ConfigFingerprint, fingerprint)
 	require.True(t, drained)
 	require.Len(t, current.RuleEffectiveFrom, 4)
-	f.stored(t, 1, 1)
+	f.stored(t, 1, 0)
+	require.Empty(t, f.alerts(t), "handover cannot replay historical alerts")
+	// At 400s the new 600s window starts before its gate, despite being newer
+	// than the old watermark. The deliberate transition gap creates no alert.
+	producer := newWriterProducer(t, f.kafka)
+	var versionTwo []byte
+	for _, seconds := range []int{400, 600} {
+		events := canonicalWriterEvents(10, f.start.Add(time.Duration(seconds)*time.Second))
+		for _, event := range events {
+			event.EventType, event.SourceIP, event.Principal = "auth.failure", &f.ip, &f.principal
+		}
+		require.NoError(t, producer.PublishBatch(t.Context(), events, uuid.NewString()))
+		f.offset += int64(len(events))
+		f.waitSource(t)
+		alerts := f.alerts(t)
+		if seconds == 400 {
+			require.Empty(t, alerts)
+			continue
+		}
+		require.Len(t, alerts, 1)
+		var alert struct {
+			RuleVersion int    `json:"rule_version"`
+			WindowStart string `json:"window_start"`
+		}
+		require.NoError(t, json.Unmarshal(alerts[0].Value, &alert))
+		require.Equal(t, 2, alert.RuleVersion)
+		require.Equal(t, f.start.Add(600*time.Second).Format("2006-01-02T15:04:05.000Z"), alert.WindowStart)
+		versionTwo = alerts[0].Value
+	}
 	require.Zero(t, f.process.terminate(t))
 	f.process = startProc(t, "detector", "", env)
-	// The gate and config survive an unchanged, idle new-generation restart.
-	requireOutputEventually(t, f.process, "service started")
-	require.Zero(t, f.process.terminate(t))
+	// Observe actual restoration and stored-byte replay before terminating.
+	newReplay := f.alerts(t)
+	if len(newReplay) == 0 {
+		newReplay = f.alerts(t)
+	}
+	require.Len(t, newReplay, 1)
+	require.Equal(t, versionTwo, newReplay[0].Value)
+	f.waitSource(t)
+	require.Zero(t, f.process.terminate(t), f.process.output.String())
 }
 
 func TestConfigLedgerHandover(t *testing.T) {
@@ -187,7 +273,8 @@ func TestConfigLedgerHandover(t *testing.T) {
 	m.RuleEffectiveFrom["AUTH_BRUTE_FORCE"] = 0
 	bad, err := json.Marshal(m)
 	require.NoError(t, err)
-	_, err = newStore.PrepareRestore(t.Context(), newOwner, &detection.Checkpoint{Offset: adopted.Offset, Metadata: string(bad)}, false)
+	tampered := &detection.Checkpoint{Offset: adopted.Offset, Metadata: string(bad)}
+	_, err = newStore.PrepareRestore(t.Context(), newOwner, tampered, false)
 	require.Error(t, err, "matching fingerprint does not authorize dropping persisted gates")
 	for i, candidate := range candidates {
 		_, err = store.Decide(t.Context(), o, candidate)

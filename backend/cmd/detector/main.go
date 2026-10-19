@@ -15,6 +15,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/database"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/detector"
+	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 )
 
@@ -40,22 +41,18 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return err
 	}
 
-	file, err := os.Open(cfg.Detector.RulesPath)
-	if err != nil {
-		return fmt.Errorf("open detector rules: %w", err)
-	}
-	rules, err := detection.LoadRules(file)
-	closeErr := file.Close()
+	rules, err := loadRules(cfg.Detector.RulesPath)
 	if err != nil {
 		return err
 	}
-	if closeErr != nil {
-		return closeErr
+	if err = checkConfigTransition(ctx, cfg); err != nil {
+		return err
 	}
 	consumer, err := detector.NewKafkaConsumer(ctx, cfg.Kafka, cfg.Detector.Writer, rules, lc.Fail)
 	if err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
+	consumer.EnableConfigTransition(cfg.Detector.AllowConfigTransition)
 	lc.Add("kafka-consumer", consumer.Close)
 	if err = consumer.Ping(ctx); err != nil {
 		return fmt.Errorf("kafka: %w", err)
@@ -107,6 +104,29 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
+}
+
+func checkConfigTransition(ctx context.Context, cfg *config.Config) error {
+	if !cfg.Detector.AllowConfigTransition {
+		return nil
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, cfg.Detector.Writer.OperationTimeout)
+	defer cancel()
+	return kafkax.VerifyStoppedDetectorGroup(checkCtx, cfg.Kafka)
+}
+
+func loadRules(path string) (*detection.Rules, error) {
+	//nolint:gosec // Startup-only operator-owned path; LoadRules caps and strictly validates its contents.
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open detector rules: %w", err)
+	}
+	rules, err := detection.LoadRules(file)
+	closeErr := file.Close()
+	if err != nil {
+		return nil, err
+	}
+	return rules, closeErr
 }
 
 func openPostgres(ctx context.Context, cfg config.DatabaseConfig, log zerolog.Logger,
