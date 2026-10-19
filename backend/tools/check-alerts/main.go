@@ -43,6 +43,8 @@ const (
 	fetchReadBytes   = 1 << 20
 	fetchWait        = 100 * time.Millisecond
 	maxEventIDs      = 5000
+	maxEventBytes    = 32 << 20
+	eventQuerySecs   = 5
 )
 
 type manifest struct {
@@ -69,8 +71,7 @@ type eventQuerier interface {
 	Query(context.Context, string, ...any) (driver.Rows, error)
 }
 
-func eventSnapshots(ctx context.Context, conn eventQuerier, tenant string, ids []string, _ time.Time) (map[string]string, error) {
-	out := map[string]string{}
+func wantedEventIDs(ids []string) (map[string]bool, error) {
 	wanted := map[string]bool{}
 	if len(ids) > maxEventIDs {
 		return nil, errors.New("event ID bound exceeded")
@@ -81,17 +82,34 @@ func eventSnapshots(ctx context.Context, conn eventQuerier, tenant string, ids [
 		}
 		wanted[id] = true
 	}
+	return wanted, nil
+}
+
+func eventSnapshots(
+	ctx context.Context, conn eventQuerier, tenant string, ids []string, since time.Time,
+) (map[string]string, error) {
+	out := map[string]string{}
+	wanted, err := wantedEventIDs(ids)
+	if err != nil {
+		return nil, err
+	}
 	if len(ids) == 0 {
 		return out, nil
 	}
 	queryCtx := driverch.Context(ctx, driverch.WithSettings(driverch.Settings{
-		"max_result_rows": maxEventIDs, "max_result_bytes": 32 << 20,
-		"result_overflow_mode": "throw", "max_execution_time": 5,
+		"max_result_rows": maxEventIDs, "max_result_bytes": maxEventBytes,
+		"result_overflow_mode": "throw", "max_execution_time": eventQuerySecs,
 	}))
-	rows, err := conn.Query(queryCtx, `SELECT event_id,tenant_id,occurred_at,received_at,source,event_type,
+	query := `SELECT event_id,tenant_id,occurred_at,received_at,source,event_type,
 		source_ip,destination_ip,destination_port,protocol,principal,action,outcome,attributes_json
-		FROM events WHERE tenant_id = {tenant:String} AND event_id IN {ids:Array(String)}
-		ORDER BY received_at ASC LIMIT 1 BY event_id`, driverch.Named("tenant", tenant), driverch.Named("ids", ids))
+		FROM events WHERE tenant_id = {tenant:String} AND event_id IN {ids:Array(String)}`
+	args := []any{driverch.Named("tenant", tenant), driverch.Named("ids", ids)}
+	if !since.IsZero() {
+		query += ` AND received_at >= {since:DateTime64(3)}`
+		args = append(args, driverch.Named("since", since))
+	}
+	query += ` ORDER BY received_at ASC LIMIT 1 BY event_id`
+	rows, err := conn.Query(queryCtx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -105,12 +123,15 @@ func eventSnapshots(ctx context.Context, conn eventQuerier, tenant string, ids [
 		if !wanted[e.EventID] || out[e.EventID] != "" || e.TenantID != tenant {
 			return nil, errors.New("event ID set differs")
 		}
+		if !since.IsZero() && e.ReceivedAt.Before(since) {
+			return nil, errors.New("historical current event row")
+		}
 		raw, marshalErr := json.Marshal(e)
 		if marshalErr != nil {
 			return nil, marshalErr
 		}
 		total += len(raw)
-		if total > 32<<20 {
+		if total > maxEventBytes {
 			return nil, errors.New("event response byte bound exceeded")
 		}
 		digest := sha256.Sum256(raw)
@@ -261,6 +282,11 @@ func loadManifest(path string) (manifest, error) {
 		len(m.SourceKeys) == 0 || len(m.SourceKeys) > 128 || len(m.EventIDs) > 5000 ||
 		len(m.PreserveIDs) > 5000 || len(m.Expected) > 64 || len(m.PreserveAlerts) > 64 {
 		return m, errors.New("invalid manifest shape")
+	}
+	start, startErr := time.Parse("2006-01-02T15:04:05.000Z", m.RunStart)
+	if startErr != nil || start.Format("2006-01-02T15:04:05.000Z") != m.RunStart ||
+		time.Since(start) < 0 || time.Since(start) > 15*time.Minute {
+		return m, errors.New("invalid original run start")
 	}
 	seen := map[string]bool{}
 	for _, key := range m.SourceKeys {
@@ -736,7 +762,8 @@ func (s *stores) verify(ctx context.Context, m manifest) error {
 	if !priorSnapshotsMatch(m, events, oldCH, oldPG) {
 		return verificationError{"prior_content"}
 	}
-	if _, err = eventSnapshots(ctx, s.ch, m.Tenant, m.EventIDs, time.Time{}); err != nil {
+	start, _ := time.Parse("2006-01-02T15:04:05.000Z", m.RunStart)
+	if _, err = eventSnapshots(ctx, s.ch, m.Tenant, m.EventIDs, start); err != nil {
 		return verificationError{"current_event_rows"}
 	}
 	return nil

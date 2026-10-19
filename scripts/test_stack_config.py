@@ -47,10 +47,26 @@ elif "--list" in args:
 class StackConfigTests(unittest.TestCase):
     def test_five_workers_ready_in_default_stack(self):
         env = dict(os.environ)
-        env.update(SENTINEL_POSTGRES_PASSWORD="synthetic-secret", SENTINEL_CLICKHOUSE_PASSWORD="synthetic-secret")
-        result = subprocess.run(["docker", "compose", "-f", str(ROOT / "deployments/compose/docker-compose.yml"), "config", "--format", "json"], env=env, capture_output=True, check=True)
+        env.update(
+            SENTINEL_POSTGRES_PASSWORD="synthetic-secret",
+            SENTINEL_CLICKHOUSE_PASSWORD="synthetic-secret",
+        )
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(ROOT / "deployments/compose/docker-compose.yml"),
+                "config",
+                "--format",
+                "json",
+            ],
+            env=env,
+            capture_output=True,
+            check=True,
+        )
         services = json.loads(result.stdout)["services"]
-        for service, port in (("detector",9102),("alert-writer",9104)):
+        for service, port in (("detector", 9102), ("alert-writer", 9104)):
             self.assertIn(service, services)
             config = services[service]
             self.assertFalse(config.get("profiles"), "normal dev-up must activate workers")

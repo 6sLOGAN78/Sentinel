@@ -39,8 +39,8 @@ func TestDetectionScenariosPreservedRepeat(t *testing.T) {
 		// 03-13 provides --output and --preserve-manifest: the latter must read
 		// prior acknowledged IDs and recheck their rows after this run, without
 		// allowing historical rows to satisfy the current-run exact-set verifier.
-		runPreservedCommand(ctx, t, root, "python3", "scripts/seed_scenarios.py",
-			"--output", output, "--preserve-manifest", previous)
+		runPreservedCommand(ctx, t, root, "timeout", "16m", "make", "seed-scenarios",
+			"SCENARIO_OUTPUT="+output, "SCENARIO_PRESERVE="+previous)
 		info, statErr := os.Stat(output)
 		require.NoError(t, statErr)
 		require.Zero(t, info.Mode().Perm()&0o077, "operator manifests must remain private")

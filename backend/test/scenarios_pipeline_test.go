@@ -3,14 +3,28 @@
 package test_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/6sLOGAN78/sentinel/internal/apikeys"
+	"github.com/6sLOGAN78/sentinel/internal/config"
+	"github.com/6sLOGAN78/sentinel/internal/contracts"
+	"github.com/6sLOGAN78/sentinel/internal/database"
 )
 
 // TestDetectionScenarios executes the exact private operator path against the
@@ -21,8 +35,19 @@ func TestDetectionScenarios(t *testing.T) {
 	defer cancel()
 	root, err := filepath.Abs("../..")
 	require.NoError(t, err)
+	rawFixture, err := os.ReadFile(filepath.Join(root, "testdata/detection/scenarios.json"))
+	require.NoError(t, err)
+	var fixtures struct {
+		Cases []scenarioCase `json:"cases"`
+	}
+	require.NoError(t, json.Unmarshal(rawFixture, &fixtures))
+	for _, fixture := range fixtures.Cases {
+		if fixture.Name == "all" || fixture.Name == "boundary" || fixture.Name == "lateness" {
+			t.Run("isolated-static-"+fixture.Name, func(t *testing.T) { runStaticScenario(ctx, t, root, fixture) })
+		}
+	}
 	output := filepath.Join(t.TempDir(), "scenarios.json")
-	runPreservedCommand(ctx, t, root, "python3", "-B", "scripts/seed_scenarios.py", "--output", output)
+	runPreservedCommand(ctx, t, root, "python3", "-B", "scripts/seed_scenarios.py", "--edges", "--output", output)
 	raw, err := os.ReadFile(output)
 	require.NoError(t, err)
 	var proof struct {
@@ -33,5 +58,159 @@ func TestDetectionScenarios(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &proof))
 	require.True(t, proof.Verified)
 	require.True(t, proof.Drained)
-	require.Len(t, proof.Expected, 8, "two malicious crossings per rule and benign zero")
+	require.Len(t, proof.Expected, 10, "two crossings per rule, benign zero, boundary and watermark equality")
+}
+
+type scenarioCase struct {
+	Name     string             `json:"name"`
+	Events   []*contracts.Event `json:"events"`
+	Expected []struct {
+		Payload contracts.Alert `json:"payload"`
+	} `json:"expected_alerts"`
+}
+
+func scenarioEnvironment(t *testing.T, service string, settings map[string]string) []string {
+	t.Helper()
+	result := serviceEnv(t, service)
+	for key, value := range settings {
+		result = append(without(result, key+"="), key+"="+value)
+	}
+	return result
+}
+
+func runStaticScenario(ctx context.Context, t *testing.T, root string, fixture scenarioCase) {
+	t.Helper()
+	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafkaCfg.Brokers, ",")...))
+	require.NoError(t, err)
+	defer client.Close()
+	admin := kadm.NewClient(client)
+	topic, alerts := "scenario-"+uuid.NewString(), "scenario-alerts-"+uuid.NewString()
+	group := "scenario-detector-" + uuid.NewString()
+	created, err := admin.CreateTopics(ctx, 6, 1, nil, topic)
+	require.NoError(t, err)
+	require.NoError(t, created[topic].Err)
+	created, err = admin.CreateTopics(ctx, 3, 1, nil, alerts)
+	require.NoError(t, err)
+	require.NoError(t, created[alerts].Err)
+	rules := filepath.Join(t.TempDir(), "rules.yaml")
+	rulesBytes, err := os.ReadFile(filepath.Join(root, "config/rules.yaml"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(rules, rulesBytes, 0o600))
+	ch, _ := newRecoveryDatabase(t)
+	settings := map[string]string{
+		"SENTINEL_KAFKA.EVENTS_TOPIC": topic, "SENTINEL_KAFKA.ALERTS_TOPIC": alerts,
+		"SENTINEL_KAFKA.DETECTOR_GROUP":     group,
+		"SENTINEL_KAFKA.EVENT_WRITER_GROUP": "scenario-events-" + uuid.NewString(),
+		"SENTINEL_KAFKA.ALERT_WRITER_GROUP": "scenario-writer-" + uuid.NewString(),
+		"SENTINEL_DETECTOR.RULES_PATH":      rules, "SENTINEL_CLICKHOUSE.DATABASE": ch.Database,
+		"SENTINEL_WRITER.FLUSH_INTERVAL": "100ms",
+	}
+	for _, service := range []string{"detector", "event-writer", "alert-writer"} {
+		process := startProc(t, service, "", scenarioEnvironment(t, service, settings))
+		requireOutputEventually(t, process, "service started")
+	}
+	ingestEnv := scenarioEnvironment(t, "ingest", settings)
+	// Historical fixed fixtures exercise default binaries in an isolated group.
+	// Live operator acceptance below keeps the real production skew unchanged.
+	ingestEnv = append(ingestEnv, "SENTINEL_CONTRACTS.PAST_SKEW=876000h")
+	ingestProcess := startProc(t, "ingest", "", ingestEnv)
+	requireOutputEventually(t, ingestProcess, "service started")
+	var port string
+	for _, value := range ingestEnv {
+		if strings.HasPrefix(value, "SENTINEL_SERVER.PORT=") {
+			port = strings.TrimPrefix(value, "SENTINEL_SERVER.PORT=")
+		}
+	}
+	db, err := database.New(ctx, pgCfg, zerolog.Nop())
+	require.NoError(t, err)
+	defer db.Close()
+	key, err := apikeys.NewStore(db.Pool).Create(ctx, "demo", []string{apikeys.ScopeWrite}, "scenario-"+uuid.NewString())
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	manifest := map[string]any{"schema_version": 1, "tenant": "demo", "event_ids": []string{},
+		"run_start":          time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		"kafka_start":        map[string]int64{},
+		"preserve_event_ids": []string{}, "preserve_alert_bytes": []string{}, "prior_events": map[string]string{},
+		"prior_ch": map[string]string{}, "prior_pg": map[string]string{}}
+	sourceKeys := map[string]bool{}
+	for _, event := range fixture.Events {
+		sourceKeys[event.TenantID+"|"+*event.SourceIP] = true
+	}
+	keys := make([]string, 0, len(sourceKeys))
+	for k := range sourceKeys {
+		keys = append(keys, k)
+	}
+	manifest["source_keys"] = keys
+	expected := make([]string, 0, len(fixture.Expected))
+	for _, item := range fixture.Expected {
+		raw, marshalErr := json.Marshal(item.Payload)
+		require.NoError(t, marshalErr)
+		expected = append(expected, string(raw))
+	}
+	manifest["expected_alert_bytes"] = expected
+	manifest = staticVerifier(ctx, t, root, "capture", path, manifest, settings, ch)
+	ids := postStaticScenario(ctx, t, "http://127.0.0.1:"+port, key, fixture.Events)
+	manifest["event_ids"] = ids
+	proof := staticVerifier(ctx, t, root, "verify", path, manifest, settings, ch)
+	require.Equal(t, true, proof["verified"])
+	require.Equal(t, true, proof["drained"])
+}
+
+func staticVerifier(ctx context.Context, t *testing.T, root, mode, path string, manifest map[string]any,
+	settings map[string]string, ch config.ClickHouseConfig) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(manifest)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, raw, 0o600))
+	cmd := exec.CommandContext(ctx, "go", "run", "./tools/check-alerts", mode, "--manifest", path)
+	cmd.Dir = filepath.Join(root, "backend")
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"), "PGHOST=" + pgCfg.Host,
+		"PGPORT=" + strconv.Itoa(pgCfg.Port), "PGUSER=" + pgCfg.User, "PGPASSWORD=" + pgCfg.Password,
+		"PGDATABASE=" + pgCfg.Name, "PGSSLMODE=disable", "SENTINEL_KAFKA.BROKERS=" + kafkaCfg.Brokers,
+		"SENTINEL_CLICKHOUSE.NATIVE_ADDRESS=" + ch.NativeAddress, "SENTINEL_CLICKHOUSE.USER=" + ch.User,
+		"SENTINEL_CLICKHOUSE.PASSWORD=" + ch.Password, "SENTINEL_CLICKHOUSE.DATABASE=" + ch.Database}
+	for _, name := range []string{"SENTINEL_KAFKA.EVENTS_TOPIC", "SENTINEL_KAFKA.ALERTS_TOPIC",
+		"SENTINEL_KAFKA.DETECTOR_GROUP"} {
+		cmd.Env = append(cmd.Env, name+"="+settings[name])
+	}
+	output, err := cmd.Output()
+	require.NoError(t, err, "private verifier %s failed", mode)
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(output, &result))
+	return result
+}
+
+func postStaticScenario(ctx context.Context, t *testing.T, url, key string, events []*contracts.Event) []string {
+	t.Helper()
+	ids := make([]string, 0, len(events))
+	seen := map[string]bool{}
+	client := &http.Client{Timeout: 10 * time.Second}
+	for index := 0; index < len(events); index += 500 {
+		batch := events[index:min(index+500, len(events))]
+		body, err := json.Marshal(map[string]any{"events": batch})
+		require.NoError(t, err)
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, url+"/api/v1/events:batch", bytes.NewReader(body))
+		require.NoError(t, err)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Api-Key", key)
+		response, err := client.Do(request)
+		require.NoError(t, err)
+		var ack struct {
+			Accepted int      `json:"accepted_count"`
+			IDs      []string `json:"event_ids"`
+		}
+		decodeErr := json.NewDecoder(response.Body).Decode(&ack)
+		require.NoError(t, response.Body.Close())
+		require.Equal(t, http.StatusAccepted, response.StatusCode)
+		require.NoError(t, decodeErr)
+		require.Equal(t, len(batch), ack.Accepted)
+		for i, event := range batch {
+			require.Equal(t, event.EventID, ack.IDs[i])
+			if !seen[event.EventID] {
+				seen[event.EventID] = true
+				ids = append(ids, event.EventID)
+			}
+		}
+	}
+	return ids
 }

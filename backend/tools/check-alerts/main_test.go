@@ -119,6 +119,12 @@ func TestCheckAlertsCurrentEventRange(t *testing.T) {
 	query := &eventBatchQuery{rows: &eventBatchRows{events: []*contracts.Event{e}}}
 	_, err := eventSnapshots(t.Context(), query, "demo", []string{e.EventID}, time.Time{})
 	require.NoError(t, err, "prior preservation keeps unbounded historical full-row hashing")
+	current := *e
+	at := contracts.NewTimestamp(start)
+	current.ReceivedAt = &at
+	query.rows = &eventBatchRows{events: []*contracts.Event{&current}}
+	_, err = eventSnapshots(t.Context(), query, "demo", []string{e.EventID}, start)
+	require.NoError(t, err, "received-at equality belongs to the current run")
 }
 
 func TestCheckAlertsManifest(t *testing.T) {
@@ -165,6 +171,7 @@ func TestCheckAlertsManifest(t *testing.T) {
 	t.Run("strict private input", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "private.json")
 		m.SchemaVersion = 1
+		m.RunStart = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 		m.EventIDs = nil
 		body, marshalErr := json.Marshal(m)
 		require.NoError(t, marshalErr)
@@ -172,6 +179,10 @@ func TestCheckAlertsManifest(t *testing.T) {
 		_, loadErr := loadManifest(path)
 		require.NoError(t, loadErr)
 		for _, bad := range [][]byte{
+			bytes.Replace(body, []byte(m.RunStart), []byte("2026-01-01T00:00:00.000Z"), 1),
+			bytes.Replace(body, []byte(m.RunStart), []byte("2099-01-01T00:00:00.000Z"), 1),
+			bytes.Replace(body, []byte(m.RunStart), []byte("2026-10-19T17:00:00.000+00:00"), 1),
+			bytes.Replace(body, []byte(m.RunStart), []byte("2026-10-19T17:00:00.000001Z"), 1),
 			bytes.Replace(body, []byte(`"tenant":"demo"`), []byte(`"tenant":"demo","tenant":"demo"`), 1),
 			bytes.Replace(body, []byte(`"tenant":"demo"`), []byte(`"tenant":"demo","unexpected":true`), 1),
 			bytes.Replace(body, []byte(`"source_keys":["demo|192.0.2.11"]`), []byte(`"source_keys":null`), 1),

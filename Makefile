@@ -75,8 +75,10 @@ seed: dev-up ## Seed and verify 1000 events through the real application path
 
 # Scheduling and delivery share 15 minutes; reconciliation owns the final 60s.
 # The preserved repeat integration selector has a separate 32-minute ceiling.
+SCENARIO_OUTPUT ?= $(CURDIR)/.local/last-scenarios.json
+SCENARIO_PRESERVE ?=
 seed-scenarios: dev-up ## Verify exact current-run scenario alerts in Kafka, CH and PG
-	timeout 16m python3 -B scripts/seed_scenarios.py
+	timeout 16m python3 -B scripts/seed_scenarios.py --output "$(SCENARIO_OUTPUT)" $(if $(SCENARIO_PRESERVE),--preserve-manifest "$(SCENARIO_PRESERVE)")
 
 bench: ## Not available yet
 	@echo "bench is available from Phase 5" >&2
