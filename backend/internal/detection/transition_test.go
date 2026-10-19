@@ -1,4 +1,4 @@
-package detection
+package detection //nolint:testpackage // exercise acknowledged state, private windows and handover gates.
 
 import (
 	"encoding/json"

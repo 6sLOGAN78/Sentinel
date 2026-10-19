@@ -18,8 +18,8 @@ const (
 
 // Checkpoint couples an exact resume pin with its recovery metadata.
 type Checkpoint struct {
-	Offset   int64
-	Metadata string
+	Offset   int64  `json:"offset"`
+	Metadata string `json:"metadata"`
 }
 
 // DecisionFrontier identifies the last fully effected durable candidate.

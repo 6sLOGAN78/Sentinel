@@ -116,9 +116,10 @@ type Config struct {
 
 // DetectorConfig loads immutable startup rules and bounds one owned batch.
 type DetectorConfig struct {
-	RulesPath string           `koanf:"rules_path" validate:"required"`
-	Writer    WriterConfig     `koanf:"writer"`
-	PG        DetectorPGConfig `koanf:"pg"`
+	RulesPath             string           `koanf:"rules_path" validate:"required"`
+	AllowConfigTransition bool             `koanf:"allow_config_transition"`
+	Writer                WriterConfig     `koanf:"writer"`
+	PG                    DetectorPGConfig `koanf:"pg"`
 }
 
 // DetectorPGConfig bounds acquisition, decision transactions and independent
@@ -650,6 +651,9 @@ func validateSection(cfg *Config, section string) error {
 	case sectionWriter:
 		return validateWriterConfig(cfg.Writer)
 	case sectionDetector:
+		if strings.TrimSpace(cfg.Detector.RulesPath) == "" {
+			return errors.New("validate detector config: rules path is required")
+		}
 		if err := validateWriterConfig(cfg.Detector.Writer); err != nil {
 			return err
 		}

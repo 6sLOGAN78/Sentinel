@@ -1,4 +1,4 @@
-package detection
+package detection //nolint:testpackage // verify canonical configuration alongside private transition fixtures.
 
 import (
 	"os"

@@ -137,6 +137,301 @@ type decisionFence struct {
 	ordinal                     int
 }
 
+// configHandover retains both sides so a PG commit followed by a Kafka commit
+// failure can resume the same authorized transition without inventing new gates.
+type configHandover struct {
+	Previous detection.Checkpoint `json:"previous"`
+	Next     detection.Checkpoint `json:"next"`
+}
+
+// PrepareRestore binds unchanged rules or adopts an exactly acknowledged drain.
+// transition is granted only by the Kafka adapter after verifying sole membership.
+func (s *DetectionDecisionStore) PrepareRestore(ctx context.Context, o DetectionOwnership,
+	cp *detection.Checkpoint, transition bool) (*detection.Checkpoint, error) {
+	if err := s.validateOwner(o); err != nil {
+		return nil, err
+	}
+	frontier, changed, err := s.restoreConfigFrontier(cp)
+	if err != nil {
+		return nil, err
+	}
+	if changed {
+		if !transition {
+			return nil, errors.New("configuration transition requires sole stopped-old-owner restart")
+		}
+		return s.transitionConfig(ctx, o, *cp)
+	}
+	if err = s.Register(ctx, o, frontier); err != nil {
+		return nil, err
+	}
+	return cp, s.bindConfigManifest(ctx, o, cp)
+}
+
+func (s *DetectionDecisionStore) restoreConfigFrontier(
+	cp *detection.Checkpoint,
+) (detection.DecisionFrontier, bool, error) {
+	if cp == nil {
+		return detection.DecisionFrontier{None: true}, false, nil
+	}
+	m, err := detection.CheckpointMetadata(*cp)
+	if err != nil {
+		return detection.DecisionFrontier{}, false, err
+	}
+	if m.ConfigFingerprint != s.rules.Fingerprint() {
+		return m.DecisionFrontier, true, nil
+	}
+	return m.DecisionFrontier, false, detection.NewPartitionState(s.rules).Restore(*cp)
+}
+
+func (s *DetectionDecisionStore) bindConfigManifest(ctx context.Context, o DetectionOwnership,
+	cp *detection.Checkpoint) error {
+	return s.transaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		f, err := lockedDecisionFence(ctx, tx, o)
+		if err != nil || !f.matches(o) {
+			return errors.New("configuration ownership lost")
+		}
+		var manifest, handover []byte
+		if err = tx.QueryRow(ctx, `SELECT rules_manifest,handover_checkpoint FROM detection_partition_fences
+			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition).
+			Scan(&manifest, &handover); err != nil {
+			return err
+		}
+		if len(manifest) > 0 {
+			var saved detection.Rules
+			if json.Unmarshal(manifest, &saved) != nil || saved.Fingerprint() != o.Config {
+				return errors.New("saved semantic manifest mismatch")
+			}
+		}
+		if len(handover) > 0 {
+			if cp == nil || !validHandoverGates(handover, *cp) {
+				return errors.New("saved handover gates missing or changed")
+			}
+		}
+		data, err := json.Marshal(s.rules)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET rules_manifest=$4
+			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition, data)
+		return err
+	})
+}
+
+func validHandoverGates(raw []byte, cp detection.Checkpoint) bool {
+	var proof configHandover
+	if json.Unmarshal(raw, &proof) != nil || cp.Offset < proof.Next.Offset {
+		return false
+	}
+	expected, err := detection.CheckpointMetadata(proof.Next)
+	if err != nil {
+		return false
+	}
+	actual, err := detection.CheckpointMetadata(cp)
+	if err != nil || actual.ConfigFingerprint != expected.ConfigFingerprint {
+		return false
+	}
+	for id, gate := range expected.RuleEffectiveFrom {
+		if actual.RuleEffectiveFrom[id] != gate {
+			return false
+		}
+	}
+	return true
+}
+
+type configFence struct {
+	decisionFence
+	source                    detection.TopicPartition
+	manifest, drain, handover []byte
+	drained                   bool
+}
+
+// Every changed-config transaction locks the same stable group rows in the
+// same order, before inspecting drain proofs or changing any partition fence.
+func lockedConfigFences(ctx context.Context, tx pgx.Tx, group string) ([]configFence, error) {
+	rows, err := tx.Query(ctx, `SELECT topic,partition_id,incarnation,member_id,generation,assignment_token,
+		config_fingerprint,frontier_offset,frontier_ordinal,rules_manifest,drain_checkpoint,handover_checkpoint,drained
+		FROM detection_partition_fences WHERE group_id=$1 ORDER BY topic,partition_id FOR UPDATE`, group)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var fences []configFence
+	for rows.Next() {
+		var f configFence
+		if err = rows.Scan(&f.source.Topic, &f.source.Partition, &f.incarnation, &f.member, &f.generation, &f.token,
+			&f.config, &f.offset, &f.ordinal, &f.manifest, &f.drain, &f.handover, &f.drained); err != nil {
+			return nil, err
+		}
+		fences = append(fences, f)
+	}
+	return fences, rows.Err()
+}
+
+func sharedConfigFloor(fences []configFence, previous, next string) (int64, error) {
+	var sealed int64
+	for _, f := range fences {
+		if !f.drained {
+			return 0, errors.New("all old partitions must have acknowledged drains")
+		}
+		var cp detection.Checkpoint
+		if f.config == previous {
+			if json.Unmarshal(f.drain, &cp) != nil {
+				return 0, errors.New("missing drain checkpoint")
+			}
+		} else {
+			var proof configHandover
+			if f.config != next || json.Unmarshal(f.handover, &proof) != nil {
+				return 0, errors.New("mixed configuration owners")
+			}
+			cp = proof.Previous
+		}
+		m, err := detection.CheckpointMetadata(cp)
+		if err != nil || !m.Drained || m.ConfigFingerprint != previous {
+			return 0, errors.New("mixed drain metadata")
+		}
+		if m.SealedThrough != nil {
+			sealed = max(sealed, *m.SealedThrough)
+		}
+	}
+	return sealed, nil
+}
+
+func (s *DetectionDecisionStore) transitionConfig(ctx context.Context, o DetectionOwnership,
+	cp detection.Checkpoint) (*detection.Checkpoint, error) {
+	m, err := detection.CheckpointMetadata(cp)
+	if err != nil || !m.Drained {
+		return nil, errors.New("configuration checkpoint is active")
+	}
+	var adopted detection.Checkpoint
+	err = s.transaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		fences, lockErr := lockedConfigFences(ctx, tx, o.Group)
+		if lockErr != nil {
+			return lockErr
+		}
+		sealed, floorErr := sharedConfigFloor(fences, m.ConfigFingerprint, o.Config)
+		if floorErr != nil {
+			return floorErr
+		}
+		for _, f := range fences {
+			if f.source == o.Source {
+				return s.adoptConfigFence(ctx, tx, o, cp, f, sealed, &adopted)
+			}
+		}
+		return errors.New("configuration fence missing; no fresh namespace adoption")
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &adopted, nil
+}
+
+func (s *DetectionDecisionStore) adoptConfigFence(ctx context.Context, tx pgx.Tx, o DetectionOwnership,
+	cp detection.Checkpoint, f configFence, sealed int64, adopted *detection.Checkpoint) error {
+	if f.incarnation != o.Incarnation || o.Generation <= f.generation &&
+		(o.Generation != f.generation || o.Member != f.member || o.tokenValue() < f.token) {
+		return errors.New("stale handover owner")
+	}
+	if f.config == o.Config {
+		var proof configHandover
+		if json.Unmarshal(f.handover, &proof) != nil || proof.Previous != cp ||
+			!validHandoverGates(f.handover, proof.Next) {
+			return errors.New("inconsistent pending handover")
+		}
+		*adopted = proof.Next
+	} else if err := s.adoptOldConfig(ctx, tx, o, cp, f, sealed, adopted); err != nil {
+		return err
+	}
+	manifest, err := json.Marshal(s.rules)
+	if err != nil {
+		return err
+	}
+	proof, err := json.Marshal(configHandover{Previous: cp, Next: *adopted})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET config_fingerprint=$4,rules_manifest=$5,
+		handover_checkpoint=$6,member_id=$7,generation=$8,assignment_token=$9
+		WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition,
+		o.Config, manifest, proof, o.Member, o.Generation, o.tokenValue())
+	return err
+}
+
+func (s *DetectionDecisionStore) adoptOldConfig(ctx context.Context, tx pgx.Tx, o DetectionOwnership,
+	cp detection.Checkpoint, f configFence, sealed int64, adopted *detection.Checkpoint) error {
+	var saved detection.Rules
+	var acknowledged detection.Checkpoint
+	if json.Unmarshal(f.manifest, &saved) != nil || json.Unmarshal(f.drain, &acknowledged) != nil ||
+		acknowledged != cp || saved.Fingerprint() != f.config {
+		return errors.New("handover does not match saved semantic manifest and acknowledged drain")
+	}
+	m, err := detection.CheckpointMetadata(cp)
+	if err != nil || !fullyEffectedConfig(f, m, f.handover) {
+		return errors.New("pending old decisions prevent handover")
+	}
+	oldOwner := o
+	oldOwner.Config = f.config
+	if err = verifyDecisionFrontier(ctx, tx, oldOwner, f.decisionFence, m.DecisionFrontier); err != nil {
+		return err
+	}
+	*adopted, err = detection.TransitionCheckpoint(&saved, s.rules, cp, sealed)
+	return err
+}
+
+func fullyEffectedConfig(f configFence, m detection.Metadata, handover []byte) bool {
+	if !m.DecisionFrontier.None {
+		return f.offset == m.DecisionFrontier.Offset && f.ordinal == m.DecisionFrontier.RuleOrdinal
+	}
+	if f.offset == -1 {
+		return true
+	}
+	var proof configHandover
+	return json.Unmarshal(handover, &proof) == nil && f.offset < proof.Next.Offset
+}
+
+// CheckpointCommitted is called only after the complete successful synchronous
+// Kafka commit callback. A PG-ahead pending decision cannot certify a drain.
+func (s *DetectionDecisionStore) CheckpointCommitted(ctx context.Context, o DetectionOwnership,
+	cp detection.Checkpoint) error {
+	if err := s.validateOwner(o); err != nil {
+		return err
+	}
+	m, metadataErr := detection.CheckpointMetadata(cp)
+	if metadataErr != nil || m.ConfigFingerprint != o.Config {
+		return errors.New("invalid committed config checkpoint")
+	}
+	return s.transaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		f, err := lockedDecisionFence(ctx, tx, o)
+		if err != nil || !f.matches(o) {
+			return errors.New("committed checkpoint ownership lost")
+		}
+		var proof []byte
+		if err = tx.QueryRow(ctx, `SELECT handover_checkpoint FROM detection_partition_fences
+			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition).
+			Scan(&proof); err != nil {
+			return err
+		}
+		var drain []byte
+		if m.Drained {
+			if !fullyEffectedConfig(configFence{decisionFence: f}, m, proof) {
+				return errors.New("pending allowed decision prevents drained marker")
+			}
+			drain, err = json.Marshal(cp)
+			if err != nil {
+				return err
+			}
+		}
+		var sealed *time.Time
+		if m.SealedThrough != nil {
+			at := time.UnixMilli(*m.SealedThrough)
+			sealed = &at
+		}
+		_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET drained=$4,sealed_through=$5,drain_checkpoint=$6
+			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition,
+			m.Drained, sealed, drain)
+		return err
+	})
+}
+
 func lockedDecisionFence(ctx context.Context, tx pgx.Tx, o DetectionOwnership) (decisionFence, error) {
 	var f decisionFence
 	err := tx.QueryRow(ctx, `SELECT incarnation,member_id,generation,assignment_token,config_fingerprint,
@@ -389,7 +684,8 @@ func (s *DetectionDecisionStore) createDecision(ctx context.Context, tx pgx.Tx, 
 	if err != nil {
 		return DetectionDecision{}, err
 	}
-	_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET frontier_offset=$4,frontier_ordinal=$5
+	_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET frontier_offset=$4,frontier_ordinal=$5,
+		drained=false,drain_checkpoint=NULL
 		WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition,
 		c.value.Offset(), c.value.RuleOrdinal())
 	if err != nil {

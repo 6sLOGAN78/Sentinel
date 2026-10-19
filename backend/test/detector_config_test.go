@@ -6,14 +6,19 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/6sLOGAN78/sentinel/internal/config"
+	"github.com/6sLOGAN78/sentinel/internal/database"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
+	"github.com/6sLOGAN78/sentinel/internal/storage/postgres"
 )
 
 func TestDetectorConfigRestart(t *testing.T) {
@@ -38,7 +43,8 @@ func TestDetectorConfigRestart(t *testing.T) {
 	changed = strings.Replace(changed, "window: 300s", "window: 600s", 1)
 	path := filepath.Join(t.TempDir(), "rules.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(changed), 0o600))
-	env := append(without(f.env, "SENTINEL_DETECTOR.RULES_PATH="), "SENTINEL_DETECTOR.RULES_PATH="+path)
+	env := append(without(f.env, "SENTINEL_DETECTOR.RULES_PATH="), "SENTINEL_DETECTOR.RULES_PATH="+path,
+		"SENTINEL_DETECTOR.ALLOW_CONFIG_TRANSITION=true")
 	active := startProc(t, "detector", "", env)
 	require.NotZero(t, active.requireExit(t, 10*time.Second), "increased version cannot adopt active old windows")
 	f.process = startProc(t, "detector", "", f.env)
@@ -83,4 +89,121 @@ func TestDetectorConfigRestart(t *testing.T) {
 	// The gate and config survive an unchanged, idle new-generation restart.
 	requireOutputEventually(t, f.process, "service started")
 	require.Zero(t, f.process.terminate(t))
+}
+
+func TestConfigLedgerHandover(t *testing.T) {
+	// Migrations are additive and applying the runner twice preserves the ledger.
+	require.NoError(t, database.Migrate(t.Context(), pgCfg, zerolog.Nop()))
+	require.NoError(t, database.Migrate(t.Context(), pgCfg, zerolog.Nop()))
+	db, err := database.New(t.Context(), pgCfg, zerolog.Nop())
+	require.NoError(t, err)
+	t.Cleanup(db.Close)
+	_, kafka := detectorPGEnv(t, pgCfg)
+	raw, err := os.ReadFile("../../config/rules.yaml")
+	require.NoError(t, err)
+	rules, err := detection.LoadRules(strings.NewReader(string(raw)))
+	require.NoError(t, err)
+	budgets := config.DetectorPGConfig{AcquireTimeout: time.Second, TransactionTimeout: 3 * time.Second,
+		LockTimeout: time.Second, StatementTimeout: 2 * time.Second, CleanupTimeout: time.Second}
+	store := postgres.NewDetectionDecisionStore(db.Pool, budgets, rules)
+	o := postgres.DetectionOwnership{Group: kafka.DetectorGroup,
+		Incarnation: postgres.DetectionGroupIncarnation(kafka.DetectorGroup), Member: "old", Generation: 1,
+		Token: 1, Source: detection.TopicPartition{Topic: kafka.EventsTopic, Partition: 0}, Config: rules.Fingerprint()}
+	_, err = store.PrepareRestore(t.Context(), o, nil, false)
+	require.NoError(t, err)
+	state := detection.NewPartitionState(rules)
+	start := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+	var candidates []detection.Candidate
+	offset := int64(0)
+	for _, seconds := range []int{299, 301} {
+		for _, event := range canonicalWriterEvents(10, start.Add(time.Duration(seconds)*time.Second)) {
+			ip, principal := "192.0.2.8", "ledger-handover"
+			event.EventType, event.SourceIP, event.Principal = "auth.failure", &ip, &principal
+			out, applyErr := state.ApplySource(o.Source, offset, event)
+			require.NoError(t, applyErr)
+			for _, candidate := range out.Candidates {
+				_, decideErr := store.Decide(t.Context(), o, candidate)
+				require.NoError(t, decideErr)
+				candidates = append(candidates, candidate)
+				require.NoError(t, state.EffectDecision(candidate))
+			}
+			require.NoError(t, state.Acknowledge(offset))
+			offset++
+		}
+	}
+	require.Len(t, candidates, 2)
+	// Acknowledge neither publication nor checkpoint for a pending candidate.
+	pending, pendingErr := state.Checkpoint()
+	require.NoError(t, pendingErr)
+	next := &detection.Rules{SchemaVersion: 1, Rules: slices.Clone(rules.Rules)}
+	next.Rules[0].Version++
+	next.Rules[0].Window = 600 * time.Second
+	newStore := postgres.NewDetectionDecisionStore(db.Pool, budgets, next)
+	newOwner := o
+	newOwner.Member, newOwner.Generation, newOwner.Config = "new", 2, next.Fingerprint()
+	_, err = newStore.PrepareRestore(t.Context(), newOwner, &pending, true)
+	require.Error(t, err, "active checkpoint cannot authorize config changes")
+	marker := canonicalWriterEvents(1, start.Add(630*time.Second))[0]
+	marker.EventType = "auth.success"
+	_, err = state.ApplySource(o.Source, offset, marker)
+	require.NoError(t, err)
+	require.NoError(t, state.Acknowledge(offset))
+	cp, err := state.Checkpoint()
+	require.NoError(t, err)
+	_, err = newStore.PrepareRestore(t.Context(), newOwner, &cp, true)
+	require.Error(t, err, "a caller-supplied drained flag cannot replace acknowledged PG proof")
+	admin := checkpointAdmin(t)
+	// Commit the actual source prefix before recording the PG drain certificate.
+	// The source exists independently from this store-level transaction fixture.
+	producer := newWriterProducer(t, kafka)
+	require.NoError(t, producer.PublishBatch(t.Context(), canonicalWriterEvents(int(cp.Offset), start), uuid.NewString()))
+	seedBrokerCheckpoint(t, admin, kafka, cp)
+	require.NoError(t, store.CheckpointCommitted(t.Context(), o, cp))
+	_, err = newStore.PrepareRestore(t.Context(), newOwner, &cp, false)
+	require.Error(t, err, "drain still requires stopped-old-owner authorization")
+	// Equal-version drift is checked against actual PG-saved definitions.
+	drift := &detection.Rules{SchemaVersion: 1, Rules: slices.Clone(next.Rules)}
+	drift.Rules[1].Threshold++
+	driftStore := postgres.NewDetectionDecisionStore(db.Pool, budgets, drift)
+	driftOwner := newOwner
+	driftOwner.Config = drift.Fingerprint()
+	_, err = driftStore.PrepareRestore(t.Context(), driftOwner, &cp, true)
+	require.Error(t, err, "unchanged rule version cannot conceal changed settings")
+	adopted, err := newStore.PrepareRestore(t.Context(), newOwner, &cp, true)
+	require.NoError(t, err)
+	require.NotNil(t, adopted)
+	require.NoError(t, detection.NewPartitionState(next).Restore(*adopted))
+	// Simulate PG commit followed by failure before the new Kafka checkpoint.
+	newOwner.Generation++
+	recovered, err := newStore.PrepareRestore(t.Context(), newOwner, &cp, true)
+	require.NoError(t, err)
+	require.Equal(t, adopted, recovered, "crash recovery must reuse precisely the authorized gates")
+	seedBrokerCheckpoint(t, admin, kafka, *adopted)
+	require.NoError(t, newStore.CheckpointCommitted(t.Context(), newOwner, *adopted))
+	_, err = newStore.PrepareRestore(t.Context(), newOwner, adopted, false)
+	require.NoError(t, err)
+	var m detection.Metadata
+	require.NoError(t, json.Unmarshal([]byte(adopted.Metadata), &m))
+	m.RuleEffectiveFrom["AUTH_BRUTE_FORCE"] = 0
+	bad, err := json.Marshal(m)
+	require.NoError(t, err)
+	_, err = newStore.PrepareRestore(t.Context(), newOwner, &detection.Checkpoint{Offset: adopted.Offset, Metadata: string(bad)}, false)
+	require.Error(t, err, "matching fingerprint does not authorize dropping persisted gates")
+	for i, candidate := range candidates {
+		_, err = store.Decide(t.Context(), o, candidate)
+		require.Error(t, err, "old ownership cannot create/replay decisions after handover")
+		var allowed bool
+		var canonical []byte
+		require.NoError(t, db.Pool.QueryRow(t.Context(), `SELECT allowed,canonical_payload FROM detection_decisions
+			WHERE topic=$1 AND source_offset=$2`, o.Source.Topic, candidate.Offset()).Scan(&allowed, &canonical))
+		require.Equal(t, i == 0, allowed)
+		require.Equal(t, candidate.CanonicalBytes(), canonical)
+	}
+	var cursors int
+	require.NoError(t, db.Pool.QueryRow(t.Context(), `SELECT count(*) FROM detection_cooldown_cursors
+		WHERE group_id=$1 AND config_fingerprint=$2`, o.Group, o.Config).Scan(&cursors))
+	require.Equal(t, 1, cursors, "old cursor is retained")
+	require.NoError(t, db.Pool.QueryRow(t.Context(), `SELECT count(*) FROM detection_cooldown_cursors
+		WHERE group_id=$1 AND config_fingerprint=$2`, o.Group, newOwner.Config).Scan(&cursors))
+	require.Zero(t, cursors, "new cursor namespace starts empty only after verified handover")
 }
