@@ -124,6 +124,7 @@ func VerifyStoppedDetectorGroup(ctx context.Context, kafka config.KafkaConfig) e
 func NewDetectorConsumer(
 	ctx context.Context, kafka config.KafkaConfig, settings config.WriterConfig,
 	rules *detection.Rules, onFatal func(error),
+	observers ...DetectorAssignmentObserver,
 ) (*DetectorConsumer, error) {
 	brokers, err := config.ParseBrokers(kafka.Brokers)
 	if err != nil {
@@ -138,6 +139,9 @@ func NewDetectorConsumer(
 		rules: rules, settings: settings, assignments: make(map[detection.TopicPartition]DetectorAssignment),
 		onFatal: onFatal, lifetime: lifetime, cancel: cancel, closeDone: make(chan struct{}), group: kafka.DetectorGroup,
 	}
+	if len(observers) > 0 {
+		c.observer = observers[0]
+	}
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...), kgo.ConsumeTopics(kafka.EventsTopic), kgo.ConsumerGroup(kafka.DetectorGroup),
 		kgo.DisableAutoCommit(), kgo.BlockRebalanceOnPoll(), kgo.ConsumeStartOffset(kgo.NewOffset().AtStart()),
@@ -146,7 +150,7 @@ func NewDetectorConsumer(
 		kgo.FetchMaxWait(consumerFetchMaxWait), kgo.SessionTimeout(consumerSessionTimeout),
 		kgo.RebalanceTimeout(budgets.Rebalance),
 		kgo.OnPartitionsAssigned(c.assigned), kgo.OnPartitionsRevoked(c.revoked),
-		kgo.OnPartitionsLost(c.revoked), kgo.OnOffsetsFetched(c.fetched),
+		kgo.OnPartitionsLost(c.lost), kgo.OnOffsetsFetched(c.fetched),
 	)
 	if err != nil {
 		cancel()
@@ -173,10 +177,9 @@ func (c *DetectorConsumer) fail(err error) error {
 	return err
 }
 
-func (c *DetectorConsumer) assigned(_ context.Context, _ *kgo.Client, topics map[string][]int32) {
+func (c *DetectorConsumer) assigned(ctx context.Context, _ *kgo.Client, topics map[string][]int32) {
 	member, generation := c.client.GroupMetadata()
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.assignmentMember, c.assignmentGeneration, c.assignmentObserved = member, generation, true
 	// Cooperative callbacks contain additions only. Retained partitions keep
 	// their lifetime token and state but must use the actual new group fence.
@@ -192,17 +195,52 @@ func (c *DetectorConsumer) assigned(_ context.Context, _ *kgo.Client, topics map
 			}
 		}
 	}
+	c.mu.Unlock()
+	if err := c.observe(ctx, "assigned", c.Assignments()); err != nil {
+		_ = c.fail(err)
+	}
 }
 
-func (c *DetectorConsumer) revoked(_ context.Context, _ *kgo.Client, topics map[string][]int32) {
+func (c *DetectorConsumer) revoked(ctx context.Context, _ *kgo.Client, topics map[string][]int32) {
+	c.releaseAssignments(ctx, "revoked", topics)
+}
+
+func (c *DetectorConsumer) lost(ctx context.Context, _ *kgo.Client, topics map[string][]int32) {
+	c.releaseAssignments(ctx, "lost", topics)
+}
+
+func (c *DetectorConsumer) releaseAssignments(ctx context.Context, boundary string, topics map[string][]int32) {
+	released := make(map[detection.TopicPartition]DetectorAssignment)
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.assignmentObserved = false
 	for topic, partitions := range topics {
 		for _, id := range partitions {
-			delete(c.assignments, detection.TopicPartition{Topic: topic, Partition: id})
+			tp := detection.TopicPartition{Topic: topic, Partition: id}
+			if a, ok := c.assignments[tp]; ok {
+				released[tp] = a
+			}
+			delete(c.assignments, tp)
 		}
 	}
+	c.mu.Unlock()
+	// Every completed batch checkpoint already precedes AllowRebalance. Neither
+	// revoke nor loss can manufacture a newer consumed-next commit.
+	if err := c.observe(ctx, boundary, released); err != nil {
+		_ = c.fail(err)
+	}
+}
+
+func (c *DetectorConsumer) observe(ctx context.Context, boundary string,
+	assignments map[detection.TopicPartition]DetectorAssignment) error {
+	if c.observer == nil {
+		return nil
+	}
+	for tp, assignment := range assignments {
+		if err := c.observer(ctx, boundary, tp, assignment); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Assignments returns an ownership snapshot, including restored checkpoints.
@@ -472,19 +510,22 @@ func (c *DetectorConsumer) CommitCheckpoints(
 	// Callback completion is authoritative. Do not overwrite a later ownership
 	// incarnation if it changed while the bounded commit was in flight.
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	for tp := range checkpoints {
 		current, ok := c.assignments[tp]
 		if !ok || current.Token != assigned[tp].Token {
+			c.mu.Unlock()
 			return errors.New("detector commit assignment changed")
 		}
 	}
+	committed := make(map[detection.TopicPartition]DetectorAssignment, len(checkpoints))
 	for tp, cp := range checkpoints {
 		a := c.assignments[tp]
 		a.Checkpoint = &cp
 		c.assignments[tp] = a
+		committed[tp] = a
 	}
-	return nil
+	c.mu.Unlock()
+	return c.observe(ctx, "committed", committed)
 }
 
 func attachMetadata(

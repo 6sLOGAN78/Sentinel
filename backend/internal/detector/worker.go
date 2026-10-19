@@ -472,5 +472,5 @@ type KafkaConsumer = kafkax.DetectorConsumer
 func NewKafkaConsumer(ctx context.Context, kafka config.KafkaConfig, settings config.WriterConfig,
 	rules *detection.Rules, onFatal func(error),
 ) (*KafkaConsumer, error) {
-	return kafkax.NewDetectorConsumer(ctx, kafka, settings, rules, onFatal)
+	return kafkax.NewDetectorConsumer(ctx, kafka, settings, rules, onFatal, observeAssignment)
 }

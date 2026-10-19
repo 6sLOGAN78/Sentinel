@@ -47,11 +47,11 @@ func detectorBarrierEnv(t *testing.T, env []string, boundary string, partition i
 
 func reachedDetectorBarrier(t *testing.T, path, boundary, topic string, partition int32, offset int64) {
 	t.Helper()
-	requireFileEventually(t, path+".reached")
-	raw, err := os.ReadFile(path + ".reached")
-	require.NoError(t, err)
 	var observation detectorObservation
-	require.NoError(t, json.Unmarshal(raw, &observation))
+	require.Eventually(t, func() bool {
+		raw, err := os.ReadFile(path + ".reached")
+		return err == nil && json.Unmarshal(raw, &observation) == nil
+	}, 20*time.Second, 10*time.Millisecond, "exact causal barrier %s not reached", boundary)
 	require.Equal(t, boundary, observation.Boundary)
 	require.Equal(t, topic, observation.Topic)
 	require.Equal(t, partition, observation.Partition)
@@ -110,6 +110,16 @@ func recoveryCheckpoint(t *testing.T, f *cooldownFixture, partition int32, next 
 	} else {
 		require.False(t, m.DecisionFrontier.None)
 		require.Equal(t, int64(9), m.DecisionFrontier.Offset)
+		var topic, fingerprint string
+		var sourcePartition int32
+		var sourceOffset int64
+		require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT topic,partition_id,source_offset,immutable_fingerprint
+			FROM detection_decisions WHERE alert_id=$1`, m.DecisionFrontier.AlertID).
+			Scan(&topic, &sourcePartition, &sourceOffset, &fingerprint))
+		require.Equal(t, f.kafka.EventsTopic, topic)
+		require.Equal(t, partition, sourcePartition)
+		require.Equal(t, m.DecisionFrontier.Offset, sourceOffset)
+		require.Equal(t, m.DecisionFrontier.Fingerprint, fingerprint)
 	}
 	t.Logf("partition=%d broker pin=%d metadata=%s", partition, cp.Offset, cp.Metadata)
 	return cp
@@ -219,6 +229,13 @@ func TestDetectorCrashBoundaries(t *testing.T) {
 					"SELECT row_to_json(w)::text FROM alert_workflows w WHERE alert_id=$1", expected.AlertID).Scan(&workflow))
 			} else {
 				require.Empty(t, f.alerts(t), "before-publish must precede actual Kafka publication")
+				var workflows int
+				require.NoError(t, f.db.Pool.QueryRow(t.Context(),
+					"SELECT count(*) FROM alert_workflows WHERE alert_id=$1", expected.AlertID).Scan(&workflows))
+				require.Zero(t, workflows)
+				count, err := storageclickhouse.NewAlertStore(f.ch).CountUnique(t.Context(), "demo", time.Time{})
+				require.NoError(t, err)
+				require.Zero(t, count)
 			}
 			killDetector(t, f.process)
 			f.process = startProc(t, "detector", "", f.env)

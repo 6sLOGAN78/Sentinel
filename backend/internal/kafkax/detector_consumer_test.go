@@ -106,7 +106,11 @@ func TestDetectorCommitMetadata(t *testing.T) {
 		}
 		c.assigned(t.Context(), nil, map[string][]int32{"events": {0}})
 		c.revoked(t.Context(), nil, map[string][]int32{"events": {0}})
-		require.Equal(t, []string{"assigned", "revoked"}, transitions)
+		c.assigned(t.Context(), nil, map[string][]int32{"events": {0}})
+		c.lost(t.Context(), nil, map[string][]int32{"events": {0}})
+		require.Empty(t, c.Assignments())
+		require.False(t, c.ReadinessSnapshot().Observed)
+		require.Equal(t, []string{"assigned", "revoked", "assigned", "lost"}, transitions)
 	})
 	tp0 := detection.TopicPartition{Topic: "events", Partition: 0}
 	tp1 := detection.TopicPartition{Topic: "events", Partition: 1}

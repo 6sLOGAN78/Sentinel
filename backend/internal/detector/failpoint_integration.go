@@ -102,9 +102,13 @@ func observeAssignment(ctx context.Context, boundary string,
 		next = m.ProcessedNext
 	}
 	name := fmt.Sprintf("%s-%d-%d-%d-%d.json", boundary, tp.Partition, a.Generation, a.Token, next)
-	return writeObservation(filepath.Join(dir, name), boundaryObservation{Boundary: boundary,
+	err := writeObservation(filepath.Join(dir, name), boundaryObservation{Boundary: boundary,
 		Topic: tp.Topic, Partition: tp.Partition, Offset: next - 1, Member: a.Member,
 		Generation: a.Generation, Token: a.Token, Checkpoint: a.Checkpoint})
+	if errors.Is(err, os.ErrExist) {
+		return nil // The exact bounded transition was already observed.
+	}
+	return err
 }
 
 func writeObservation(path string, observation boundaryObservation) error {
@@ -116,7 +120,7 @@ func writeObservation(path string, observation boundaryObservation) error {
 	// #nosec G304 G703 -- exclusive create refuses symlinks/existing control files.
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, os.ErrExist) {
-		return nil
+		return os.ErrExist
 	}
 	if err != nil {
 		return errors.New("create detector test observation")
