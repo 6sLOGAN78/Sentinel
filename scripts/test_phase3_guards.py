@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+ORDINARY = (
+    "TestDetectionPipelineAuth", "TestDetectionPipelineScan", "TestDetectionPipelineVolume",
+    "TestDetectorCheckpoint", "TestDetectorRetention", "TestDetectorConfigRestart",
+    "TestDetectorCapacity", "TestDetectorMidWindowRecovery", "TestDetectorThirdReplicaRebalance",
+    "TestDetectorCrashBoundaries", "TestAlertWriterPipeline", "TestAlertWriterConflict",
+    "TestAlertWriterConcurrentReplay", "TestAlertWriterPartialStorage", "TestAlertWriterPoison",
+    "TestAlertWorkflowReplay", "TestDetectorPoison", "TestConfigLedgerHandover",
+    "TestDetectorPGDependency", "TestAlertsSchema", "TestDetectionDecisionsSchema",
+)
+COOLDOWN = tuple("TestDetectorCooldown" + suffix for suffix in (
+    "Visible", "Expiry", "Replay", "Crash", "Outage", "Owners", "RestoreBehindCheckpoint",
+))
+UNIT = ("TestConfigWindowEnlargement", "TestConfigLedgerHandover")
+EXPECTED = (
+    [("./test/...", name, "6m", True) for name in ORDINARY]
+    + [("./test/...", name, "8m", True) for name in COOLDOWN]
+    + [("./internal/detection/...", name, "60s", False) for name in UNIT]
+    + [("./test/...", "TestDetectionScenarios", "16m", True),
+       ("./test/...", "TestDetectionScenariosPreservedRepeat", "32m", True)]
+)
+
+
+class Phase3GuardTests(unittest.TestCase):
+    def run_guard(self, *, empty: str = "", failed: str = "", direct: bool = False):
+        """Run the real shell entry point/nonempty runner against a fake Go process."""
+        with tempfile.TemporaryDirectory(prefix="sentinel-phase3-guard-") as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            (root / "backend").mkdir()
+            for name in ("check-phase3-tests.sh", "go-test-nonempty.sh"):
+                shutil.copy2(ROOT / "scripts" / name, root / "scripts" / name)
+            fake = root / "go"
+            fake.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                "args = sys.argv[1:]\n"
+                "with open(os.environ['PHASE3_CALLS'], 'a') as log:\n"
+                "    log.write(json.dumps({'args': args, 'cwd': os.getcwd()}) + '\\n')\n"
+                "selector = args[args.index('-run') + 1]\n"
+                "if selector == os.environ['PHASE3_FAILED']:\n"
+                "    print('--- PASS: misleading_prior_success (0.00s)')\n"
+                "    sys.exit(7)\n"
+                "if selector != os.environ['PHASE3_EMPTY']:\n"
+                "    print('--- PASS: ' + selector.strip('^$') + ' (0.00s)')\n"
+                "print('ok synthetic')\n",
+                encoding="utf-8",
+            )
+            fake.chmod(0o700)
+            log = root / "calls.jsonl"
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ.get("PATH", ""),
+                       PHASE3_CALLS=str(log), PHASE3_EMPTY=empty, PHASE3_FAILED=failed)
+            command = ["bash", str(root / "scripts" / "check-phase3-tests.sh")]
+            if direct:
+                command = ["bash", str(root / "scripts" / "go-test-nonempty.sh"),
+                           "./test/...", "^TestExample$", "-tags=integration", "-timeout", "6m", "-p", "1"]
+            result = subprocess.run(command, cwd="/tmp", env=env, text=True,
+                                    capture_output=True, timeout=10)
+            calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+            for call in calls:
+                self.assertEqual(call["cwd"], str(root / "backend"))
+            return result, [call["args"] for call in calls]
+
+    def test_every_exact_family_runs_independently_with_its_budget_and_build_tag(self):
+        result, calls = self.run_guard()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        actual = []
+        for args in calls:
+            self.assertEqual(args[0], "test")
+            self.assertIn("-count=1", args)
+            self.assertIn("-v", args)
+            self.assertIn("-timeout", args, "every family needs a finite Go timeout")
+            self.assertIn("-run", args)
+            selector = args[args.index("-run") + 1]
+            self.assertRegex(selector, r"^\^Test[A-Za-z0-9]+\$$", "broad regex cannot prove each family")
+            package = next(arg for arg in args if arg.startswith("./"))
+            integration = package == "./test/..."
+            self.assertEqual("-tags=integration" in args, integration)
+            if integration:
+                self.assertEqual(args[args.index("-p") + 1], "1")
+            actual.append((package, selector[1:-1], args[args.index("-timeout") + 1], integration))
+        self.assertCountEqual(actual, EXPECTED)
+
+    def test_each_empty_family_fails_even_if_other_families_pass(self):
+        for _, name, _, _ in EXPECTED:
+            with self.subTest(family=name):
+                result, calls = self.run_guard(empty="^" + name + "$")
+                self.assertNotEqual(result.returncode, 0, "empty family was accepted: " + name)
+                self.assertIn("no passing tests matched", result.stderr)
+                self.assertTrue(any("^" + name + "$" in args for args in calls))
+
+    def test_each_go_failure_is_propagated_despite_a_pass_line(self):
+        for _, name, _, _ in EXPECTED:
+            with self.subTest(family=name):
+                result, _ = self.run_guard(failed="^" + name + "$")
+                self.assertNotEqual(result.returncode, 0, "failed family was accepted: " + name)
+                self.assertIn("go test failed", result.stderr)
+
+    def test_existing_nonempty_runner_rejects_empty_and_failed_go(self):
+        # These guards already work; record characterization, not invented RED.
+        for option in ("empty", "failed"):
+            with self.subTest(option=option):
+                result, _ = self.run_guard(direct=True, **{option: "^TestExample$"})
+                self.assertNotEqual(result.returncode, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
