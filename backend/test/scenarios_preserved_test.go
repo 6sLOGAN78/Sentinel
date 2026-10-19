@@ -24,10 +24,11 @@ func TestDetectionScenariosPreservedRepeat(t *testing.T) {
 	defer cancel()
 	root, err := filepath.Abs("../..")
 	require.NoError(t, err)
-	require.FileExists(t, filepath.Join(root, "scripts", "seed_scenarios.py"), "03-13 must supply orchestration before this acceptance is executed")
+	require.FileExists(t, filepath.Join(root, "scripts", "seed_scenarios.py"),
+		"03-13 must supply orchestration before this acceptance is executed")
 	dir := t.TempDir()
 	legacy := filepath.Join(dir, "legacy.json")
-	runPreservedCommand(t, ctx, root, nil, "python3", "scripts/seed.py")
+	runPreservedCommand(ctx, t, root, "python3", "scripts/seed.py")
 	legacyBytes, readLegacyErr := os.ReadFile(filepath.Join(root, ".local", "last-send.json"))
 	require.NoError(t, readLegacyErr)
 	require.NoError(t, os.WriteFile(legacy, legacyBytes, 0o600))
@@ -38,7 +39,8 @@ func TestDetectionScenariosPreservedRepeat(t *testing.T) {
 		// 03-13 provides --output and --preserve-manifest: the latter must read
 		// prior acknowledged IDs and recheck their rows after this run, without
 		// allowing historical rows to satisfy the current-run exact-set verifier.
-		runPreservedCommand(t, ctx, root, nil, "python3", "scripts/seed_scenarios.py", "--output", output, "--preserve-manifest", previous)
+		runPreservedCommand(ctx, t, root, "python3", "scripts/seed_scenarios.py",
+			"--output", output, "--preserve-manifest", previous)
 		info, statErr := os.Stat(output)
 		require.NoError(t, statErr)
 		require.Zero(t, info.Mode().Perm()&0o077, "operator manifests must remain private")
@@ -48,13 +50,14 @@ func TestDetectionScenariosPreservedRepeat(t *testing.T) {
 			EventIDs           []string `json:"event_ids"`
 			Verified           bool     `json:"verified"`
 			PriorRowsPreserved bool     `json:"prior_rows_preserved"`
-			NewLateDrops       int      `json:"new_late_drops"`
+			NewLateDrops       *int     `json:"new_late_drops"`
 			Drained            bool     `json:"drained"`
 		}
 		require.NoError(t, json.Unmarshal(body, &manifest))
 		require.True(t, manifest.Verified, "actual Kafka/CH/PG reconciliation is required")
 		require.True(t, manifest.PriorRowsPreserved)
-		require.Zero(t, manifest.NewLateDrops)
+		require.NotNil(t, manifest.NewLateDrops)
+		require.Zero(t, *manifest.NewLateDrops)
 		require.True(t, manifest.Drained)
 		require.NotEmpty(t, manifest.EventIDs)
 		ids := make(map[string]bool, len(manifest.EventIDs))
@@ -67,11 +70,11 @@ func TestDetectionScenariosPreservedRepeat(t *testing.T) {
 	}
 }
 
-func runPreservedCommand(t *testing.T, ctx context.Context, root string, extra []string, name string, args ...string) {
+func runPreservedCommand(ctx context.Context, t *testing.T, root, name string, args ...string) {
 	t.Helper()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), extra...)
+	cmd.Env = os.Environ()
 	// Child tools own sanitized diagnostics; credentials only enter via env.
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "preserved operator command failed (%d diagnostic bytes)", len(out))

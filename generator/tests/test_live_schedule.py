@@ -2,12 +2,16 @@
 
 import copy
 import json
+import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
-from sentinel_generator.live_schedule import build_live_schedule, wait_for_batch
+from sentinel_generator.cli import main
+from sentinel_generator.live_schedule import build_live_schedule, delivery_deadline, wait_for_batch
 from sentinel_generator.scenarios import RULES, build_scenario
 from sentinel_generator.send import RetryPolicy, SendError
 
@@ -24,15 +28,21 @@ def snapshot(maximum: datetime | None = None) -> dict[str, Any]:
         "producers_quiescent": True,
         "source_partitions": {key: index % 6 for index, key in enumerate(sources)},
         "source_snapshots": [
-            {"partition": p, "snapshot_end": 3 if maximum else 0,
-             "processed_next": 3 if maximum else 0, "empty": maximum is None,
-             "max_event_time": maximum.isoformat() if maximum else None}
+            {
+                "partition": p,
+                "snapshot_end": 3 if maximum else 0,
+                "processed_next": 3 if maximum else 0,
+                "empty": maximum is None,
+                "max_event_time": maximum.isoformat() if maximum else None,
+            }
             for p in range(6)
         ],
     }
 
 
-@pytest.mark.parametrize("name", [r.name for r in RULES] + ["all", "benign", "boundary", "lateness"])
+@pytest.mark.parametrize(
+    "name", [r.name for r in RULES] + ["all", "benign", "boundary", "lateness"]
+)
 def test_live_base_windows_threats_then_mapped_markers(name: str) -> None:
     maximum = NOW + timedelta(milliseconds=10)
     schedule, scenario = build_live_schedule(
@@ -61,14 +71,22 @@ def test_live_base_windows_threats_then_mapped_markers(name: str) -> None:
         assert start <= datetime.fromisoformat(str(contributors[0]["occurred_at"])) < end
         assert int(start.timestamp() * 1000) % (rule.window_seconds * 1000) == 0
         latest_end = max(latest_end, end)
-    assert all(datetime.fromisoformat(str(e["occurred_at"])) >= latest_end + timedelta(seconds=30) for e in drains)
+    assert all(
+        datetime.fromisoformat(str(e["occurred_at"])) >= latest_end + timedelta(seconds=30)
+        for e in drains
+    )
     assert RetryPolicy().total_budget == 120 and RetryPolicy().max_attempts == 5
 
 
 def test_adjacent_window_crossings_preserve_one_allowed_expectation() -> None:
     schedule, scenario = build_live_schedule(
-        snapshot=snapshot(), name="auth-brute-force", seed=7, tenant="demo",
-        batch_size=500, now=NOW, adjacent_cooldown=True,
+        snapshot=snapshot(),
+        name="auth-brute-force",
+        seed=7,
+        tenant="demo",
+        batch_size=500,
+        now=NOW,
+        adjacent_cooldown=True,
     )
     assert scenario is not None
     candidates = schedule["candidate_windows"]
@@ -77,15 +95,24 @@ def test_adjacent_window_crossings_preserve_one_allowed_expectation() -> None:
     assert first["window_end"] == second["window_start"]
     assert first["allowed"] is True and second["allowed"] is False
     assert len(scenario.expected_alerts) == 1
-    times = sorted({str(e["occurred_at"]) for e in scenario.events if e["event_type"] == "auth.failure"})
+    times = sorted(
+        {str(e["occurred_at"]) for e in scenario.events if e["event_type"] == "auth.failure"}
+    )
     assert len(times) == 2
-    assert datetime.fromisoformat(times[1]) - datetime.fromisoformat(times[0]) == timedelta(milliseconds=2)
+    assert datetime.fromisoformat(times[1]) - datetime.fromisoformat(times[0]) == timedelta(
+        milliseconds=2
+    )
 
 
 def test_interruptible_wait_and_configured_skew_margin() -> None:
     schedule, scenario = build_live_schedule(
-        snapshot=snapshot(), name="auth-brute-force", seed=42, tenant="demo",
-        batch_size=500, now=NOW, future_skew_seconds=30,
+        snapshot=snapshot(),
+        name="auth-brute-force",
+        seed=42,
+        tenant="demo",
+        batch_size=500,
+        now=NOW,
+        future_skew_seconds=30,
     )
     assert scenario is not None
     batch = schedule["batches"][0]  # type: ignore[index]
@@ -105,7 +132,19 @@ def test_interruptible_wait_and_configured_skew_margin() -> None:
     assert clock + timedelta(seconds=28) >= newest
 
 
-@pytest.mark.parametrize("defect", ["future", "too_many_batches", "moving", "missing", "false_empty", "partition", "expired", "skew"])
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "future",
+        "too_many_batches",
+        "moving",
+        "missing",
+        "false_empty",
+        "partition",
+        "expired",
+        "skew",
+    ],
+)
 def test_preflight_refusal_before_any_injection(defect: str) -> None:
     source = snapshot()
     batch_size = 500
@@ -128,16 +167,31 @@ def test_preflight_refusal_before_any_injection(defect: str) -> None:
     elif defect == "skew":
         skew = 2
     with pytest.raises((SendError, ValueError)):
-        build_live_schedule(snapshot=source, name="all", seed=42, tenant="demo",
-                            batch_size=batch_size, now=NOW, future_skew_seconds=skew)
+        build_live_schedule(
+            snapshot=source,
+            name="all",
+            seed=42,
+            tenant="demo",
+            batch_size=batch_size,
+            now=NOW,
+            future_skew_seconds=skew,
+        )
 
 
 def test_wait_refuses_deadline_and_propagates_interrupt() -> None:
-    schedule, _ = build_live_schedule(snapshot=snapshot(), name="auth-brute-force", seed=42,
-                                      tenant="demo", batch_size=500, now=NOW)
+    schedule, _ = build_live_schedule(
+        snapshot=snapshot(),
+        name="auth-brute-force",
+        seed=42,
+        tenant="demo",
+        batch_size=500,
+        now=NOW,
+    )
     assert schedule, "loadable schedule declaration has no behavior"
     with pytest.raises(SendError):
-        wait_for_batch(schedule, 0, utc_now=lambda: NOW + timedelta(minutes=15), sleeper=lambda _: None)
+        wait_for_batch(
+            schedule, 0, utc_now=lambda: NOW + timedelta(minutes=15), sleeper=lambda _: None
+        )
     interrupted = copy.deepcopy(schedule)
     interrupted["batches"][0]["send_not_before"] = (NOW + timedelta(seconds=2)).isoformat()  # type: ignore[index]
 
@@ -146,3 +200,141 @@ def test_wait_refuses_deadline_and_propagates_interrupt() -> None:
 
     with pytest.raises(KeyboardInterrupt):
         wait_for_batch(interrupted, 0, utc_now=lambda: NOW, sleeper=stop)
+
+
+def test_private_schedule_cli_and_live_sender_waits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private = tmp_path / "snapshot.json"
+    private.write_text(json.dumps(snapshot()))
+    private.chmod(0o600)
+    schedule_path = tmp_path / "schedule.json"
+    try:
+        code = main(
+            [
+                "schedule",
+                "--snapshot",
+                str(private),
+                "--scenario",
+                "auth-brute-force",
+                "--tenant",
+                "demo",
+                "--output",
+                str(schedule_path),
+                "--batch-size",
+                "500",
+                "--future-skew-seconds",
+                "30",
+            ],
+            utc_now=lambda: NOW,
+        )
+    except SystemExit as error:
+        assert isinstance(error.code, int)
+        code = error.code
+    assert code == 0, "CLI has not wired the private snapshot scheduler"
+    assert schedule_path.stat().st_mode & 0o777 == 0o600
+    monkeypatch.setenv("SENTINEL_API_KEY", "live-test-key")
+    clock = NOW
+    bodies: list[bytes] = []
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        nonlocal clock
+        assert 0 < seconds <= 1
+        sleeps.append(seconds)
+        clock += timedelta(seconds=seconds)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        events = json.loads(request.content)["events"]
+        assert all(
+            datetime.fromisoformat(e["occurred_at"]) <= clock + timedelta(seconds=28)
+            for e in events
+        )
+        bodies.append(request.content)
+        if len(bodies) == 1:
+            return httpx.Response(503, headers={"Retry-After": "120"})
+        return httpx.Response(
+            202,
+            json=dict(
+                accepted_count=len(events),
+                rejected_count=0,
+                event_ids=[e["event_id"] for e in events],
+                request_id="live",
+            ),
+        )
+
+    output = tmp_path / "run.json"
+    assert (
+        main(
+            [
+                "send",
+                "--scenario",
+                "auth-brute-force",
+                "--tenant",
+                "demo",
+                "--batch-size",
+                "500",
+                "--schedule",
+                str(schedule_path),
+                "--output",
+                str(output),
+            ],
+            utc_now=lambda: clock,
+            sleeper=sleep,
+            transport=httpx.MockTransport(handle),
+        )
+        == 0
+    )
+    assert len(bodies) == 2 and bodies[0] == bodies[1] and sleeps
+    result = json.loads(output.read_text())
+    assert result["accepted"] > 0 and result["retries"] == 1
+    assert result["source_partitions"] == json.loads(schedule_path.read_text())["source_partitions"]
+
+
+def test_live_cli_refuses_tampered_schedule_before_key_loading(tmp_path: Path) -> None:
+    schedule, _ = build_live_schedule(
+        snapshot=snapshot(),
+        name="auth-brute-force",
+        seed=42,
+        tenant="demo",
+        batch_size=500,
+        now=NOW,
+    )
+    schedule["batches"][0]["send_not_before"] = NOW.isoformat()  # type: ignore[index]
+    path = tmp_path / "schedule.json"
+    path.write_text(json.dumps(schedule))
+    path.chmod(0o600)
+    assert (
+        main(
+            [
+                "send",
+                "--scenario",
+                "auth-brute-force",
+                "--tenant",
+                "demo",
+                "--batch-size",
+                "500",
+                "--schedule",
+                str(path),
+                "--output",
+                str(tmp_path / "absent.json"),
+            ],
+            utc_now=lambda: NOW,
+        )
+        == 1
+    )
+    assert not (tmp_path / "absent.json").exists()
+
+
+def test_actual_deadline_interrupts_blocking_transport_time() -> None:
+    now = datetime.now(UTC)
+    started = time.monotonic()
+    with (
+        pytest.raises(SendError, match="deadline exceeded"),
+        delivery_deadline(
+            {"deadline": (now + timedelta(milliseconds=30)).isoformat()}, lambda: datetime.now(UTC)
+        ),
+    ):
+        time.sleep(0.5)
+    assert time.monotonic() - started < 0.5

@@ -12,12 +12,21 @@ import stat
 import sys
 import time
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
 import httpx
 
+from sentinel_generator.live_schedule import (
+    build_live_schedule,
+    delivery_deadline,
+    instant,
+    live_scenario,
+    preflight,
+    wait_for_batch,
+)
 from sentinel_generator.scenarios import SCENARIO_NAMES, Scenario, build_scenario, format_time
 from sentinel_generator.send import MAX_BATCH_SIZE, MAX_EVENT_COUNT, SendError, generate_events
 from sentinel_generator.send import send_events as deliver_events
@@ -83,7 +92,7 @@ def _format_timestamp(value: datetime) -> str:
     return value.strftime("%Y-%m-%dT%H:%M:%S.") + f"{value.microsecond // 1000:03d}Z"
 
 
-def _read_private_key(path: Path) -> str:
+def _read_private_key(path: Path, max_bytes: int | None = None) -> str:
     info = path.lstat()
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
         raise SendError(f"key file is not a regular file: {path}")
@@ -100,7 +109,10 @@ def _read_private_key(path: Path) -> str:
             raise SendError(f"key file changed while being opened: {path}")
         with os.fdopen(descriptor, encoding="utf-8") as key_stream:
             descriptor = -1
-            key = key_stream.read().strip()
+            key = key_stream.read() if max_bytes is None else key_stream.read(max_bytes + 1)
+            if max_bytes is not None and len(key.encode()) > max_bytes:
+                raise SendError("private input exceeds its size limit")
+            key = key.strip()
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -210,6 +222,17 @@ def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sentinel-generator")
     commands = parser.add_subparsers(dest="command", required=True)
+    schedule = commands.add_parser("schedule", help="build a private live schedule from a snapshot")
+    schedule.add_argument("--snapshot", type=Path, required=True)
+    schedule.add_argument("--scenario", choices=SCENARIO_NAMES, required=True)
+    schedule.add_argument("--seed", type=int, default=42)
+    schedule.add_argument("--tenant", type=_tenant, required=True)
+    schedule.add_argument(
+        "--batch-size", type=_bounded_int("batch-size", 1, MAX_BATCH_SIZE), default=500
+    )
+    schedule.add_argument("--future-skew-seconds", type=int, default=300)
+    schedule.add_argument("--adjacent-cooldown", action="store_true")
+    schedule.add_argument("--output", type=Path, required=True)
     send = commands.add_parser("send", help="send deterministic benign event batches")
     send.add_argument("--seed", type=int, default=42)
     mode = send.add_mutually_exclusive_group()
@@ -239,8 +262,26 @@ def _schedule_time(value: object) -> datetime:
         raise SendError("invalid caught-up schedule timestamp") from None
 
 
+def _private_json(path: Path) -> dict[str, object]:
+    def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate private context field")
+            result[key] = value
+        return result
+
+    try:
+        raw: object = json.loads(_read_private_key(path, 1024 * 1024), object_pairs_hook=unique)
+    except ValueError:
+        raise SendError("invalid private schedule JSON") from None
+    if not isinstance(raw, dict):
+        raise SendError("private schedule must be an object")
+    return cast(dict[str, object], raw)
+
+
 def _read_schedule(args: argparse.Namespace, now: datetime) -> dict[str, object]:
-    """Validate the ready-only input contract; 03-21 owns snapshots and clock waits.
+    """Validate private ready-only v1 or clock-wait v2 input.
 
     schema_version=1 binds scenario/seed/tenant/base, snapshot_at, a deadline no
     more than 15 minutes later, six caught-up source_snapshots, and batches with
@@ -254,15 +295,10 @@ def _read_schedule(args: argparse.Namespace, now: datetime) -> dict[str, object]
         )
     if path.lstat().st_size > 1024 * 1024:
         raise SendError("caught-up schedule exceeds 1 MiB")
-    try:
-        raw: object = json.loads(_read_private_key(path))
-    except ValueError:
-        raise SendError("invalid caught-up schedule JSON") from None
-    if not isinstance(raw, dict):
-        raise SendError("invalid caught-up schedule")
-    schedule = cast(dict[str, object], raw)
+    schedule = _private_json(path)
     if (
-        schedule.get("schema_version") != 1
+        type(schedule.get("schema_version")) is not int
+        or schedule.get("schema_version") not in {1, 2}
         or schedule.get("scenario") != args.scenario
         or schedule.get("seed") != args.seed
         or schedule.get("tenant") != args.tenant
@@ -306,7 +342,41 @@ def _read_schedule(args: argparse.Namespace, now: datetime) -> dict[str, object]
                 raise SendError("scenario base must exceed every processed partition maximum")
         else:
             raise SendError("source snapshot must explicitly declare empty state")
+    if schedule["schema_version"] == 2:
+        _validate_live_schedule(args, schedule, now)
     return schedule
+
+
+def _validate_live_schedule(
+    args: argparse.Namespace, schedule: dict[str, object], now: datetime
+) -> None:
+    snapshot: dict[str, object] = {
+        key: schedule.get(key)
+        for key in (
+            "snapshot_at",
+            "deadline",
+            "producers_quiescent",
+            "source_snapshots",
+            "source_partitions",
+        )
+    }
+    snapshot["schema_version"] = 1
+    skew, adjacent = schedule.get("future_skew_seconds"), schedule.get("adjacent_cooldown")
+    if type(skew) is not int or type(adjacent) is not bool:
+        raise SendError("invalid live scheduling policy")
+    expected, _ = build_live_schedule(
+        snapshot=snapshot,
+        name=args.scenario,
+        seed=args.seed,
+        tenant=args.tenant,
+        batch_size=args.batch_size,
+        now=instant(schedule.get("base")),
+        future_skew_seconds=skew,
+        adjacent_cooldown=adjacent,
+    )
+    if expected != schedule:
+        raise SendError("live schedule does not match the derived events, windows and waits")
+    preflight(schedule, now)
 
 
 def _scheduled_batches(
@@ -328,6 +398,8 @@ def _scheduled_batches(
         batch = cast(dict[str, object], raw)
         if batch.get("event_ids") != [event["event_id"] for event in events]:
             raise SendError("scheduled batch event IDs do not match the run")
+        if schedule["schema_version"] == 2:
+            continue  # Exact derived waits were validated; wait immediately before delivery.
         if _schedule_time(batch.get("send_not_before")) > now:
             raise SendError("scheduled batch requires the operator clock-wait scheduler")
         # Ingest defaults: future <=5m, past <=168h. Keep a 1s clock margin.
@@ -354,27 +426,59 @@ def _run_scenario(
     else:
         schedule = _read_schedule(args, now)
         base = _schedule_time(schedule["base"])
-    scenario = build_scenario(name=args.scenario, seed=args.seed, tenant=args.tenant, timebase=base)
+    if schedule.get("schema_version") == 2:
+        scenario, _ = live_scenario(
+            name=args.scenario,
+            seed=args.seed,
+            tenant=args.tenant,
+            base=base,
+            adjacent_cooldown=schedule.get("adjacent_cooldown") is True,
+        )
+    else:
+        scenario = build_scenario(
+            name=args.scenario, seed=args.seed, tenant=args.tenant, timebase=base
+        )
     sent = accepted = rejected = retries = 0
     accepted_ids: list[str] = []
     if not args.dry_run:
         batches = _scheduled_batches(schedule, scenario, args.batch_size, now)
         api_key = _load_api_key(tenant=args.tenant, key_file=args.key_file)
-        with httpx.Client(timeout=httpx.Timeout(10.0, connect=3.0), transport=transport) as client:
-            for batch in batches:
+        guard = (
+            delivery_deadline(schedule, utc_now)
+            if schedule["schema_version"] == 2
+            else nullcontext()
+        )
+        with (
+            guard,
+            httpx.Client(timeout=httpx.Timeout(10.0, connect=3.0), transport=transport) as client,
+        ):
+            for index, batch in enumerate(batches):
+                if schedule["schema_version"] == 2:
+                    wait_for_batch(schedule, index, utc_now=utc_now, sleeper=sleeper)
                 batch_now = _utc_milliseconds(utc_now())
                 if batch_now >= _schedule_time(schedule["deadline"]):
                     raise SendError("scenario scheduling deadline exceeded")
+                active_sleeper = sleeper
+                if schedule["schema_version"] == 2:
+                    active_sleeper = _live_retry_sleeper(schedule, utc_now, sleeper)
+                    times = [_schedule_time(e["occurred_at"]) for e in batch]
+                    skew = cast(int, schedule["future_skew_seconds"]) - 2
+                    if max(times) > batch_now + timedelta(seconds=skew) or min(
+                        times
+                    ) < batch_now - timedelta(hours=168):
+                        raise SendError("live batch is outside the ingest clock bounds")
                 result = deliver_events(
                     batch,
                     url=args.url,
                     api_key=api_key,
                     batch_size=args.batch_size,
                     client=client,
-                    sleeper=sleeper,
+                    sleeper=active_sleeper,
                     jitter=jitter,
                     utc_now=utc_now,
                 )
+                if schedule["schema_version"] == 2 and utc_now() >= instant(schedule["deadline"]):
+                    raise SendError("live delivery exceeded the orchestration deadline")
                 sent += result.sent
                 accepted += result.accepted
                 rejected += result.rejected
@@ -404,6 +508,8 @@ def _run_scenario(
         "source_snapshots": schedule.get("source_snapshots", []),
         "batches": schedule.get("batches", []),
         "deadline": schedule.get("deadline"),
+        "source_partitions": schedule.get("source_partitions", {}),
+        "candidate_windows": schedule.get("candidate_windows", []),
     }
     _write_manifest(args.output, manifest)
     print(
@@ -419,6 +525,22 @@ def _run_scenario(
         )
     )
     return 0
+
+
+def _live_retry_sleeper(
+    schedule: dict[str, object], utc_now: Callable[[], datetime], sleeper: Callable[[float], None]
+) -> Callable[[float], None]:
+    def bounded_sleep(seconds: float) -> None:
+        target = utc_now() + timedelta(seconds=seconds)
+        while utc_now() < target:
+            now = utc_now()
+            if now >= instant(schedule["deadline"]) or target > instant(schedule["deadline"]):
+                raise SendError("live delivery retry exceeds orchestration deadline")
+            sleeper(min(1.0, (target - now).total_seconds()))
+            if utc_now() <= now:
+                raise SendError("live delivery clock did not advance")
+
+    return bounded_sleep
 
 
 def _run_send(
@@ -482,6 +604,24 @@ def main(
     """Run the command, returning a process-compatible exit status."""
     args = _parser().parse_args(argv)
     try:
+        if args.command == "schedule":
+            schedule, _ = build_live_schedule(
+                snapshot=_private_json(args.snapshot),
+                name=args.scenario,
+                seed=args.seed,
+                tenant=args.tenant,
+                batch_size=args.batch_size,
+                now=_utc_milliseconds(utc_now()),
+                future_skew_seconds=args.future_skew_seconds,
+                adjacent_cooldown=args.adjacent_cooldown,
+            )
+            _write_manifest(args.output, schedule)
+            print(
+                json.dumps(
+                    {"scheduled": True, "batches": len(cast(list[object], schedule["batches"]))}
+                )
+            )
+            return 0
         if args.command == "send":
             return _run_send(
                 args,

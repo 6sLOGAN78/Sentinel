@@ -21,8 +21,9 @@ type fakeObserver struct {
 	records []*kgo.Record
 	moving  bool
 	reads   int
-	onWait  func()
 }
+
+func (*fakeObserver) Fingerprint() string { return strings.Repeat("a", 64) }
 
 func (f *fakeObserver) History(context.Context) (map[int32]history, error) {
 	f.reads++
@@ -55,7 +56,8 @@ func fixtureCP(pin, next int64, prefix, sealed *int64, drained bool) *detection.
 	m := detection.Metadata{Format: 2, ConfigFingerprint: strings.Repeat("a", 64),
 		RuleVersions:      map[string]int{"AUTH_BRUTE_FORCE": 1, "PORT_SCAN": 1, "REQUEST_FLOOD": 1, "DENY_SPIKE": 1},
 		RuleEffectiveFrom: map[string]int64{"AUTH_BRUTE_FORCE": 0, "PORT_SCAN": 0, "REQUEST_FLOOD": 0, "DENY_SPIKE": 0},
-		DecisionFrontier:  detection.DecisionFrontier{None: true}, PrefixMaxEventTime: prefix, SealedThrough: sealed, ProcessedNext: next, Drained: drained}
+		DecisionFrontier:  detection.DecisionFrontier{None: true}, PrefixMaxEventTime: prefix, SealedThrough: sealed,
+		ProcessedNext: next, Drained: drained}
 	b, _ := json.Marshal(m)
 	return &detection.Checkpoint{Offset: pin, Metadata: string(b)}
 }
@@ -69,6 +71,7 @@ func emptyObserver() *fakeObserver {
 	return f
 }
 
+//nolint:gocognit // Independent named proof cases share the fake source and clock.
 func TestDetectionStateSnapshot(t *testing.T) {
 	start := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
@@ -88,7 +91,8 @@ func TestDetectionStateSnapshot(t *testing.T) {
 				floor = intPointer(start.UnixMilli() - 30000)
 			}
 			f.cps[0] = fixtureCP(tc.pin, tc.next, tc.prefix, floor, tc.pin == tc.next)
-			got, err := caughtUp(t.Context(), f, []string{"demo|192.0.2.11"}, start, start.Add(15*time.Minute), func() time.Time { return start }, func(context.Context, time.Duration) error { return nil })
+			got, err := caughtUp(t.Context(), f, []string{"demo|192.0.2.11"}, start, start.Add(15*time.Minute),
+				func() time.Time { return start }, func(context.Context, time.Duration) error { return nil })
 			require.NoError(t, err)
 			require.Len(t, got.SourceSnapshots, 6)
 			require.Equal(t, tc.empty, got.SourceSnapshots[0].Empty)
@@ -106,15 +110,34 @@ func TestDetectionStateSnapshot(t *testing.T) {
 		f.bounds[0] = history{0, 3}
 		f.cps[0] = fixtureCP(0, 1, nil, intPointer(start.UnixMilli()-30000), false)
 		clock := start
-		got, err := caughtUp(t.Context(), f, []string{"demo|192.0.2.11"}, start, start.Add(15*time.Minute), func() time.Time { return clock }, func(_ context.Context, d time.Duration) error {
-			require.LessOrEqual(t, d, time.Second)
-			clock = clock.Add(d)
-			f.cps[0] = fixtureCP(0, 3, nil, intPointer(start.UnixMilli()-30000), false)
-			return nil
-		})
+		got, err := caughtUp(t.Context(), f, []string{"demo|192.0.2.11"}, start, start.Add(15*time.Minute),
+			func() time.Time { return clock }, func(_ context.Context, d time.Duration) error {
+				require.LessOrEqual(t, d, time.Second)
+				clock = clock.Add(d)
+				f.cps[0] = fixtureCP(0, 3, nil, intPointer(start.UnixMilli()-30000), false)
+				return nil
+			})
 		require.NoError(t, err)
 		require.Equal(t, int64(3), got.SourceSnapshots[0].ProcessedNext)
 		require.Greater(t, clock, start)
+	})
+	t.Run("missing_metadata_reconstructs_but_waits_for_detector", func(t *testing.T) {
+		f := emptyObserver()
+		f.bounds[0] = history{0, 1}
+		f.cps[0] = nil
+		f.records = []*kgo.Record{snapshotEvent(t, 0, start)}
+		clock := start
+		waits := 0
+		got, err := caughtUp(t.Context(), f, []string{"demo|192.0.2.11"}, start, start.Add(runBudget),
+			func() time.Time { return clock }, func(_ context.Context, d time.Duration) error {
+				clock = clock.Add(d)
+				waits++
+				f.cps[0] = fixtureCP(1, 1, intPointer(start.UnixMilli()), intPointer(start.UnixMilli()-30000), true)
+				return nil
+			})
+		require.NoError(t, err)
+		require.Equal(t, 1, waits)
+		require.Equal(t, start.Format(time.RFC3339Nano), *got.SourceSnapshots[0].MaxEventTime)
 	})
 	for _, defect := range []string{"corrupt", "trimmed", "missing_unsafe", "moving", "missing_metadata", "timeout"} {
 		t.Run(defect, func(t *testing.T) {
@@ -138,14 +161,20 @@ func TestDetectionStateSnapshot(t *testing.T) {
 			}
 			clock := start
 			waits := 0
-			_, err := caughtUp(t.Context(), f, []string{"demo|192.0.2.11"}, start, start.Add(15*time.Minute), func() time.Time { return clock }, func(_ context.Context, d time.Duration) error { clock = clock.Add(d); waits++; return nil })
+			_, err := caughtUp(t.Context(), f, []string{"demo|192.0.2.11"}, start, start.Add(15*time.Minute),
+				func() time.Time { return clock }, func(_ context.Context, d time.Duration) error {
+					clock = clock.Add(d)
+					waits++
+					return nil
+				})
 			require.Error(t, err)
 			require.LessOrEqual(t, waits, 60)
 		})
 	}
 	t.Run("bounded_reconstruction_includes_prefix", func(t *testing.T) {
 		f := emptyObserver()
-		f.records = []*kgo.Record{snapshotEvent(t, 1, start.Add(-time.Second)), snapshotEvent(t, 2, start.Add(-2*time.Second))}
+		f.records = []*kgo.Record{snapshotEvent(t, 1, start.Add(-time.Second)),
+			snapshotEvent(t, 2, start.Add(-2*time.Second))}
 		maximum, err := reconstruct(t.Context(), f, 0, 1, 3, intPointer(start.UnixMilli()))
 		require.NoError(t, err)
 		require.Equal(t, start.UnixMilli(), *maximum)
@@ -185,12 +214,27 @@ func TestDetectionStateSnapshot(t *testing.T) {
 			require.Error(t, err)
 		}
 	})
+	t.Run("private_protocol_roundtrip_and_ambiguity", func(t *testing.T) {
+		at := time.Now().UTC().Truncate(time.Millisecond)
+		body, err := json.Marshal(snapshotRequest{SchemaVersion: 1, ProducersQuiescent: true,
+			SourceKeys: []string{"demo|192.0.2.11"}, StartedAt: at, Deadline: at.Add(runBudget)})
+		require.NoError(t, err)
+		var output strings.Builder
+		require.NoError(t, runProtocol(t.Context(), strings.NewReader(string(body)), &output, emptyObserver()))
+		var result snapshot
+		require.NoError(t, json.Unmarshal([]byte(output.String()), &result))
+		require.Len(t, result.SourceSnapshots, 6)
+		duplicate := strings.Replace(string(body), `"producers_quiescent":true`,
+			`"producers_quiescent":false,"producers_quiescent":true`, 1)
+		require.Error(t, runProtocol(t.Context(), strings.NewReader(duplicate), &strings.Builder{}, emptyObserver()))
+	})
 	t.Run("cancellation_interrupts_wait", func(t *testing.T) {
 		f := emptyObserver()
 		f.bounds[0] = history{0, 1}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		_, err := caughtUp(ctx, f, nil, start, start.Add(15*time.Minute), func() time.Time { return start }, func(context.Context, time.Duration) error { return errors.New("canceled") })
+		_, err := caughtUp(ctx, f, nil, start, start.Add(15*time.Minute), func() time.Time { return start },
+			func(context.Context, time.Duration) error { return errors.New("canceled") })
 		require.Error(t, err)
 	})
 }
@@ -199,7 +243,9 @@ func snapshotEvent(t *testing.T, offset int64, at time.Time) *kgo.Record {
 	t.Helper()
 	source := "192.0.2.11"
 	received := contracts.NewTimestamp(at)
-	b, err := json.Marshal(contracts.Event{SchemaVersion: 1, EventID: "0199f000-0000-7000-8000-000000000001", TenantID: "demo", OccurredAt: received, ReceivedAt: &received, Source: "generator", EventType: "auth.success", SourceIP: &source})
+	b, err := json.Marshal(contracts.Event{SchemaVersion: 1, EventID: "0199f000-0000-7000-8000-000000000001",
+		TenantID: "demo", OccurredAt: received, ReceivedAt: &received, Source: "generator",
+		EventType: "auth.success", SourceIP: &source})
 	require.NoError(t, err)
 	return &kgo.Record{Offset: offset, Key: []byte("demo|192.0.2.11"), Value: b}
 }
