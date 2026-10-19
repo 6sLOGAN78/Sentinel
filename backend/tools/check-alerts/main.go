@@ -42,6 +42,7 @@ const (
 	brokerReadBytes  = 2 << 20
 	fetchReadBytes   = 1 << 20
 	fetchWait        = 100 * time.Millisecond
+	maxEventIDs      = 5000
 )
 
 type manifest struct {
@@ -58,17 +59,92 @@ type manifest struct {
 	PriorPG        map[string]string `json:"prior_pg"`
 }
 
-// verificationFailure carries only a fixed stage name, never driver errors.
-type verificationFailure struct{ stage string }
+// verificationError carries only a fixed stage name, never driver errors.
+type verificationError struct{ stage string }
 
-func (e verificationFailure) Error() string { return "alert verification failed: " + e.stage }
+func (e verificationError) Error() string { return "alert verification failed: " + e.stage }
 
 type eventQuerier interface {
 	Query(context.Context, string, ...any) (driver.Rows, error)
 }
 
-func eventSnapshots(_ context.Context, _ eventQuerier, _ string, _ []string) (map[string]string, error) {
-	return nil, errors.New("bounded event batch is unavailable")
+func eventSnapshots(ctx context.Context, conn eventQuerier, tenant string, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	wanted := map[string]bool{}
+	if len(ids) > maxEventIDs {
+		return nil, errors.New("event ID bound exceeded")
+	}
+	for _, id := range ids {
+		if wanted[id] {
+			return nil, errors.New("duplicate expected event")
+		}
+		wanted[id] = true
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	queryCtx := driverch.Context(ctx, driverch.WithSettings(driverch.Settings{
+		"max_result_rows": maxEventIDs, "max_result_bytes": 32 << 20,
+		"result_overflow_mode": "throw", "max_execution_time": 5,
+	}))
+	rows, err := conn.Query(queryCtx, `SELECT event_id,tenant_id,occurred_at,received_at,source,event_type,
+		source_ip,destination_ip,destination_port,protocol,principal,action,outcome,attributes_json
+		FROM events WHERE tenant_id = {tenant:String} AND event_id IN {ids:Array(String)}
+		ORDER BY received_at ASC LIMIT 1 BY event_id`, driverch.Named("tenant", tenant), driverch.Named("ids", ids))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var total int
+	for rows.Next() {
+		e, readErr := scanEventRow(rows)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if !wanted[e.EventID] || out[e.EventID] != "" || e.TenantID != tenant {
+			return nil, errors.New("event ID set differs")
+		}
+		raw, marshalErr := json.Marshal(e)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		total += len(raw)
+		if total > 32<<20 {
+			return nil, errors.New("event response byte bound exceeded")
+		}
+		digest := sha256.Sum256(raw)
+		out[e.EventID] = hex.EncodeToString(digest[:])
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) != len(wanted) {
+		return nil, errors.New("missing acknowledged event rows")
+	}
+	return out, nil
+}
+
+func scanEventRow(rows driver.Rows) (*contracts.Event, error) {
+	e := &contracts.Event{SchemaVersion: contracts.EventSchemaVersion}
+	var occurred, received time.Time
+	var port *uint16
+	var attributes string
+	err := rows.Scan(&e.EventID, &e.TenantID, &occurred, &received, &e.Source, &e.EventType,
+		&e.SourceIP, &e.DestinationIP, &port, &e.Protocol, &e.Principal, &e.Action, &e.Outcome, &attributes)
+	if err != nil {
+		return nil, err
+	}
+	e.OccurredAt = contracts.NewTimestamp(occurred)
+	at := contracts.NewTimestamp(received)
+	e.ReceivedAt = &at
+	if port != nil {
+		value := int(*port)
+		e.DestinationPort = &value
+	}
+	if err = json.Unmarshal([]byte(attributes), &e.Attributes); err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 func priorSnapshotsMatch(m manifest, events, ch, pg map[string]string) bool {
@@ -96,7 +172,7 @@ func command() int {
 		err = operate(ctx, os.Args[1], m)
 	}
 	if err != nil {
-		var failure verificationFailure
+		var failure verificationError
 		if errors.As(err, &failure) {
 			fmt.Fprintln(os.Stderr, failure.Error())
 		} else {
@@ -533,26 +609,16 @@ func (s *stores) pgCurrent(ctx context.Context, m manifest) ([][]byte, error) {
 func (s *stores) prior(ctx context.Context, m manifest) (
 	map[string]string, map[string]string, map[string]string, error,
 ) {
-	events := map[string]string{}
+	events, err := eventSnapshots(ctx, s.ch, m.Tenant, m.PreserveIDs)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	ch := map[string]string{}
 	pg := map[string]string{}
-	store := storagech.NewEventStore(s.ch)
-	for _, id := range m.PreserveIDs {
-		event, err := store.Get(ctx, m.Tenant, id)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		raw, err := json.Marshal(event)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		digest := sha256.Sum256(raw)
-		events[id] = hex.EncodeToString(digest[:])
-	}
 	alerts := storagech.NewAlertStore(s.ch)
 	for _, raw := range m.PreserveAlerts {
-		a, err := contracts.DecodeAlert(strings.NewReader(raw))
-		if err != nil || a.TenantID != m.Tenant {
+		a, decodeErr := contracts.DecodeAlert(strings.NewReader(raw))
+		if decodeErr != nil || a.TenantID != m.Tenant {
 			return nil, nil, nil, errors.New("invalid prior alert")
 		}
 		stored, getErr := alerts.Get(ctx, m.Tenant, a.AlertID)
@@ -645,36 +711,32 @@ func operate(ctx context.Context, mode string, m manifest) error {
 
 func (s *stores) verify(ctx context.Context, m manifest) error {
 	if err := s.drained(ctx); err != nil {
-		return verificationFailure{"source_checkpoint"}
+		return verificationError{"source_checkpoint"}
 	}
 	kafka, err := s.kafkaRange(ctx, m)
 	if err != nil {
-		return verificationFailure{"kafka_range"}
+		return verificationError{"kafka_range"}
 	}
 	ch, err := s.chCurrent(ctx, m)
 	if err != nil {
-		return verificationFailure{"clickhouse_set"}
+		return verificationError{"clickhouse_set"}
 	}
 	pg, err := s.pgCurrent(ctx, m)
 	if err != nil {
-		return verificationFailure{"workflow_payload"}
+		return verificationError{"workflow_payload"}
 	}
 	if err = reconcile(m, kafka, ch, pg); err != nil {
-		return verificationFailure{"exact_payload_set"}
+		return verificationError{"exact_payload_set"}
 	}
 	events, oldCH, oldPG, err := s.prior(ctx, m)
 	if err != nil {
-		return verificationFailure{"prior_read"}
+		return verificationError{"prior_read"}
 	}
-	if !reflect.DeepEqual(events, m.PriorEvents) ||
-		!reflect.DeepEqual(oldCH, m.PriorCH) || !reflect.DeepEqual(oldPG, m.PriorPG) {
-		return verificationFailure{"prior_content"}
+	if !priorSnapshotsMatch(m, events, oldCH, oldPG) {
+		return verificationError{"prior_content"}
 	}
-	store := storagech.NewEventStore(s.ch)
-	for _, id := range m.EventIDs {
-		if _, err = store.Get(ctx, m.Tenant, id); err != nil {
-			return verificationFailure{"current_event_rows"}
-		}
+	if _, err = eventSnapshots(ctx, s.ch, m.Tenant, m.EventIDs); err != nil {
+		return verificationError{"current_event_rows"}
 	}
 	return nil
 }

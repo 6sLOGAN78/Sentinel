@@ -84,8 +84,10 @@ func TestCheckAlertsEventBatch(t *testing.T) {
 		rows []*contracts.Event
 	}{
 		{"missing", nil}, {"duplicate", []*contracts.Event{e, e}},
-		{"extra", []*contracts.Event{e, {SchemaVersion: 1, EventID: uuid.NewString(), TenantID: "demo", OccurredAt: at, ReceivedAt: &at}}},
-		{"wrong tenant", []*contracts.Event{{SchemaVersion: 1, EventID: e.EventID, TenantID: "demo2", OccurredAt: at, ReceivedAt: &at}}},
+		{"extra", []*contracts.Event{e, {SchemaVersion: 1, EventID: uuid.NewString(),
+			TenantID: "demo", OccurredAt: at, ReceivedAt: &at}}},
+		{"wrong tenant", []*contracts.Event{{SchemaVersion: 1, EventID: e.EventID,
+			TenantID: "demo2", OccurredAt: at, ReceivedAt: &at}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			query.rows = &eventBatchRows{events: tc.rows}
@@ -96,7 +98,8 @@ func TestCheckAlertsEventBatch(t *testing.T) {
 	m := manifest{PriorEvents: want, PriorCH: map[string]string{}, PriorPG: map[string]string{}}
 	require.True(t, priorSnapshotsMatch(m, actual, map[string]string{}, map[string]string{}))
 	m.PriorEvents = map[string]string{e.EventID: "corrupt"}
-	require.False(t, priorSnapshotsMatch(m, actual, map[string]string{}, map[string]string{}), "corrupt prior full-row hash")
+	require.False(t, priorSnapshotsMatch(m, actual, map[string]string{}, map[string]string{}),
+		"corrupt prior full-row hash")
 }
 
 func TestCheckAlertsManifest(t *testing.T) {
