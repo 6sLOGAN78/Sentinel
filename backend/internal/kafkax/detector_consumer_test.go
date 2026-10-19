@@ -275,3 +275,53 @@ func TestDetectorCommitMetadata(t *testing.T) {
 		require.Equal(t, budgets.Rebalance, client.OptValue(kgo.RebalanceTimeout))
 	})
 }
+
+type cancellationPollDriver struct {
+	commitDriver
+	pollErr error
+}
+
+func (d cancellationPollDriver) PollRecords(ctx context.Context, _ int) kgo.Fetches {
+	if d.pollErr != nil {
+		return kgo.NewErrFetch(d.pollErr)
+	}
+	<-ctx.Done()
+	return kgo.NewErrFetch(ctx.Err())
+}
+
+func TestDetectorPollCancellation(t *testing.T) {
+	for _, scenario := range []string{"sibling lifetime", "caller cancellation", "terminal restore", "independent transport"} {
+		t.Run(scenario, func(t *testing.T) {
+			lifetime, cancelLifetime := context.WithCancel(t.Context())
+			defer cancelLifetime()
+			caller, cancelCaller := context.WithCancel(t.Context())
+			defer cancelCaller()
+			driver := cancellationPollDriver{}
+			c := &DetectorConsumer{lifetime: lifetime, settings: config.WriterConfig{OperationTimeout: 10 * time.Millisecond}}
+			want := error(nil)
+			switch scenario {
+			case "sibling lifetime":
+				// Service cancellation can reach the lifetime sibling before caller.
+				cancelLifetime()
+			case "caller cancellation":
+				cancelCaller()
+				want = context.Canceled
+			case "terminal restore":
+				c.fatal = errors.New("authoritative restore failure")
+				cancelLifetime()
+				want = c.fatal
+			case "independent transport":
+				driver.pollErr = context.Canceled
+				want = context.Canceled
+			}
+			c.client = driver
+			records, err := c.PollRecords(caller, 1)
+			require.Empty(t, records)
+			if want == nil {
+				require.NoError(t, err, "sibling lifetime must not fabricate caller cancellation")
+			} else {
+				require.ErrorIs(t, err, want)
+			}
+		})
+	}
+}
