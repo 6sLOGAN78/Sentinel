@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -95,6 +96,7 @@ func poisonMetadata(t *testing.T, cp detection.Checkpoint) detection.Metadata {
 func TestDetectorPoisonPrefix(t *testing.T) {
 	t.Run("trusted classification and event time", testDetectorClassification)
 	t.Run("live pin and failed poison preserve clocks", testDetectorLivePoisonPin)
+	t.Run("poison ordering cannot acknowledge pending effects", testPoisonAcknowledgementOrder)
 	t.Run("failed partition retains acknowledged prefix", func(t *testing.T) {
 		w, c := poisonWorker(t)
 		now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
@@ -141,6 +143,30 @@ func TestDetectorPoisonPrefix(t *testing.T) {
 		require.Equal(t, int64(1), cp.Offset)
 		require.Equal(t, int64(1), poisonMetadata(t, cp).ProcessedNext)
 	})
+}
+
+func testPoisonAcknowledgementOrder(t *testing.T) {
+	w, _ := poisonWorker(t)
+	state := detection.NewPartitionStateWithBounds(w.rules, w.bounds)
+	for _, offset := range []int64{-1, math.MaxInt64} {
+		before, err := state.Checkpoint()
+		require.NoError(t, err)
+		require.Error(t, state.AcknowledgePoison(offset))
+		after, err := state.Checkpoint()
+		require.NoError(t, err)
+		require.Equal(t, before, after)
+	}
+	r := poisonEvent(t, 0, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+	var e contracts.Event
+	require.NoError(t, json.Unmarshal(r.Value, &e))
+	_, err := state.ApplySource(detection.TopicPartition{Topic: "events"}, 0, &e)
+	require.NoError(t, err)
+	windows, ledger, bytes := state.Usage()
+	require.Error(t, state.AcknowledgePoison(1), "pending valid effects cannot be acknowledged as poison")
+	afterWindows, afterLedger, afterBytes := state.Usage()
+	require.Equal(t, []int{windows, ledger, bytes}, []int{afterWindows, afterLedger, afterBytes})
+	require.NoError(t, state.Acknowledge(0))
+	require.Error(t, state.AcknowledgePoison(0), "duplicate acknowledgement is invalid")
 }
 
 func testDetectorLivePoisonPin(t *testing.T) {
