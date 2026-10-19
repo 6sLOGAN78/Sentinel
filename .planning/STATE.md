@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Wave 12 build/test gate passed; 19/21 Phase 3 plans complete, 03-13 next
-last_updated: "2026-10-19T12:31:17.779Z"
+stopped_at: Completed 03-13 with verified live/preserved acceptance; 20/21 Phase 3 plans, parent Wave 13 gate then 03-14; stop before Phase 4
+last_updated: "2026-10-19T22:31:22.818Z"
 last_activity: 2026-10-19
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 54
-  percent: 96
+  completed_plans: 55
+  percent: 98
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 20 of 21
-Status: Executing — Wave 12 gate passed; Wave 13 plan 03-13 next
+Plan: 21 of 21
+Status: Executing — 03-13 complete; parent Wave 13 gate then final plan 03-14
 Last activity: 2026-10-19
 
-Progress: [██████████] 96%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 54 (13 Phase 1 + 22 Phase 2 + 19 Phase 3)
+- Total plans completed: 55 (13 Phase 1 + 22 Phase 2 + 20 Phase 3)
 - Timing averages/totals: pending.
 
 **Per Plan:**
@@ -76,8 +76,9 @@ Progress: [██████████] 96%
 | Phase 03 P11 | 15 min | 3 tasks | 10 files |
 | Phase 3 P12 | approximately 4h 10m elapsed incl interruption | 3 tasks | 8 files |
 | Phase 3 P20 | approximately 18 min | 3 tasks | 5 files |
+| Phase 3 P13 | approximately 10h elapsed incl interruptions and recovery | 3 tasks | 16 files |
 
-**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 19 plans (timing aggregates pending).
+**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 20 plans (timing aggregates pending).
 
 ## Accumulated Context
 
@@ -171,6 +172,10 @@ Progress: [██████████] 96%
 - [Phase 3]: 03-12: New assignment lifetimes remain pending until complete authoritative offset/history/config validation; stale token/member/generation completion cannot unlock processing, readiness or commit.
 - [Phase 3]: 03-20: Observe decision Commit inside the transaction and post-commit only after independent rollback cleanup and connection release; failed observation authorizes no publication and requires immutable replay.
 - [Phase 3]: 03-20: Preserve immutable decision-frontier and actual Kafka owner fences; missing, older or mismatched PG recovery fails with unchanged Kafka metadata, never treating processed_next as decision evidence.
+- [Phase 3]: 03-13: Preserve independent canonical SCAN fixture wording; align only runtime summary and the two old expectations, never regenerate goldens.
+- [Phase 3]: 03-13: Fix fresh documentation IPv6 mapping before actual partition snapshot and schedule; reuse pinned generator functions and canonical identity.
+- [Phase 3]: 03-13: Require current Kafka range plus exact CH/PG payloads and original UTC-ms received-at bound for current events; preserve full prior historical rows and workflow seq.
+- [Phase 3]: 03-13: Use bounded typed full-row event batches with existing received_at ASC earliest-row policy; retain10s query/60s reconciliation/original15m budgets.
 
 ### Pending Todos
 
@@ -178,6 +183,7 @@ None yet.
 
 ### Planning Continuation
 
+- Plan 03-13 completed after two quota interruptions and normal preserved-stack recovery. Assertion RED 97797ef, healthy workers/canonical SCAN GREEN a8ff12e, constructor RED/GREEN 2e17dd3/184084a, exact bounded batch RED/GREEN 3ad49a6/e0f3777, current-row RED 765ecaa and final operator GREEN f686b61 are committed; verified SUMMARY 80f455c was committed immediately before serialized SDK tracking. Actual final independent preserved repeat passed 315.63s (legacy 1000 seed then two exact Make commands, same topics/groups/volumes, prior full rows/workflows retained, normal deltas 0, drained); actual fixed/default-binary and preserved live-edge selector passed 559.28s (full canonical payloads, ten alerts, expected edge delta 1). Original UTC-ms start/15-minute budget and final 60 seconds remain binding; restart/reset refuses. Initial N+1 reconciliation failure, interrupted second run, stopped-stack setup failure and pinned migration network-reset/retry are preserved in SUMMARY. Full Go race/web six/Python 121, standard lint, owned integration lint, bounded build and integration vet passed; only prior recovery_test.go:162 integration lint remains for 03-14. Twenty of twenty-one Phase 3 summaries and 55/56 overall plans are complete (98%). SDK again wrote 33% and misplaced its metric; reconciled against actual artifacts. Parent Wave 13 spotcheck/gate then 03-14 remain; global requirements/phase completion are pending. Stop before Phase 4.
 - Plan 03-20 completed: compiling callback/crash assertion RED 4219745, bounded transaction observations/frontier proof GREEN 5ffb8ca and runtime four-cut GREEN 3294fc3; verified SUMMARY dabe5a8 was committed before serialized tracking. Four independent cooldown families pass: final partition-1 four cuts preserve full canonical bytes, resolved workflow rows and post-commit checkpoint; actual third-owner moved target rejects concurrent stale identities without any PG operational mutation; real PG outage/commit-outcome replay/lock rollback and advanced-pin lost-seed restore with zero actual DLQ records pass. Pure worker/frontier/transaction race families, retained exact CrashBoundaries/ThirdReplica, full make test/race (web 6, Python 121), standard lint, bounded build and integration vet pass. Only existing recovery_test.go:162 integration-lint debt remains. Existing source/ownership/pending-fetch invariants were preserved as passing characterization. Nineteen of twenty-one Phase 3 summaries and 54/56 overall plans are complete (96% rounded). SDK again wrote 33% and misplaced the metric; tracking reconciles both against actual artifacts. Parent Wave 12 gate is next, then 03-13 actual preserved-data acceptance. Global requirements/phase completion remain pending; stop before Phase 4.
 - Plan 03-12 completed after the intentional interruption: causal fixture RED dcd085f, observer RED d832c62, private hooks GREEN 6574c22 and callback/actual-target GREEN c14ffc7; approved inherited sibling-cancellation RED/GREEN 7ae8cfe/e01326d and pending-offset-fetch RED/GREEN 8392c89/cf9367b. Verified SUMMARY 4c80754 was committed before serialized tracking. Final independent real MidWindow, all three CrashBoundaries, actual seeded ThirdReplica count=3, Checkpoint and ReadyzDependencies pass after the last source change; full make test/race (six web, 121 Python), standard lint, bounded build and integration vet pass. Only existing recovery_test.go:162 integration-lint debt remains. An earlier third-target restore timeout remains explicitly unexplained; the separately proven pending-fetch safety gap is not claimed as its confirmed cause. Newly acquired lifetimes cannot restore/process/become ready/commit before authoritative fetch/history/config completion; retained tokens and fences remain intact. Eighteen of twenty-one Phase 3 summaries and 53/56 overall plans are complete (95% rounded). SDK again wrote 33% and misplaced the metric; tracking reconciles both against actual artifacts. Parent Wave 11 gate is next, then 03-20. Global requirements and phase completion remain pending; stop before Phase 4.
 - Plan 03-11 completed: assertion RED f37731d, detector GREEN a552d03, pending-effect guard 3acb983 and shared writer retry GREEN 27c3774; verified SUMMARY 3ee9366 committed before serialized tracking. Both real worker poison/outage families and 400-record aggregate proofs pass, as do the three independent retained Phase 2 poison/DLQ/slow-rebalance families, native partial/ambiguous storage, resolved workflow replay, real detector capacity/retained-owner and AUTH regressions. Full make test/race (web 6, Python 121), standard lint, bounded build and integration vet pass; integration lint retains only recovery_test.go:162. Parent approved one reducer.go extension for bounded event-free poison acknowledgement; no synthetic event clock was introduced. Seventeen of twenty-one Phase 3 summaries and 52/56 overall plans are complete (93%); parent Wave 10 gate is next, then 03-12. SDK regenerated 33% frontmatter and misplaced the metric; tracking reconciles both to actual artifacts. Global requirement and phase-completion checkboxes remain pending; stop before Phase 4.
@@ -201,13 +207,13 @@ None yet.
 
 ### Blockers/Concerns
 
-- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 19/21 plans implemented, including exact checkpoint reconstruction, all four predicates, native stores, adversarial alert persistence, frozen candidates, durable cross-window cooldown, stopped-replica configuration handover, aggregate fail-closed state admission, internal late metrics, restored-assignment readiness, private caught-up live scheduling, bounded poison/DLQ durable prefixes, causal source/publication/checkpoint crashes, actual third-owner transfer and the complete scoped cooldown PG-commit/outage/stale-owner/restore-behind matrix. Parent Wave 12 gate, actual preserved-stack scenario acceptance and phase-wide security/CI remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14. Earlier 03-12 real third-target timeout remains unexplained, with final required repeated proof passing; see its SUMMARY. Operational decision history has no automatic GC; deliberate group-generation reset requires stopped maintenance. Changed-config rolling handover is intentionally unsupported; use zero old members before startup and sole new membership.
-- Unresolved phase acceptance debt discovered by 03-07: shared scenarios.json expects SCAN summary `Distinct destination ports probed`, while runtime evidence.go emits `Distinct destination ports on one host`; complete static expected canonical fixture equality fails. Root retained reconciliation for 03-13/03-14. Checkpoint proofs compare all runtime bytes against uninterrupted output and exact independent fixture IDs; this is not a static canonical fixture pass. See phase deferred-items.md and 03-07-SUMMARY.md.
+- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 20/21 plans implemented, including exact checkpoint reconstruction, all four predicates, native stores, adversarial alert persistence, frozen candidates, durable cross-window cooldown, stopped-replica configuration handover, aggregate fail-closed state admission, internal late metrics, restored-assignment readiness, private caught-up live scheduling, bounded poison/DLQ durable prefixes, causal source/publication/checkpoint crashes, actual third-owner transfer, the scoped cooldown PG-commit/outage/stale-owner/restore-behind matrix and actual exact preserved-stack scenario acceptance. Parent Wave 13 gate, final plan 03-14 and phase-wide security/CI remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14. Earlier 03-12 real third-target timeout remains unexplained, with final required repeated proof passing; see its SUMMARY. Operational decision history has no automatic GC; deliberate group-generation reset requires stopped maintenance. Changed-config rolling handover is intentionally unsupported; use zero old members before startup and sole new membership.
+- The SCAN canonical fixture debt discovered by 03-07 is resolved by approved 03-13 assertion RED and one runtime summary alignment to independently committed `Distinct destination ports probed`. No golden regeneration or ID/evidence/window/version/schema changes: complete fixed canonical Go/Python and actual Kafka/CH/PG payload proof pass. Historical failed records remain preserved; see 03-13-SUMMARY.md. The full legacy seed flow is not claimed zero-late: scenario baselines follow legacy/startup, normal runs require delta 0, explicit edge requires delta 1, and in-run restart/reset refuses.
 - Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-19T12:31:17.767Z
-Stopped at: Wave 12 parent build/test gate passed; continue 03-13 sequentially. Stop before Phase 4.
+Last session: 2026-10-19T22:31:22.807Z
+Stopped at: Completed 03-13 with committed exact live/preserved proof and summary; parent Wave 13 gate then 03-14. Stop before Phase 4.
 Resume file: None
