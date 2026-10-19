@@ -173,6 +173,7 @@ func newKafkaObserver() (*kafkaObserver, error) {
 		return nil, errors.New("invalid snapshot rules")
 	}
 	client, err := kgo.NewClient(kgo.SeedBrokers(brokers...), kgo.BrokerMaxReadBytes(observerReadBytes),
+		kgo.FetchMaxBytes(scanFetchBytes),
 		kgo.RequestTimeoutOverhead(observerRequestOverhead))
 	if err != nil {
 		return nil, errors.New("kafka observer unavailable")
