@@ -103,7 +103,7 @@ func (s *PartitionState) apply(source *TopicPartition, offset int64, event *cont
 	}
 	t := event.OccurredAt.UnixMilli()
 	late := s.maximum != nil && t < *s.maximum-Lateness.Milliseconds()
-	var changes map[windowKey]*windowState
+	var changes []windowAdmission
 	outcome := Outcome{Late: late}
 	windows, bytes := 0, 0
 	if !late {
@@ -116,38 +116,18 @@ func (s *PartitionState) apply(source *TopicPartition, offset int64, event *cont
 	if err := s.bounds.reserve(windows, 1, bytes+ledgerEntryBytes); err != nil {
 		return Outcome{}, err
 	}
-	for key, window := range changes {
-		s.windows[key] = window
+	for _, change := range changes {
+		change.state.ids[event.EventID] = struct{}{}
+		if change.port != nil {
+			change.state.ports[*change.port] = struct{}{}
+		}
+		s.windows[change.key] = change.state
 	}
 	s.prefix[offset] = cloneTime(s.maximum)
 	s.last = offset
 	s.processedNext = max(s.processedNext, offset+1)
 	if s.maximum == nil || t > *s.maximum {
 		s.maximum = cloneTime(&t)
-	}
-	return outcome, nil
-}
-
-func (s *PartitionState) applyRules(source *TopicPartition, offset int64, event *contracts.Event) (Outcome, error) {
-	var outcome Outcome
-	// Evaluate in the canonical ordinal order, never YAML order. Aggregate every
-	// matching rule so a source frontier can order multiple decisions at an offset.
-	for ordinal, id := range ruleIDs() {
-		for _, r := range s.rules.Rules {
-			if r.ID != id || !r.Enabled {
-				continue
-			}
-			second, port, matched := ruleGroup(event, r.ID)
-			if !matched {
-				continue
-			}
-			out, err := s.applyWindow(source, offset, ordinal, event, r, second, port)
-			if err != nil {
-				return Outcome{}, err
-			}
-			outcome.Alerts = append(outcome.Alerts, out.Alerts...)
-			outcome.Candidates = append(outcome.Candidates, out.Candidates...)
-		}
 	}
 	return outcome, nil
 }
@@ -166,64 +146,6 @@ func ruleGroup(event *contracts.Event, ruleID string) (string, *int, bool) {
 		return "", nil, volumeMatches(event, ruleID)
 	}
 	return "", nil, false
-}
-
-func (s *PartitionState) applyWindow(
-	source *TopicPartition, offset int64, ordinal int, event *contracts.Event, r Rule, second string, port *int,
-) (Outcome, error) {
-	t := event.OccurredAt.UnixMilli()
-	start := t / r.Window.Milliseconds() * r.Window.Milliseconds()
-	end := start + r.Window.Milliseconds()
-	if start < s.effective[r.ID] || s.sealed != nil && end <= *s.sealed {
-		return Outcome{}, nil
-	}
-	key := windowKey{tenant: event.TenantID, rule: r.ID, ip: *event.SourceIP, principal: second, start: start}
-	w := s.windows[key]
-	if w == nil {
-		w = &windowState{first: offset, end: end, ids: make(map[string]struct{})}
-		if port != nil {
-			w.ports = make(map[int]struct{})
-		}
-		s.windows[key] = w
-	}
-	if _, ok := w.ids[event.EventID]; ok {
-		return Outcome{}, nil
-	}
-	if len(w.ids) >= s.bounds.limits.Events {
-		return Outcome{}, errCapacity
-	}
-	if port != nil {
-		if _, exists := w.ports[*port]; !exists && len(w.ports) >= s.bounds.limits.Ports {
-			return Outcome{}, errCapacity
-		}
-	}
-	w.ids[event.EventID] = struct{}{}
-	if port != nil {
-		w.ports[*port] = struct{}{}
-	}
-	if len(w.samples) < maxSamples {
-		w.samples = append(w.samples, event.EventID)
-	}
-	count := len(w.ids)
-	if port != nil {
-		count = len(w.ports)
-	}
-	if w.frozen != "" || count < r.Threshold {
-		return Outcome{}, nil
-	}
-	a, raw, fingerprint, err := freezeEvidence(key, w, r)
-	if err != nil {
-		return Outcome{}, err
-	}
-	w.frozen = string(raw)
-	out := Outcome{Alerts: []*contracts.Alert{a}}
-	if source != nil {
-		out.Candidates = []Candidate{{
-			source: *source, offset: offset, ordinal: ordinal,
-			trigger: contracts.NewTimestamp(event.OccurredAt.Time), canonical: w.frozen, fingerprint: fingerprint,
-		}}
-	}
-	return out, nil
 }
 
 // Acknowledge seals only after all effects through this source offset succeed.

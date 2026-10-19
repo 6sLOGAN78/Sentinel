@@ -46,7 +46,8 @@ func rejectUnchanged(t *testing.T, s *PartitionState, offset int64, e *contracts
 	require.Equal(t, []int{w, l, b}, []int{nw, nl, nb})
 }
 
-func TestStateBounds(t *testing.T) { //nolint:gocognit // Independent adversarial resource subcases share the named acceptance family.
+//nolint:gocognit // Independent resource subcases share the named acceptance family.
+func TestStateBounds(t *testing.T) {
 	t.Run("aggregate_windows", func(t *testing.T) {
 		budget := NewBounds(StateLimits{Windows: 2})
 		a, b := NewPartitionStateWithBounds(boundRules(), budget), NewPartitionStateWithBounds(boundRules(), budget)
