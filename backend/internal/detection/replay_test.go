@@ -128,6 +128,9 @@ func replaySharedFixtures(t *testing.T) {
 			require.Len(t, expected, len(tc.Expected))
 			for _, a := range tc.Expected {
 				require.Contains(t, expected, a.Payload.AlertID)
+				canonical, marshalErr := json.Marshal(a.Payload)
+				require.NoError(t, marshalErr)
+				require.Equal(t, string(canonical), expected[a.Payload.AlertID], "complete independent fixture payload")
 			}
 			replayAllCuts(t, baseline, tc.Events, expected)
 		})
