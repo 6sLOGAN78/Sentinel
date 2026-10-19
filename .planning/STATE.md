@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-19-PLAN.md; 12/21 Phase 3 plans complete, Wave 6 cross-plan gate pending
-last_updated: "2026-10-18T23:37:12.222Z"
-last_activity: 2026-10-18
+stopped_at: Completed 03-07-PLAN.md; 13/21 Phase 3 plans complete, Wave 7 cross-plan gate pending
+last_updated: "2026-10-19T04:54:35.671Z"
+last_activity: 2026-10-19
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 47
-  percent: 84
+  completed_plans: 48
+  percent: 86
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 13 of 21
-Status: Executing — Wave 6 cross-plan gate pending
-Last activity: 2026-10-18
+Plan: 14 of 21
+Status: Executing — Wave 7 cross-plan gate pending
+Last activity: 2026-10-19
 
-Progress: [████████░░] 84%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 47 (13 Phase 1 + 22 Phase 2 + 12 Phase 3)
+- Total plans completed: 48 (13 Phase 1 + 22 Phase 2 + 13 Phase 3)
 - Timing averages/totals: pending.
 
 **Per Plan:**
@@ -69,8 +69,9 @@ Progress: [████████░░] 84%
 | Phase 03 P10 | 13 min | 3 tasks | 7 files |
 | Phase 03 P05 | 6 min | 2 tasks | 7 files |
 | Phase 03 P19 | ~13 min timed | 2 tasks | 11 files |
+| Phase 03 P07 | 5h 15m elapsed incl quota pause | 3 tasks | 7 files |
 
-**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 12 plans (timing aggregates pending).
+**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 13 plans (timing aggregates pending).
 
 ## Accumulated Context
 
@@ -144,6 +145,9 @@ Progress: [████████░░] 84%
 - [Phase 03]: 03-19: Lock current partition fence, read globally unique alert_id before any cursor access, then atomically persist a missing ordered decision/cursor/frontier.
 - [Phase 03]: 03-19: Derive incarnation from configured group, exclude it from fence primary key and reject generation/member/token rollback.
 - [Phase 03]: 03-19: Checkpoint last fully effected decision and verify immutable PG row plus a fence at least that far on restore; legitimate PG ahead is allowed.
+- [Phase 03-07]: Require complete format-2 recovery fields, explicit nullable clocks, unique JSON members and non-null gates/frontiers before restoring source state.
+- [Phase 03-07]: Adopt checkpoints only after complete successful synchronous callback and unchanged assignment tokens; record verified retained history start.
+- [Phase 03-07]: Replay uses uninterrupted canonical bytes and exact independent shared fixture IDs; pre-existing SCAN summary mismatch remains unresolved phase acceptance debt.
 
 ### Pending Todos
 
@@ -151,8 +155,9 @@ None yet.
 
 ### Planning Continuation
 
+- Resumed Wave 7 plan 03-07 after quota interruption; proof/model/adapter commits d255ef0, 48dac29, b8351c6 and 0e93039 are complete, and verified SUMMARY 47daeb5 is committed before tracking. Exact canonical bytes/live state pass 3,410 restart cuts plus 156 successive restarts; real broker metadata/corruption/retention and stored-byte restart proofs pass. Final full make test/race, standard lint and bounded build/integration vet pass. 13/21 plans have summaries; parent Wave 7 cross-plan gate is pending. Wave 6 already passed at a09cc92. Global requirement completion and Phase 3 completion remain unclaimed.
 - Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. Wave 1 plans 03-01/03-06 and Wave 2 plans 03-02/03-15/03-16 are implemented with committed SUMMARYs; both cross-plan gates passed. Wave 3 plans 03-03 (SCAN), 03-17 (native stores) and 03-18 (real PG dependency/fixtures) have committed proof/SUMMARY evidence. Automatic execution continues after the parent Wave 3 gate, stopping before Phase 4.
-- Waves 1–5 passed their cross-plan gates. Wave 6 plan 03-19 has committed assertion RED/GREEN (99e19cb/b385283) and verified SUMMARY (b8c7d99): real PG immutable allow/suppress decisions, monotone entity cursors and current Kafka membership fences precede stored-byte publication; populated fully effected checkpoint frontiers are verified against PG on restore. All five independent cooldown/transaction/schema families pass, including actual 299s/301s visibility in Kafka/CH/workflow, equality, immutable old replay, ownership rejection, legitimate PG ahead/restore-behind checks and real PG fence-lock failure preserving exact previous broker checkpoint metadata. Actual restart republishes identical stored bytes. Full make test/race, standard lint, build/integration vet and independent AUTH/SCAN/Volume/PG dependency/writer/workflow/readiness regressions pass. 12/21 summaries are committed; the parent Wave 6 gate is pending. Full crash/rebalance/outage/restore-behind worker matrix remains 03-20, drained config handover remains 03-08, and existing integration lint recovery_test.go:162 unparam remains 03-14.
+- Waves 1–6 passed their cross-plan gates, with Wave 6 recorded at a09cc92. Plan 03-19 has committed assertion RED/GREEN (99e19cb/b385283) and verified SUMMARY (b8c7d99): real PG immutable allow/suppress decisions, monotone entity cursors and current Kafka membership fences precede stored-byte publication; populated fully effected checkpoint frontiers are verified against PG on restore. All five independent cooldown/transaction/schema families pass, including actual 299s/301s visibility in Kafka/CH/workflow, equality, immutable old replay, ownership rejection, legitimate PG ahead/restore-behind checks and real PG fence-lock failure preserving exact previous broker checkpoint metadata. Actual restart republishes identical stored bytes. Full make test/race, standard lint, build/integration vet and independent AUTH/SCAN/Volume/PG dependency/writer/workflow/readiness regressions pass. Full crash/rebalance/outage/restore-behind worker matrix remains 03-20, drained config handover remains 03-08, and existing integration lint recovery_test.go:162 unparam remains 03-14.
 - User chose option 1: actual alert-level cooldown across nearby windows, rejecting candidate-only throttling. See 03-COOLDOWN-DECISION.md and amended research: durable PG allow/suppress decisions/cursors/fences, checkpoint decision_frontier consistency, event-time expiry, unchanged canonical IDs and Kafka window replay. Initial and R1 checker failures remain preserved; their issues are resolved by R2. Planning approval is not production proof. Preserve unrelated configuration/.serena edits and existing user volumes.
 - Phase 2 closeout evidence below is historical and remains valid; it is not the current Phase 3 authorization boundary.
 
@@ -167,12 +172,13 @@ None yet.
 
 ### Blockers/Concerns
 
-- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 12/21 plans implemented, including all four predicates, native stores, adversarial alert persistence, frozen candidates and real durable cross-window cooldown with fenced immutable decisions/checkpoint frontiers. Broader poison/prefix/state-bound/late-metric proofs, complete detector crash/rebalance/outage recovery, drained config handover, live scheduling and phase-wide security/CI remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14. Operational decision history has no automatic GC; deliberate group-generation reset requires stopped maintenance.
+- No current Phase 2 blocker or open Phase 3 planning blocker. Phase 3 has 13/21 plans implemented, including exact checkpoint reconstruction, all four predicates, native stores, adversarial alert persistence, frozen candidates and real durable cross-window cooldown with fenced immutable decisions/checkpoint frontiers. Broader poison/state-bound/late-metric proofs, complete detector crash/rebalance/outage recovery, drained config handover, live scheduling and phase-wide security/CI remain pending. Existing integration lint unparam in test/recovery_test.go:162 remains for 03-14. Operational decision history has no automatic GC; deliberate group-generation reset requires stopped maintenance.
+- Unresolved phase acceptance debt discovered by 03-07: shared scenarios.json expects SCAN summary `Distinct destination ports probed`, while runtime evidence.go emits `Distinct destination ports on one host`; complete static expected canonical fixture equality fails. Root retained reconciliation for 03-13/03-14. Checkpoint proofs compare all runtime bytes against uninterrupted output and exact independent fixture IDs; this is not a static canonical fixture pass. See phase deferred-items.md and 03-07-SUMMARY.md.
 - Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
 - The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
 
 ## Session Continuity
 
-Last session: 2026-10-18T23:37:12.210Z
-Stopped at: Completed 03-19-PLAN.md; 12/21 Phase 3 plans complete, Wave 6 cross-plan gate pending
+Last session: 2026-10-19T04:54:35.661Z
+Stopped at: Completed 03-07-PLAN.md; 13/21 Phase 3 plans complete, Wave 7 cross-plan gate pending
 Resume file: None
