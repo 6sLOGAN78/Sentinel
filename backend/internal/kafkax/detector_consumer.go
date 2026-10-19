@@ -54,6 +54,9 @@ type DetectorConsumer struct {
 	cancel                context.CancelFunc
 	closeOnce             sync.Once
 	closeDone             chan struct{}
+	assignmentObserved    bool
+	assignmentMember      string
+	assignmentGeneration  int32
 }
 
 // DetectorReadiness identifies one callback-observed group assignment.
@@ -65,7 +68,19 @@ type DetectorReadiness struct {
 }
 
 // ReadinessSnapshot is a bounded snapshot; it performs no network operation.
-func (c *DetectorConsumer) ReadinessSnapshot() DetectorReadiness { return DetectorReadiness{} }
+func (c *DetectorConsumer) ReadinessSnapshot() DetectorReadiness {
+	member, generation := c.client.GroupMetadata()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snapshot := DetectorReadiness{Member: member, Generation: generation,
+		Observed: c.assignmentObserved && c.fatal == nil && member != "" && generation >= 0 &&
+			member == c.assignmentMember && generation == c.assignmentGeneration,
+		Tokens: make(map[detection.TopicPartition]uint64, len(c.assignments))}
+	for tp, assignment := range c.assignments {
+		snapshot.Tokens[tp] = assignment.Token
+	}
+	return snapshot
+}
 
 // EnableConfigTransition opts into a stopped-old-replica handover at startup.
 // A changed checkpoint still requires actual sole Kafka membership and PG proof.
@@ -138,6 +153,7 @@ func NewDetectorConsumer(
 
 func (c *DetectorConsumer) fail(err error) error {
 	c.mu.Lock()
+	c.assignmentObserved = false
 	first := c.fatal == nil
 	if first {
 		c.fatal = err
@@ -156,6 +172,13 @@ func (c *DetectorConsumer) assigned(_ context.Context, _ *kgo.Client, topics map
 	member, generation := c.client.GroupMetadata()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.assignmentMember, c.assignmentGeneration, c.assignmentObserved = member, generation, true
+	// Cooperative callbacks contain additions only. Retained partitions keep
+	// their lifetime token and state but must use the actual new group fence.
+	for tp, assignment := range c.assignments {
+		assignment.Member, assignment.Generation = member, generation
+		c.assignments[tp] = assignment
+	}
 	for topic, partitions := range topics {
 		for _, id := range partitions {
 			c.sequence++
@@ -169,6 +192,7 @@ func (c *DetectorConsumer) assigned(_ context.Context, _ *kgo.Client, topics map
 func (c *DetectorConsumer) revoked(_ context.Context, _ *kgo.Client, topics map[string][]int32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.assignmentObserved = false
 	for topic, partitions := range topics {
 		for _, id := range partitions {
 			delete(c.assignments, detection.TopicPartition{Topic: topic, Partition: id})

@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -32,9 +34,36 @@ type Consumer interface {
 }
 
 // Ready reports whether the current assignment has completed required restore.
-func (w *Worker) Ready(context.Context) error { return nil }
+func (w *Worker) Ready(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	current := w.consumer.ReadinessSnapshot()
+	restored := w.restored.Load()
+	if !current.Observed || restored == nil || current.Member != restored.Member ||
+		current.Generation != restored.Generation || !maps.Equal(current.Tokens, restored.Tokens) {
+		return errors.New("detector assignment restoration pending")
+	}
+	return nil
+}
 
-func (w *Worker) publishReadiness(map[detection.TopicPartition]Assignment) {}
+func (w *Worker) publishReadiness(assigned map[detection.TopicPartition]Assignment) {
+	snapshot := w.consumer.ReadinessSnapshot()
+	if !snapshot.Observed || len(snapshot.Tokens) != len(assigned) {
+		w.restored.Store(nil)
+		return
+	}
+	for tp, token := range snapshot.Tokens {
+		assignment, exists := assigned[tp]
+		part, restored := w.partitions[tp]
+		if !exists || !restored || part.token != token || assignment.Token != token ||
+			!w.assignmentCurrent(tp, assignment) {
+			w.restored.Store(nil)
+			return
+		}
+	}
+	w.restored.Store(&snapshot)
+}
 
 // Publisher acknowledges every frozen alert before returning success.
 type Publisher interface {
@@ -44,6 +73,14 @@ type partition struct {
 	token uint64
 	state *detection.PartitionState
 	owner postgres.DetectionOwnership
+}
+
+type decisionStore interface {
+	PrepareRestore(context.Context, postgres.DetectionOwnership,
+		*detection.Checkpoint, bool) (*detection.Checkpoint, error)
+	CheckpointCommitted(context.Context, postgres.DetectionOwnership, detection.Checkpoint) error
+	Register(context.Context, postgres.DetectionOwnership, detection.DecisionFrontier) error
+	Decide(context.Context, postgres.DetectionOwnership, detection.Candidate) (postgres.DetectionDecision, error)
 }
 
 // Worker serializes source records and their durable effects.
@@ -56,9 +93,10 @@ type Worker struct {
 	partitions map[detection.TopicPartition]partition
 	pool       *pgxpool.Pool
 	pg         config.DetectorPGConfig
-	decisions  *postgres.DetectionDecisionStore
+	decisions  decisionStore
 	bounds     *detection.Bounds
 	metrics    *opshttp.DetectionMetrics
+	restored   atomic.Pointer[kafkax.DetectorReadiness]
 }
 
 // New constructs a worker from explicit dependencies and startup settings.
@@ -153,7 +191,11 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 		}
 		checkpoints[tp] = cp
 	}
-	return w.commitEffects(ctx, checkpoints)
+	if err := w.commitEffects(ctx, checkpoints); err != nil {
+		return err
+	}
+	w.publishReadiness(assigned)
+	return nil
 }
 
 func (w *Worker) syncAssignments(ctx context.Context, assigned map[detection.TopicPartition]Assignment) error {
@@ -224,6 +266,24 @@ func (w *Worker) partitionState(
 		if ok {
 			w.partitions[tp].state.Release()
 		}
+		w.partitions[tp] = p
+	}
+	if p.owner.Member != a.Member || p.owner.Generation != a.Generation {
+		owner := p.owner
+		owner.Member, owner.Generation = a.Member, a.Generation
+		if err := w.validateOwnership(owner); err != nil {
+			return nil, err
+		}
+		// A same-token cooperative retention preserves fully effected reducer
+		// state. Re-fence and verify its durable frontier before changing owner;
+		// newly acquired tokens still take the complete restore path above.
+		if err := w.decisions.Register(ctx, owner, p.state.DecisionFrontier()); err != nil {
+			return nil, err
+		}
+		if err := w.validateOwnership(owner); err != nil {
+			return nil, err
+		}
+		p.owner = owner
 		w.partitions[tp] = p
 	}
 	if err := w.validateOwnership(p.owner); err != nil {

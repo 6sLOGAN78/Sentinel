@@ -92,6 +92,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
 		{Name: "kafka", Fn: consumer.Ping}, {Name: "alerts", Fn: publisher.Ping},
 		{Name: "postgres", Fn: db.Pool.Ping},
+		{Name: "detector", Fn: worker.Ready},
 	}, opshttp.WithDetectionMetrics(metrics))
 	if err != nil {
 		return fmt.Errorf("ops http: %w", err)

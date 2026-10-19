@@ -46,6 +46,13 @@ func commitResponse(partitions ...kmsg.OffsetCommitResponseTopicPartition) *kmsg
 
 func (d commitDriver) GroupMetadata() (string, int32) { return "member-7", 9 }
 
+type readinessDriver struct {
+	commitDriver
+	generation int32
+}
+
+func (d *readinessDriver) GroupMetadata() (string, int32) { return "member-7", d.generation }
+
 func TestDetectorAssignmentReadiness(t *testing.T) {
 	c := &DetectorConsumer{client: commitDriver{},
 		assignments: make(map[detection.TopicPartition]DetectorAssignment)}
@@ -66,6 +73,20 @@ func TestDetectorAssignmentReadiness(t *testing.T) {
 	c.cancel = func() {}
 	_ = c.fail(errors.New("terminal fixture failure"))
 	require.False(t, c.ReadinessSnapshot().Observed, "terminal failures invalidate the snapshot")
+}
+
+func TestDetectorRetainedAssignment(t *testing.T) {
+	driver := &readinessDriver{generation: 9}
+	c := &DetectorConsumer{client: driver, assignments: make(map[detection.TopicPartition]DetectorAssignment)}
+	tp := detection.TopicPartition{Topic: "events", Partition: 0}
+	c.assigned(t.Context(), nil, map[string][]int32{"events": {0}})
+	before := c.Assignments()[tp]
+	driver.generation = 10
+	c.assigned(t.Context(), nil, map[string][]int32{})
+	after := c.Assignments()[tp]
+	require.Equal(t, int32(10), after.Generation,
+		"empty added set retains owned partitions under the new actual generation")
+	require.Equal(t, before.Token, after.Token, "retained assignment preserves its ownership lifetime token")
 }
 
 // Ignoring callback errors or omitting any requested partition must prevent
