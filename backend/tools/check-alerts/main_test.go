@@ -70,7 +70,7 @@ func TestCheckAlertsEventBatch(t *testing.T) {
 	digest := sha256.Sum256(raw)
 	want := map[string]string{e.EventID: hex.EncodeToString(digest[:])}
 	query := &eventBatchQuery{rows: &eventBatchRows{events: []*contracts.Event{e}}}
-	actual, err := eventSnapshots(t.Context(), query, "demo", []string{e.EventID})
+	actual, err := eventSnapshots(t.Context(), query, "demo", []string{e.EventID}, time.Time{})
 	require.NoError(t, err)
 	require.Equal(t, want, actual)
 	require.Contains(t, query.query, "tenant_id = {tenant:String}")
@@ -91,7 +91,7 @@ func TestCheckAlertsEventBatch(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			query.rows = &eventBatchRows{events: tc.rows}
-			_, readErr := eventSnapshots(t.Context(), query, "demo", []string{e.EventID})
+			_, readErr := eventSnapshots(t.Context(), query, "demo", []string{e.EventID}, time.Time{})
 			require.Error(t, readErr)
 		})
 	}
@@ -100,6 +100,25 @@ func TestCheckAlertsEventBatch(t *testing.T) {
 	m.PriorEvents = map[string]string{e.EventID: "corrupt"}
 	require.False(t, priorSnapshotsMatch(m, actual, map[string]string{}, map[string]string{}),
 		"corrupt prior full-row hash")
+}
+
+func TestCheckAlertsCurrentEventRange(t *testing.T) {
+	start := time.Now().UTC().Truncate(time.Millisecond)
+	old := contracts.NewTimestamp(start.Add(-time.Second))
+	e := &contracts.Event{SchemaVersion: 1, EventID: uuid.NewString(), TenantID: "demo",
+		OccurredAt: old, ReceivedAt: &old, Attributes: map[string]any{}}
+	for _, name := range []string{"malicious", "benign zero"} {
+		t.Run(name, func(t *testing.T) {
+			query := &eventBatchQuery{rows: &eventBatchRows{events: []*contracts.Event{e}}}
+			_, err := eventSnapshots(t.Context(), query, "demo", []string{e.EventID}, start)
+			require.Error(t, err, "historical rows cannot satisfy current acknowledged IDs")
+			require.Contains(t, query.query, "received_at >= {since:DateTime64(3)}")
+			require.Len(t, query.args, 3)
+		})
+	}
+	query := &eventBatchQuery{rows: &eventBatchRows{events: []*contracts.Event{e}}}
+	_, err := eventSnapshots(t.Context(), query, "demo", []string{e.EventID}, time.Time{})
+	require.NoError(t, err, "prior preservation keeps unbounded historical full-row hashing")
 }
 
 func TestCheckAlertsManifest(t *testing.T) {

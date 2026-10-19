@@ -48,6 +48,7 @@ const (
 type manifest struct {
 	SchemaVersion  int               `json:"schema_version"`
 	Tenant         string            `json:"tenant"`
+	RunStart       string            `json:"run_start"`
 	SourceKeys     []string          `json:"source_keys"`
 	EventIDs       []string          `json:"event_ids"`
 	Expected       []string          `json:"expected_alert_bytes"`
@@ -68,7 +69,7 @@ type eventQuerier interface {
 	Query(context.Context, string, ...any) (driver.Rows, error)
 }
 
-func eventSnapshots(ctx context.Context, conn eventQuerier, tenant string, ids []string) (map[string]string, error) {
+func eventSnapshots(ctx context.Context, conn eventQuerier, tenant string, ids []string, _ time.Time) (map[string]string, error) {
 	out := map[string]string{}
 	wanted := map[string]bool{}
 	if len(ids) > maxEventIDs {
@@ -609,7 +610,7 @@ func (s *stores) pgCurrent(ctx context.Context, m manifest) ([][]byte, error) {
 func (s *stores) prior(ctx context.Context, m manifest) (
 	map[string]string, map[string]string, map[string]string, error,
 ) {
-	events, err := eventSnapshots(ctx, s.ch, m.Tenant, m.PreserveIDs)
+	events, err := eventSnapshots(ctx, s.ch, m.Tenant, m.PreserveIDs, time.Time{})
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -735,7 +736,7 @@ func (s *stores) verify(ctx context.Context, m manifest) error {
 	if !priorSnapshotsMatch(m, events, oldCH, oldPG) {
 		return verificationError{"prior_content"}
 	}
-	if _, err = eventSnapshots(ctx, s.ch, m.Tenant, m.EventIDs); err != nil {
+	if _, err = eventSnapshots(ctx, s.ch, m.Tenant, m.EventIDs, time.Time{}); err != nil {
 		return verificationError{"current_event_rows"}
 	}
 	return nil
