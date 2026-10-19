@@ -5,6 +5,15 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
+
+	"github.com/6sLOGAN78/sentinel/internal/contracts"
+)
+
+const (
+	metadataNull   = "null"
+	metadataPrefix = "prefix_max_event_time"
+	metadataSealed = "sealed_through"
 )
 
 // Checkpoint couples an exact resume pin with its recovery metadata.
@@ -51,13 +60,14 @@ func decodeCheckpointMetadata(raw string) (Metadata, error) {
 	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 		return Metadata{}, err
 	}
-	if len(fields) != 9 {
+	keys := []string{"format", "config_fingerprint", "rule_versions", metadataPrefix,
+		metadataSealed, "processed_next", "rule_effective_from", "decision_frontier", "drained"}
+	if len(fields) != len(keys) {
 		return Metadata{}, errors.New("checkpoint field set mismatch")
 	}
-	for _, key := range []string{"format", "config_fingerprint", "rule_versions", "prefix_max_event_time",
-		"sealed_through", "processed_next", "rule_effective_from", "decision_frontier", "drained"} {
+	for _, key := range keys {
 		value, present := fields[key]
-		if !present || string(value) == "null" && key != "prefix_max_event_time" && key != "sealed_through" {
+		if !present || !validNullableMetadata(key, value) {
 			return Metadata{}, errors.New("checkpoint missing explicit field")
 		}
 	}
@@ -65,13 +75,13 @@ func decodeCheckpointMetadata(raw string) (Metadata, error) {
 	if err := json.Unmarshal(fields["decision_frontier"], &marker); err != nil {
 		return Metadata{}, err
 	}
-	if value, present := marker["none"]; !present || string(value) == "null" {
+	if value, present := marker["none"]; !present || string(value) == metadataNull {
 		return Metadata{}, errors.New("checkpoint missing explicit decision frontier")
 	}
 	for key, value := range marker {
 		switch key {
 		case "none", "offset", "rule_ordinal", "alert_id", "fingerprint":
-			if string(value) != "null" {
+			if string(value) != metadataNull {
 				continue
 			}
 		}
@@ -84,6 +94,24 @@ func decodeCheckpointMetadata(raw string) (Metadata, error) {
 		return Metadata{}, errors.New("invalid checkpoint metadata")
 	}
 	return m, nil
+}
+
+func validateCheckpointContext(m Metadata, pin int64) error {
+	if m.PrefixMaxEventTime != nil && !contracts.ValidWindow(time.UnixMilli(*m.PrefixMaxEventTime)) ||
+		m.SealedThrough != nil && !contracts.ValidWindow(time.UnixMilli(*m.SealedThrough)) {
+		return errors.New("invalid checkpoint time")
+	}
+	if m.PrefixMaxEventTime != nil && m.SealedThrough == nil {
+		return errors.New("checkpoint missing sealed floor")
+	}
+	if m.Drained && m.ProcessedNext != pin {
+		return errors.New("invalid drained checkpoint")
+	}
+	if !m.Drained && (m.ProcessedNext == pin || m.SealedThrough == nil) ||
+		m.PrefixMaxEventTime != nil && *m.SealedThrough < *m.PrefixMaxEventTime-Lateness.Milliseconds() {
+		return errors.New("inconsistent checkpoint prefix")
+	}
+	return nil
 }
 
 func uniqueMetadataObject(d *json.Decoder) error {
@@ -103,6 +131,9 @@ func uniqueMetadataObject(d *json.Decoder) error {
 		if err = d.Decode(&value); err != nil {
 			return err
 		}
+		if !validNullableMetadata(name, value) {
+			return errors.New("null checkpoint scalar")
+		}
 		if len(value) > 0 && value[0] == '{' {
 			if err = uniqueMetadataObject(json.NewDecoder(strings.NewReader(string(value)))); err != nil {
 				return err
@@ -111,4 +142,8 @@ func uniqueMetadataObject(d *json.Decoder) error {
 	}
 	_, err = d.Token()
 	return err
+}
+
+func validNullableMetadata(key string, value json.RawMessage) bool {
+	return string(value) != metadataNull || key == metadataPrefix || key == metadataSealed
 }

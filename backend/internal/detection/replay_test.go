@@ -25,7 +25,7 @@ func replayStream(seed uint64) []*contracts.Event {
 		checkpointEvent(4, 300000, 4), checkpointEvent(5, 280000, 0), checkpointEvent(6, 269999, 0),
 		checkpointEvent(7, 280000, 0), checkpointEvent(7, 280000, 0), checkpointEvent(8, 270000, 0),
 	}
-	rng := rand.New(rand.NewPCG(seed, seed+17)) //nolint:gosec // deterministic replay fixtures, not security randomness.
+	rng := rand.New(rand.NewPCG(seed, seed+17))
 	for i := range 160 {
 		at := int64(300000+i*2300) - int64(rng.IntN(45000))
 		e := checkpointEvent(i+20, at, rng.IntN(5))
@@ -78,19 +78,7 @@ func TestReplayEveryRestartCut(t *testing.T) {
 				checkpointApply(t, baseline, int64(i), e, expected)
 			}
 			require.NotEmpty(t, expected, "fixture must cross actual thresholds")
-			for cut := 0; cut <= len(events); cut++ {
-				s := NewPartitionState(checkpointRules())
-				actual := make(map[string]string)
-				for i := range cut {
-					checkpointApply(t, s, int64(i), events[i], actual)
-				}
-				s = replayAt(t, s, events, cut, actual)
-				for i := cut; i < len(events); i++ {
-					checkpointApply(t, s, int64(i), events[i], actual)
-				}
-				require.Equal(t, expected, actual, "canonical union at restart cut %d", cut)
-				equalReplayState(t, baseline, s)
-			}
+			replayAllCuts(t, baseline, events, expected)
 			// Repeated restarts on one run exercise successive advancing pins.
 			s := NewPartitionState(checkpointRules())
 			actual := make(map[string]string)
@@ -120,8 +108,7 @@ func replaySharedFixtures(t *testing.T) {
 			Name     string             `json:"name"`
 			Events   []*contracts.Event `json:"events"`
 			Expected []struct {
-				Payload   contracts.Alert `json:"payload"`
-				Canonical string          `json:"canonical_payload"`
+				Payload contracts.Alert `json:"payload"`
 			} `json:"expected_alerts"`
 		} `json:"cases"`
 	}
@@ -142,19 +129,24 @@ func replaySharedFixtures(t *testing.T) {
 			for _, a := range tc.Expected {
 				require.Contains(t, expected, a.Payload.AlertID)
 			}
-			for cut := 0; cut <= len(tc.Events); cut++ {
-				s := NewPartitionState(rules)
-				outputs := make(map[string]string)
-				for i := range cut {
-					checkpointApply(t, s, int64(i), tc.Events[i], outputs)
-				}
-				s = replayAt(t, s, tc.Events, cut, outputs)
-				for i := cut; i < len(tc.Events); i++ {
-					checkpointApply(t, s, int64(i), tc.Events[i], outputs)
-				}
-				require.Equal(t, expected, outputs)
-				equalReplayState(t, baseline, s)
-			}
+			replayAllCuts(t, baseline, tc.Events, expected)
 		})
+	}
+}
+
+func replayAllCuts(t *testing.T, baseline *PartitionState, events []*contracts.Event, expected map[string]string) {
+	t.Helper()
+	for cut := 0; cut <= len(events); cut++ {
+		s := NewPartitionState(baseline.rules)
+		outputs := make(map[string]string)
+		for i := range cut {
+			checkpointApply(t, s, int64(i), events[i], outputs)
+		}
+		s = replayAt(t, s, events, cut, outputs)
+		for i := cut; i < len(events); i++ {
+			checkpointApply(t, s, int64(i), events[i], outputs)
+		}
+		require.Equal(t, expected, outputs, "canonical union at restart cut %d", cut)
+		equalReplayState(t, baseline, s)
 	}
 }

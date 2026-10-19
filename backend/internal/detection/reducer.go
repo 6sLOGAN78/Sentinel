@@ -294,19 +294,8 @@ func (s *PartitionState) Restore(cp Checkpoint) error {
 			return errors.New("invalid rule effective gate")
 		}
 	}
-	if m.PrefixMaxEventTime != nil && !contracts.ValidWindow(time.UnixMilli(*m.PrefixMaxEventTime)) ||
-		m.SealedThrough != nil && !contracts.ValidWindow(time.UnixMilli(*m.SealedThrough)) {
-		return errors.New("invalid checkpoint time")
-	}
-	if m.PrefixMaxEventTime != nil && m.SealedThrough == nil {
-		return errors.New("checkpoint missing sealed floor")
-	}
-	if m.Drained && m.ProcessedNext != cp.Offset {
-		return errors.New("invalid drained checkpoint")
-	}
-	if !m.Drained && (m.ProcessedNext == cp.Offset || m.SealedThrough == nil) ||
-		m.PrefixMaxEventTime != nil && *m.SealedThrough < *m.PrefixMaxEventTime-Lateness.Milliseconds() {
-		return errors.New("inconsistent checkpoint prefix")
+	if err = validateCheckpointContext(m, cp.Offset); err != nil {
+		return err
 	}
 	s.maximum = cloneTime(m.PrefixMaxEventTime)
 	s.sealed = cloneTime(m.SealedThrough)

@@ -15,7 +15,7 @@ import (
 func checkpointRules() *Rules {
 	r := &Rules{SchemaVersion: 1}
 	for i, id := range ruleIDs() {
-		window := []time.Duration{300, 60, 60, 120}[i] * time.Second
+		window := []time.Duration{300 * time.Second, 60 * time.Second, 60 * time.Second, 120 * time.Second}[i]
 		r.Rules = append(r.Rules, Rule{ID: id, Version: 1, Enabled: true, Threshold: 3,
 			Window: window, Cooldown: time.Minute, Severity: "high"})
 	}
@@ -119,5 +119,9 @@ func TestCheckpointPrefixAndSealed(t *testing.T) {
 			strings.Replace(cp.Metadata, `"drained":false`, `"drained":null`, 1)} {
 			require.Error(t, NewPartitionState(checkpointRules()).Restore(Checkpoint{Offset: cp.Offset, Metadata: bad}))
 		}
+		nullGate := strings.Replace(cp.Metadata, `"rule_effective_from":{"AUTH_BRUTE_FORCE":0`,
+			`"rule_effective_from":{"AUTH_BRUTE_FORCE":null`, 1)
+		require.NotEqual(t, cp.Metadata, nullGate)
+		require.Error(t, NewPartitionState(checkpointRules()).Restore(Checkpoint{Offset: cp.Offset, Metadata: nullGate}))
 	})
 }
