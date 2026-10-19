@@ -377,6 +377,29 @@ func TestDetectorCooldownReplay(t *testing.T) {
 	})
 }
 
+// Separate tests share PG in a full package run. REQUEST_FLOOD ignores the
+// principal, so a random principal alone cannot isolate its global alert ID.
+func TestDetectorCooldownFixtureIsolation(t *testing.T) {
+	first := newCooldownFixture(t, true)
+	second := newCooldownFixture(t, true)
+	second.start = first.start // Same event-time window is intentional.
+	var identities []string
+	for _, f := range []*cooldownFixture{first, second} {
+		require.Zero(t, f.process.terminate(t), f.process.output.String())
+		owner := cooldownOwner(t, f, 0)
+		candidate := cooldownCandidate(t, f.rules, owner.Source, 1000,
+			f.start.Add(59*time.Second), "demo", f.ip, f.principal, "REQUEST_FLOOD")
+		var alert contracts.Alert
+		require.NoError(t, json.Unmarshal(candidate.CanonicalBytes(), &alert))
+		identities = append(identities, alert.AlertID)
+		decision, err := cooldownStore(f).Decide(t.Context(), owner, candidate)
+		require.NoError(t, err, "separate test fixtures must not collide on a global alert identity")
+		require.True(t, decision.Allowed)
+		require.Equal(t, candidate.CanonicalBytes(), decision.Canonical)
+	}
+	require.NotEqual(t, identities[0], identities[1])
+}
+
 func cooldownCandidate(t *testing.T, rules *detection.Rules, source detection.TopicPartition,
 	offset int64, at time.Time, tenant, ip, principal, rule string) detection.Candidate {
 	t.Helper()
