@@ -465,11 +465,11 @@ func TestDetectorCooldownCrash(t *testing.T) {
 				require.Zero(t, count, "uncommitted decision must be invisible to another connection")
 				// NOWAIT proves the reached observation is causally inside the
 				// live transaction, rather than before Begin or after Commit.
-				tx, err := f.db.Pool.Begin(t.Context())
-				require.NoError(t, err)
-				_, err = tx.Exec(t.Context(), `SELECT 1 FROM detection_partition_fences
+				tx, beginErr := f.db.Pool.Begin(t.Context())
+				require.NoError(t, beginErr)
+				_, lockErr := tx.Exec(t.Context(), `SELECT 1 FROM detection_partition_fences
 					WHERE group_id=$1 FOR UPDATE NOWAIT`, f.kafka.DetectorGroup)
-				require.ErrorContains(t, err, "55P03")
+				require.ErrorContains(t, lockErr, "55P03")
 				require.NoError(t, tx.Rollback(t.Context()))
 			} else {
 				require.Equal(t, 1, count)
@@ -478,22 +478,50 @@ func TestDetectorCooldownCrash(t *testing.T) {
 			if boundary == "after-successful-checkpoint" {
 				next = 10
 			}
-			recoveryCheckpoint(t, f, 1, next)
+			before := recoveryCheckpoint(t, f, 1, next)
+			workflow := ""
 			if boundary == "before-decision-commit" || boundary == "after-decision-commit-before-publish" {
 				require.Empty(t, f.alerts(t))
 			} else {
 				requireRecoveredAlert(t, f, canonical)
+				workflow = resolveCooldownWorkflow(t, f, canonical)
 			}
 			killDetector(t, f.process)
 			f.process = startProc(t, "detector", "", f.env)
 			requireRecoveredAlert(t, f, canonical)
-			recoveryCheckpoint(t, f, 1, 10)
+			after := recoveryCheckpoint(t, f, 1, 10)
+			if next == 10 {
+				require.Equal(t, before, after)
+			}
+			if workflow != "" {
+				require.Equal(t, workflow, cooldownWorkflow(t, f, canonical))
+			}
 			require.Zero(t, f.process.terminate(t), f.process.output.String())
 		})
 	}
 	// This retained family proves old allow AND suppress after a newer cursor,
 	// equality at expiry and complete immutable PG bytes independently of cuts.
 	t.Run("old allow and suppress after newer cursor", TestDetectorCooldownReplay)
+}
+
+func cooldownWorkflow(t *testing.T, f *cooldownFixture, canonical []byte) string {
+	t.Helper()
+	var alert contracts.Alert
+	require.NoError(t, json.Unmarshal(canonical, &alert))
+	var row string
+	require.NoError(t, f.db.Pool.QueryRow(t.Context(),
+		"SELECT row_to_json(w)::text FROM alert_workflows w WHERE alert_id=$1", alert.AlertID).Scan(&row))
+	return row
+}
+
+func resolveCooldownWorkflow(t *testing.T, f *cooldownFixture, canonical []byte) string {
+	t.Helper()
+	var alert contracts.Alert
+	require.NoError(t, json.Unmarshal(canonical, &alert))
+	_, err := f.db.Pool.Exec(t.Context(), `UPDATE alert_workflows SET status='resolved',assignee='cooldown-analyst',
+		version=7,updated_at=created_at+interval '1 second' WHERE alert_id=$1`, alert.AlertID)
+	require.NoError(t, err)
+	return cooldownWorkflow(t, f, canonical)
 }
 
 func publishCooldownPartition(t *testing.T, f *cooldownFixture, partition int32, events []*contracts.Event) {
@@ -669,6 +697,8 @@ func assertCooldownStaleOwners(t *testing.T, f *cooldownFixture, current, old po
 
 func TestDetectorCooldownRestoreBehindCheckpoint(t *testing.T) {
 	f := newCooldownFixture(t, false)
+	dlqTopic := sentineltesting.RequireUniqueTopic(t, f.kafka, "cooldown-restore-dlq")
+	f.env = append(without(f.env, "SENTINEL_KAFKA.DLQ_TOPIC="), "SENTINEL_KAFKA.DLQ_TOPIC="+dlqTopic)
 	f.send(t, 299)
 	f.stored(t, 1, 0)
 	require.Len(t, f.alerts(t), 1)
@@ -723,5 +753,10 @@ func TestDetectorCooldownRestoreBehindCheckpoint(t *testing.T) {
 	require.Equal(t, checkpoint, retained)
 	require.Equal(t, operational, cooldownRows(t, f))
 	require.Empty(t, f.alerts(t), "lost eligibility seed must never create a new allow/publication")
-	require.NotContains(t, f.process.output.String(), "DLQ")
+	ends, err := f.admin.ListEndOffsets(t.Context(), dlqTopic)
+	require.NoError(t, err)
+	dlq, ok := ends.Lookup(dlqTopic, 0)
+	require.True(t, ok)
+	require.NoError(t, dlq.Err)
+	require.Zero(t, dlq.Offset, "operational recovery failure cannot quarantine valid source records")
 }

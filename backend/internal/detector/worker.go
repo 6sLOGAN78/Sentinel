@@ -142,7 +142,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	if w.pool == nil {
 		return errors.New("detector requires postgres pool")
 	}
-	w.decisions = postgres.NewDetectionDecisionStore(w.pool, pg, w.rules)
+	w.decisions = postgres.NewDetectionDecisionStore(w.pool, pg, w.rules, reachBoundary)
 	for ctx.Err() == nil {
 		records, pollErr := w.consumer.PollRecords(ctx, w.settings.BatchSize)
 		if ctx.Err() != nil {
