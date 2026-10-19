@@ -3,7 +3,6 @@
 package alertwriter
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"sort"
@@ -147,14 +146,19 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record, budgets con
 	if err != nil {
 		return err
 	}
-	effectsCtx, cancel := context.WithTimeout(ctx, budgets.Retry)
+	deadline := time.Now().Add(budgets.Retry)
+	if parentDeadline, ok := ctx.Deadline(); ok && parentDeadline.Add(-w.settings.OperationTimeout).Before(deadline) {
+		deadline = parentDeadline.Add(-w.settings.OperationTimeout)
+	}
+	effectsCtx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
+	retries := &effectRetries{remaining: w.settings.MaxAttempts - 1, backoff: w.settings.RetryMinBackoff}
 	committable := make([]*kgo.Record, 0, len(keys))
 	var effectErr error
 	for _, key := range keys {
 		var last *kgo.Record
 		for _, record := range partitions[key] {
-			if err = w.persistRecord(effectsCtx, record); err != nil {
+			if err = w.persistRecord(effectsCtx, record, retries); err != nil {
 				effectErr = errors.Join(effectErr, err)
 				break
 			}
@@ -164,7 +168,7 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record, budgets con
 			committable = append(committable, last)
 		}
 	}
-	if len(committable) > 0 {
+	if len(committable) > 0 && ctx.Err() == nil {
 		commitCtx, cancelCommit := context.WithTimeout(ctx, w.settings.OperationTimeout)
 		defer cancelCommit()
 		if err = w.consumer.CommitRecords(commitCtx, committable...); err != nil {
@@ -172,76 +176,6 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record, budgets con
 		}
 	}
 	return effectErr
-}
-
-func (w *Writer) persistRecord(ctx context.Context, record *kgo.Record) error {
-	if ctx.Err() != nil {
-		return errors.New("alert persistence budget exhausted")
-	}
-	alert, err := contracts.DecodeAlert(bytes.NewReader(record.Value))
-	if err != nil {
-		return w.quarantine(ctx, record, kafkax.DLQReasonDecode)
-	}
-	if err = ValidateIdentity(alert, record.Key); err != nil {
-		return w.quarantine(ctx, record, kafkax.DLQReasonValidation)
-	}
-	fingerprint, err := ImmutableFingerprint(alert)
-	if err != nil {
-		return errors.New("alert fingerprint failed")
-	}
-	backoff := w.settings.RetryMinBackoff
-	for attempt := 1; attempt <= w.settings.MaxAttempts; attempt++ {
-		operationCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
-		err = w.persist(operationCtx, alert, fingerprint)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		if errors.Is(err, ErrConflict) {
-			return w.quarantine(ctx, record, kafkax.DLQReasonValidation)
-		}
-		if attempt == w.settings.MaxAttempts || ctx.Err() != nil {
-			break
-		}
-		w.log.Warn().Int("attempt", attempt).Msg("alert persistence failed; retrying")
-		timer := time.NewTimer(backoff)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return errors.New("alert persistence budget exhausted")
-		case <-timer.C:
-		}
-		backoff = min(backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
-	}
-	// Driver errors may contain payloads/SQL arguments; terminal logs are sanitized.
-	return errors.New("alert persistence failed within bounded attempts")
-}
-
-func (w *Writer) quarantine(ctx context.Context, record *kgo.Record, reason kafkax.DLQReason) error {
-	if w.dlq == nil {
-		return errors.New("alert quarantine unavailable")
-	}
-	backoff := w.settings.RetryMinBackoff
-	for attempt := 1; attempt <= w.settings.MaxAttempts && ctx.Err() == nil; attempt++ {
-		publishCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
-		err := w.dlq.Publish(publishCtx, record, reason)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		if attempt == w.settings.MaxAttempts {
-			break
-		}
-		timer := time.NewTimer(backoff)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return errors.New("alert quarantine budget exhausted")
-		case <-timer.C:
-		}
-		backoff = min(backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
-	}
-	return errors.New("alert quarantine failed within bounded attempts")
 }
 
 func (w *Writer) persist(ctx context.Context, alert *contracts.Alert, fingerprint string) error {
