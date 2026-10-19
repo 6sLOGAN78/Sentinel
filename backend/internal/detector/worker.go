@@ -14,10 +14,9 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	"github.com/6sLOGAN78/sentinel/internal/storage/postgres"
 )
-
-const stateAdmissionBytes = 4096
 
 // Assignment couples restored metadata to one ownership incarnation.
 type Assignment = kafkax.DetectorAssignment
@@ -52,19 +51,26 @@ type Worker struct {
 	pool       *pgxpool.Pool
 	pg         config.DetectorPGConfig
 	decisions  *postgres.DetectionDecisionStore
+	bounds     *detection.Bounds
+	metrics    *opshttp.DetectionMetrics
 }
 
 // New constructs a worker from explicit dependencies and startup settings.
 func New(
 	consumer Consumer, publisher Publisher, rules *detection.Rules,
 	settings config.WriterConfig, limits contracts.Limits,
-	pool *pgxpool.Pool, pg config.DetectorPGConfig,
+	pool *pgxpool.Pool, pg config.DetectorPGConfig, metrics ...*opshttp.DetectionMetrics,
 ) *Worker {
-	return &Worker{
+	w := &Worker{
 		consumer: consumer, publisher: publisher, rules: rules, settings: settings, limits: limits,
 		partitions: make(map[detection.TopicPartition]partition),
 		pool:       pool, pg: pg,
+		bounds: detection.NewBounds(detection.StateLimits{}),
 	}
+	if len(metrics) > 0 {
+		w.metrics = metrics[0]
+	}
+	return w
 }
 
 // Run processes one bounded owned batch at a time until cancellation or failure.
@@ -132,9 +138,6 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 		if err != nil {
 			return err
 		}
-		if err = w.admit(); err != nil {
-			return err
-		}
 		if err = w.applyRecord(ctx, state, record); err != nil {
 			return err
 		}
@@ -150,6 +153,7 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 func (w *Worker) syncAssignments(ctx context.Context, assigned map[detection.TopicPartition]Assignment) error {
 	for tp := range w.partitions {
 		if _, ok := assigned[tp]; !ok {
+			w.partitions[tp].state.Release()
 			delete(w.partitions, tp)
 		}
 	}
@@ -211,6 +215,9 @@ func (w *Worker) partitionState(
 		if err != nil {
 			return nil, err
 		}
+		if ok {
+			w.partitions[tp].state.Release()
+		}
 		w.partitions[tp] = p
 	}
 	if err := w.validateOwnership(p.owner); err != nil {
@@ -220,7 +227,7 @@ func (w *Worker) partitionState(
 }
 
 func (w *Worker) restorePartition(ctx context.Context, tp detection.TopicPartition, a Assignment) (partition, error) {
-	p := partition{token: a.Token, state: detection.NewPartitionState(w.rules)}
+	p := partition{token: a.Token, state: detection.NewPartitionStateWithBounds(w.rules, w.bounds)}
 	p.owner = postgres.DetectionOwnership{Group: a.Group, Incarnation: postgres.DetectionGroupIncarnation(a.Group),
 		Member: a.Member, Generation: a.Generation, Token: a.Token, Source: tp, Config: w.rules.Fingerprint()}
 	if err := w.validateOwnership(p.owner); err != nil {
@@ -273,21 +280,6 @@ func (w *Worker) validateOwnership(o postgres.DetectionOwnership) error {
 	return nil
 }
 
-func (w *Worker) admit() error {
-	windows, ledger, total := 0, 0, 0
-	for _, part := range w.partitions {
-		nw, nl, nb := part.state.Usage()
-		windows += nw
-		ledger += nl
-		total += nb
-	}
-	if windows >= detection.MaxWindows || ledger >= detection.MaxLedgerEntries ||
-		total > detection.MaxStateBytes-stateAdmissionBytes {
-		return errors.New("detector state admission exhausted")
-	}
-	return nil
-}
-
 func (w *Worker) applyRecord(ctx context.Context, state *detection.PartitionState, record *kgo.Record) error {
 	event, err := contracts.DecodeEvent(bytes.NewReader(record.Value))
 	if err != nil {
@@ -308,6 +300,7 @@ func (w *Worker) applyRecord(ctx context.Context, state *detection.PartitionStat
 	if err != nil {
 		return err
 	}
+	w.recordLateness(outcome.Late)
 	owner := w.partitions[source].owner
 	for _, candidate := range outcome.Candidates {
 		if err = w.validateOwnership(owner); err != nil {
@@ -330,6 +323,12 @@ func (w *Worker) applyRecord(ctx context.Context, state *detection.PartitionStat
 		}
 	}
 	return state.Acknowledge(record.Offset)
+}
+
+func (w *Worker) recordLateness(late bool) {
+	if late && w.metrics != nil {
+		w.metrics.IncLate()
+	}
 }
 
 // AlertProducer preserves the detector constructor contract.

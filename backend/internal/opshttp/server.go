@@ -63,6 +63,7 @@ type handler struct {
 	draining *Draining
 	checks   []Check
 	sem      chan struct{}
+	metrics  *DetectionMetrics
 }
 
 type checkResult struct {
@@ -70,9 +71,9 @@ type checkResult struct {
 	state string
 }
 
-// NewHandler returns the fixed /healthz and /readyz routes. Readiness admits
+// NewHandler returns /healthz, /readyz and an optional fixed detector metric. Readiness admits
 // at most sixteen concurrent requests; saturation launches no checks.
-func NewHandler(timeout time.Duration, draining *Draining, checks []Check) http.Handler {
+func NewHandler(timeout time.Duration, draining *Draining, checks []Check, options ...Option) http.Handler {
 	if timeout <= 0 {
 		timeout = time.Second
 	}
@@ -82,9 +83,15 @@ func NewHandler(timeout time.Duration, draining *Draining, checks []Check) http.
 		checks: append([]Check(nil), checks...),
 		sem:    make(chan struct{}, maxConcurrentReadiness),
 	}
+	for _, option := range options {
+		option(h)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.healthz)
 	mux.HandleFunc("GET /readyz", h.readyz)
+	if h.metrics != nil {
+		mux.HandleFunc("GET /metrics", h.serveMetrics)
+	}
 
 	return mux
 }
@@ -184,7 +191,7 @@ type Server struct {
 
 // Start binds cfg synchronously, so address conflicts fail service startup,
 // then begins serving in the background.
-func Start(cfg config.OpsConfig, draining *Draining, checks []Check) (*Server, error) {
+func Start(cfg config.OpsConfig, draining *Draining, checks []Check, options ...Option) (*Server, error) {
 	addr := net.JoinHostPort(cfg.BindAddress, cfg.Port)
 	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
 	if err != nil {
@@ -194,7 +201,7 @@ func Start(cfg config.OpsConfig, draining *Draining, checks []Check) (*Server, e
 	s := &Server{
 		srv: &http.Server{
 			Addr:              addr,
-			Handler:           NewHandler(cfg.CheckTimeout, draining, checks),
+			Handler:           NewHandler(cfg.CheckTimeout, draining, checks, options...),
 			ReadHeaderTimeout: readHeaderTimeout,
 			ReadTimeout:       readTimeout,
 			WriteTimeout:      writeTimeout,

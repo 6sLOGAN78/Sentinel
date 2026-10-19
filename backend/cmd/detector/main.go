@@ -25,6 +25,9 @@ func main() {
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
 	var opsServer *opshttp.Server
+	draining := &opshttp.Draining{}
+	metrics := &opshttp.DetectionMetrics{}
+	fail := func(err error) { draining.Begin(); lc.Fail(err) }
 	lc.Add("ops-http", func(closeCtx context.Context) error {
 		if opsServer == nil {
 			return nil
@@ -48,7 +51,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err = checkConfigTransition(ctx, cfg); err != nil {
 		return err
 	}
-	consumer, err := detector.NewKafkaConsumer(ctx, cfg.Kafka, cfg.Detector.Writer, rules, lc.Fail)
+	consumer, err := detector.NewKafkaConsumer(ctx, cfg.Kafka, cfg.Detector.Writer, rules, fail)
 	if err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
@@ -66,13 +69,13 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return err
 	}
 	worker := detector.New(consumer, publisher, rules, cfg.Detector.Writer,
-		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets)
+		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets, metrics)
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
 	go func() {
 		workerErr := worker.Run(workerCtx)
 		if workerErr != nil {
-			lc.Fail(workerErr)
+			fail(workerErr)
 		}
 		workerDone <- workerErr
 	}()
@@ -86,11 +89,10 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		}
 	})
 
-	draining := &opshttp.Draining{}
 	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
 		{Name: "kafka", Fn: consumer.Ping}, {Name: "alerts", Fn: publisher.Ping},
 		{Name: "postgres", Fn: db.Pool.Ping},
-	})
+	}, opshttp.WithDetectionMetrics(metrics))
 	if err != nil {
 		return fmt.Errorf("ops http: %w", err)
 	}
