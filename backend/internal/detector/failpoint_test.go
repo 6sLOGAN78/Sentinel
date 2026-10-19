@@ -90,6 +90,8 @@ func TestDetectorPendingSource(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, before, after)
 		require.Empty(t, base.committed)
+		require.Error(t, w.commitEffects(t.Context(), map[detection.TopicPartition]detection.Checkpoint{tp: before}))
+		require.Empty(t, base.committed)
 		w.publishReadiness(w.consumer.Assignments())
 		require.Error(t, w.Ready(t.Context()))
 	})

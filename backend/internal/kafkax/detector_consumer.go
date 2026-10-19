@@ -84,6 +84,9 @@ func (c *DetectorConsumer) ReadinessSnapshot() DetectorReadiness {
 		Tokens: make(map[detection.TopicPartition]uint64, len(c.assignments))}
 	for tp, assignment := range c.assignments {
 		snapshot.Tokens[tp] = assignment.Token
+		if assignment.RestorePending {
+			snapshot.Observed = false
+		}
 	}
 	return snapshot
 }
@@ -192,7 +195,7 @@ func (c *DetectorConsumer) assigned(ctx context.Context, _ *kgo.Client, topics m
 		for _, id := range partitions {
 			c.sequence++
 			c.assignments[detection.TopicPartition{Topic: topic, Partition: id}] = DetectorAssignment{
-				Token: c.sequence, Group: c.group, Member: member, Generation: generation,
+				Token: c.sequence, Group: c.group, Member: member, Generation: generation, RestorePending: true,
 			}
 		}
 	}
@@ -260,6 +263,7 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 	if err != nil {
 		return c.fail(err)
 	}
+	expected := c.Assignments()
 	checkCtx, cancel := context.WithTimeout(ctx, c.settings.OperationTimeout)
 	defer cancel()
 	admin := kadm.NewClient(client)
@@ -271,7 +275,7 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 		return c.fail(errors.New("detector offset response incomplete"))
 	}
 	if len(topics) == 0 {
-		return c.finishConfigRestore(checkCtx, client)
+		return c.finishOffsetFetch(checkCtx, client, expected)
 	}
 	starts, err := admin.ListStartOffsets(checkCtx, topics...)
 	if err != nil {
@@ -299,7 +303,39 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 			return c.fail(errors.New("detector restore response incomplete"))
 		}
 	}
-	return c.finishConfigRestore(checkCtx, client)
+	return c.finishOffsetFetch(checkCtx, client, expected)
+}
+
+func (c *DetectorConsumer) finishOffsetFetch(ctx context.Context, client *kgo.Client,
+	expected map[detection.TopicPartition]DetectorAssignment) error {
+	if err := c.finishConfigRestore(ctx, client); err != nil {
+		return err
+	}
+	if err := c.completeOffsetFetch(expected); err != nil {
+		return c.fail(err)
+	}
+	return nil
+}
+
+func (c *DetectorConsumer) completeOffsetFetch(expected map[detection.TopicPartition]DetectorAssignment) error {
+	member, generation := c.client.GroupMetadata()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.assignments) != len(expected) {
+		return errors.New("detector assignment changed during offset fetch")
+	}
+	for tp, previous := range expected {
+		current, ok := c.assignments[tp]
+		if !ok || current.Token != previous.Token || current.Member != previous.Member ||
+			current.Generation != previous.Generation || member != previous.Member || generation != previous.Generation {
+			return errors.New("detector ownership changed during offset fetch")
+		}
+	}
+	for tp, assignment := range c.assignments {
+		assignment.RestorePending = false
+		c.assignments[tp] = assignment
+	}
+	return nil
 }
 
 func (c *DetectorConsumer) finishConfigRestore(ctx context.Context, client *kgo.Client) error {
@@ -481,7 +517,7 @@ func (c *DetectorConsumer) CommitCheckpoints(
 	assigned := c.Assignments()
 	offsets := make(map[string]map[int32]kgo.EpochOffset)
 	for tp, cp := range checkpoints {
-		if _, ok := assigned[tp]; !ok {
+		if assignment, ok := assigned[tp]; !ok || assignment.RestorePending {
 			return errors.New("detector commit ownership lost")
 		}
 		if cp.Offset < 0 || len(cp.Metadata) == 0 || len(cp.Metadata) > detection.MaxMetadataBytes {

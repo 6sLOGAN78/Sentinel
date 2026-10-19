@@ -56,7 +56,7 @@ func (w *Worker) publishReadiness(assigned map[detection.TopicPartition]Assignme
 	for tp, token := range snapshot.Tokens {
 		assignment, exists := assigned[tp]
 		part, restored := w.partitions[tp]
-		if !exists || !restored || part.token != token || assignment.Token != token ||
+		if !exists || !restored || assignment.RestorePending || part.token != token || assignment.Token != token ||
 			!w.assignmentCurrent(tp, assignment) {
 			w.restored.Store(nil)
 			return
@@ -259,7 +259,7 @@ func (w *Worker) syncAssignments(ctx context.Context, assigned map[detection.Top
 	// Restore every assignment before processing any record. Changed-config
 	// adoption must also run on an idle drained partition.
 	for tp, assignment := range assigned {
-		if !w.assignmentCurrent(tp, assignment) {
+		if assignment.RestorePending || !w.assignmentCurrent(tp, assignment) {
 			continue
 		}
 		if _, err := w.partitionState(ctx, tp, assigned); err != nil && w.assignmentCurrent(tp, assignment) {
@@ -313,6 +313,9 @@ func (w *Worker) partitionState(
 	a, owned := assigned[tp]
 	if !owned {
 		return nil, errors.New("detector partition ownership lost")
+	}
+	if a.RestorePending {
+		return nil, errors.New("detector partition metadata restoration pending")
 	}
 	p, ok := w.partitions[tp]
 	if !ok || p.token != a.Token {
@@ -401,7 +404,8 @@ func (w *Worker) finishRestore(ctx context.Context, p partition,
 func (w *Worker) validateOwnership(o postgres.DetectionOwnership) error {
 	a, ok := w.consumer.Assignments()[o.Source]
 	member, generation := w.consumer.GroupMetadata()
-	if !ok || a.Token != o.Token || a.Group != o.Group || a.Member != o.Member || a.Generation != o.Generation ||
+	if !ok || a.RestorePending || a.Token != o.Token || a.Group != o.Group ||
+		a.Member != o.Member || a.Generation != o.Generation ||
 		member != o.Member || generation != o.Generation {
 		return errors.New("detector partition ownership lost")
 	}

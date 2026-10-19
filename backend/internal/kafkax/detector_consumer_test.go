@@ -115,6 +115,47 @@ func TestDetectorPendingOffsetFetch(t *testing.T) {
 			require.False(t, called, "pending metadata cannot reach the broker commit callback")
 		})
 	}
+	for _, change := range []string{"completed new group", "revoke and reacquire", "generation", "member"} {
+		t.Run(change, func(t *testing.T) {
+			driver := &readinessDriver{generation: 9}
+			c := &DetectorConsumer{client: driver, assignments: make(map[detection.TopicPartition]DetectorAssignment)}
+			tp := detection.TopicPartition{Topic: "events", Partition: 0}
+			c.assigned(t.Context(), nil, map[string][]int32{"events": {0}})
+			expected := c.Assignments()
+			// A genuinely new group becomes valid only after the absent offset
+			// and actual retained-history bounds have both been validated.
+			require.NoError(t, c.restorePartition(tp, kmsg.OffsetFetchResponseTopicPartition{Offset: -1},
+				kadm.ListedOffsets{"events": {0: {Offset: 12}}}, kadm.ListedOffsets{"events": {0: {Offset: 23}}}))
+			require.True(t, c.Assignments()[tp].RestorePending, "validation alone does not complete the full fetch callback")
+			require.False(t, c.ReadinessSnapshot().Observed)
+			switch change {
+			case "revoke and reacquire":
+				c.revoked(t.Context(), nil, map[string][]int32{"events": {0}})
+				c.assigned(t.Context(), nil, map[string][]int32{"events": {0}})
+			case "generation":
+				driver.generation++
+				c.assigned(t.Context(), nil, map[string][]int32{})
+			case "member":
+				c.mu.Lock()
+				a := c.assignments[tp]
+				a.Member = "different-member"
+				c.assignments[tp] = a
+				c.mu.Unlock()
+			}
+			err := c.completeOffsetFetch(expected)
+			if change == "completed new group" {
+				require.NoError(t, err)
+				require.False(t, c.Assignments()[tp].RestorePending)
+				require.Nil(t, c.Assignments()[tp].Checkpoint, "validated new group does not invent checkpoint metadata")
+				require.Equal(t, int64(12), c.Assignments()[tp].HistoryStart)
+				require.True(t, c.ReadinessSnapshot().Observed)
+			} else {
+				require.Error(t, err)
+				require.True(t, c.Assignments()[tp].RestorePending, "stale fetch cannot clear a newer pending owner")
+				require.False(t, c.ReadinessSnapshot().Observed)
+			}
+		})
+	}
 }
 
 // Ignoring callback errors or omitting any requested partition must prevent
