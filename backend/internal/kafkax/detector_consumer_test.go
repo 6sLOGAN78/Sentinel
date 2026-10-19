@@ -89,6 +89,34 @@ func TestDetectorRetainedAssignment(t *testing.T) {
 	require.Equal(t, before.Token, after.Token, "retained assignment preserves its ownership lifetime token")
 }
 
+func TestDetectorPendingOffsetFetch(t *testing.T) {
+	for _, scenario := range []string{"readiness before fetched callback", "commit before fetched callback"} {
+		t.Run(scenario, func(t *testing.T) {
+			called := false
+			c := &DetectorConsumer{client: commitDriver{t: t, called: &called,
+				response: commitResponse(kmsg.OffsetCommitResponseTopicPartition{Partition: 0},
+					kmsg.OffsetCommitResponseTopicPartition{Partition: 1})},
+				settings:    config.WriterConfig{OperationTimeout: time.Second},
+				assignments: make(map[detection.TopicPartition]DetectorAssignment)}
+			// Deliberately stop at this real callback boundary. OnOffsetsFetched
+			// has not returned metadata or validated log bounds for either token.
+			c.assigned(t.Context(), nil, map[string][]int32{"events": {0, 1}})
+			t.Logf("assigned tokens exposed before offset fetch: %+v", c.Assignments())
+			if scenario == "readiness before fetched callback" {
+				require.False(t, c.ReadinessSnapshot().Observed,
+					"assigned membership cannot certify pending authoritative offset fetch")
+				return
+			}
+			err := c.CommitCheckpoints(t.Context(), map[detection.TopicPartition]detection.Checkpoint{
+				{Topic: "events", Partition: 0}: {Offset: 12, Metadata: "canonical-0"},
+				{Topic: "events", Partition: 1}: {Offset: 23, Metadata: "canonical-1"},
+			})
+			require.Error(t, err, "unfetched assignment must not overwrite the broker checkpoint")
+			require.False(t, called, "pending metadata cannot reach the broker commit callback")
+		})
+	}
+}
+
 // Ignoring callback errors or omitting any requested partition must prevent
 // success; corrupt fetched metadata must cancel ownership and report terminal failure.
 func TestDetectorCommitMetadata(t *testing.T) {
@@ -290,7 +318,9 @@ func (d cancellationPollDriver) PollRecords(ctx context.Context, _ int) kgo.Fetc
 }
 
 func TestDetectorPollCancellation(t *testing.T) {
-	for _, scenario := range []string{"sibling lifetime", "caller cancellation", "terminal restore", "independent transport"} {
+	for _, scenario := range []string{
+		"sibling lifetime", "caller cancellation", "terminal restore", "independent transport",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			lifetime, cancelLifetime := context.WithCancel(t.Context())
 			defer cancelLifetime()
@@ -315,7 +345,9 @@ func TestDetectorPollCancellation(t *testing.T) {
 				want = context.Canceled
 			}
 			c.client = driver
+			started := time.Now()
 			records, err := c.PollRecords(caller, 1)
+			require.Less(t, time.Since(started), time.Second, "stop/fatal polling keeps its existing finite ceiling")
 			require.Empty(t, records)
 			if want == nil {
 				require.NoError(t, err, "sibling lifetime must not fabricate caller cancellation")

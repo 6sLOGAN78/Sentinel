@@ -283,5 +283,16 @@ func observedDetector(t *testing.T, binary string, env []string) (*proc, string)
 	dir := t.TempDir()
 	require.NoError(t, os.Chmod(dir, 0o700))
 	env = append(without(env, "SENTINEL_OPS.PORT="), "SENTINEL_OPS.PORT="+opsPort(t, serviceEnv(t, "detector")))
-	return startRecoveryProc(t, binary, append(env, detectorControl+"OBSERVATIONS="+dir)), dir
+	process := startRecoveryProc(t, binary, append(env, detectorControl+"OBSERVATIONS="+dir))
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		t.Logf("observed detector output: %s", process.output.String())
+		for _, o := range detectorObservations(t, dir) {
+			t.Logf("observed boundary=%s partition=%d member=%s generation=%d token=%d offset=%d",
+				o.Boundary, o.Partition, o.Member, o.Generation, o.Token, o.Offset)
+		}
+	})
+	return process, dir
 }

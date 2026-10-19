@@ -21,6 +21,7 @@ type DetectorAssignment struct {
 	Token             uint64
 	Checkpoint        *detection.Checkpoint
 	HistoryStart      int64
+	RestorePending    bool
 	TransitionAllowed bool
 	Group, Member     string
 	Generation        int32
