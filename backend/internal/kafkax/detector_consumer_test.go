@@ -92,6 +92,22 @@ func TestDetectorRetainedAssignment(t *testing.T) {
 // Ignoring callback errors or omitting any requested partition must prevent
 // success; corrupt fetched metadata must cancel ownership and report terminal failure.
 func TestDetectorCommitMetadata(t *testing.T) {
+	t.Run("ownership observations are outside locks and preserve snapshots", func(t *testing.T) {
+		tp := detection.TopicPartition{Topic: "events", Partition: 0}
+		c := &DetectorConsumer{client: commitDriver{},
+			assignments: make(map[detection.TopicPartition]DetectorAssignment)}
+		var transitions []string
+		c.observer = func(_ context.Context, event string, source detection.TopicPartition, a DetectorAssignment) error {
+			_ = c.Assignments() // Observers must never run while the adapter holds its mutex.
+			require.Equal(t, tp, source)
+			require.NotZero(t, a.Token)
+			transitions = append(transitions, event)
+			return nil
+		}
+		c.assigned(t.Context(), nil, map[string][]int32{"events": {0}})
+		c.revoked(t.Context(), nil, map[string][]int32{"events": {0}})
+		require.Equal(t, []string{"assigned", "revoked"}, transitions)
+	})
 	tp0 := detection.TopicPartition{Topic: "events", Partition: 0}
 	tp1 := detection.TopicPartition{Topic: "events", Partition: 1}
 	checkpoints := map[detection.TopicPartition]detection.Checkpoint{
@@ -123,6 +139,14 @@ func TestDetectorCommitMetadata(t *testing.T) {
 				assignments: map[detection.TopicPartition]DetectorAssignment{
 					tp0: {Token: 1, Checkpoint: previous}, tp1: {Token: 2},
 				}}
+			observed := 0
+			c.observer = func(_ context.Context, boundary string, tp detection.TopicPartition, a DetectorAssignment) error {
+				require.Equal(t, "committed", boundary)
+				require.Equal(t, checkpoints[tp], *a.Checkpoint)
+				_ = c.Assignments()
+				observed++
+				return nil
+			}
 			err := c.CommitCheckpoints(context.Background(), checkpoints)
 			require.True(t, called, "checkpoint must reach the authoritative completion callback")
 			if tc.wantErr {
@@ -135,7 +159,9 @@ func TestDetectorCommitMetadata(t *testing.T) {
 			}
 			if tc.wantErr {
 				require.Equal(t, previous, c.assignments[tp0].Checkpoint)
+				require.Zero(t, observed, "failed or incomplete callbacks cannot signal success")
 			} else {
+				require.Equal(t, 2, observed, "only authoritative successful callbacks may emit committed observations")
 				require.Equal(t, checkpoints[tp0], *c.assignments[tp0].Checkpoint,
 					"only successful complete callback records the acknowledged checkpoint")
 				require.Equal(t, checkpoints[tp1], *c.assignments[tp1].Checkpoint)

@@ -26,6 +26,10 @@ type DetectorAssignment struct {
 	Generation        int32
 }
 
+// DetectorAssignmentObserver observes bounded ownership/checkpoint transitions.
+// The worker supplies a production no-op or integration-only private observer.
+type DetectorAssignmentObserver func(context.Context, string, detection.TopicPartition, DetectorAssignment) error
+
 type detectorClient interface {
 	CommitOffsetsSync(context.Context, map[string]map[int32]kgo.EpochOffset,
 		func(*kgo.Client, *kmsg.OffsetCommitRequest, *kmsg.OffsetCommitResponse, error))
@@ -57,6 +61,7 @@ type DetectorConsumer struct {
 	assignmentObserved    bool
 	assignmentMember      string
 	assignmentGeneration  int32
+	observer              DetectorAssignmentObserver
 }
 
 // DetectorReadiness identifies one callback-observed group assignment.
