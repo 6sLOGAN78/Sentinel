@@ -170,6 +170,21 @@ func (s *PartitionState) Acknowledge(throughOffset int64) error {
 	return nil
 }
 
+// AcknowledgePoison advances only source bookkeeping after durable quarantine.
+// It cannot alter event clocks, windows, evidence or pending candidate effects.
+func (s *PartitionState) AcknowledgePoison(offset int64) error {
+	if offset < 0 || offset == math.MaxInt64 || offset <= s.last || s.last > s.acknowledged {
+		return errors.New("invalid source effect order")
+	}
+	if err := s.bounds.reserve(0, 1, ledgerEntryBytes); err != nil {
+		return err
+	}
+	s.prefix[offset] = cloneTime(s.maximum)
+	s.last, s.acknowledged = offset, offset
+	s.processedNext = max(s.processedNext, offset+1)
+	return nil
+}
+
 // Checkpoint snapshots the pin and metadata after effects are acknowledged.
 func (s *PartitionState) Checkpoint() (Checkpoint, error) {
 	if s.last != s.acknowledged {

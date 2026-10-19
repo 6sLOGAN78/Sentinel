@@ -61,7 +61,8 @@ func poisonWorker(t *testing.T) (*Worker, *poisonConsumer) {
 	settings := config.WriterConfig{BatchSize: 500, FlushInterval: time.Millisecond, MaxAttempts: 2,
 		RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
 		OperationTimeout: 50 * time.Millisecond, ShutdownTimeout: time.Second}
-	w := New(c, nil, rules, settings, contracts.DefaultLimits(), nil, config.DetectorPGConfig{}, &opshttp.DetectionMetrics{})
+	w := New(c, nil, rules, settings, contracts.DefaultLimits(), nil,
+		config.DetectorPGConfig{}, &opshttp.DetectionMetrics{})
 	w.decisions = poisonDecisions{}
 	for n := range int32(2) {
 		tp := detection.TopicPartition{Topic: "events", Partition: n}
@@ -93,6 +94,7 @@ func poisonMetadata(t *testing.T, cp detection.Checkpoint) detection.Metadata {
 
 func TestDetectorPoisonPrefix(t *testing.T) {
 	t.Run("trusted classification and event time", testDetectorClassification)
+	t.Run("live pin and failed poison preserve clocks", testDetectorLivePoisonPin)
 	t.Run("failed partition retains acknowledged prefix", func(t *testing.T) {
 		w, c := poisonWorker(t)
 		now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
@@ -139,6 +141,33 @@ func TestDetectorPoisonPrefix(t *testing.T) {
 		require.Equal(t, int64(1), cp.Offset)
 		require.Equal(t, int64(1), poisonMetadata(t, cp).ProcessedNext)
 	})
+}
+
+func testDetectorLivePoisonPin(t *testing.T) {
+	w, c := poisonWorker(t)
+	valid := poisonEvent(t, 0, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+	var event contracts.Event
+	require.NoError(t, json.Unmarshal(valid.Value, &event))
+	principal := "live"
+	event.EventType, event.Principal = "auth.failure", &principal
+	valid.Value, _ = json.Marshal(event)
+	require.NoError(t, w.process(t.Context(), []*kgo.Record{valid}))
+	tp := detection.TopicPartition{Topic: "events"}
+	before := poisonMetadata(t, c.committed[tp])
+	w.WithQuarantine(poisonPublisher{func(context.Context, *kgo.Record, kafkax.DLQReason) error { return nil }})
+	require.NoError(t, w.process(t.Context(), []*kgo.Record{{Topic: "events", Offset: 1, Value: []byte("{")}}))
+	cp := c.committed[tp]
+	require.Zero(t, cp.Offset, "unexpired contributor still pins replay before consumed-next")
+	after := poisonMetadata(t, cp)
+	require.Equal(t, before.PrefixMaxEventTime, after.PrefixMaxEventTime)
+	require.Equal(t, before.SealedThrough, after.SealedThrough)
+	require.Equal(t, before.DecisionFrontier, after.DecisionFrontier)
+	require.Equal(t, int64(2), after.ProcessedNext)
+	w.WithQuarantine(poisonPublisher{func(context.Context, *kgo.Record, kafkax.DLQReason) error {
+		return errors.New("outage")
+	}})
+	require.Error(t, w.process(t.Context(), []*kgo.Record{{Topic: "events", Offset: 2, Value: []byte("{")}}))
+	require.Equal(t, cp, c.committed[tp], "unacknowledged poison cannot alter durable pin or metadata")
 }
 
 func testDetectorClassification(t *testing.T) {
@@ -188,52 +217,58 @@ func testDetectorClassification(t *testing.T) {
 }
 
 func TestWorkerAggregateBudget(t *testing.T) {
-	for _, mode := range []string{"slow", "shared retries", "parent cancellation"} {
-		t.Run(mode, func(t *testing.T) {
-			w, c := poisonWorker(t)
-			var records []*kgo.Record
-			for n := range int64(400) {
-				records = append(records, &kgo.Record{Topic: "events", Offset: n, Value: []byte("{")})
+	for _, mode := range []string{"slow", "shared retries", "parent cancellation", "shutdown deadline"} {
+		t.Run(mode, func(t *testing.T) { testWorkerAggregateBudget(t, mode) })
+	}
+}
+
+func testWorkerAggregateBudget(t *testing.T, mode string) {
+	w, c := poisonWorker(t)
+	var records []*kgo.Record
+	for n := range int64(400) {
+		records = append(records, &kgo.Record{Topic: "events", Offset: n, Value: []byte("{")})
+	}
+	attempts := make(map[int64]int)
+	acks := 0
+	ctx, cancel := context.WithCancel(t.Context())
+	if mode == "shutdown deadline" {
+		cancel()
+		ctx, cancel = context.WithTimeout(t.Context(), 75*time.Millisecond)
+	}
+	defer cancel()
+	w.WithQuarantine(poisonPublisher{func(op context.Context, r *kgo.Record, _ kafkax.DLQReason) error {
+		attempts[r.Offset]++
+		if mode == "shared retries" && attempts[r.Offset] == 1 {
+			return errors.New("temporary failure")
+		}
+		if mode == "parent cancellation" {
+			cancel()
+			return op.Err()
+		}
+		if mode == "slow" || mode == "shutdown deadline" {
+			timer := time.NewTimer(20 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-op.Done():
+				return op.Err()
+			case <-timer.C:
 			}
-			attempts := make(map[int64]int)
-			acks := 0
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			w.WithQuarantine(poisonPublisher{func(op context.Context, r *kgo.Record, _ kafkax.DLQReason) error {
-				attempts[r.Offset]++
-				if mode == "shared retries" && attempts[r.Offset] == 1 {
-					return errors.New("temporary failure")
-				}
-				if mode == "parent cancellation" {
-					cancel()
-					return op.Err()
-				}
-				if mode == "slow" {
-					timer := time.NewTimer(20 * time.Millisecond)
-					defer timer.Stop()
-					select {
-					case <-op.Done():
-						return op.Err()
-					case <-timer.C:
-					}
-				}
-				acks++
-				return nil
-			}})
-			start := time.Now()
-			require.Error(t, w.process(ctx, records))
-			require.Less(t, time.Since(start), 400*time.Millisecond)
-			if mode == "parent cancellation" {
-				require.Empty(t, c.committed)
-				return
-			}
-			require.Positive(t, acks, "earlier acknowledged poison must remain committable")
-			cp := c.committed[detection.TopicPartition{Topic: "events"}]
-			require.Equal(t, int64(acks), cp.Offset)
-			require.NoError(t, c.commitCtx, "effects expiry must preserve independent commit reservation")
-			if mode == "shared retries" {
-				require.Equal(t, 1, acks, "successful poison must not replenish failed-attempt allowance")
-			}
-		})
+		}
+		acks++
+		return nil
+	}})
+	start := time.Now()
+	require.Error(t, w.process(ctx, records))
+	require.Less(t, time.Since(start), 400*time.Millisecond)
+	if mode == "parent cancellation" {
+		require.Empty(t, c.committed)
+		return
+	}
+	require.Positive(t, acks, "earlier acknowledged poison must remain committable")
+	cp := c.committed[detection.TopicPartition{Topic: "events"}]
+	require.Equal(t, int64(acks), cp.Offset)
+	require.NoError(t, c.commitCtx, "effects expiry must preserve independent commit reservation")
+	if mode == "shared retries" {
+		require.Equal(t, 1, acks, "successful poison must not replenish failed-attempt allowance")
 	}
 }

@@ -2,11 +2,11 @@
 package detector
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"maps"
 	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -180,34 +180,70 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
+	budgets, err := config.ComputeWriterBudgets(w.settings)
+	if err != nil {
+		return err
+	}
+	ownedCtx, cancelOwned := context.WithTimeout(ctx, budgets.Processing)
+	defer cancelOwned()
 	assigned := w.consumer.Assignments()
-	if err := w.syncAssignments(ctx, assigned); err != nil {
+	if err = w.syncAssignments(ownedCtx, assigned); err != nil {
 		return err
 	}
+	partitions, keys, err := detectorRecords(records)
+	if err != nil {
+		return err
+	}
+	deadline, _ := ownedCtx.Deadline()
+	effectsDeadline := minTime(time.Now().Add(budgets.Retry), deadline.Add(-w.settings.OperationTimeout))
+	effectsCtx, cancelEffects := context.WithDeadline(ownedCtx, effectsDeadline)
+	defer cancelEffects()
+	retries := &poisonRetries{remaining: w.settings.MaxAttempts - 1, backoff: w.settings.RetryMinBackoff}
 	checkpoints := make(map[detection.TopicPartition]detection.Checkpoint)
-	for _, record := range records {
-		if ctx.Err() != nil {
-			return ctx.Err()
+	var effectErr error
+	for _, tp := range keys {
+		for _, record := range partitions[tp] {
+			cp, recordErr := w.processCheckpoint(effectsCtx, record, tp, assigned, retries)
+			if recordErr != nil {
+				effectErr = errors.Join(effectErr, recordErr)
+				break
+			}
+			checkpoints[tp] = cp
 		}
-		tp := detection.TopicPartition{Topic: record.Topic, Partition: record.Partition}
-		state, err := w.partitionState(ctx, tp, assigned)
-		if err != nil {
-			return err
-		}
-		if err = w.applyRecord(ctx, state, record); err != nil {
-			return err
-		}
-		cp, err := state.Checkpoint()
-		if err != nil {
-			return err
-		}
-		checkpoints[tp] = cp
 	}
-	if err := w.commitEffects(ctx, checkpoints); err != nil {
+	// Effects expiry leaves a separate source-commit reservation live. Parent
+	// cancellation still forbids new commits and bounds shutdown ownership.
+	if ownedCtx.Err() != nil {
+		return errors.Join(effectErr, ownedCtx.Err())
+	}
+	commitCtx, cancelCommit := context.WithTimeout(ownedCtx, w.settings.OperationTimeout)
+	defer cancelCommit()
+	if err = w.commitEffects(commitCtx, checkpoints); err != nil {
 		return err
 	}
-	w.publishReadiness(assigned)
-	return nil
+	if effectErr == nil {
+		w.publishReadiness(assigned)
+	}
+	return effectErr
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+func (w *Worker) processCheckpoint(ctx context.Context, record *kgo.Record, tp detection.TopicPartition,
+	assigned map[detection.TopicPartition]Assignment, retries *poisonRetries) (detection.Checkpoint, error) {
+	state, err := w.partitionState(ctx, tp, assigned)
+	if err != nil {
+		return detection.Checkpoint{}, err
+	}
+	if err = w.processRecord(ctx, state, record, retries); err != nil {
+		return detection.Checkpoint{}, err
+	}
+	return state.Checkpoint()
 }
 
 func (w *Worker) syncAssignments(ctx context.Context, assigned map[detection.TopicPartition]Assignment) error {
@@ -358,21 +394,8 @@ func (w *Worker) validateOwnership(o postgres.DetectionOwnership) error {
 	return nil
 }
 
-func (w *Worker) applyRecord(ctx context.Context, state *detection.PartitionState, record *kgo.Record) error {
-	event, err := contracts.DecodeEvent(bytes.NewReader(record.Value))
-	if err != nil {
-		return errors.New("detector invalid source record")
-	}
-	if event.ReceivedAt == nil || event.ReceivedAt.IsZero() || event.Validate(event.OccurredAt.Time, w.limits) != nil {
-		return errors.New("detector invalid source event")
-	}
-	key := event.TenantID + "|"
-	if event.SourceIP != nil {
-		key += *event.SourceIP
-	}
-	if string(record.Key) != key {
-		return errors.New("detector source key mismatch")
-	}
+func (w *Worker) applyEvent(ctx context.Context, state *detection.PartitionState,
+	record *kgo.Record, event *contracts.Event) error {
 	source := detection.TopicPartition{Topic: record.Topic, Partition: record.Partition}
 	outcome, err := state.ApplySource(source, record.Offset, event)
 	if err != nil {

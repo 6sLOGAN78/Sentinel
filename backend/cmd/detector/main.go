@@ -51,14 +51,9 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err = checkConfigTransition(ctx, cfg); err != nil {
 		return err
 	}
-	consumer, err := detector.NewKafkaConsumer(ctx, cfg.Kafka, cfg.Detector.Writer, rules, fail)
+	consumer, err := openConsumer(ctx, cfg, rules, fail, lc)
 	if err != nil {
-		return fmt.Errorf("kafka: %w", err)
-	}
-	consumer.EnableConfigTransition(cfg.Detector.AllowConfigTransition)
-	lc.Add("kafka-consumer", consumer.Close)
-	if err = consumer.Ping(ctx); err != nil {
-		return fmt.Errorf("kafka: %w", err)
+		return err
 	}
 	publisher, err := detector.NewAlertProducer(ctx, cfg.Kafka)
 	if err != nil {
@@ -68,8 +63,12 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err = publisher.Ping(ctx); err != nil {
 		return err
 	}
+	dlq, err := openQuarantine(ctx, cfg, lc)
+	if err != nil {
+		return err
+	}
 	worker := detector.New(consumer, publisher, rules, cfg.Detector.Writer,
-		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets, metrics)
+		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets, metrics).WithQuarantine(dlq)
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
 	go func() {
@@ -107,6 +106,29 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
+}
+
+func openConsumer(ctx context.Context, cfg *config.Config, rules *detection.Rules,
+	fail func(error), lc *app.Lifecycle) (*detector.KafkaConsumer, error) {
+	consumer, err := detector.NewKafkaConsumer(ctx, cfg.Kafka, cfg.Detector.Writer, rules, fail)
+	if err != nil {
+		return nil, fmt.Errorf("kafka: %w", err)
+	}
+	consumer.EnableConfigTransition(cfg.Detector.AllowConfigTransition)
+	lc.Add("kafka-consumer", consumer.Close)
+	if err = consumer.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("kafka: %w", err)
+	}
+	return consumer, nil
+}
+
+func openQuarantine(ctx context.Context, cfg *config.Config, lc *app.Lifecycle) (*kafkax.DLQPublisher, error) {
+	dlq, err := kafkax.NewDLQPublisher(ctx, cfg.Kafka, cfg.Kafka.DLQTopic, cfg.Detector.Writer.DLQMaxBytes)
+	if err != nil {
+		return nil, fmt.Errorf("kafka DLQ: %w", err)
+	}
+	lc.Add("kafka-dlq", dlq.Close)
+	return dlq, nil
 }
 
 func checkConfigTransition(ctx context.Context, cfg *config.Config) error {

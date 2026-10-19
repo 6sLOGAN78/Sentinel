@@ -27,6 +27,7 @@ import (
 func TestDetectorPoison(t *testing.T) {
 	t.Run("default binary trusted bounded quarantine", testDetectorRealPoison)
 	t.Run("real DLQ outage preserves source", testDetectorDLQOutage)
+	t.Run("hundreds delayed real poison release ownership", func(t *testing.T) { testDetectorPoisonWork(t, true) })
 }
 
 func testDetectorRealPoison(t *testing.T) {
@@ -65,15 +66,24 @@ func testDetectorRealPoison(t *testing.T) {
 	produceDLQSources(t, kafka, records)
 	admin := checkpointAdmin(t)
 	require.Eventually(t, func() bool {
-		cp := brokerCheckpoint(t, admin, kafka)
+		offsets, fetchErr := admin.FetchOffsets(t.Context(), kafka.DetectorGroup)
+		if fetchErr != nil {
+			return false
+		}
+		cp, exists := offsets.Lookup(kafka.EventsTopic, 0)
 		var m detection.Metadata
-		return cp.At == int64(len(records)) && json.Unmarshal([]byte(cp.Metadata), &m) == nil &&
+		return exists && cp.Err == nil && cp.At == int64(len(records)) && json.Unmarshal([]byte(cp.Metadata), &m) == nil &&
 			m.ProcessedNext == int64(len(records))
 	}, 8*time.Second, 25*time.Millisecond, "poison was not durably checkpointed:\n%s", p.output.String())
+	require.Eventually(t, func() bool {
+		got, err := observed.snapshot()
+		return err == nil && len(got) == 5
+	}, 3*time.Second, 25*time.Millisecond)
 	got, err := observed.snapshot()
 	require.NoError(t, err)
 	require.Len(t, got, 5, "late valid events are normal drops, never quarantine")
-	for i, reason := range []string{"decode_error", "missing_received_at", "validation_error", "validation_error", "decode_error"} {
+	reasons := []string{"decode_error", "missing_received_at", "validation_error", "validation_error", "decode_error"}
+	for i, reason := range reasons {
 		r := got[poisonOrigin{0, int64(i + 1)}]
 		require.NotNil(t, r)
 		requireDLQOrigin(t, r, records[i+1], reason)
@@ -128,7 +138,9 @@ func requireDLQOrigin(t *testing.T, dlq, source *kgo.Record, reason string) {
 
 func unavailableDLQ(t *testing.T, kafka config.KafkaConfig, settings config.WriterConfig) *kafkax.DLQPublisher {
 	t.Helper()
-	kafka.Brokers, kafka.ProduceTimeout, kafka.RecordRetries = "127.0.0.1:1", settings.OperationTimeout, 0
+	kafka.Brokers, kafka.RecordRetries = "127.0.0.1:1", 0
+	kafka.ProduceTimeout = max(time.Second, settings.OperationTimeout)
+	kafka.MaxBufferedRecords, kafka.MaxBufferedBytes = 100, 1<<20
 	publisher, err := kafkax.NewDLQPublisher(t.Context(), kafka, kafka.DLQTopic, 64)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -140,11 +152,37 @@ func unavailableDLQ(t *testing.T, kafka config.KafkaConfig, settings config.Writ
 }
 
 func testDetectorDLQOutage(t *testing.T) {
+	testDetectorPoisonWork(t, false)
+}
+
+type trackedDetectorConsumer struct {
+	*detector.KafkaConsumer
+	count, released int
+}
+
+func (c *trackedDetectorConsumer) PollRecords(ctx context.Context, maxRecords int) ([]*kgo.Record, error) {
+	records, err := c.KafkaConsumer.PollRecords(ctx, maxRecords)
+	c.count += len(records)
+	return records, err
+}
+
+func (c *trackedDetectorConsumer) AllowRebalance() {
+	c.KafkaConsumer.AllowRebalance()
+	if c.count > 0 {
+		c.released++
+	}
+}
+
+func testDetectorPoisonWork(t *testing.T, slow bool) {
 	_, kafka := detectorPGEnv(t, pgCfg)
+	kafka.ProduceTimeout, kafka.MaxBufferedRecords, kafka.MaxBufferedBytes = time.Second, 100, 1<<20
 	kafka.DLQTopic = sentineltesting.RequireUniqueTopic(t, kafka, "detector-outage-dlq")
 	settings := integrationWriterSettings()
 	settings.MaxAttempts, settings.BatchSize = 1, 500
 	settings.OperationTimeout, settings.ShutdownTimeout = 300*time.Millisecond, time.Second
+	if slow {
+		settings.OperationTimeout = time.Second
+	}
 	file, err := os.Open("../../config/rules.yaml")
 	require.NoError(t, err)
 	defer file.Close()
@@ -159,21 +197,50 @@ func testDetectorDLQOutage(t *testing.T) {
 	alerts, err := detector.NewAlertProducer(t.Context(), kafka)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, alerts.Close(t.Context())) }()
-	poison := &kgo.Record{Topic: kafka.EventsTopic, Value: []byte("{")}
-	produceDLQSources(t, kafka, []*kgo.Record{poison})
+	count := 1
+	if slow {
+		count = 400
+	}
+	records := make([]*kgo.Record, count)
+	for n := range records {
+		records[n] = &kgo.Record{Topic: kafka.EventsTopic, Value: []byte("{")}
+	}
+	produceDLQSources(t, kafka, records)
 	pg := config.DetectorPGConfig{AcquireTimeout: 100 * time.Millisecond, TransactionTimeout: 200 * time.Millisecond,
 		LockTimeout: 100 * time.Millisecond, StatementTimeout: 100 * time.Millisecond, CleanupTimeout: 100 * time.Millisecond}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	w := detector.New(consumer, alerts, rules, settings, contracts.DefaultLimits(), db.Pool, pg).
-		WithQuarantine(unavailableDLQ(t, kafka, settings))
+	var publisher detector.QuarantinePublisher
+	var delayed *slowRealDLQ
+	if slow {
+		delayed = &slowRealDLQ{inner: integrationDLQPublisher(t, kafka, kafka.DLQTopic, settings),
+			second: make(chan struct{}), acknowledged: make(map[poisonOrigin]bool)}
+		publisher = delayed
+	} else {
+		publisher = unavailableDLQ(t, kafka, settings)
+	}
+	tracked := &trackedDetectorConsumer{KafkaConsumer: consumer}
+	w := detector.New(tracked, alerts, rules, settings, contracts.DefaultLimits(), db.Pool, pg).WithQuarantine(publisher)
 	err = w.Run(ctx)
 	require.ErrorContains(t, err, "quarantine", "real DLQ outage must be terminal, sanitized and replayable")
+	require.Equal(t, 1, tracked.released, "owned poison batch must release the rebalance gate on failure")
 	cp := brokerCheckpoint(t, checkpointAdmin(t), kafka)
 	var m detection.Metadata
 	require.NoError(t, json.Unmarshal([]byte(cp.Metadata), &m))
-	require.Zero(t, cp.At)
-	require.Zero(t, m.ProcessedNext)
+	if slow {
+		require.Equal(t, 400, tracked.count)
+		require.Less(t, delayed.elapsed(), 3*time.Second)
+		acks := delayed.acknowledgedOrigins()
+		require.NotEmpty(t, acks)
+		require.Equal(t, int64(len(acks)), cp.At)
+		require.Equal(t, cp.At, m.ProcessedNext)
+		for n := range cp.At {
+			require.True(t, acks[poisonOrigin{0, n}])
+		}
+	} else {
+		require.Zero(t, cp.At)
+		require.Zero(t, m.ProcessedNext)
+	}
 	require.Nil(t, m.PrefixMaxEventTime)
 }
 
