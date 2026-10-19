@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-12-PLAN.md; parent Wave 11 gate next; stop before Phase 4
+stopped_at: Wave 11 build/test gate passed; 18/21 Phase 3 plans complete, 03-20 next
 last_updated: "2026-10-19T12:08:42.758Z"
 last_activity: 2026-10-19
 progress:
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
 Plan: 19 of 21
-Status: Executing — 03-12 complete; parent Wave 11 gate next, then 03-20
+Status: Executing — Wave 11 gate passed; Wave 12 plan 03-20 next
 Last activity: 2026-10-19
 
 Progress: [██████████] 95%
@@ -205,5 +205,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-10-19T12:08:42.746Z
-Stopped at: Completed 03-12-PLAN.md; parent Wave 11 gate next; stop before Phase 4
+Stopped at: Wave 11 parent build/test gate passed; continue 03-20 sequentially. Stop before Phase 4.
 Resume file: None
