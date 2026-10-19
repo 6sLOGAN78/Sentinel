@@ -10,7 +10,8 @@ for name in \
   TestDetectorMidWindowRecovery TestDetectorThirdReplicaRebalance TestDetectorCrashBoundaries \
   TestAlertWriterPipeline TestAlertWriterConflict TestAlertWriterConcurrentReplay \
   TestAlertWriterPartialStorage TestAlertWriterPoison TestAlertWorkflowReplay TestDetectorPoison \
-  TestConfigLedgerHandover TestDetectorPGDependency TestAlertsSchema TestDetectionDecisionsSchema; do
+  TestConfigLedgerHandover TestDetectorPGDependency TestAlertsSchema TestDetectionDecisionsSchema \
+  TestDetectorCooldownFixtureIsolation; do
   bash scripts/go-test-nonempty.sh './test/...' "^${name}$" -tags=integration -timeout 6m -p 1
 done
 

@@ -19,6 +19,7 @@ ORDINARY = (
     "TestAlertWriterConcurrentReplay", "TestAlertWriterPartialStorage", "TestAlertWriterPoison",
     "TestAlertWorkflowReplay", "TestDetectorPoison", "TestConfigLedgerHandover",
     "TestDetectorPGDependency", "TestAlertsSchema", "TestDetectionDecisionsSchema",
+    "TestDetectorCooldownFixtureIsolation",
 )
 COOLDOWN = tuple("TestDetectorCooldown" + suffix for suffix in (
     "Visible", "Expiry", "Replay", "Crash", "Outage", "Owners", "RestoreBehindCheckpoint",

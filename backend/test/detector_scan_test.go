@@ -109,7 +109,7 @@ func TestDetectionPipelineScan(t *testing.T) {
 	require.Equal(t, &contracts.Alert{
 		SchemaVersion: 1, AlertID: id, TenantID: "demo", RuleID: "PORT_SCAN", RuleVersion: 1,
 		Severity: "medium", Status: "open", CreatedAt: end, WindowStart: contracts.NewTimestamp(start), WindowEnd: end,
-		EntityKey: source + "|" + destination, Summary: "Distinct destination ports on one host",
+		EntityKey: source + "|" + destination, Summary: "Distinct destination ports probed",
 		EventCount: 24, SampleEventIDs: samples,
 		DedupeKey: "demo|PORT_SCAN|" + source + "|" + destination + "|" + start.Format(time.RFC3339Nano),
 	}, alert)

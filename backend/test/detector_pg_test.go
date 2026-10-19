@@ -11,9 +11,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
+	"github.com/6sLOGAN78/sentinel/internal/database"
+	"github.com/6sLOGAN78/sentinel/internal/detection"
 	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
 )
 
@@ -47,10 +51,15 @@ func TestDetectorPGDependency(t *testing.T) {
 		pg, handle, err := sentineltesting.StartPostgresFaultContainer(t.Context())
 		require.NoError(t, err)
 		t.Cleanup(handle.Close)
+		migrateCtx, cancelMigrations := context.WithTimeout(t.Context(), readinessWait)
+		defer cancelMigrations()
+		require.NoError(t, database.Migrate(migrateCtx, pg, zerolog.Nop()))
 		env, kafka := detectorPGEnv(t, pg)
 		p := startProc(t, "detector", "", env)
 		url := "http://127.0.0.1:" + opsPort(t, env)
 		requireStatusEventually(t, url+"/readyz", http.StatusOK)
+		admin := checkpointAdmin(t)
+		before := emptyPGDependencyCheckpoint(t, admin, kafka)
 		require.NoError(t, handle.Pause(t.Context()))
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -61,11 +70,40 @@ func TestDetectorPGDependency(t *testing.T) {
 		events := canonicalWriterEvents(1, time.Now().UTC().Add(-time.Minute))
 		require.NoError(t, newWriterProducer(t, kafka).PublishBatch(t.Context(), events, uuid.NewString()))
 		require.NotZero(t, p.requireExit(t, 5*time.Second), p.output.String())
-		_, committed := committedNextOffset(t, kafka, kafka.DetectorGroup, kafka.EventsTopic)
-		require.False(t, committed, "PG outage must leave source metadata untouched")
+		after := brokerCheckpoint(t, admin, kafka)
+		require.Equal(t, before.Offset, after.At, "PG outage must not advance source offset")
+		require.Equal(t, before.Metadata, after.Metadata, "PG outage must preserve complete checkpoint metadata")
+		ends, endErr := admin.ListEndOffsets(t.Context(), kafka.AlertsTopic)
+		require.NoError(t, endErr)
+		end, ok := ends.Lookup(kafka.AlertsTopic, 0)
+		require.True(t, ok)
+		require.NoError(t, end.Err)
+		require.Zero(t, end.Offset, "PG outage must not publish an alert")
 		require.Contains(t, p.output.String(), "postgres unavailable")
 		require.NotContains(t, p.output.String(), pg.Password)
 	})
+}
+
+func emptyPGDependencyCheckpoint(t *testing.T, admin *kadm.Client, kafka config.KafkaConfig) detection.Checkpoint {
+	t.Helper()
+	var before detection.Checkpoint
+	require.Eventually(t, func() bool {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		offsets, err := admin.FetchOffsets(ctx, kafka.DetectorGroup)
+		if err != nil {
+			return false
+		}
+		offset, ok := offsets.Lookup(kafka.EventsTopic, 0)
+		if !ok || offset.Err != nil || offset.At != 0 {
+			return false
+		}
+		before = detection.Checkpoint{Offset: offset.At, Metadata: offset.Metadata}
+		metadata, decodeErr := detection.CheckpointMetadata(before)
+		return decodeErr == nil && metadata.Format == 2 && metadata.ProcessedNext == 0 && metadata.Drained &&
+			metadata.PrefixMaxEventTime == nil && metadata.SealedThrough == nil && metadata.DecisionFrontier.None
+	}, readinessWait, 25*time.Millisecond, "actual empty format-2 checkpoint must precede PG fault")
+	return before
 }
 
 func detectorPGEnv(t *testing.T, pg config.DatabaseConfig) ([]string, config.KafkaConfig) {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -88,9 +89,14 @@ func newCooldownPGFixture(t *testing.T, short bool, pg config.DatabaseConfig) *c
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{kafka.AlertsTopic: {0: kgo.NewOffset().AtStart()}}))
 	require.NoError(t, err)
 	t.Cleanup(observer.Close)
+	// Principal is not part of FLOOD/DENY identity. Isolate every rule by source
+	// within the documentation prefix, including repeated families in one PG.
+	entropy := uuid.New()
+	address := [16]byte{0x20, 0x01, 0x0d, 0xb8}
+	copy(address[4:], entropy[:12])
 	return &cooldownFixture{kafka: kafka, db: db, ch: ch, process: process, observer: observer,
 		admin: kadm.NewClient(observer), rules: rules, state: detection.NewPartitionState(rules),
-		start: time.Now().UTC().Truncate(5 * time.Minute), ip: "192.0.2.19",
+		start: time.Now().UTC().Truncate(5 * time.Minute), ip: netip.AddrFrom16(address).String(),
 		principal: "cooldown|" + uuid.NewString(), env: env}
 }
 
