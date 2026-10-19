@@ -202,7 +202,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 03-08-PLAN.md — Allow rule changes only through a strict startup config and drained version handover
+- [x] 03-08-PLAN.md — Allow rule changes only through a strict startup config and drained version handover
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -292,7 +292,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
-| 3. Detection & Alert Pipeline | 13/21 | In Progress|  |
+| 3. Detection & Alert Pipeline | 14/21 | In Progress|  |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
