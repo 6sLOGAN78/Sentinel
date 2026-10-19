@@ -78,7 +78,8 @@ func requireCheckpointFailure(t *testing.T, env []string, kafka config.KafkaConf
 	t.Helper()
 	seedBrokerCheckpoint(t, admin, kafka, cp)
 	p := startProc(t, "detector", "", env)
-	require.NotZero(t, p.requireExit(t, 10*time.Second), "invalid restore cannot retry forever ready: %s", p.output.String())
+	require.NotZero(t, p.requireExit(t, 10*time.Second),
+		"invalid restore cannot retry forever ready: %s", p.output.String())
 	retained := brokerCheckpoint(t, admin, kafka)
 	require.Equal(t, cp.Offset, retained.At, "restore failure cannot reset/seek/commit a new source position")
 	require.Equal(t, cp.Metadata, retained.Metadata)
@@ -129,7 +130,8 @@ func TestDetectorCheckpoint(t *testing.T) {
 	admin := checkpointAdmin(t)
 	valid := validBrokerCheckpoint(t)
 	for _, tc := range []struct{ name, metadata string }{
-		{"missing", ""}, {"malformed", "{"}, {"unknown format", strings.Replace(valid.Metadata, `"format":2`, `"format":9`, 1)},
+		{"missing", ""}, {"malformed", "{"},
+		{"unknown format", strings.Replace(valid.Metadata, `"format":2`, `"format":9`, 1)},
 		{"oversized", strings.Repeat("x", 1025)},
 		{"missing explicit prefix", strings.Replace(valid.Metadata, `"prefix_max_event_time":null,`, "", 1)},
 	} {

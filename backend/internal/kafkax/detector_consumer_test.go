@@ -17,10 +17,11 @@ import (
 
 type commitDriver struct {
 	*kgo.Client
-	response *kmsg.OffsetCommitResponse
-	err      error
-	t        *testing.T
-	called   *bool
+	response   *kmsg.OffsetCommitResponse
+	err        error
+	t          *testing.T
+	called     *bool
+	beforeDone func()
 }
 
 func (d commitDriver) CommitOffsetsSync(ctx context.Context, offsets map[string]map[int32]kgo.EpochOffset,
@@ -33,6 +34,9 @@ func (d commitDriver) CommitOffsetsSync(ctx context.Context, offsets map[string]
 	deadline, ok := ctx.Deadline()
 	require.True(d.t, ok)
 	require.LessOrEqual(d.t, time.Until(deadline), time.Second)
+	if d.beforeDone != nil {
+		d.beforeDone()
+	}
 	done(nil, nil, d.response, d.err)
 }
 
@@ -95,6 +99,20 @@ func TestDetectorCommitMetadata(t *testing.T) {
 			}
 		})
 	}
+	t.Run("stale completion cannot replace reassigned checkpoint", func(t *testing.T) {
+		called := false
+		previous := &detection.Checkpoint{Offset: 7, Metadata: "previous successful"}
+		c := &DetectorConsumer{settings: config.WriterConfig{OperationTimeout: time.Second},
+			assignments: map[detection.TopicPartition]DetectorAssignment{tp0: {Token: 1, Checkpoint: previous}, tp1: {Token: 2}}}
+		c.client = commitDriver{t: t, called: &called,
+			response: commitResponse(kmsg.OffsetCommitResponseTopicPartition{Partition: 0},
+				kmsg.OffsetCommitResponseTopicPartition{Partition: 1}),
+			beforeDone: func() { c.mu.Lock(); defer c.mu.Unlock(); a := c.assignments[tp0]; a.Token++; c.assignments[tp0] = a }}
+		require.Error(t, c.CommitCheckpoints(context.Background(), checkpoints))
+		require.True(t, called)
+		require.Equal(t, previous, c.Assignments()[tp0].Checkpoint)
+		require.Nil(t, c.Assignments()[tp1].Checkpoint, "one changed owner prevents adoption of the checkpoint set")
+	})
 	t.Run("metadata attached atomically to every requested partition", func(t *testing.T) {
 		req := &kmsg.OffsetCommitRequest{Topics: []kmsg.OffsetCommitRequestTopic{{Topic: "events",
 			Partitions: []kmsg.OffsetCommitRequestTopicPartition{{Partition: 0, Offset: 12}, {Partition: 1, Offset: 23}},
@@ -129,6 +147,7 @@ func TestDetectorCommitMetadata(t *testing.T) {
 		require.NoError(t, c.restorePartition(tp0,
 			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: -1}, starts, ends))
 		require.Nil(t, c.Assignments()[tp0].Checkpoint)
+		require.Equal(t, int64(12), c.Assignments()[tp0].HistoryStart)
 		require.Error(t, c.restorePartition(tp0,
 			kmsg.OffsetFetchResponseTopicPartition{Partition: 0, Offset: -1}, nil, ends),
 			"fresh group must still establish a verified retained history boundary")

@@ -19,6 +19,7 @@ import (
 type DetectorAssignment struct {
 	Token         uint64
 	Checkpoint    *detection.Checkpoint
+	HistoryStart  int64
 	Group, Member string
 	Generation    int32
 }
@@ -215,11 +216,17 @@ func (c *DetectorConsumer) restorePartition(
 	if !owned {
 		return errors.New("detector restore ownership lost")
 	}
+	start, okStart := starts.Lookup(tp.Topic, tp.Partition)
+	end, okEnd := ends.Lookup(tp.Topic, tp.Partition)
+	if !okStart || !okEnd || start.Err != nil || end.Err != nil || start.Offset < 0 || end.Offset < start.Offset {
+		return errors.New("detector history bounds unavailable")
+	}
+	if p.Offset < -1 {
+		return errors.New("invalid detector absent offset")
+	}
+	assignment.HistoryStart = start.Offset
 	if p.Offset >= 0 {
-		start, okStart := starts.Lookup(tp.Topic, tp.Partition)
-		end, okEnd := ends.Lookup(tp.Topic, tp.Partition)
-		if !okStart || !okEnd || start.Err != nil || end.Err != nil ||
-			p.Offset < start.Offset || p.Offset > end.Offset || p.Metadata == nil {
+		if p.Offset < start.Offset || p.Offset > end.Offset || p.Metadata == nil {
 			return errors.New("detector checkpoint history lost")
 		}
 		cp := detection.Checkpoint{Offset: p.Offset, Metadata: *p.Metadata}
@@ -280,7 +287,7 @@ func (c *DetectorConsumer) CommitCheckpoints(
 	commitCtx = kgo.PreCommitFnContext(commitCtx, func(req *kmsg.OffsetCommitRequest) error {
 		return attachMetadata(req, checkpoints)
 	})
-	var result error
+	result := errors.New("detector commit callback missing")
 	c.client.CommitOffsetsSync(commitCtx, offsets, func(
 		_ *kgo.Client, _ *kmsg.OffsetCommitRequest, response *kmsg.OffsetCommitResponse, err error,
 	) {
@@ -290,7 +297,25 @@ func (c *DetectorConsumer) CommitCheckpoints(
 		}
 		result = checkCommitResponse(response, checkpoints)
 	})
-	return result
+	if result != nil {
+		return result
+	}
+	// Callback completion is authoritative. Do not overwrite a later ownership
+	// incarnation if it changed while the bounded commit was in flight.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for tp := range checkpoints {
+		current, ok := c.assignments[tp]
+		if !ok || current.Token != assigned[tp].Token {
+			return errors.New("detector commit assignment changed")
+		}
+	}
+	for tp, cp := range checkpoints {
+		a := c.assignments[tp]
+		a.Checkpoint = &cp
+		c.assignments[tp] = a
+	}
+	return nil
 }
 
 func attachMetadata(
