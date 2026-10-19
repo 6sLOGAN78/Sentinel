@@ -1,8 +1,10 @@
-package detection
+package detection //nolint:testpackage // verify unchanged private accounting and recoverable state on rejection.
 
 import (
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,7 +46,7 @@ func rejectUnchanged(t *testing.T, s *PartitionState, offset int64, e *contracts
 	require.Equal(t, []int{w, l, b}, []int{nw, nl, nb})
 }
 
-func TestStateBounds(t *testing.T) {
+func TestStateBounds(t *testing.T) { //nolint:gocognit // Independent adversarial resource subcases share the named acceptance family.
 	t.Run("aggregate_windows", func(t *testing.T) {
 		budget := NewBounds(StateLimits{Windows: 2})
 		a, b := NewPartitionStateWithBounds(boundRules(), budget), NewPartitionStateWithBounds(boundRules(), budget)
@@ -60,7 +62,7 @@ func TestStateBounds(t *testing.T) {
 			if n%2 == 1 {
 				s = b
 			}
-			applyBound(t, s, int64(n/2), boundEvent(n, fmt.Sprint(n)))
+			applyBound(t, s, int64(n/2), boundEvent(n, strconv.Itoa(n)))
 		}
 		rejectUnchanged(t, b, MaxWindows/2, boundEvent(MaxWindows+1, "overflow"))
 	})
@@ -87,9 +89,54 @@ func TestStateBounds(t *testing.T) {
 	t.Run("bytes_and_frozen_payload", func(t *testing.T) {
 		r := boundRules()
 		r.Rules[0].Threshold = 2
-		s := NewPartitionStateWithBounds(r, NewBounds(StateLimits{Bytes: 1100}))
+		s := NewPartitionStateWithBounds(r, NewBounds(StateLimits{Bytes: 1600}))
 		applyBound(t, s, 0, boundEvent(0, "a"))
 		rejectUnchanged(t, s, 1, boundEvent(1, "a"))
+	})
+	t.Run("production_bytes_aggregate", func(t *testing.T) {
+		budget := NewBounds(StateLimits{})
+		a, b := NewPartitionStateWithBounds(boundRules(), budget), NewPartitionStateWithBounds(boundRules(), budget)
+		// Exercise the reducer's byte defense even for a direct caller bypassing
+		// contract validation. Runtime principals are additionally schema-capped.
+		large := strings.Repeat("x", 64<<10)
+		for n := 0; ; n++ {
+			s := a
+			if n%2 == 1 {
+				s = b
+			}
+			e := boundEvent(n, large+strconv.Itoa(n))
+			need := windowBaseBytes + len(e.TenantID) + len(authRuleID) + len(*e.SourceIP) + len(*e.Principal) +
+				eventEntryBytes + len(e.EventID) + ledgerEntryBytes
+			if need > MaxStateBytes-budget.bytes {
+				rejectUnchanged(t, s, int64(n/2), e)
+				require.LessOrEqual(t, budget.bytes, MaxStateBytes)
+				break
+			}
+			applyBound(t, s, int64(n/2), e)
+		}
+	})
+	t.Run("release_only_safe_prefix_and_retired_state", func(t *testing.T) {
+		budget := NewBounds(StateLimits{Windows: 1, Ledger: 2})
+		s := NewPartitionStateWithBounds(boundRules(), budget)
+		applyBound(t, s, 0, boundEvent(0, "a"))
+		cp, err := s.Checkpoint()
+		require.NoError(t, err)
+		s.Committed(cp)
+		require.Equal(t, 1, budget.ledger, "live pin retains prefix entry")
+		marker := boundEvent(1, "a")
+		marker.EventType = "auth.success"
+		marker.OccurredAt = contracts.NewTimestamp(marker.OccurredAt.Add(2 * time.Hour))
+		_, err = s.Apply(1, marker)
+		require.NoError(t, err)
+		require.Equal(t, 1, budget.windows, "unfinished effect cannot retire state")
+		require.NoError(t, s.Acknowledge(1))
+		require.Zero(t, budget.windows)
+		require.Equal(t, 2, budget.ledger)
+		cp, err = s.Checkpoint()
+		require.NoError(t, err)
+		s.Committed(cp)
+		require.Zero(t, budget.ledger)
+		require.Zero(t, budget.bytes)
 	})
 	t.Run("ports_exact", func(t *testing.T) {
 		r := boundRules()

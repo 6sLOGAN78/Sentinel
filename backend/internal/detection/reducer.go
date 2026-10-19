@@ -4,6 +4,7 @@ package detection
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -22,7 +23,7 @@ const (
 	ruleCount        = 4
 	maxSamples       = 20
 	ledgerEntryBytes = 64
-	windowBaseBytes  = 512
+	windowBaseBytes  = 1024
 	eventEntryBytes  = 128
 	portEntryBytes   = 32
 	metadataFormat   = 2
@@ -64,18 +65,12 @@ type PartitionState struct {
 	acknowledged        int64
 	effective           map[string]int64
 	frontier            DecisionFrontier
+	bounds              *Bounds
 }
 
 // NewPartitionState creates an empty partition with explicit effective gates.
 func NewPartitionState(rules *Rules) *PartitionState {
-	e := make(map[string]int64, ruleCount)
-	for _, id := range ruleIDs() {
-		e[id] = 0
-	}
-	return &PartitionState{
-		rules: rules, windows: make(map[windowKey]*windowState), prefix: make(map[int64]*int64),
-		last: -1, acknowledged: -1, effective: e, frontier: DecisionFrontier{None: true},
-	}
+	return NewPartitionStateWithBounds(rules, NewBounds(StateLimits{}))
 }
 
 func cloneTime(v *int64) *int64 {
@@ -91,11 +86,7 @@ func (s *PartitionState) Usage() (int, int, int) {
 	windows, ledger := len(s.windows), len(s.prefix)
 	bytes := ledger * ledgerEntryBytes
 	for k, w := range s.windows {
-		bytes += windowBaseBytes + len(k.tenant) + len(k.rule) + len(k.ip) + len(k.principal)
-		bytes += len(w.frozen) + len(w.ports)*portEntryBytes
-		for id := range w.ids {
-			bytes += eventEntryBytes + len(id)
-		}
+		bytes += windowBytes(k, w)
 	}
 	return windows, ledger, bytes
 }
@@ -107,24 +98,34 @@ func (s *PartitionState) Apply(offset int64, event *contracts.Event) (Outcome, e
 }
 
 func (s *PartitionState) apply(source *TopicPartition, offset int64, event *contracts.Event) (Outcome, error) {
-	if offset < 0 || offset <= s.last || s.last > s.acknowledged {
+	if offset < 0 || offset == math.MaxInt64 || offset <= s.last || s.last > s.acknowledged {
 		return Outcome{}, errors.New("invalid source effect order")
 	}
-	if len(s.prefix) >= MaxLedgerEntries {
-		return Outcome{}, errors.New("detector prefix capacity exceeded")
+	t := event.OccurredAt.UnixMilli()
+	late := s.maximum != nil && t < *s.maximum-Lateness.Milliseconds()
+	var changes map[windowKey]*windowState
+	outcome := Outcome{Late: late}
+	windows, bytes := 0, 0
+	if !late {
+		var err error
+		changes, outcome, windows, bytes, err = s.prepare(source, offset, event)
+		if err != nil {
+			return Outcome{}, err
+		}
+	}
+	if err := s.bounds.reserve(windows, 1, bytes+ledgerEntryBytes); err != nil {
+		return Outcome{}, err
+	}
+	for key, window := range changes {
+		s.windows[key] = window
 	}
 	s.prefix[offset] = cloneTime(s.maximum)
 	s.last = offset
 	s.processedNext = max(s.processedNext, offset+1)
-	t := event.OccurredAt.UnixMilli()
-	late := s.maximum != nil && t < *s.maximum-Lateness.Milliseconds()
 	if s.maximum == nil || t > *s.maximum {
 		s.maximum = cloneTime(&t)
 	}
-	if late {
-		return Outcome{Late: true}, nil
-	}
-	return s.applyRules(source, offset, event)
+	return outcome, nil
 }
 
 func (s *PartitionState) applyRules(source *TopicPartition, offset int64, event *contracts.Event) (Outcome, error) {
@@ -179,9 +180,6 @@ func (s *PartitionState) applyWindow(
 	key := windowKey{tenant: event.TenantID, rule: r.ID, ip: *event.SourceIP, principal: second, start: start}
 	w := s.windows[key]
 	if w == nil {
-		if len(s.windows) >= MaxWindows {
-			return Outcome{}, errors.New("detector window capacity exceeded")
-		}
 		w = &windowState{first: offset, end: end, ids: make(map[string]struct{})}
 		if port != nil {
 			w.ports = make(map[int]struct{})
@@ -191,8 +189,13 @@ func (s *PartitionState) applyWindow(
 	if _, ok := w.ids[event.EventID]; ok {
 		return Outcome{}, nil
 	}
-	if len(w.ids) >= MaxWindowEvents {
-		return Outcome{}, errors.New("detector event capacity exceeded")
+	if len(w.ids) >= s.bounds.limits.Events {
+		return Outcome{}, errCapacity
+	}
+	if port != nil {
+		if _, exists := w.ports[*port]; !exists && len(w.ports) >= s.bounds.limits.Ports {
+			return Outcome{}, errCapacity
+		}
 	}
 	w.ids[event.EventID] = struct{}{}
 	if port != nil {
@@ -236,6 +239,8 @@ func (s *PartitionState) Acknowledge(throughOffset int64) error {
 		}
 		for key, w := range s.windows {
 			if w.end <= *s.sealed {
+				s.bounds.windows--
+				s.bounds.bytes -= windowBytes(key, w)
 				delete(s.windows, key)
 			}
 		}
@@ -311,6 +316,8 @@ func (s *PartitionState) Restore(cp Checkpoint) error {
 func (s *PartitionState) Committed(cp Checkpoint) {
 	for offset := range s.prefix {
 		if offset < cp.Offset {
+			s.bounds.ledger--
+			s.bounds.bytes -= ledgerEntryBytes
 			delete(s.prefix, offset)
 		}
 	}

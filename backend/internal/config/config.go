@@ -83,6 +83,7 @@ const (
 	maxFetches         = 8
 	maxDLQBytes        = 1 << 20
 	maxAggregateFetch  = 128 << 20
+	detectorStateBytes = 64 << 20
 	defaultPGAcquire   = 2 * time.Second
 	defaultPGTx        = 5 * time.Second
 	defaultPGStatement = 2 * time.Second
@@ -120,6 +121,18 @@ type DetectorConfig struct {
 	AllowConfigTransition bool             `koanf:"allow_config_transition"`
 	Writer                WriterConfig     `koanf:"writer"`
 	PG                    DetectorPGConfig `koanf:"pg"`
+}
+
+// ComputeDetectorResources validates the conservative accounted resource sum.
+// It is not an RSS guarantee: driver/runtime/transient allocations are separate.
+// Check against the ceiling before multiplication/addition to avoid overflow.
+func ComputeDetectorResources(fetch, concurrency, producer, state int64) error {
+	const ceiling = int64(256 << 20)
+	if fetch <= 0 || concurrency <= 0 || producer <= 0 || state <= 0 ||
+		producer > ceiling || state > ceiling-producer || fetch > (ceiling-producer-state)/concurrency {
+		return errors.New("validate detector config: aggregate accounted resources exceed 256 MiB")
+	}
+	return nil
 }
 
 // DetectorPGConfig bounds acquisition, decision transactions and independent
@@ -658,6 +671,10 @@ func validateSection(cfg *Config, section string) error {
 			return err
 		}
 		if err := validateDetectorPool(cfg.Database); err != nil {
+			return err
+		}
+		if err := ComputeDetectorResources(int64(cfg.Detector.Writer.FetchMaxBytes),
+			int64(cfg.Detector.Writer.MaxConcurrentFetches), int64(cfg.Kafka.MaxBufferedBytes), detectorStateBytes); err != nil {
 			return err
 		}
 		_, err := ComputeDetectorPGBudgets(cfg.Detector.PG, cfg.Detector.Writer)
