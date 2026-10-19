@@ -2,6 +2,7 @@ package postgres //nolint:testpackage // inject the transaction boundary and ins
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -178,6 +179,76 @@ func TestDetectionDecisionBoundaries(t *testing.T) {
 			}
 			require.True(t, tx.rolled)
 			require.True(t, released)
+		})
+	}
+}
+
+type frontierTx struct {
+	pgx.Tx
+	row     pgx.Row
+	queries int
+}
+
+func (tx *frontierTx) QueryRow(context.Context, string, ...any) pgx.Row {
+	tx.queries++
+	return tx.row
+}
+
+type missingDecisionRow struct{}
+
+func (missingDecisionRow) Scan(...any) error { return pgx.ErrNoRows }
+
+func TestDetectionDecisionFrontier(t *testing.T) {
+	rules, candidate := transactionCandidate(t)
+	var alert contracts.Alert
+	require.NoError(t, json.Unmarshal(candidate.CanonicalBytes(), &alert))
+	o := DetectionOwnership{Group: "detector", Config: rules.Fingerprint(), Source: candidate.Source()}
+	frontier := detection.DecisionFrontier{Offset: candidate.Offset(), RuleOrdinal: candidate.RuleOrdinal(),
+		AlertID: alert.AlertID, Fingerprint: candidate.Fingerprint()}
+	for _, scenario := range []string{"none", "equal", "ahead", "missing", "fingerprint", "config",
+		"offset", "ordinal", "fence behind", "equal offset older ordinal"} {
+		t.Run(scenario, func(t *testing.T) {
+			marker := frontier
+			f := decisionFence{offset: marker.Offset, ordinal: marker.RuleOrdinal}
+			values := []any{marker.Fingerprint, o.Config, marker.Offset, marker.RuleOrdinal}
+			tx := &frontierTx{}
+			switch scenario {
+			case "none":
+				marker = detection.DecisionFrontier{None: true}
+			case "ahead":
+				f.offset += 100
+			case "missing":
+				tx.row = missingDecisionRow{}
+			case "fingerprint":
+				values[0] = strings.Repeat("f", 64)
+			case "config":
+				values[1] = strings.Repeat("f", 64)
+			case "offset":
+				values[2] = marker.Offset + 1
+			case "ordinal":
+				values[3] = marker.RuleOrdinal + 1
+			case "fence behind":
+				f.offset--
+			case "equal offset older ordinal":
+				marker.RuleOrdinal++
+			}
+			if tx.row == nil {
+				tx.row = decisionRow{values}
+			}
+			err := verifyDecisionFrontier(t.Context(), tx, o, f, marker)
+			if scenario == "none" || scenario == "equal" || scenario == "ahead" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			if scenario == "missing" {
+				require.ErrorIs(t, err, pgx.ErrNoRows)
+			}
+			if scenario == "none" || scenario == "fence behind" || scenario == "equal offset older ordinal" {
+				require.Zero(t, tx.queries)
+			} else {
+				require.Equal(t, 1, tx.queries)
+			}
 		})
 	}
 }

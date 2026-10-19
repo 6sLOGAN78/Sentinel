@@ -40,26 +40,7 @@ func TestDecisionFrontierRestore(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			w, c := poisonWorker(t)
 			tp := detection.TopicPartition{Topic: "events"}
-			state := detection.NewPartitionState(w.rules)
-			if scenario != "none" {
-				at := time.Date(2026, 10, 19, 0, 4, 59, 0, time.UTC)
-				ip, principal := "192.0.2.1", "frontier"
-				for i := range int64(11) {
-					e := &contracts.Event{TenantID: "demo", EventID: fmt.Sprintf("00000000-0000-4000-8000-%012d", i),
-						EventType: "auth.failure", SourceIP: &ip, Principal: &principal, OccurredAt: contracts.NewTimestamp(at)}
-					if i == 10 {
-						e.EventType, e.OccurredAt = "auth.success", contracts.NewTimestamp(at.Add(31*time.Second))
-					}
-					out, applyErr := state.ApplySource(tp, i, e)
-					require.NoError(t, applyErr)
-					for _, candidate := range out.Candidates {
-						require.NoError(t, state.EffectDecision(candidate))
-					}
-					require.NoError(t, state.Acknowledge(i))
-				}
-			}
-			cp, err := state.Checkpoint()
-			require.NoError(t, err)
+			cp := frontierCheckpoint(t, w.rules, tp, scenario != "none")
 			m, err := detection.CheckpointMetadata(cp)
 			require.NoError(t, err)
 			if scenario == "none" {
@@ -96,4 +77,30 @@ func TestDecisionFrontierRestore(t *testing.T) {
 			}
 		})
 	}
+}
+
+func frontierCheckpoint(t *testing.T, rules *detection.Rules, tp detection.TopicPartition,
+	populated bool) detection.Checkpoint {
+	t.Helper()
+	state := detection.NewPartitionState(rules)
+	if populated {
+		at := time.Date(2026, 10, 19, 0, 4, 59, 0, time.UTC)
+		ip, principal := "192.0.2.1", "frontier"
+		for i := range int64(11) {
+			e := &contracts.Event{TenantID: "demo", EventID: fmt.Sprintf("00000000-0000-4000-8000-%012d", i),
+				EventType: "auth.failure", SourceIP: &ip, Principal: &principal, OccurredAt: contracts.NewTimestamp(at)}
+			if i == 10 {
+				e.EventType, e.OccurredAt = "auth.success", contracts.NewTimestamp(at.Add(31*time.Second))
+			}
+			out, err := state.ApplySource(tp, i, e)
+			require.NoError(t, err)
+			for _, candidate := range out.Candidates {
+				require.NoError(t, state.EffectDecision(candidate))
+			}
+			require.NoError(t, state.Acknowledge(i))
+		}
+	}
+	cp, err := state.Checkpoint()
+	require.NoError(t, err)
+	return cp
 }

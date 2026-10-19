@@ -607,18 +607,37 @@ func (s *DetectionDecisionStore) Decide(ctx context.Context, o DetectionOwnershi
 		}
 		if found {
 			result = stored
-			return nil
+		} else {
+			if !positionBefore(f.offset, f.ordinal, c.Offset(), c.RuleOrdinal()) {
+				return errors.New("missing older immutable decision")
+			}
+			result, findErr = s.createDecision(ctx, tx, o, candidate)
+			if findErr != nil {
+				return findErr
+			}
 		}
-		if !positionBefore(f.offset, f.ordinal, c.Offset(), c.RuleOrdinal()) {
-			return errors.New("missing older immutable decision")
-		}
-		result, findErr = s.createDecision(ctx, tx, o, candidate)
-		return findErr
+		// Observe only a fully prepared transaction, while the fence/cursor
+		// locks and uncommitted immutable row still belong to this transaction.
+		return s.observeDecision(ctx, "before-decision-commit", o, c)
 	})
 	if err != nil {
 		return DetectionDecision{}, err
 	}
+	// transaction has committed AND completed independent rollback/release.
+	// A failed post-commit observation is uncertain to the caller: return no
+	// publication authorization; immutable lookup resolves the durable outcome.
+	if err = s.observeDecision(ctx, "after-decision-commit-before-publish", o, c); err != nil {
+		return DetectionDecision{}, errors.New("postgres decision commit observation failed; replay required")
+	}
 	return result, nil
+}
+
+func (s *DetectionDecisionStore) observeDecision(ctx context.Context, boundary string,
+	o DetectionOwnership, c detection.Candidate) error {
+	if s.boundary == nil {
+		return nil
+	}
+	return s.boundary(ctx, boundary, o.Source, c.Offset())
 }
 
 func findDecision(ctx context.Context, tx pgx.Tx, o DetectionOwnership,

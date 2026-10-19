@@ -444,12 +444,20 @@ func TestDetectorCooldownCrash(t *testing.T) {
 		t.Run(boundary, func(t *testing.T) {
 			f := newCooldownFixture(t, false)
 			stopInitialDetector(t, f)
+			// Exercise a nonzero source partition through the shared protocol.
+			// This also guards the barrier helper against a hardcoded zero.
+			topic := "cooldown-cut-" + uuid.NewString()
+			response, err := f.admin.CreateTopics(t.Context(), 2, 1, nil, topic)
+			require.NoError(t, err)
+			require.NoError(t, response[topic].Err)
+			f.kafka.EventsTopic = topic
+			f.env = append(without(f.env, "SENTINEL_KAFKA.EVENTS_TOPIC="), "SENTINEL_KAFKA.EVENTS_TOPIC="+topic)
 			events, canonical := recoveryAuthEvents(t, f, f.principal)
-			env, barrier := detectorBarrierEnv(t, f.env, boundary, 0, 9)
+			env, barrier := detectorBarrierEnv(t, f.env, boundary, 1, 9)
 			env = append(without(env, "SENTINEL_DETECTOR.WRITER.BATCH_SIZE="), "SENTINEL_DETECTOR.WRITER.BATCH_SIZE=1")
 			f.process = startRecoveryProc(t, binary, env)
-			require.NoError(t, newWriterProducer(t, f.kafka).PublishBatch(t.Context(), events, uuid.NewString()))
-			reachedDetectorBarrier(t, barrier, boundary, f.kafka.EventsTopic, 0, 9)
+			publishCooldownPartition(t, f, 1, events)
+			reachedDetectorBarrier(t, barrier, boundary, f.kafka.EventsTopic, 1, 9)
 			var count int
 			require.NoError(t, f.db.Pool.QueryRow(t.Context(),
 				"SELECT count(*) FROM detection_decisions WHERE topic=$1", f.kafka.EventsTopic).Scan(&count))
@@ -470,7 +478,7 @@ func TestDetectorCooldownCrash(t *testing.T) {
 			if boundary == "after-successful-checkpoint" {
 				next = 10
 			}
-			recoveryCheckpoint(t, f, 0, next)
+			recoveryCheckpoint(t, f, 1, next)
 			if boundary == "before-decision-commit" || boundary == "after-decision-commit-before-publish" {
 				require.Empty(t, f.alerts(t))
 			} else {
@@ -479,13 +487,26 @@ func TestDetectorCooldownCrash(t *testing.T) {
 			killDetector(t, f.process)
 			f.process = startProc(t, "detector", "", f.env)
 			requireRecoveredAlert(t, f, canonical)
-			recoveryCheckpoint(t, f, 0, 10)
+			recoveryCheckpoint(t, f, 1, 10)
 			require.Zero(t, f.process.terminate(t), f.process.output.String())
 		})
 	}
 	// This retained family proves old allow AND suppress after a newer cursor,
 	// equality at expiry and complete immutable PG bytes independently of cuts.
 	t.Run("old allow and suppress after newer cursor", TestDetectorCooldownReplay)
+}
+
+func publishCooldownPartition(t *testing.T, f *cooldownFixture, partition int32, events []*contracts.Event) {
+	t.Helper()
+	producer, err := kgo.NewClient(kgo.SeedBrokers(f.kafka.Brokers), kgo.RecordPartitioner(kgo.ManualPartitioner()))
+	require.NoError(t, err)
+	defer producer.Close()
+	for _, event := range events {
+		raw, marshalErr := json.Marshal(event)
+		require.NoError(t, marshalErr)
+		record := &kgo.Record{Topic: f.kafka.EventsTopic, Partition: partition, Key: []byte("demo|" + f.ip), Value: raw}
+		require.NoError(t, producer.ProduceSync(t.Context(), record).FirstErr())
+	}
 }
 
 func TestDetectorCooldownOutage(t *testing.T) {
@@ -562,34 +583,76 @@ func TestDetectorCooldownOutage(t *testing.T) {
 }
 
 func TestDetectorCooldownOwners(t *testing.T) {
-	// Reuse the real twelve-partition two-to-third transfer and independently
-	// exercise concurrent rejected PG ownership/source identities below.
-	t.Run("actual target transfer", TestDetectorThirdReplicaRebalance)
-	t.Run("concurrent stale owners", func(t *testing.T) {
-		f := newCooldownFixture(t, true)
-		f.send(t, 0)
-		stopInitialDetector(t, f)
-		o := cooldownOwner(t, f, 0)
+	f := newCooldownFixture(t, false)
+	stopInitialDetector(t, f)
+	topic := "cooldown-transfer-" + uuid.NewString()
+	response, err := f.admin.CreateTopics(t.Context(), 12, 1, nil, topic)
+	require.NoError(t, err)
+	require.NoError(t, response[topic].Err)
+	f.kafka.EventsTopic = topic
+	f.env = append(without(f.env, "SENTINEL_KAFKA.EVENTS_TOPIC="), "SENTINEL_KAFKA.EVENTS_TOPIC="+topic)
+	binary := buildIntegrationBinary(t, "detector")
+	first, firstDir := observedDetector(t, binary, f.env)
+	second, secondDir := observedDetector(t, binary, f.env)
+	f.process = first
+	require.Eventually(t, func() bool {
+		group, describeErr := recoveryGroup(t, f)
+		return describeErr == nil && group.Err == nil && len(group.Members) == 2
+	}, 15*time.Second, 25*time.Millisecond)
+	producer, err := kgo.NewClient(kgo.SeedBrokers(kafkaCfg.Brokers), kgo.RecordPartitioner(kgo.ManualPartitioner()))
+	require.NoError(t, err)
+	t.Cleanup(producer.Close)
+	canonical, tenth := seedTransferPartitions(t, f, producer)
+	oldOwners := incorporatedOwners(t, f, []string{firstDir, secondDir})
+	oldFences := make(map[int32]postgres.DetectionOwnership)
+	for id := range int32(12) {
+		oldFences[id] = cooldownOwner(t, f, id)
+	}
+	third, thirdDir := observedDetector(t, binary, f.env)
+	moved := transferredTarget(t, f, thirdDir, oldOwners)
+	require.Eventually(t, func() bool {
+		return observedTransition(t, []string{firstDir, secondDir}, "revoked", moved.Partition,
+			oldOwners[moved.Partition], 0) &&
+			observedTransition(t, []string{thirdDir}, "committed", moved.Partition, moved.Member, moved.Token)
+	}, 20*time.Second, 25*time.Millisecond)
+	f.process = third
+	require.NoError(t, producer.ProduceSync(t.Context(), tenth[moved.Partition]).FirstErr())
+	recoveryCheckpoint(t, f, moved.Partition, 10)
+	requireRecoveredAlert(t, f, canonical[moved.Partition])
+	current := cooldownOwner(t, f, moved.Partition)
+	require.Equal(t, moved.Member, current.Member)
+	require.NotEqual(t, oldFences[moved.Partition].Member, current.Member)
+	assertCooldownStaleOwners(t, f, current, oldFences[moved.Partition])
+	for _, process := range []*proc{third, second, first} {
+		require.Zero(t, process.terminate(t), process.output.String())
+	}
+}
+
+func assertCooldownStaleOwners(t *testing.T, f *cooldownFixture, current, old postgres.DetectionOwnership) {
+	t.Helper()
+	t.Run("concurrent stale owners on moved target", func(t *testing.T) {
 		store := cooldownStore(f)
-		current := o
-		current.Generation++
-		current.Member = "current-successor"
-		current.Token++
-		require.NoError(t, store.Register(t.Context(), current, detection.DecisionFrontier{None: true}))
+		candidate := cooldownCandidate(t, f.rules, current.Source, 0, f.start.Add(2*time.Second),
+			"demo", f.ip, f.principal+"-missing", "AUTH_BRUTE_FORCE")
 		before := cooldownRows(t, f)
 		var wg sync.WaitGroup
-		errorsFound := make(chan error, 8)
+		errorsFound := make(chan error, 10)
 		for _, change := range []func(*postgres.DetectionOwnership){
+			func(v *postgres.DetectionOwnership) { *v = old },
 			func(v *postgres.DetectionOwnership) { v.Generation-- },
 			func(v *postgres.DetectionOwnership) { v.Member = "wrong-equal-generation" },
-			func(v *postgres.DetectionOwnership) { v.Token-- },
+			func(v *postgres.DetectionOwnership) { v.Token++ },
 			func(v *postgres.DetectionOwnership) { v.Incarnation = uuid.NewString(); v.Generation++ },
 		} {
 			stale := current
 			change(&stale)
 			wg.Go(func() {
-				errorsFound <- store.Register(t.Context(), stale, detection.DecisionFrontier{None: true})
-				_, err := store.Decide(t.Context(), stale, f.candidates[0])
+				// Register only delayed/invalid assignments; a token change with
+				// the same member is checked by Decide, not self-registered.
+				if stale.Token == current.Token || stale.Member != current.Member || stale.Generation != current.Generation {
+					errorsFound <- store.Register(t.Context(), stale, detection.DecisionFrontier{None: true})
+				}
+				_, err := store.Decide(t.Context(), stale, candidate)
 				errorsFound <- err
 			})
 		}
@@ -598,9 +661,7 @@ func TestDetectorCooldownOwners(t *testing.T) {
 		for err := range errorsFound {
 			require.Error(t, err)
 		}
-		missing := cooldownCandidate(t, f.rules, current.Source, 0, f.start.Add(2*time.Second),
-			"demo", f.ip, f.principal, "AUTH_BRUTE_FORCE")
-		_, err := store.Decide(t.Context(), current, missing)
+		_, err := store.Decide(t.Context(), current, candidate)
 		require.Error(t, err, "absent earlier decision cannot be recreated")
 		require.Equal(t, before, cooldownRows(t, f), "rejections must preserve all operational rows")
 	})
