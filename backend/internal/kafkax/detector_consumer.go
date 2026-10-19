@@ -449,8 +449,10 @@ func (c *DetectorConsumer) PollRecords(ctx context.Context, limit int) ([]*kgo.R
 	// Wake periodically to validate and adopt idle assigned checkpoints, even
 	// when no source record arrives after the old configuration drained.
 	pollCtx, cancel := context.WithTimeout(ctx, min(c.settings.OperationTimeout, time.Second))
-	stop := context.AfterFunc(c.lifetime, cancel)
-	defer stop()
+	// The caller owns cancellation. A sibling lifetime can observe service
+	// cancellation first; linking it here fabricates a poll error before the
+	// worker's own context is canceled. Fatal restore still wins below, and
+	// this existing one-second deadline bounds idle/closed lifetime checks.
 	defer cancel()
 	fetches := c.client.PollRecords(pollCtx, limit)
 	c.mu.Lock()
