@@ -1,4 +1,6 @@
 # Phase 3 deferred items
 
+Resolved in 03-13: the SCAN wording issue below is historical, not open debt. Independent canonical fixtures were preserved; runtime summary and two old expectations were aligned through assertion RED/GREEN. Full Go/Python canonical equality and actual Kafka/CH/PG payload acceptance pass (a8ff12e; 03-13-SUMMARY.md). The integration-lint item remains open for 03-14.
+
 - Discovered during 03-07: shared scenarios.json expected SCAN summary is `Distinct destination ports probed`; runtime detection/evidence.go emits `Distinct destination ports on one host`. Whole expected canonical equality fails for SCAN/all fixture cases. This predates checkpoint changes. Root was notified and explicitly retained it as unresolved phase acceptance debt for 03-13/03-14; reconcile approved canonical wording with evidence, without an arbitrary golden update. 03-07 checks the exact fixture identity set and every runtime payload byte against uninterrupted execution; it does not certify expected canonical fixture bytes. No unowned runtime/fixture files were edited.
 - Existing integration lint test/recovery_test.go:162 unparam remains deferred to 03-14; final 03-07 integration lint reports only this finding.

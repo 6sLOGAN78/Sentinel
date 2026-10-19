@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-13 with verified live/preserved acceptance; 20/21 Phase 3 plans, parent Wave 13 gate then 03-14; stop before Phase 4
+stopped_at: Wave 13 build/test gate passed; 20/21 Phase 3 plans complete, final plan 03-14 next
 last_updated: "2026-10-19T22:31:22.818Z"
 last_activity: 2026-10-19
 progress:
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
 Plan: 21 of 21
-Status: Executing — 03-13 complete; parent Wave 13 gate then final plan 03-14
+Status: Executing — Wave 13 gate passed; final Wave 14 plan 03-14 next
 Last activity: 2026-10-19
 
 Progress: [██████████] 98%
@@ -154,7 +154,7 @@ Progress: [██████████] 98%
 - [Phase 03]: 03-19: Checkpoint last fully effected decision and verify immutable PG row plus a fence at least that far on restore; legitimate PG ahead is allowed.
 - [Phase 03-07]: Require complete format-2 recovery fields, explicit nullable clocks, unique JSON members and non-null gates/frontiers before restoring source state.
 - [Phase 03-07]: Adopt checkpoints only after complete successful synchronous callback and unchanged assignment tokens; record verified retained history start.
-- [Phase 03-07]: Replay uses uninterrupted canonical bytes and exact independent shared fixture IDs; pre-existing SCAN summary mismatch remains unresolved phase acceptance debt.
+- [Phase 03-07]: Replay uses uninterrupted canonical bytes and exact independent shared fixture IDs; SCAN summary mismatch was unresolved at that point and is now resolved by 03-13 full canonical proof.
 - [Phase 03-08]: Persist actual prior rule definitions and exact acknowledged drain in existing PG partition fences; changed-rule versions are checked against saved semantics.
 - [Phase 03-08]: Changed-config startup requires zero old members before joining and sole membership afterward; unchanged-config replicas retain normal multi-member operation.
 - [Phase 03-08]: Persist both handover checkpoints and all four aligned effective gates so PG-before-Kafka failures resume the same authorization without resetting group/fence identity.
@@ -215,5 +215,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-10-19T22:31:22.807Z
-Stopped at: Completed 03-13 with committed exact live/preserved proof and summary; parent Wave 13 gate then 03-14. Stop before Phase 4.
+Stopped at: Wave 13 parent build/test gate passed; continue 03-14 sequentially, then phase-wide review/security/verification. Stop before Phase 4.
 Resume file: None
