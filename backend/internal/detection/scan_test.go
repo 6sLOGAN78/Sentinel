@@ -98,7 +98,7 @@ func testScanEvidence(t *testing.T) {
 		SchemaVersion: 1, AlertID: contracts.DedupeKey("demo", "PORT_SCAN", []string{"192.0.2.10", "192.0.2.20"}, start),
 		TenantID: "demo", RuleID: "PORT_SCAN", RuleVersion: 1, Severity: "medium", Status: "open",
 		CreatedAt: end, WindowStart: contracts.NewTimestamp(start), WindowEnd: end,
-		EntityKey: "192.0.2.10|192.0.2.20", Summary: "Distinct destination ports on one host",
+		EntityKey: "192.0.2.10|192.0.2.20", Summary: "Distinct destination ports probed",
 		EventCount: 24, SampleEventIDs: samples, DedupeKey: "demo|PORT_SCAN|192.0.2.10|192.0.2.20|2026-10-17T12:00:00Z",
 	}, alert)
 	require.NoError(t, alert.Validate())

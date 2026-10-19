@@ -46,7 +46,7 @@ func TestFrozenEvidence(t *testing.T) {
 			} else {
 				end = "2026-10-17T12:01:00.000Z"
 				require.Equal(t, "medium", frozen.Severity)
-				require.Equal(t, "Distinct destination ports on one host", frozen.Summary)
+				require.Equal(t, "Distinct destination ports probed", frozen.Summary)
 			}
 			require.Contains(t, string(before), `"created_at":"`+end+`"`)
 			for i := range 6 {

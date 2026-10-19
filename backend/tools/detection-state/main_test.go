@@ -15,6 +15,15 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 )
 
+func TestDetectionStateClientBounds(t *testing.T) {
+	t.Setenv("SENTINEL_DETECTOR.RULES_PATH", "../../../config/rules.yaml")
+	t.Setenv("SENTINEL_KAFKA.BROKERS", "127.0.0.1:29092")
+	require.LessOrEqual(t, scanFetchBytes, observerReadBytes)
+	source, err := newKafkaObserver()
+	require.NoError(t, err, "bounded admin client must construct before network observation")
+	source.client.Close()
+}
+
 type fakeObserver struct {
 	bounds  map[int32]history
 	cps     map[int32]*detection.Checkpoint
