@@ -206,7 +206,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 03-09-PLAN.md — Bound detector state and expose deterministic late drops without weakening readiness
+- [x] 03-09-PLAN.md — Bound detector state and expose deterministic late drops without weakening readiness
 - [ ] 03-21-PLAN.md — Schedule live scenarios after a private caught-up partition snapshot within legal ingest skew
 
 **Wave 10** *(blocked on Wave 9 completion)*
@@ -292,7 +292,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
-| 3. Detection & Alert Pipeline | 14/21 | In Progress|  |
+| 3. Detection & Alert Pipeline | 15/21 | In Progress|  |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
