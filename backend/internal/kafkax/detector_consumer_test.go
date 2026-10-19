@@ -46,6 +46,28 @@ func commitResponse(partitions ...kmsg.OffsetCommitResponseTopicPartition) *kmsg
 
 func (d commitDriver) GroupMetadata() (string, int32) { return "member-7", 9 }
 
+func TestDetectorAssignmentReadiness(t *testing.T) {
+	c := &DetectorConsumer{client: commitDriver{},
+		assignments: make(map[detection.TopicPartition]DetectorAssignment)}
+	require.False(t, c.ReadinessSnapshot().Observed, "membership is not assignment completion")
+	c.assigned(t.Context(), nil, map[string][]int32{})
+	snapshot := c.ReadinessSnapshot()
+	require.True(t, snapshot.Observed, "explicit empty callback is a completed assignment")
+	require.Equal(t, "member-7", snapshot.Member)
+	require.Equal(t, int32(9), snapshot.Generation)
+	require.Empty(t, snapshot.Tokens)
+	tp := detection.TopicPartition{Topic: "events", Partition: 0}
+	c.assigned(t.Context(), nil, map[string][]int32{"events": {0}})
+	snapshot = c.ReadinessSnapshot()
+	require.Equal(t, c.Assignments()[tp].Token, snapshot.Tokens[tp])
+	c.revoked(t.Context(), nil, map[string][]int32{"events": {0}})
+	require.False(t, c.ReadinessSnapshot().Observed)
+	c.assigned(t.Context(), nil, map[string][]int32{})
+	c.cancel = func() {}
+	_ = c.fail(errors.New("terminal fixture failure"))
+	require.False(t, c.ReadinessSnapshot().Observed, "terminal failures invalidate the snapshot")
+}
+
 // Ignoring callback errors or omitting any requested partition must prevent
 // success; corrupt fetched metadata must cancel ownership and report terminal failure.
 func TestDetectorCommitMetadata(t *testing.T) {

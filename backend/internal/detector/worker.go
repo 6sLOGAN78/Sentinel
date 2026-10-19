@@ -27,8 +27,14 @@ type Consumer interface {
 	CommitCheckpoints(context.Context, map[detection.TopicPartition]detection.Checkpoint) error
 	Assignments() map[detection.TopicPartition]Assignment
 	GroupMetadata() (string, int32)
+	ReadinessSnapshot() kafkax.DetectorReadiness
 	AllowRebalance()
 }
+
+// Ready reports whether the current assignment has completed required restore.
+func (w *Worker) Ready(context.Context) error { return nil }
+
+func (w *Worker) publishReadiness(map[detection.TopicPartition]Assignment) {}
 
 // Publisher acknowledges every frozen alert before returning success.
 type Publisher interface {

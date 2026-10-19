@@ -119,6 +119,14 @@ func assertOutageRecovery(
 	services ...string,
 ) {
 	t.Helper()
+	defer func() {
+		if t.Failed() {
+			for _, service := range services {
+				t.Logf("%s dependency %s recovery process output:\n%s",
+					service, name, fixtures[service].proc.output.String())
+			}
+		}
+	}()
 	require.NoError(t, handle.Pause(t.Context()), name)
 	paused := true
 	t.Cleanup(func() {

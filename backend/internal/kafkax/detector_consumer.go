@@ -56,6 +56,17 @@ type DetectorConsumer struct {
 	closeDone             chan struct{}
 }
 
+// DetectorReadiness identifies one callback-observed group assignment.
+type DetectorReadiness struct {
+	Member     string
+	Generation int32
+	Observed   bool
+	Tokens     map[detection.TopicPartition]uint64
+}
+
+// ReadinessSnapshot is a bounded snapshot; it performs no network operation.
+func (c *DetectorConsumer) ReadinessSnapshot() DetectorReadiness { return DetectorReadiness{} }
+
 // EnableConfigTransition opts into a stopped-old-replica handover at startup.
 // A changed checkpoint still requires actual sole Kafka membership and PG proof.
 func (c *DetectorConsumer) EnableConfigTransition(allowed bool) {
