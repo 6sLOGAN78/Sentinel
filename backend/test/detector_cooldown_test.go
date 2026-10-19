@@ -6,9 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +28,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 	"github.com/6sLOGAN78/sentinel/internal/storage/postgres"
+	sentineltesting "github.com/6sLOGAN78/sentinel/internal/testing"
 )
 
 type cooldownFixture struct {
@@ -45,7 +49,12 @@ type cooldownFixture struct {
 
 func newCooldownFixture(t *testing.T, short bool) *cooldownFixture {
 	t.Helper()
-	env, kafka := detectorPGEnv(t, pgCfg)
+	return newCooldownPGFixture(t, short, pgCfg)
+}
+
+func newCooldownPGFixture(t *testing.T, short bool, pg config.DatabaseConfig) *cooldownFixture {
+	t.Helper()
+	env, kafka := detectorPGEnv(t, pg)
 	raw, err := os.ReadFile("../../config/rules.yaml")
 	require.NoError(t, err)
 	if short {
@@ -56,20 +65,25 @@ func newCooldownFixture(t *testing.T, short bool) *cooldownFixture {
 	path := filepath.Join(t.TempDir(), "rules.yaml")
 	require.NoError(t, os.WriteFile(path, raw, 0o600))
 	env = append(without(env, "SENTINEL_DETECTOR.RULES_PATH="), "SENTINEL_DETECTOR.RULES_PATH="+path)
-	db, err := database.New(t.Context(), pgCfg, zerolog.Nop())
+	require.NoError(t, database.Migrate(t.Context(), pg, zerolog.Nop()))
+	db, err := database.New(t.Context(), pg, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
 	chCfg, ch := newRecoveryDatabase(t)
 	writerEnv := serviceEnv(t, "alert-writer")
 	for key, value := range map[string]string{"SENTINEL_KAFKA.ALERTS_TOPIC": kafka.AlertsTopic,
 		"SENTINEL_KAFKA.ALERT_WRITER_GROUP": "cooldown-writer-" + uuid.NewString(),
-		"SENTINEL_CLICKHOUSE.DATABASE":      chCfg.Database} {
+		"SENTINEL_CLICKHOUSE.DATABASE":      chCfg.Database,
+		"SENTINEL_DATABASE.HOST":            pg.Host, "SENTINEL_DATABASE.PORT": strconv.Itoa(pg.Port),
+		"SENTINEL_DATABASE.USER": pg.User, "SENTINEL_DATABASE.PASSWORD": pg.Password,
+		"SENTINEL_DATABASE.NAME": pg.Name, "SENTINEL_DATABASE.SSL_MODE": "disable"} {
 		writerEnv = append(without(writerEnv, key+"="), key+"="+value)
 	}
 	writer := startProc(t, "alert-writer", "", writerEnv)
 	requireOutputEventually(t, writer, "service started")
 	process := startProc(t, "detector", "", env)
 	requireOutputEventually(t, process, "service started")
+	requireStatusEventually(t, "http://127.0.0.1:"+opsPort(t, env)+"/readyz", http.StatusOK)
 	observer, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{kafka.AlertsTopic: {0: kgo.NewOffset().AtStart()}}))
 	require.NoError(t, err)
@@ -389,4 +403,264 @@ func cooldownCandidate(t *testing.T, rules *detection.Rules, source detection.To
 	}
 	require.NotEmpty(t, candidate.CanonicalBytes())
 	return candidate
+}
+
+func cooldownStore(f *cooldownFixture,
+	hooks ...func(context.Context, string, detection.TopicPartition, int64) error) *postgres.DetectionDecisionStore {
+	return postgres.NewDetectionDecisionStore(f.db.Pool, config.DetectorPGConfig{AcquireTimeout: time.Second,
+		TransactionTimeout: 5 * time.Second, LockTimeout: 250 * time.Millisecond,
+		StatementTimeout: time.Second, CleanupTimeout: time.Second}, f.rules, hooks...)
+}
+
+func cooldownOwner(t *testing.T, f *cooldownFixture, partition int32) postgres.DetectionOwnership {
+	t.Helper()
+	o := postgres.DetectionOwnership{Group: f.kafka.DetectorGroup, Config: f.rules.Fingerprint(),
+		Source: detection.TopicPartition{Topic: f.kafka.EventsTopic, Partition: partition}}
+	var token int64
+	require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT incarnation,member_id,generation,assignment_token
+		FROM detection_partition_fences WHERE group_id=$1 AND topic=$2 AND partition_id=$3`,
+		o.Group, o.Source.Topic, partition).Scan(&o.Incarnation, &o.Member, &o.Generation, &token))
+	o.Token = uint64(token)
+	return o
+}
+
+// Inspect all operational rows, so a rejected owner cannot silently alter its
+// fence or cursor even when the immutable decision count stays unchanged.
+func cooldownRows(t *testing.T, f *cooldownFixture) string {
+	t.Helper()
+	var rows string
+	require.NoError(t, f.db.Pool.QueryRow(t.Context(), `SELECT json_build_array(
+		(SELECT json_agg(c ORDER BY alert_id) FROM detection_decisions c WHERE group_id=$1),
+		(SELECT json_agg(c ORDER BY partition_id) FROM detection_partition_fences c WHERE group_id=$1),
+		(SELECT json_agg(c ORDER BY entity_components) FROM detection_cooldown_cursors c WHERE group_id=$1))::text`,
+		f.kafka.DetectorGroup).Scan(&rows))
+	return rows
+}
+
+func TestDetectorCooldownCrash(t *testing.T) {
+	binary := buildIntegrationBinary(t, "detector")
+	for _, boundary := range []string{"before-decision-commit", "after-decision-commit-before-publish",
+		"after-ack-before-checkpoint", "after-successful-checkpoint"} {
+		t.Run(boundary, func(t *testing.T) {
+			f := newCooldownFixture(t, false)
+			stopInitialDetector(t, f)
+			events, canonical := recoveryAuthEvents(t, f, f.principal)
+			env, barrier := detectorBarrierEnv(t, f.env, boundary, 0, 9)
+			env = append(without(env, "SENTINEL_DETECTOR.WRITER.BATCH_SIZE="), "SENTINEL_DETECTOR.WRITER.BATCH_SIZE=1")
+			f.process = startRecoveryProc(t, binary, env)
+			require.NoError(t, newWriterProducer(t, f.kafka).PublishBatch(t.Context(), events, uuid.NewString()))
+			reachedDetectorBarrier(t, barrier, boundary, f.kafka.EventsTopic, 0, 9)
+			var count int
+			require.NoError(t, f.db.Pool.QueryRow(t.Context(),
+				"SELECT count(*) FROM detection_decisions WHERE topic=$1", f.kafka.EventsTopic).Scan(&count))
+			if boundary == "before-decision-commit" {
+				require.Zero(t, count, "uncommitted decision must be invisible to another connection")
+				// NOWAIT proves the reached observation is causally inside the
+				// live transaction, rather than before Begin or after Commit.
+				tx, err := f.db.Pool.Begin(t.Context())
+				require.NoError(t, err)
+				_, err = tx.Exec(t.Context(), `SELECT 1 FROM detection_partition_fences
+					WHERE group_id=$1 FOR UPDATE NOWAIT`, f.kafka.DetectorGroup)
+				require.ErrorContains(t, err, "55P03")
+				require.NoError(t, tx.Rollback(t.Context()))
+			} else {
+				require.Equal(t, 1, count)
+			}
+			next := int64(9)
+			if boundary == "after-successful-checkpoint" {
+				next = 10
+			}
+			recoveryCheckpoint(t, f, 0, next)
+			if boundary == "before-decision-commit" || boundary == "after-decision-commit-before-publish" {
+				require.Empty(t, f.alerts(t))
+			} else {
+				requireRecoveredAlert(t, f, canonical)
+			}
+			killDetector(t, f.process)
+			f.process = startProc(t, "detector", "", f.env)
+			requireRecoveredAlert(t, f, canonical)
+			recoveryCheckpoint(t, f, 0, 10)
+			require.Zero(t, f.process.terminate(t), f.process.output.String())
+		})
+	}
+	// This retained family proves old allow AND suppress after a newer cursor,
+	// equality at expiry and complete immutable PG bytes independently of cuts.
+	t.Run("old allow and suppress after newer cursor", TestDetectorCooldownReplay)
+}
+
+func TestDetectorCooldownOutage(t *testing.T) {
+	t.Run("connection outage preserves checkpoint", func(t *testing.T) {
+		pg, handle, err := sentineltesting.StartPostgresFaultContainer(t.Context())
+		require.NoError(t, err)
+		t.Cleanup(handle.Close)
+		f := newCooldownPGFixture(t, false, pg)
+		f.send(t, 299)
+		f.stored(t, 1, 0)
+		before, err := f.admin.FetchOffsets(t.Context(), f.kafka.DetectorGroup)
+		require.NoError(t, err)
+		checkpoint, ok := before.Lookup(f.kafka.EventsTopic, 0)
+		require.True(t, ok)
+		f.alerts(t)
+		require.NoError(t, handle.Pause(t.Context()))
+		paused := true
+		t.Cleanup(func() {
+			if !paused {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			require.NoError(t, handle.Unpause(ctx))
+		})
+		requireDependencyEventually(t, "http://127.0.0.1:"+opsPort(t, f.env)+"/readyz", "postgres", "unavailable")
+		events := canonicalWriterEvents(10, f.start.Add(301*time.Second))
+		for _, event := range events {
+			event.EventType, event.SourceIP, event.Principal = "auth.failure", &f.ip, &f.principal
+		}
+		require.NoError(t, newWriterProducer(t, f.kafka).PublishBatch(t.Context(), events, uuid.NewString()))
+		require.NotZero(t, f.process.requireExit(t, 5*time.Second))
+		after, err := f.admin.FetchOffsets(t.Context(), f.kafka.DetectorGroup)
+		require.NoError(t, err)
+		retained, ok := after.Lookup(f.kafka.EventsTopic, 0)
+		require.True(t, ok)
+		require.Equal(t, checkpoint, retained)
+		require.Empty(t, f.alerts(t))
+		require.NoError(t, handle.Unpause(t.Context()))
+		paused = false
+		f.process = startProc(t, "detector", "", f.env)
+		f.offset = 20
+		f.waitSource(t)
+		f.stored(t, 1, 1)
+		require.Zero(t, f.process.terminate(t), f.process.output.String())
+	})
+	t.Run("commit acknowledged ambiguously then immutable lookup", func(t *testing.T) {
+		f := newCooldownFixture(t, true)
+		f.send(t, 0)
+		stopInitialDetector(t, f)
+		owner := cooldownOwner(t, f, 0)
+		candidate := cooldownCandidate(t, f.rules, owner.Source, 100, f.start.Add(60*time.Second),
+			"demo", f.ip, f.principal, "AUTH_BRUTE_FORCE")
+		observed := false
+		store := cooldownStore(f, func(_ context.Context, boundary string, _ detection.TopicPartition, _ int64) error {
+			if boundary == "after-decision-commit-before-publish" {
+				observed = true
+				return context.DeadlineExceeded
+			}
+			return nil
+		})
+		decision, err := store.Decide(t.Context(), owner, candidate)
+		require.Error(t, err, "uncertain acknowledgement cannot authorize a publication")
+		require.True(t, observed, "post-commit callback must observe a committed real transaction")
+		require.Empty(t, decision.Canonical)
+		before := cooldownRows(t, f)
+		decision, err = cooldownStore(f).Decide(t.Context(), owner, candidate)
+		require.NoError(t, err)
+		require.True(t, decision.Allowed)
+		require.Equal(t, candidate.CanonicalBytes(), decision.Canonical)
+		require.Equal(t, before, cooldownRows(t, f))
+	})
+	t.Run("lock deadline and explicit rollback", TestDetectorCooldownReplay)
+}
+
+func TestDetectorCooldownOwners(t *testing.T) {
+	// Reuse the real twelve-partition two-to-third transfer and independently
+	// exercise concurrent rejected PG ownership/source identities below.
+	t.Run("actual target transfer", TestDetectorThirdReplicaRebalance)
+	t.Run("concurrent stale owners", func(t *testing.T) {
+		f := newCooldownFixture(t, true)
+		f.send(t, 0)
+		stopInitialDetector(t, f)
+		o := cooldownOwner(t, f, 0)
+		store := cooldownStore(f)
+		current := o
+		current.Generation++
+		current.Member = "current-successor"
+		current.Token++
+		require.NoError(t, store.Register(t.Context(), current, detection.DecisionFrontier{None: true}))
+		before := cooldownRows(t, f)
+		var wg sync.WaitGroup
+		errorsFound := make(chan error, 8)
+		for _, change := range []func(*postgres.DetectionOwnership){
+			func(v *postgres.DetectionOwnership) { v.Generation-- },
+			func(v *postgres.DetectionOwnership) { v.Member = "wrong-equal-generation" },
+			func(v *postgres.DetectionOwnership) { v.Token-- },
+			func(v *postgres.DetectionOwnership) { v.Incarnation = uuid.NewString(); v.Generation++ },
+		} {
+			stale := current
+			change(&stale)
+			wg.Go(func() {
+				errorsFound <- store.Register(t.Context(), stale, detection.DecisionFrontier{None: true})
+				_, err := store.Decide(t.Context(), stale, f.candidates[0])
+				errorsFound <- err
+			})
+		}
+		wg.Wait()
+		close(errorsFound)
+		for err := range errorsFound {
+			require.Error(t, err)
+		}
+		missing := cooldownCandidate(t, f.rules, current.Source, 0, f.start.Add(2*time.Second),
+			"demo", f.ip, f.principal, "AUTH_BRUTE_FORCE")
+		_, err := store.Decide(t.Context(), current, missing)
+		require.Error(t, err, "absent earlier decision cannot be recreated")
+		require.Equal(t, before, cooldownRows(t, f), "rejections must preserve all operational rows")
+	})
+}
+
+func TestDetectorCooldownRestoreBehindCheckpoint(t *testing.T) {
+	f := newCooldownFixture(t, false)
+	f.send(t, 299)
+	f.stored(t, 1, 0)
+	require.Len(t, f.alerts(t), 1)
+	marker := canonicalWriterEvents(1, f.start.Add(330*time.Second))
+	marker[0].EventType, marker[0].SourceIP = "auth.success", &f.ip
+	require.NoError(t, newWriterProducer(t, f.kafka).PublishBatch(t.Context(), marker, uuid.NewString()))
+	f.offset++
+	f.waitSource(t)
+	stopInitialDetector(t, f)
+	before, err := f.admin.FetchOffsets(t.Context(), f.kafka.DetectorGroup)
+	require.NoError(t, err)
+	checkpoint, ok := before.Lookup(f.kafka.EventsTopic, 0)
+	require.True(t, ok)
+	require.Equal(t, int64(11), checkpoint.At, "marker seals first window and advances pin beyond lost seed")
+	cp := detection.Checkpoint{Offset: checkpoint.At, Metadata: checkpoint.Metadata}
+	m, err := detection.CheckpointMetadata(cp)
+	require.NoError(t, err)
+	require.False(t, m.DecisionFrontier.None)
+	require.Equal(t, int64(9), m.DecisionFrontier.Offset, "processed_next alone is not proof of a decision")
+	// Simulate restoring ONLY this fixture's operational PG rows. The Kafka
+	// checkpoint, immutable detection and workflow intentionally remain newer.
+	tx, err := f.db.Pool.Begin(t.Context())
+	require.NoError(t, err)
+	for _, query := range []string{
+		"DELETE FROM detection_decisions WHERE group_id=$1",
+		"DELETE FROM detection_cooldown_cursors WHERE group_id=$1",
+		`UPDATE detection_partition_fences SET frontier_offset=-1,frontier_ordinal=-1,
+		 drained=false,drain_checkpoint=NULL WHERE group_id=$1`,
+	} {
+		_, err = tx.Exec(t.Context(), query, f.kafka.DetectorGroup)
+		require.NoError(t, err)
+	}
+	require.NoError(t, tx.Commit(t.Context()))
+	operational := cooldownRows(t, f)
+	events := canonicalWriterEvents(10, f.start.Add(340*time.Second))
+	for _, event := range events {
+		event.EventType, event.SourceIP, event.Principal = "auth.failure", &f.ip, &f.principal
+	}
+	require.NoError(t, newWriterProducer(t, f.kafka).PublishBatch(t.Context(), events, uuid.NewString()))
+	f.process = startProc(t, "detector", "", f.env)
+	require.NotZero(t, f.process.requireExit(t, 8*time.Second), "inconsistent restore must fail terminally")
+	client := &http.Client{Timeout: time.Second}
+	response, statusErr := client.Get("http://127.0.0.1:" + opsPort(t, f.env) + "/readyz")
+	if statusErr == nil {
+		defer response.Body.Close()
+		require.NotEqual(t, http.StatusOK, response.StatusCode)
+	}
+	after, err := f.admin.FetchOffsets(t.Context(), f.kafka.DetectorGroup)
+	require.NoError(t, err)
+	retained, ok := after.Lookup(f.kafka.EventsTopic, 0)
+	require.True(t, ok)
+	require.Equal(t, checkpoint, retained)
+	require.Equal(t, operational, cooldownRows(t, f))
+	require.Empty(t, f.alerts(t), "lost eligibility seed must never create a new allow/publication")
+	require.NotContains(t, f.process.output.String(), "DLQ")
 }

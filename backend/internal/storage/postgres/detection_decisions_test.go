@@ -133,3 +133,51 @@ func TestDetectionDecisionTransaction(t *testing.T) {
 		require.True(t, tx.rolled)
 	})
 }
+
+func TestDetectionDecisionBoundaries(t *testing.T) {
+	rules, candidate := transactionCandidate(t)
+	o := DetectionOwnership{Group: "detector", Incarnation: DetectionGroupIncarnation("detector"),
+		Member: "member", Generation: 3, Token: 1, Source: candidate.Source(), Config: rules.Fingerprint()}
+	for _, stop := range []string{"", "before-decision-commit", "after-decision-commit-before-publish"} {
+		t.Run("stop="+stop, func(t *testing.T) {
+			tx := &decisionTx{t: t, owner: o, candidate: candidate, allowed: true}
+			released := false
+			var observed []string
+			store := NewDetectionDecisionStore(nil, config.DetectorPGConfig{TransactionTimeout: time.Second,
+				CleanupTimeout: time.Second}, rules,
+				func(ctx context.Context, boundary string, source detection.TopicPartition, offset int64) error {
+					require.NoError(t, ctx.Err())
+					require.Equal(t, candidate.Source(), source)
+					require.Equal(t, candidate.Offset(), offset)
+					observed = append(observed, boundary)
+					if boundary == "before-decision-commit" {
+						require.False(t, tx.committed)
+						require.False(t, released)
+					} else {
+						require.True(t, tx.committed)
+						require.True(t, tx.rolled)
+						require.True(t, released, "post-commit hook must not retain a PG connection across Kafka")
+					}
+					if boundary == stop {
+						return context.DeadlineExceeded
+					}
+					return nil
+				})
+			store.begin = func(context.Context) (pgx.Tx, func(), error) {
+				return tx, func() { released = true }, nil
+			}
+			decision, err := store.Decide(t.Context(), o, candidate)
+			if stop == "" {
+				require.NoError(t, err)
+				require.Equal(t, []string{"before-decision-commit", "after-decision-commit-before-publish"}, observed)
+				require.Equal(t, candidate.CanonicalBytes(), decision.Canonical)
+			} else {
+				require.Error(t, err, "failed boundary must not authorize publication")
+				require.Empty(t, decision.Canonical)
+				require.Equal(t, stop != "before-decision-commit", tx.committed)
+			}
+			require.True(t, tx.rolled)
+			require.True(t, released)
+		})
+	}
+}

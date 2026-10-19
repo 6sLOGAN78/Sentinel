@@ -43,16 +43,22 @@ type DetectionDecision struct {
 
 // DetectionDecisionStore persists operational decisions separately from workflows.
 type DetectionDecisionStore struct {
-	pool    *pgxpool.Pool
-	budgets config.DetectorPGConfig
-	rules   *detection.Rules
-	begin   func(context.Context) (pgx.Tx, func(), error)
+	pool     *pgxpool.Pool
+	budgets  config.DetectorPGConfig
+	rules    *detection.Rules
+	begin    func(context.Context) (pgx.Tx, func(), error)
+	boundary func(context.Context, string, detection.TopicPartition, int64) error
 }
 
 // NewDetectionDecisionStore uses the explicit bounded detector pool.
 func NewDetectionDecisionStore(pool *pgxpool.Pool, budgets config.DetectorPGConfig,
-	rules *detection.Rules) *DetectionDecisionStore {
-	return &DetectionDecisionStore{pool: pool, budgets: budgets, rules: rules}
+	rules *detection.Rules,
+	boundaries ...func(context.Context, string, detection.TopicPartition, int64) error) *DetectionDecisionStore {
+	s := &DetectionDecisionStore{pool: pool, budgets: budgets, rules: rules}
+	if len(boundaries) > 0 {
+		s.boundary = boundaries[0]
+	}
+	return s
 }
 
 // DetectionGroupIncarnation is stable for a configured group, across processes.
