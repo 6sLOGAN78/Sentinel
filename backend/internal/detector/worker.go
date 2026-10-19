@@ -243,6 +243,9 @@ func (w *Worker) processCheckpoint(ctx context.Context, record *kgo.Record, tp d
 	if err = w.processRecord(ctx, state, record, retries); err != nil {
 		return detection.Checkpoint{}, err
 	}
+	if err = reachBoundary(ctx, "after-record", tp, record.Offset); err != nil {
+		return detection.Checkpoint{}, err
+	}
 	return state.Checkpoint()
 }
 
@@ -291,6 +294,13 @@ func (w *Worker) commitEffects(ctx context.Context,
 	for tp, cp := range checkpoints {
 		w.partitions[tp].state.Committed(cp)
 		if err := w.decisions.CheckpointCommitted(ctx, w.partitions[tp].owner, cp); err != nil {
+			return err
+		}
+		m, err := detection.CheckpointMetadata(cp)
+		if err != nil {
+			return err
+		}
+		if err = reachBoundary(ctx, "after-successful-checkpoint", tp, m.ProcessedNext-1); err != nil {
 			return err
 		}
 	}
@@ -364,6 +374,10 @@ func (w *Worker) restorePartition(ctx context.Context, tp detection.TopicPartiti
 	if err = w.finishRestore(ctx, p, *adopted, a.Checkpoint); err != nil {
 		return partition{}, err
 	}
+	a.Checkpoint = adopted
+	if err = observeAssignment(ctx, "restored", tp, a); err != nil {
+		return partition{}, err
+	}
 	return p, nil
 }
 
@@ -415,7 +429,7 @@ func (w *Worker) applyEvent(ctx context.Context, state *detection.PartitionState
 			return err
 		}
 		if decision.Allowed {
-			if err = w.publisher.PublishCanonical(ctx, decision.Canonical); err != nil {
+			if err = w.publishAllowed(ctx, decision.Canonical, source, record.Offset); err != nil {
 				return err
 			}
 		}
@@ -424,6 +438,17 @@ func (w *Worker) applyEvent(ctx context.Context, state *detection.PartitionState
 		}
 	}
 	return state.Acknowledge(record.Offset)
+}
+
+func (w *Worker) publishAllowed(ctx context.Context, canonical []byte,
+	tp detection.TopicPartition, offset int64) error {
+	if err := reachBoundary(ctx, "before-publish", tp, offset); err != nil {
+		return err
+	}
+	if err := w.publisher.PublishCanonical(ctx, canonical); err != nil {
+		return err
+	}
+	return reachBoundary(ctx, "after-ack-before-checkpoint", tp, offset)
 }
 
 func (w *Worker) recordLateness(late bool) {

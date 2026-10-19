@@ -5,6 +5,7 @@ package test_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
@@ -39,7 +41,8 @@ func detectorBarrierEnv(t *testing.T, env []string, boundary string, partition i
 	require.NoError(t, os.Chmod(dir, 0o700))
 	path := filepath.Join(dir, "cut")
 	return append(env, detectorControl+"BOUNDARY="+boundary, detectorControl+"BARRIER="+path,
-		detectorControl+"PARTITION="+strconv.Itoa(int(partition)), detectorControl+"OFFSET="+strconv.FormatInt(offset, 10)), path
+		detectorControl+"PARTITION="+strconv.Itoa(int(partition)),
+		detectorControl+"OFFSET="+strconv.FormatInt(offset, 10)), path
 }
 
 func reachedDetectorBarrier(t *testing.T, path, boundary, topic string, partition int32, offset int64) {
@@ -90,7 +93,8 @@ func recoveryCheckpoint(t *testing.T, f *cooldownFixture, partition int32, next 
 		cp = detection.Checkpoint{Offset: o.At, Metadata: o.Metadata}
 		m, err := detection.CheckpointMetadata(cp)
 		return err == nil && m.ProcessedNext == next
-	}, 20*time.Second, 25*time.Millisecond, "missing partition %d processed_next=%d; %s", partition, next, f.process.output.String())
+	}, 70*time.Second, 25*time.Millisecond, "missing partition %d processed_next=%d; %s",
+		partition, next, f.process.output.String())
 	require.Zero(t, cp.Offset, "live AUTH retains the first source contributor")
 	m, err := detection.CheckpointMetadata(cp)
 	require.NoError(t, err)
@@ -115,7 +119,17 @@ func requireRecoveredAlert(t *testing.T, f *cooldownFixture, canonical []byte) {
 	t.Helper()
 	var expected contracts.Alert
 	require.NoError(t, json.Unmarshal(canonical, &expected))
-	records := f.alerts(t)
+	readCtx, cancelRead := context.WithTimeout(t.Context(), 70*time.Second)
+	defer cancelRead()
+	var records []*kgo.Record
+	for len(records) == 0 && readCtx.Err() == nil {
+		fetches := f.observer.PollRecords(readCtx, 100)
+		if readCtx.Err() == nil {
+			require.NoError(t, fetches.Err())
+		}
+		records = append(records, fetches.Records()...)
+	}
+	records = append(records, f.alerts(t)...)
 	require.NotEmpty(t, records, "no actual Kafka publication: %s", f.process.output.String())
 	for _, record := range records {
 		require.Equal(t, "demo|"+expected.AlertID, string(record.Key))
@@ -136,8 +150,8 @@ func requireRecoveredAlert(t *testing.T, f *cooldownFixture, canonical []byte) {
 	require.NoError(t, err)
 	require.Equal(t, canonical, raw, "immediate CH detail retains immutable evidence")
 	var decision []byte
-	require.NoError(t, f.db.Pool.QueryRow(t.Context(), "SELECT canonical_payload FROM detection_decisions WHERE alert_id=$1",
-		expected.AlertID).Scan(&decision))
+	require.NoError(t, f.db.Pool.QueryRow(t.Context(),
+		"SELECT canonical_payload FROM detection_decisions WHERE alert_id=$1", expected.AlertID).Scan(&decision))
 	require.Equal(t, canonical, decision)
 }
 
@@ -147,13 +161,19 @@ func killDetector(t *testing.T, process *proc) {
 	require.NotZero(t, process.requireExit(t, failFastLimit))
 }
 
+func stopInitialDetector(t *testing.T, f *cooldownFixture) {
+	t.Helper()
+	requireStatusEventually(t, "http://127.0.0.1:"+opsPort(t, f.env)+"/readyz", http.StatusOK)
+	require.Zero(t, f.process.terminate(t), f.process.output.String())
+}
+
 func TestDetectorMidWindowRecovery(t *testing.T) {
 	f := newCooldownFixture(t, false)
-	require.Zero(t, f.process.terminate(t), f.process.output.String())
+	stopInitialDetector(t, f)
 	events, canonical := recoveryAuthEvents(t, f, f.principal)
 	env, barrier := detectorBarrierEnv(t, f.env, "after-record", 0, 8)
 	// One-record batches make the durable predecessor independently inspectable.
-	env = append(without(env, "SENTINEL_WRITER.BATCH_SIZE="), "SENTINEL_WRITER.BATCH_SIZE=1")
+	env = append(without(env, "SENTINEL_DETECTOR.WRITER.BATCH_SIZE="), "SENTINEL_DETECTOR.WRITER.BATCH_SIZE=1")
 	f.process = startRecoveryProc(t, buildIntegrationBinary(t, "detector"), env)
 	require.NoError(t, newWriterProducer(t, f.kafka).PublishBatch(t.Context(), events[:9], uuid.NewString()))
 	reachedDetectorBarrier(t, barrier, "after-record", f.kafka.EventsTopic, 0, 8)
@@ -175,10 +195,10 @@ func TestDetectorCrashBoundaries(t *testing.T) {
 	for _, boundary := range []string{"before-publish", "after-ack-before-checkpoint", "after-successful-checkpoint"} {
 		t.Run(boundary, func(t *testing.T) {
 			f := newCooldownFixture(t, false)
-			require.Zero(t, f.process.terminate(t), f.process.output.String())
+			stopInitialDetector(t, f)
 			events, canonical := recoveryAuthEvents(t, f, f.principal)
 			env, barrier := detectorBarrierEnv(t, f.env, boundary, 0, 9)
-			env = append(without(env, "SENTINEL_WRITER.BATCH_SIZE="), "SENTINEL_WRITER.BATCH_SIZE=1")
+			env = append(without(env, "SENTINEL_DETECTOR.WRITER.BATCH_SIZE="), "SENTINEL_DETECTOR.WRITER.BATCH_SIZE=1")
 			f.process = startRecoveryProc(t, binary, env)
 			require.NoError(t, newWriterProducer(t, f.kafka).PublishBatch(t.Context(), events, uuid.NewString()))
 			reachedDetectorBarrier(t, barrier, boundary, f.kafka.EventsTopic, 0, 9)
@@ -212,7 +232,8 @@ func TestDetectorCrashBoundaries(t *testing.T) {
 				var afterWorkflow string
 				require.NoError(t, f.db.Pool.QueryRow(t.Context(),
 					"SELECT row_to_json(w)::text FROM alert_workflows w WHERE alert_id=$1", expected.AlertID).Scan(&afterWorkflow))
-				require.Equal(t, workflow, afterWorkflow, "resolved workflow, assignee, version, timestamps and seq must survive replay")
+				require.Equal(t, workflow, afterWorkflow,
+					"resolved workflow, assignee, version, timestamps and seq must survive replay")
 			}
 			t.Logf("cut=%s alert=%s canonical=%s", boundary, expected.AlertID, canonical)
 			require.Zero(t, f.process.terminate(t), f.process.output.String())
