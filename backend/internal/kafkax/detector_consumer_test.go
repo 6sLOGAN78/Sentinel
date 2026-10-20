@@ -167,8 +167,15 @@ func TestDetectorCooperativeOffsetFetch(t *testing.T) {
 	for _, missingNew := range []bool{false, true} {
 		t.Run(fmt.Sprintf("missing new pending=%t", missingNew), func(t *testing.T) {
 			client := detectorHistoryClient(t)
-			rules := &detection.Rules{SchemaVersion: 1}
+			rules := &detection.Rules{SchemaVersion: 1, Rules: []detection.Rule{
+				{ID: "AUTH_BRUTE_FORCE", Version: 1, Window: 5 * time.Minute},
+				{ID: "PORT_SCAN", Version: 1, Window: time.Minute},
+				{ID: "REQUEST_FLOOD", Version: 1, Window: time.Minute},
+				{ID: "DENY_SPIKE", Version: 1, Window: 2 * time.Minute},
+			}}
 			checkpoint, err := detection.NewPartitionState(rules).Checkpoint()
+			require.NoError(t, err)
+			_, err = detection.CheckpointMetadata(checkpoint)
 			require.NoError(t, err)
 			retained := detection.TopicPartition{Topic: "events", Partition: 0}
 			added := detection.TopicPartition{Topic: "events", Partition: 1}
@@ -207,7 +214,6 @@ func TestDetectorCooperativeOffsetFetch(t *testing.T) {
 			}})
 			after := c.Assignments()
 			require.Equal(t, before[retained], after[retained], "retained state/token/current owner must not be restored again")
-			require.Equal(t, int64(12), after[added].HistoryStart, "actual broker history validation completed")
 			if missingNew {
 				require.ErrorContains(t, err, "restore response incomplete")
 				require.ErrorIs(t, fatal, err)
@@ -216,6 +222,7 @@ func TestDetectorCooperativeOffsetFetch(t *testing.T) {
 				require.ErrorIs(t, ctx.Err(), context.Canceled)
 				return
 			}
+			require.Equal(t, int64(12), after[added].HistoryStart, "actual broker history validation completed")
 			require.NoError(t, err, "cooperative fetch response legitimately omits the retained completed partition")
 			require.NoError(t, fatal)
 			require.False(t, after[added].RestorePending)
@@ -223,6 +230,44 @@ func TestDetectorCooperativeOffsetFetch(t *testing.T) {
 			require.Nil(t, after[added].Checkpoint, "validated absent broker offset remains a legitimate new group")
 			require.Equal(t, before[added].Token, after[added].Token)
 			require.True(t, c.ReadinessSnapshot().Observed)
+		})
+	}
+}
+
+func TestDetectorCooperativeFetchValidation(t *testing.T) {
+	for _, scenario := range []string{"duplicate", "foreign partition", "foreign topic", "retained", "partition error"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			c := &DetectorConsumer{client: commitDriver{}, cancel: cancel,
+				settings: config.WriterConfig{OperationTimeout: time.Second},
+				assignments: map[detection.TopicPartition]DetectorAssignment{
+					{Topic: "events", Partition: 0}: {Token: 7, HistoryStart: 7},
+					{Topic: "events", Partition: 1}: {Token: 8, RestorePending: true},
+				}}
+			before := c.Assignments()
+			partitions := []kmsg.OffsetFetchResponseTopicPartition{{Partition: 1, Offset: -1}}
+			extra := kmsg.OffsetFetchResponseTopicPartition{Partition: 1, Offset: -1}
+			topic := "events"
+			switch scenario {
+			case "foreign partition":
+				extra.Partition = 2
+			case "foreign topic":
+				topic = "foreign"
+			case "retained":
+				extra.Partition = 0
+			case "partition error":
+				extra.ErrorCode = 29
+			}
+			response := &kmsg.OffsetFetchResponse{Topics: []kmsg.OffsetFetchResponseTopic{
+				{Topic: "events", Partitions: partitions},
+				{Topic: topic, Partitions: []kmsg.OffsetFetchResponseTopicPartition{extra}},
+			}}
+			err := c.fetched(ctx, detectorHistoryClient(t), response)
+			require.Error(t, err)
+			require.ErrorIs(t, ctx.Err(), context.Canceled)
+			require.Equal(t, before, c.Assignments(),
+				"invalid response must not partially restore any pending or retained state")
 		})
 	}
 }
@@ -268,44 +313,50 @@ func serveDetectorHistory(conn net.Conn) error {
 		if err := request.ReadFrom(raw[header:]); err != nil {
 			return err
 		}
-		var response kmsg.Response
-		switch req := request.(type) {
-		case *kmsg.ApiVersionsRequest:
-			response = &kmsg.ApiVersionsResponse{ApiKeys: []kmsg.ApiVersionsResponseApiKey{
-				{ApiKey: 2, MaxVersion: 1}, {ApiKey: 3}, {ApiKey: 18},
-			}}
-		case *kmsg.MetadataRequest:
-			topic := "events"
-			response = &kmsg.MetadataResponse{Brokers: []kmsg.MetadataResponseBroker{{NodeID: 1, Host: "history", Port: 9092}},
-				Topics: []kmsg.MetadataResponseTopic{{Topic: &topic, Partitions: []kmsg.MetadataResponseTopicPartition{
-					{Partition: 0, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
-					{Partition: 1, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
-					{Partition: 2, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
-				}}}}
-		case *kmsg.ListOffsetsRequest:
-			listed := &kmsg.ListOffsetsResponse{}
-			for _, topic := range req.Topics {
-				out := kmsg.ListOffsetsResponseTopic{Topic: topic.Topic}
-				for _, partition := range topic.Partitions {
-					offset := int64(12)
-					if partition.Timestamp == -1 {
-						offset = 23
-					}
-					out.Partitions = append(out.Partitions, kmsg.ListOffsetsResponseTopicPartition{
-						Partition: partition.Partition, Offset: offset, OldStyleOffsets: []int64{offset}})
-				}
-				listed.Topics = append(listed.Topics, out)
-			}
-			response = listed
-		default:
-			return fmt.Errorf("unexpected fixture request %T", request)
+		response, err := detectorHistoryResponse(request)
+		if err != nil {
+			return err
 		}
 		response.SetVersion(request.GetVersion())
 		wire := response.AppendTo(append([]byte(nil), raw[4:8]...))
 		binary.BigEndian.PutUint32(size[:], uint32(len(wire)))
-		if _, err := conn.Write(append(size[:], wire...)); err != nil {
+		if _, err = conn.Write(append(size[:], wire...)); err != nil {
 			return err
 		}
+	}
+}
+
+func detectorHistoryResponse(request kmsg.Request) (kmsg.Response, error) {
+	switch req := request.(type) {
+	case *kmsg.ApiVersionsRequest:
+		return &kmsg.ApiVersionsResponse{ApiKeys: []kmsg.ApiVersionsResponseApiKey{
+			{ApiKey: 2, MaxVersion: 1}, {ApiKey: 3}, {ApiKey: 18},
+		}}, nil
+	case *kmsg.MetadataRequest:
+		topic := "events"
+		return &kmsg.MetadataResponse{Brokers: []kmsg.MetadataResponseBroker{{NodeID: 1, Host: "history", Port: 9092}},
+			Topics: []kmsg.MetadataResponseTopic{{Topic: &topic, Partitions: []kmsg.MetadataResponseTopicPartition{
+				{Partition: 0, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
+				{Partition: 1, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
+				{Partition: 2, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
+			}}}}, nil
+	case *kmsg.ListOffsetsRequest:
+		listed := &kmsg.ListOffsetsResponse{}
+		for _, topic := range req.Topics {
+			out := kmsg.ListOffsetsResponseTopic{Topic: topic.Topic}
+			for _, partition := range topic.Partitions {
+				offset := int64(12)
+				if partition.Timestamp == -1 {
+					offset = 23
+				}
+				out.Partitions = append(out.Partitions, kmsg.ListOffsetsResponseTopicPartition{
+					Partition: partition.Partition, Offset: offset, OldStyleOffsets: []int64{offset}})
+			}
+			listed.Topics = append(listed.Topics, out)
+		}
+		return listed, nil
+	default:
+		return nil, fmt.Errorf("unexpected fixture request %T", request)
 	}
 }
 

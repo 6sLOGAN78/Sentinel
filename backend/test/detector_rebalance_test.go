@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -13,6 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/6sLOGAN78/sentinel/internal/contracts"
+	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
 
 func TestDetectorThirdReplicaRebalance(t *testing.T) {
@@ -56,6 +60,154 @@ func TestDetectorThirdReplicaRebalance(t *testing.T) {
 	for _, process := range []*proc{third, second, first} {
 		require.Zero(t, process.terminate(t), process.output.String())
 	}
+}
+
+func TestDetectorCooperativeAcquisition(t *testing.T) {
+	f := newCooldownFixture(t, false)
+	stopInitialDetector(t, f)
+	topic := "detector-acquisition-" + uuid.NewString()
+	response, err := f.admin.CreateTopics(t.Context(), 12, 1, nil, topic)
+	require.NoError(t, err)
+	require.NoError(t, response[topic].Err)
+	f.kafka.EventsTopic = topic
+	f.env = append(without(f.env, "SENTINEL_KAFKA.EVENTS_TOPIC="), "SENTINEL_KAFKA.EVENTS_TOPIC="+topic)
+	binary := buildIntegrationBinary(t, "detector")
+	first, firstDir := observedDetector(t, binary, f.env)
+	second, secondDir := observedDetector(t, binary, f.env)
+	f.process = first
+	require.Eventually(t, func() bool {
+		group, describeErr := recoveryGroup(t, f)
+		return describeErr == nil && group.Err == nil && len(group.Members) == 2
+	}, 15*time.Second, 25*time.Millisecond)
+	producer, err := kgo.NewClient(kgo.SeedBrokers(kafkaCfg.Brokers), kgo.RecordPartitioner(kgo.ManualPartitioner()))
+	require.NoError(t, err)
+	t.Cleanup(producer.Close)
+	canonical, tenth := seedTransferPartitions(t, f, producer)
+	oldOwners := incorporatedOwners(t, f, []string{firstDir, secondDir})
+	retained := make(map[int32]detectorObservation)
+	for _, observation := range detectorObservations(t, firstDir) {
+		if observation.Boundary == "committed" && observationAtNine(observation) &&
+			oldOwners[observation.Partition] == observation.Member {
+			retained[observation.Partition] = observation
+		}
+	}
+	require.NotEmpty(t, retained, "survivor must retain incorporated state while acquiring additions")
+	require.Less(t, len(retained), 12)
+	require.Zero(t, second.terminate(t), second.output.String())
+	moved := acquiredTarget(t, f, firstDir, oldOwners, retained)
+	requireStatusEventually(t, "http://127.0.0.1:"+opsPort(t, first.cmd.Env)+"/readyz", http.StatusOK)
+	require.NotEqual(t, oldOwners[moved.Partition], moved.Member)
+	before := recoveryCheckpoint(t, f, moved.Partition, 9)
+	require.Equal(t, before, *moved.Checkpoint)
+	require.NoError(t, producer.ProduceSync(t.Context(), tenth[moved.Partition]).FirstErr())
+	recoveryCheckpoint(t, f, moved.Partition, 10)
+	requireRecoveredAlert(t, f, canonical[moved.Partition])
+	for partition, previous := range retained {
+		retainedBefore := recoveryCheckpoint(t, f, partition, 9)
+		require.Equal(t, *previous.Checkpoint, retainedBefore)
+		require.NoError(t, producer.ProduceSync(t.Context(), tenth[partition]).FirstErr())
+		recoveryCheckpoint(t, f, partition, 10)
+		requireRetainedAcquisitionAlert(t, f, canonical[partition])
+		break // One actual retained live window plus the acquired live window.
+	}
+	t.Logf("cooperative 2->1 target=%d oldOwner=%s survivor=%s generation=%d retained=%d restored=%+v",
+		moved.Partition, oldOwners[moved.Partition], moved.Member, moved.Generation, len(retained), *moved.Checkpoint)
+	require.Zero(t, first.terminate(t), first.output.String())
+}
+
+func requireRetainedAcquisitionAlert(t *testing.T, f *cooldownFixture, canonical []byte) {
+	t.Helper()
+	var expected contracts.Alert
+	require.NoError(t, json.Unmarshal(canonical, &expected))
+	records := f.alerts(t)
+	require.NotEmpty(t, records, "retained window must detect event ten, not restart its count")
+	for _, record := range records {
+		require.Equal(t, "demo|"+expected.AlertID, string(record.Key))
+		require.Equal(t, canonical, record.Value)
+	}
+	require.Eventually(t, func() bool {
+		var count int
+		return f.db.Pool.QueryRow(t.Context(), "SELECT count(*) FROM alert_workflows WHERE alert_id=$1", expected.AlertID).
+			Scan(&count) == nil && count == 1
+	}, 10*time.Second, 25*time.Millisecond)
+	store := storageclickhouse.NewAlertStore(f.ch)
+	count, err := store.CountUnique(t.Context(), "demo", time.Time{})
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), count, "one immutable acquired identity and one immutable retained identity")
+	stored, err := store.Get(t.Context(), "demo", expected.AlertID)
+	require.NoError(t, err)
+	raw, err := json.Marshal(stored)
+	require.NoError(t, err)
+	require.Equal(t, canonical, raw)
+	var decision []byte
+	require.NoError(t, f.db.Pool.QueryRow(t.Context(),
+		"SELECT canonical_payload FROM detection_decisions WHERE alert_id=$1", expected.AlertID).Scan(&decision))
+	require.Equal(t, canonical, decision)
+}
+
+func acquiredTarget(t *testing.T, f *cooldownFixture, dir string,
+	oldOwners map[int32]string, retained map[int32]detectorObservation) detectorObservation {
+	t.Helper()
+	var moved detectorObservation
+	require.Eventually(t, func() bool {
+		group, err := recoveryGroup(t, f)
+		if err != nil || group.Err != nil || len(group.Members) != 1 {
+			return false
+		}
+		observations := detectorObservations(t, dir)
+		for _, observation := range observations {
+			if observation.Boundary == "restored" && observationAtNine(observation) &&
+				observation.Member != oldOwners[observation.Partition] && oldOwners[observation.Partition] != "" &&
+				groupOwns(group, observation.Member, f.kafka.EventsTopic, observation.Partition) &&
+				observedTransition(t, []string{dir}, "committed", observation.Partition, observation.Member, observation.Token) &&
+				retainedNineCurrent(t, f, observations, retained, observation.Generation) {
+				moved = observation
+				return true
+			}
+		}
+		return false
+	}, 25*time.Second, 25*time.Millisecond,
+		"survivor failed to retain completed partitions and restore acquired additions")
+	return moved
+}
+
+func retainedNineCurrent(t *testing.T, f *cooldownFixture, observations []detectorObservation,
+	retained map[int32]detectorObservation, generation int32) bool {
+	t.Helper()
+	for partition, previous := range retained {
+		assigned := false
+		for _, current := range observations {
+			if current.Partition != partition || current.Generation != generation {
+				continue
+			}
+			if current.Token != previous.Token || current.Member != previous.Member || current.Boundary == "restored" {
+				return false
+			}
+			if observationAtNine(current) && *current.Checkpoint == *previous.Checkpoint {
+				assigned = assigned || current.Boundary == "assigned"
+			}
+		}
+		if !assigned || !retainedFenceCurrent(t, f, previous, generation) {
+			return false
+		}
+	}
+	return true
+}
+
+func retainedFenceCurrent(t *testing.T, f *cooldownFixture, previous detectorObservation, generation int32) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	var member string
+	var actualGeneration int32
+	var token uint64
+	var offset, ordinal int64
+	err := f.db.Pool.QueryRow(ctx, `SELECT member_id,generation,assignment_token,frontier_offset,frontier_ordinal
+		FROM detection_partition_fences WHERE group_id=$1 AND topic=$2 AND partition_id=$3`,
+		f.kafka.DetectorGroup, f.kafka.EventsTopic, previous.Partition).
+		Scan(&member, &actualGeneration, &token, &offset, &ordinal)
+	return err == nil && member == previous.Member && actualGeneration == generation && token == previous.Token &&
+		offset == -1 && ordinal == -1
 }
 
 func observedTransition(t *testing.T, dirs []string, boundary string,

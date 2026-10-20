@@ -264,15 +264,15 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 		return c.fail(err)
 	}
 	expected := c.Assignments()
+	if err = validatePendingFetch(partitions, expected); err != nil {
+		return c.fail(err)
+	}
 	checkCtx, cancel := context.WithTimeout(ctx, c.settings.OperationTimeout)
 	defer cancel()
 	admin := kadm.NewClient(client)
 	topics := make([]string, 0, len(partitions))
 	for _, t := range partitions {
 		topics = append(topics, t.Topic)
-	}
-	if len(topics) == 0 && len(c.Assignments()) != 0 {
-		return c.fail(errors.New("detector offset response incomplete"))
 	}
 	if len(topics) == 0 {
 		return c.finishOffsetFetch(checkCtx, client, expected)
@@ -285,25 +285,39 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 	if err != nil {
 		return c.fail(errors.New("detector history end unavailable"))
 	}
-	seen := make(map[detection.TopicPartition]bool)
 	for _, topic := range partitions {
 		for _, p := range topic.Partitions {
 			tp := detection.TopicPartition{Topic: topic.Topic, Partition: p.Partition}
-			if p.ErrorCode != 0 || seen[tp] {
-				return c.fail(errors.New("detector partition offset fetch failed"))
-			}
-			seen[tp] = true
 			if err = c.restorePartition(tp, p, starts, ends); err != nil {
 				return c.fail(err)
 			}
 		}
 	}
-	for tp := range c.Assignments() {
-		if !seen[tp] {
-			return c.fail(errors.New("detector restore response incomplete"))
+	return c.finishOffsetFetch(checkCtx, client, expected)
+}
+
+// Cooperative offset fetches contain additions only. Validate the complete
+// captured pending set before mutating any assignment; retained state is not a
+// requested checkpoint and must never be overwritten by this response.
+func validatePendingFetch(partitions []kmsg.OffsetFetchResponseTopic,
+	expected map[detection.TopicPartition]DetectorAssignment) error {
+	seen := make(map[detection.TopicPartition]bool)
+	for _, topic := range partitions {
+		for _, p := range topic.Partitions {
+			tp := detection.TopicPartition{Topic: topic.Topic, Partition: p.Partition}
+			assignment, owned := expected[tp]
+			if p.ErrorCode != 0 || seen[tp] || !owned || !assignment.RestorePending {
+				return errors.New("detector unexpected or failed partition offset fetch")
+			}
+			seen[tp] = true
 		}
 	}
-	return c.finishOffsetFetch(checkCtx, client, expected)
+	for tp, assignment := range expected {
+		if assignment.RestorePending && !seen[tp] {
+			return errors.New("detector restore response incomplete")
+		}
+	}
+	return nil
 }
 
 func (c *DetectorConsumer) finishOffsetFetch(ctx context.Context, client *kgo.Client,
@@ -331,7 +345,11 @@ func (c *DetectorConsumer) completeOffsetFetch(expected map[detection.TopicParti
 			return errors.New("detector ownership changed during offset fetch")
 		}
 	}
-	for tp, assignment := range c.assignments {
+	for tp, previous := range expected {
+		if !previous.RestorePending {
+			continue
+		}
+		assignment := c.assignments[tp]
 		assignment.RestorePending = false
 		c.assignments[tp] = assignment
 	}
