@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -33,6 +34,10 @@ func NewAlertStore(pool *pgxpool.Pool, timeout time.Duration) *AlertStore {
 
 // BeginLocked acquires a transaction-scoped per-ID lock before any CH effect.
 func (s *AlertStore) BeginLocked(ctx context.Context, id string) (pgx.Tx, error) {
+	lifetime, err := alertTransactionLifetime(ctx)
+	if err != nil {
+		return nil, err
+	}
 	beginCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 	tx, err := s.pool.Begin(beginCtx)
@@ -41,8 +46,8 @@ func (s *AlertStore) BeginLocked(ctx context.Context, id string) (pgx.Tx, error)
 	}
 	limit := fmt.Sprintf("%dms", max(int64(1), s.timeout.Milliseconds()))
 	if _, err = tx.Exec(beginCtx, `SELECT set_config('lock_timeout',$1,true),
-		set_config('statement_timeout',$1,true),set_config('idle_in_transaction_session_timeout',$1,true),
-		set_config('transaction_timeout',$1,true)`, limit); err != nil {
+		set_config('statement_timeout',$1,true),set_config('idle_in_transaction_session_timeout',$2,true),
+		set_config('transaction_timeout',$2,true)`, limit, lifetime); err != nil {
 		rollback(tx)
 		return nil, err
 	}
@@ -55,6 +60,23 @@ func (s *AlertStore) BeginLocked(ctx context.Context, id string) (pgx.Tx, error)
 		return nil, err
 	}
 	return tx, nil
+}
+
+// Compute before BEGIN, so acquisition/setup cannot shorten the server lease
+// below the caller's full operation deadline plus independent rollback reserve.
+// Cancellation does not release this lock: the writer rolls back only after its
+// synchronous CH operation returns, including an uncertain acknowledgement.
+func alertTransactionLifetime(ctx context.Context) (string, error) {
+	deadline, bounded := ctx.Deadline()
+	remaining := time.Until(deadline)
+	// PostgreSQL integer timeout settings are milliseconds. Check before adding
+	// cleanup and rounding up; neither an overflow nor zero may disable a lease.
+	maximum := time.Duration(math.MaxInt32) * time.Millisecond
+	if ctx.Err() != nil || !bounded || remaining <= 0 || remaining > maximum-rollbackTimeout {
+		return "", errors.New("alert transaction requires a live bounded operation deadline")
+	}
+	lifetime := (remaining + rollbackTimeout + time.Millisecond - 1) / time.Millisecond
+	return fmt.Sprintf("%dms", lifetime), nil
 }
 
 // Find reads the authoritative winner inside its already locked transaction.

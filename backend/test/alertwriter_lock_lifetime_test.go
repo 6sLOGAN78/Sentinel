@@ -11,6 +11,7 @@ import (
 
 	driverclickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -27,12 +28,38 @@ func TestAlertWriterLockLifetime(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 	store := storagepostgres.NewAlertStore(db.Pool, 10*time.Second)
+	t.Run("requires live finite caller budget", func(t *testing.T) {
+		canceled, cancel := context.WithTimeout(t.Context(), time.Second)
+		cancel()
+		expired, cancelExpired := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+		defer cancelExpired()
+		overflow, cancelOverflow := context.WithTimeout(t.Context(), time.Duration(1<<31)*time.Millisecond)
+		defer cancelOverflow()
+		for _, invalid := range []context.Context{context.Background(), canceled, expired, overflow} {
+			tx, beginErr := store.BeginLocked(invalid, uuid.NewString())
+			if tx != nil {
+				rollbackLifetimeTx(tx)
+			}
+			require.ErrorContains(t, beginErr, "live bounded operation deadline")
+		}
+	})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	id := uuid.NewString()
 	holder, err := store.BeginLocked(ctx, id)
 	require.NoError(t, err)
-	defer func() { _ = holder.Rollback(context.Background()) }()
+	defer rollbackLifetimeTx(holder)
+	var statement, lock, transaction, idle float64
+	require.NoError(t, holder.QueryRow(ctx, `SELECT
+		EXTRACT(EPOCH FROM current_setting('statement_timeout')::interval),
+		EXTRACT(EPOCH FROM current_setting('lock_timeout')::interval),
+		EXTRACT(EPOCH FROM current_setting('transaction_timeout')::interval),
+		EXTRACT(EPOCH FROM current_setting('idle_in_transaction_session_timeout')::interval)`).
+		Scan(&statement, &lock, &transaction, &idle))
+	require.InDelta(t, 5.0, statement, 0.001)
+	require.InDelta(t, 5.0, lock, 0.001)
+	require.InDelta(t, 11.0, transaction, 0.1)
+	require.InDelta(t, transaction, idle, 0.001)
 	// Model sequential bounded native work still in flight after PG's old
 	// five-second limit. The competing lock operation is itself bounded.
 	require.NoError(t, lockLifetimeDelay(ctx, 6*time.Second))
@@ -40,11 +67,17 @@ func TestAlertWriterLockLifetime(t *testing.T) {
 	defer cancelContender()
 	contender, lockErr := store.BeginLocked(contenderCtx, id)
 	if contender != nil {
-		_ = contender.Rollback(context.Background())
+		rollbackLifetimeTx(contender)
 	}
 	require.Error(t, lockErr, "PG must not release the winner lock while bounded CH work can still acknowledge")
 	_, err = holder.Exec(ctx, "SELECT 1")
 	require.NoError(t, err, "whole transaction and idle lifetimes must cover the caller's critical section")
+}
+
+func rollbackLifetimeTx(tx pgx.Tx) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = tx.Rollback(ctx)
 }
 
 // Native stores do every read/write. The controlled delays reproduce two
@@ -115,7 +148,7 @@ func (c *singleAlertInput) CommitRecords(context.Context, ...*kgo.Record) error 
 func (*singleAlertInput) AllowRebalance() {}
 
 func startLockLifetimeWriter(t *testing.T, f *alertReplayFixture, alert *contracts.Alert,
-	detections alertwriter.DetectionStore) (<-chan error, *singleAlertInput) {
+	detections alertwriter.DetectionStore, workflow ...alertwriter.WorkflowStore) (<-chan error, *singleAlertInput) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	t.Cleanup(cancel)
@@ -125,7 +158,10 @@ func startLockLifetimeWriter(t *testing.T, f *alertReplayFixture, alert *contrac
 		Key: []byte(alert.TenantID + "|" + alert.AlertID), Value: raw}}
 	settings := f.settings
 	settings.OperationTimeout, settings.ShutdownTimeout = 10*time.Second, 20*time.Second
-	store := storagepostgres.NewAlertStore(f.db.Pool, settings.OperationTimeout)
+	var store alertwriter.WorkflowStore = storagepostgres.NewAlertStore(f.db.Pool, settings.OperationTimeout)
+	if len(workflow) != 0 {
+		store = workflow[0]
+	}
 	done := make(chan error, 1)
 	go func() {
 		done <- alertwriter.New(input, detections, store, settings, zerolog.Nop()).WithQuarantine(f.dlq).Run(ctx)
@@ -133,10 +169,107 @@ func startLockLifetimeWriter(t *testing.T, f *alertReplayFixture, alert *contrac
 	return done, input
 }
 
+// Hold the local synchronous return after a real native acknowledgement. This
+// checks cancellation ordering only, not remote abort after a disconnected send.
+type returningDetectionStore struct {
+	*storageclickhouse.AlertStore
+	acknowledged chan struct{}
+	release      chan struct{}
+	returned     chan struct{}
+}
+
+func (s *returningDetectionStore) InsertBatch(ctx context.Context, alerts []*contracts.Alert) error {
+	if err := s.AlertStore.InsertBatch(ctx, alerts); err != nil {
+		return err
+	}
+	close(s.acknowledged)
+	select {
+	case <-s.release:
+	case <-time.After(time.Second):
+	}
+	close(s.returned)
+	return nil
+}
+
+type observedWorkflowStore struct {
+	*storagepostgres.AlertStore
+	returned <-chan struct{}
+	rollback chan bool
+}
+
+func (s *observedWorkflowStore) BeginLocked(ctx context.Context, id string) (pgx.Tx, error) {
+	tx, err := s.AlertStore.BeginLocked(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &observedLifetimeTx{Tx: tx, returned: s.returned, rollback: s.rollback}, nil
+}
+
+type observedLifetimeTx struct {
+	pgx.Tx
+	returned <-chan struct{}
+	rollback chan bool
+}
+
+func (tx *observedLifetimeTx) Rollback(ctx context.Context) error {
+	returned := false
+	select {
+	case <-tx.returned:
+		returned = true
+	default:
+	}
+	tx.rollback <- returned
+	return tx.Tx.Rollback(ctx)
+}
+
+func TestAlertWriterCancellationLockLifetime(t *testing.T) {
+	f := newAlertReplayFixture(t)
+	detections := &returningDetectionStore{AlertStore: storageclickhouse.NewAlertStore(f.ch),
+		acknowledged: make(chan struct{}), release: make(chan struct{}), returned: make(chan struct{})}
+	store := storagepostgres.NewAlertStore(f.db.Pool, 10*time.Second)
+	observed := &observedWorkflowStore{AlertStore: store, returned: detections.returned, rollback: make(chan bool, 1)}
+	done, input := startLockLifetimeWriter(t, f, f.alert, detections, observed)
+	select {
+	case <-detections.acknowledged:
+	case <-time.After(5 * time.Second):
+		t.Fatal("native acknowledgement was not observed")
+	}
+	input.cancel()
+	contenderCtx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	contender, err := store.BeginLocked(contenderCtx, f.alert.AlertID)
+	if contender != nil {
+		rollbackLifetimeTx(contender)
+	}
+	require.Error(t, err, "cancellation must not release a lock while the native call has not returned")
+	select {
+	case <-observed.rollback:
+		t.Fatal("rollback began before the synchronous native return")
+	default:
+	}
+	close(detections.release)
+	require.NoError(t, <-done)
+	require.True(t, <-observed.rollback, "independent rollback must follow local return/ack boundary")
+	require.False(t, input.committed, "canceled persistence must not commit its source")
+	ctx, cancelAfter := context.WithTimeout(t.Context(), time.Second)
+	defer cancelAfter()
+	after, err := store.BeginLocked(ctx, f.alert.AlertID)
+	require.NoError(t, err, "independent cleanup must eventually release the lock")
+	rollbackLifetimeTx(after)
+	stored, err := detections.Get(ctx, f.alert.TenantID, f.alert.AlertID)
+	require.NoError(t, err)
+	require.Equal(t, f.alert.Summary, stored.Summary, "the acknowledged native effect really exists")
+	var workflows int
+	require.NoError(t, f.db.Pool.QueryRow(ctx,
+		"SELECT count(*) FROM alert_workflows WHERE alert_id=$1", f.alert.AlertID).Scan(&workflows))
+	require.Zero(t, workflows)
+}
+
 func TestAlertWriterDifferingPayloadLockLifetime(t *testing.T) {
 	f := newAlertReplayFixture(t)
 	store := storageclickhouse.NewAlertStore(f.ch)
-	delayed := &delayedWinnerStore{AlertStore: store, insertEntered: make(chan struct{}), acknowledged: make(chan struct{})}
+	delayed := &delayedWinnerStore{AlertStore: store,
+		insertEntered: make(chan struct{}), acknowledged: make(chan struct{})}
 	first, firstInput := startLockLifetimeWriter(t, f, f.alert, delayed)
 	select {
 	case <-delayed.insertEntered:
@@ -161,7 +294,8 @@ func TestAlertWriterDifferingPayloadLockLifetime(t *testing.T) {
 	require.NoError(t, err)
 	wantFingerprint, err := alertwriter.ImmutableFingerprint(f.alert)
 	require.NoError(t, err)
-	require.Equal(t, []string{string(wantRaw)}, payloads, "every physical CH representation must belong to the lock holder")
+	require.Equal(t, []string{string(wantRaw)}, payloads,
+		"every physical CH representation must belong to the lock holder")
 	require.Equal(t, []string{wantFingerprint}, fingerprints)
 	require.NoError(t, firstErr)
 	require.NoError(t, secondErr)
