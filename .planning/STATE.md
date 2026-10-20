@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Static-scenario PG interference reproduced and fixture-isolated; scopedreview/acceptance reruns active
-last_updated: "2026-10-20T16:40:00Z"
+stopped_at: Fixture review/static/scenario gates passed; repaired fullintegration running
+last_updated: "2026-10-20T16:45:49Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
@@ -183,6 +183,7 @@ None yet.
 
 ### Planning Continuation
 
+- FixtureR2reviewad64731clean, noproductionchange. OriginalcombinedcausalGREEN0/43.02s/pkg39.230s. Finalpostfixtureunit/race/web6/Python121/lint/build/default+integrationvet/integrationlintbundlePASS0/47.43s. CompleteaffectedTestDetectionScenariosPASS0/282.50s(pkg279.476,family247.18,staticall4.05/liveedges237.30) withstrictverifierandcanonicalfixturesunchanged. Nowrepairedfullmake test-integ32m serialsession46545/log/tmp/sentinel-03-14-after-fixture-full-integ.log started16:45:49Z. SevenindependentPhase2selectorsstillqueued. NoSUMMARY/tracking/phasepass/pushyet. Goalverifierprepcomplete54truths/72artifactdecls(68paths)/46links/all14IDs, finalheld. Historical46wholematrixPASSbeforefixture-onlydelta plusaffectedselectorPASSafterdelta areseparateproof, notinventedfreshwhole46run.
 - Fullsuitefailurecausereproduced withnativeConcurrentReplay→staticall inonepackage: sharedPGunexpectedworkflowonsame192.0.2.10source matches strictworkflowquery, whileCH/topicswereprivate; actualREDexit1/84.37sameworkflow_payload. PermanentregressionREDb336634 preservespreexistingworkflowfullrowandfailsintendedstage (112.80s;initialKafkaCOORDINATORsetupfailureexplicitlynotRED). Fixture-onlydf0bfbb givesstaticfixtureuniqueUUIDPGdatabase/allmigrations andwiresworkers/ingestkey/verifier; cleanup10sONLYownedDBafterchildrenLIFO. No runtime/golden/verifier/assertion/budgetchange. FocusedGREEN0/51.89pkg44.876static4.76; originalcombinedGREEN/fullscenario rerunsactive. IndependentonefileR2review /root/phase3_final_review writes03-REVIEW-FINAL-FIXTURE-R2.md; rootwillnotduplicatescope/livework. New32mfullaggregatehelduntilreviewclean. Original46matrixpassedbeforethisfixture-onlydelta; doNOTclaimitranagain. Conditionalpushstillhelduntilalllocalsucceed.
 - Latestresume recovered actual fullmake test-integ EXIT2/1824.17s/package1822.485s, below32mcap, not timeout. Onlynamedfailure foundininitiallogscan: TestDetectionScenarios/isolated-static-all60.83s (family300.79s), despiteexactfamilymatrixpassing. Noactiveproducer/testprocessremains. Originalexecutor hitusageerrorwhilefullprocesscompleted; followedup todiagnosepreservedstage-specificlog andproposecausalrepair, no blindrerun/deadlinerelaxation/reset. RootholdsconditionalpushbecausealllocalcheckspreconditionFAILED. Goalverifierprepalsohitusageerrorandwasresumed, finalverdictheld.46matrix/seed/reviews/securityremainrecordedpassesbutnotfullacceptance. SevenPhase2groups/finalunitlint/03-14SUMMARY/tracking/CI/goalcompletionstillpending.
 - Exact final46-family matrix completed exit0/2545.66s, all46topfamilies nonemptyPASS. Scenariofamily229.18s inclpreservedliveedges; finalpreservedrepeat583.03s/package599.067s verifies exacttwoMakecommands withfirstmanifestpreserved. Documented make seed thenpassed0/43.83s:1000sent/accepted/visible,3APIchecks,tenant-isolation1,retries0. Actualfullmake test-integ32m nowruns serially in executor session12713/log/tmp/sentinel-03-14-final-full-integ.log, started15:42:15Z. SevenindependentretainedPhase2selectors and finalunit/lintaftertest-only26f3f8a remainqueued. No fullsuite/hostedCI/03-14completion yet. Root onlypushes afteralllocalchecks asapproved;45mCIjobremainsunchanged despite42m26smeasuredexactmatrix and mustbeobserved honestly.
