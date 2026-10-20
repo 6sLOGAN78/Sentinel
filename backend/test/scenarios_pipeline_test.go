@@ -26,6 +26,8 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/database"
+	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
+	storagepostgres "github.com/6sLOGAN78/sentinel/internal/storage/postgres"
 )
 
 // TestDetectionScenarios executes the exact private operator path against the
@@ -44,7 +46,12 @@ func TestDetectionScenarios(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rawFixture, &fixtures))
 	for _, fixture := range fixtures.Cases {
 		if fixture.Name == "all" || fixture.Name == "boundary" || fixture.Name == "lateness" {
-			t.Run("isolated-static-"+fixture.Name, func(t *testing.T) { runStaticScenario(ctx, t, root, fixture) })
+			t.Run("isolated-static-"+fixture.Name, func(t *testing.T) {
+				if fixture.Name == "all" {
+					defer seedStaticWorkflowCollision(t)()
+				}
+				runStaticScenario(ctx, t, root, fixture)
+			})
 		}
 	}
 	t.Run("preserved-live-edges", func(t *testing.T) {
@@ -70,6 +77,21 @@ type scenarioCase struct {
 	Expected []struct {
 		Payload contracts.Alert `json:"payload"`
 	} `json:"expected_alerts"`
+}
+
+// A shared-PG workflow with a scenario source but a different identity must not
+// contaminate its exact-set verifier or be deleted to make that verifier pass.
+func seedStaticWorkflowCollision(t *testing.T) func() {
+	t.Helper()
+	f := newAlertReplayFixture(t)
+	f.publish(t, f.alert)
+	detections := storageclickhouse.NewAlertStore(f.ch)
+	workflows := storagepostgres.NewAlertStore(f.db.Pool, f.settings.OperationTimeout)
+	require.NoError(t, f.run(t, detections, workflows))
+	before := f.workflow(t)
+	return func() {
+		require.JSONEq(t, before, f.workflow(t), "static acceptance must preserve the complete unrelated workflow")
+	}
 }
 
 func scenarioEnvironment(t *testing.T, service string, settings map[string]string) []string {
