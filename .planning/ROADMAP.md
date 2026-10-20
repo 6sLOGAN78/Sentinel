@@ -227,7 +227,7 @@ Plans:
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
-- [ ] 03-14-PLAN.md — Guard every Phase 3 acceptance family in CI and document verified operator/replay behavior
+- [x] 03-14-PLAN.md — Guard every Phase 3 acceptance family in CI and document verified operator/replay behavior
 
 **Research**: Complete targeted amendment (03-RESEARCH.md, 2026-10-17). USER option1 actual cross-window cooldown is planned through durable PG decisions/cursors/ownership fences, format2 state-pin metadata, aligned config handover and private watermark-aware live scheduling. Decision-frontier restore-behind proof is assigned; independent revision checking and all execution results remain pending. Original checker report is historical; both ADRs precede rule code in03-01-T01.
 
@@ -292,7 +292,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
-| 3. Detection & Alert Pipeline | 20/21 | In Progress|  |
+| 3. Detection & Alert Pipeline | 21/21 | Verification / hosted CI pending | - |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |

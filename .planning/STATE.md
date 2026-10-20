@@ -2,241 +2,115 @@
 gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
-status: executing
-stopped_at: Persistent fullintegration PASS recovered; seven retainedPhase2selectors and final03-14 closeout resumed
-last_updated: "2026-10-20T23:16:29Z"
-last_activity: 2026-10-20
+status: verifying
+stopped_at: All21Phase3plans locally complete; root push/hosted CI and final goal verification pending
+last_updated: "2026-10-20T23:30:00Z"
+last_activity: 2026-10-21
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 56
-  completed_plans: 55
-  percent: 98
+  completed_plans: 56
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-20)
-
-**Core value:** The end-to-end flow (generator → ingest → Kafka → detector → ClickHouse/PostgreSQL → API → live dashboard) works and is provably correct under failure, with deterministic, deduplicated alerts and no loss of acknowledged events.
-**Current focus:** Phase 3 — Detection & Alert Pipeline
+See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
+Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
+Current focus: Phase3 — Detection & Alert Pipeline. Stop before Phase4.
 
 ## Current Position
 
-Phase: 3 (Detection & Alert Pipeline) — EXECUTING
-Plan: 21 of 21
-Status: Reservation whole-fix R2 clean — 03-14 acceptance and phase closeout incomplete
-Last activity: 2026-10-20
+Phase: 3 of6 — VERIFYING, not complete.
+Plan: 21 of21 locally complete; all21numbered SUMMARY files committed.
+Status: Local execution/review/security gates pass; hostedCI and goal verdict pending.
+Progress: 56/56 currently planned tasks/plans complete (13Phase1+22Phase2+21Phase3).
+This is plan completion, not100%of the six-phase product or Phase3 acceptance.
 
-Progress: [██████████] 98%
+## Latest Verified Evidence
 
-## Performance Metrics
+- 03-14SUMMARY54b09e4 committed before SDK tracking; full read/self-check verified.
+- Exact46family matrix PASS0/2545.66s before fixture-only isolation; affected complete
+  scenario family afterdf0bfbb PASS0/282.50s; unchanged45family proof retained honestly.
+- Repaired full integration persistent log: package1845.917s,elapsed1849.21s,
+  EXIT0/RETURNED_EXIT0,2026-10-20T17:16:37Z–17:47:26Z.
+- All7retained Phase2CIexact groups PASS0/321.83s; persistent per-group logs.
+- Final855cb60static bundle PASS0/20.59s: fullunit/race,web6,Python121,lint,
+  build/default+integrationvet/integrationlint/default3workerhookexclusion/webformat+build.
+- All44script cases PASS0/77.382s using locked generator interpreter; exactCI10casesPASS.
+- Pinned8.30.1full-history gitleaks PASS0/zero after one precise historical prose
+  fingerprint exception; independently reviewed, no broad exclusion/new risk acceptance.
+- Root afterSUMMARY independently reran bounded make test and backend build: both0.
+- Local seed1000accepted/visible, API/tenant checks and exacttwoMake preserved-repeat
+  commands PASS. Actualrepeat583.03s, current/prior evidence preserved.
+- Source-review aggregate03-REVIEW.md clean across130unique changed artifacts.
+  Whole-fixR2 closesCR-02-R1; finaltest/fixture/CI repair reviews clean.
+- Registered03-SECURITY.md:78closed (57mitigate/21originalSCaccept),0open/unregistered;
+  committed03-14summary and final local evidence reconciled, no certification claim.
 
-**Velocity:**
+## Current Work / Next Action
 
-- Total plans completed: 55 (13 Phase 1 + 22 Phase 2 + 20 Phase 3)
-- Timing averages/totals: pending.
+1. Root commits final tracking/audit checkpoint, checks candidate full-history scan,
+   verifies fast-forward and pushes committed main to origin under explicit user approval.
+2. Monitor NEW hostedCI on repaired candidate; oldrun39457945227/head19db519 failed.
+   Do not reuse earlier remote success or infer newCIgreen from localpasses.
+3. On actualCIgreen, give /root/phase3_final_verification explicit final release with
+   run/head/evidence and committed03-14SUMMARY. Its static preparation is complete:
+   54truths+5roadmapSC,72artifact declarations/68paths,46links,all14IDs accounted for.
+4. Only after required verified verdict passes: reconcile requirements/roadmap/project,
+   run phase.complete with actual21numbered plans, avoid known SDK counting defects.
+5. Stop beforePhase4; no further implementation or milestone advancement authorized.
 
-**Per Plan:**
+## Binding Decisions / Limits
 
-| Plan | Duration | Tasks | Files |
-|------|----------|-------|-------|
-| Phase 02 P00 | 16 min | 3 tasks | 6 files |
-| Phase 02 P01 | 16 min | 3 tasks | 11 files |
-| Phase 02 P10 | 15 min | 3 tasks | 7 files |
-| Phase 02 P02 | 5 h | 2 tasks | 14 files |
-| Phase 02 P03 | 8 min | 3 tasks | 10 files |
-| Phase 02 P04 | 9 min | 3 tasks | 13 files |
-| Phase 02 P05 | 2 min | 3 tasks | 7 files |
-| Phase 02 P06 | 7 min | 3 tasks | 12 files |
-| Phase 02 P07 | 22 min | 3 tasks | 10 files |
-| Phase 02 P08 | 14min | 3 tasks | 12 files |
-| Phase 02 P09 | 26h 33m | 3 tasks | 15 files |
-| Phase 02 P11 | 20 min | 3 tasks | 9 files |
-| Phase 02 P12 | 8 min | 3 tasks | 10 files |
-| Phase 02 P13 | 22 min | 3 tasks | 7 files |
-| Phase 03 P01 | 9 min | 2 tasks | 8 files |
-| Phase 03 P06 | ~10 min | 2 tasks | 5 files |
-| Phase 03 P02 | 7 min | 2 tasks | 7 files |
-| Phase 03 P15 | 3 min | 2 tasks | 5 files |
-| Phase 03 P16 | 5 min | 2 tasks | 5 files |
-| Phase 03 P03 | 6 min | 2 tasks | 7 files |
-| Phase 03 P17 | ~6 min | 2 tasks | 6 files |
-| Phase 03 P18 | ~9 min | 3 tasks | 12 files |
-| Phase 03 P04 | 5 min | 2 tasks | 7 files |
-| Phase 03 P10 | 13 min | 3 tasks | 7 files |
-| Phase 03 P05 | 6 min | 2 tasks | 7 files |
-| Phase 03 P19 | ~13 min timed | 2 tasks | 11 files |
-| Phase 03 P07 | 5h 15m elapsed incl quota pause | 3 tasks | 7 files |
-| Phase 03 P08 | 31 min | 3 tasks | 15 files |
-| Phase 03 P09 | 85 min elapsed incl quota pause | 3 tasks | 14 files |
-| Phase 03 P21 | approximately 18 min | 2 tasks | 7 files |
-| Phase 03 P11 | 15 min | 3 tasks | 10 files |
-| Phase 3 P12 | approximately 4h 10m elapsed incl interruption | 3 tasks | 8 files |
-| Phase 3 P20 | approximately 18 min | 3 tasks | 5 files |
-| Phase 3 P13 | approximately 10h elapsed incl interruptions and recovery | 3 tasks | 16 files |
+- User approved automaticPhase3completion and specialist agents; no routine approvals.
+- User explicitly approved push/hostedCI AFTERalllocalchecks. Root alone handles remote.
+- Sharedmain/no-worktrees. Preserve userdirty.planning/config.json/.serena unstaged.
+- No volume reset, topic deletion, OPTIMIZE, history rewrite, broadsecret-scan bypass,
+  speculative deadline increase, golden regeneration or invented performance/CI proof.
+- At-least-once with immediate visible dedupe, not exactly-once physical insertion.
+- Actual cross-window cooldown chosen by user; durablePGdecision before publication.
+- Permanent globalPGreservation before anyCHinsert; saved canonical bytes, then
+  post-CHinsert-only workflow. No claimTTL/GC/lease transfer or mixed old/new protocol.
+- Old91rows fully reconciled before006/newwriter startup; later recovery163workflows,
+  72reservations/163physical IDs reconciled header authority (not a claimed full rehash).
+- Stopped-owner config handover only; changed-config rolling handover unsupported.
+- Sequence allocation is not commit order; Phase4 must provide gap-safe backfill.
+- Accounted state bounds are not RSS guarantees; operational ledgers grow without GC.
 
-**By Phase:** Phase 1: 13 plans; Phase 2: 22 plans; Phase 3: 20 plans (timing aggregates pending).
+## Historical Failures / Provenance
 
-## Accumulated Context
+Historical reports/log summaries remain unchanged in phase artifacts and git.
+- Earlier620.17s10maggregate exhausted before scenarios; measured finite32m adopted.
+- Older974.03saggregate static/repeat failures lack original diagnostics; not retroexplained.
+- Later1824.17saggregate static workflow_payload failure causally reproduced with
+  sharedPGsource collision; REDb336634/privatePGdf0bfbbGREEN; strict verifier unchanged.
+- Post-fix46545runtime interrupted/loglost: UNKNOWN, not counted as pass or failure.
+  Replacement persistent full PASS above supplies actual proof.
+- Exact native previsibility pause unproved; real nativeACKloss(aftervisibility),
+  controlled delayed-visibility model and process-crash tests are distinct.
+- ReservationTask3 genuineRED lacks separatetests-onlyREDcommit; history not reconstructed.
+- Existingfixture process cleanupKill is not observed join; R2documents PG18bounded wait
+  and no demonstrated current bug. Earlier moved-target timeout remains unexplained.
+- CIoldpython missinghttpx repaired with lockedvenv; scanner historical prose exception
+  independently classified. Invalidsetup/umask failures are not mislabeled behaviorRED.
 
-### Decisions
+## Tracking Notes
 
-- Roadmap follows spec §14 order, 6 phases. Optional Phase 7 (Aegis, ML) deferred to v2.
-- DEP-03 (hardened CI) assigned to Phase 6. Phase 1 CI skeleton covered by FND-02/FND-05.
-- UI-05 (System page) placed in Phase 5 because it needs lag and health metrics from OBS-02.
-- GEN-01/GEN-03 in Phase 2, GEN-02 in Phase 3, OBS-01 in Phase 2.
-- SSE fan-out via Postgres LISTEN/NOTIFY with `seq` backfill. Postgres is the alert list index (ADRs in Phase 3/4).
-- Epoch-aligned tumbling windows with state-pin replay recovery (ADR first in Phase 3).
-- [Phase 02]: 02-00: Optional BindAddress accepts IPv4/IPv6 literals; unset retains all-interface container binding.
-- [Phase 02]: 02-00: Request logs use paths only; error and panic logs exclude raw messages, headers and bodies.
-- [Phase 02]: 02-01: Credential cache stores copied positive records only, verifies every presented secret and expires within 30 seconds.
-- [Phase 02]: 02-01: Demo credentials are atomically written at mode 0600 beneath a mode 0700 directory and symlink files are refused.
-- [Phase 02]: Retries preserve one serialized body per batch and stop after five attempts or 120 cumulative wait seconds. — This bounds remote backpressure while honoring positive Retry-After delays in full.
-- [Phase 02]: A 202 is accepted only when counts and ordered event IDs exactly match; credentials come only from environment or private files. — This prevents false success accounting and keeps secrets out of process arguments and artifacts.
-- [Phase 02]: 02-02: Reserve bounded request capacity before authentication and return 503 immediately when saturated.
-- [Phase 02]: 02-02: Kafka 202 responses require synchronous all-ISR acknowledgements for every ordered record.
-- [Phase 02]: Resolve every reliably parsed tenant before field validation so cross-tenant writes return 403 without publishing. — Preserves tenant authorization precedence while keeping invalid batches atomic.
-- [Phase 02]: Strip client received_at through duplicate-safe normalization and apply one server UTC-millisecond timestamp. — Keeps received_at server-owned without weakening duplicate-key rejection.
-- [Phase 02]: Error details are optional and capped at 50, preserving ordinary three-field envelopes. — Provides indexed diagnostics while bounding response work and maintaining wire compatibility.
-- [Phase 02]: Store physical event duplicates but collapse every user-visible lookup and count immediately by event_id. — Keeps retries safe without depending on asynchronous ClickHouse merges.
-- [Phase 02]: Bind authenticated tenant and event ID as native ClickHouse named parameters. — Enforces tenant isolation and prevents untrusted values from entering SQL text.
-- [Phase 02]: Conflicting payloads sharing an event ID have one visible identity but no immutable content winner. — Matches ReplacingMergeTree behavior across merges and equal-millisecond ties.
-- [Phase 02]: 02-05: Keep the seven-day migration default immutable and apply configured retention after every successful migration run.
-- [Phase 02]: 02-05: Accept only validated 1..3650-day retention and a validated database identifier in fixed TTL DDL.
-- [Phase 02]: 02-05: Do not automatically MATERIALIZE TTL; existing-part deletion remains asynchronous.
-- [Phase 02]: 02-06: Disable Kafka auto-commit and commit only partition-contiguous offsets after ClickHouse insertion succeeds.
-- [Phase 02]: 02-06: Validate replayed events relative to occurred_at while requiring nonzero occurred_at and received_at.
-- [Phase 02]: 02-06: Preserve first worker failure through bounded lifecycle cleanup and cap consumer fetch/rebalance resources.
-- [Phase 02]: 02-07: Insert valid events before publishing poison records so ClickHouse failures never create DLQ traffic.
-- [Phase 02]: 02-07: Commit each Kafka partition only through its own contiguous durable effect prefix.
-- [Phase 02]: 02-07: Bound DLQ records to the value cap plus an 8 KiB metadata allowance and reject source dlq.* overrides.
-- [Phase 02]: 02-08: Keep fail-open handling inside each limiter so every admitted Redis bypass increments exactly one process-local atomic counter and emits one sanitized warning.
-- [Phase 02]: 02-08: Apply one 250 ms limiter deadline on top of bounded Redis dial/read/write timeouts and retries while preserving shared AUTH/TLS client construction.
-- [Phase 02]: 02-09: Expose dependency state only on a separately bound ops listener with loopback defaults and sanitized states.
-- [Phase 02]: 02-09: Register ops shutdown first and draining last so LIFO cleanup advertises not-ready before stopping work and closes ops last.
-- [Phase 02]: 02-09: Use real protocol checks for Kafka, PostgreSQL, Redis, and ClickHouse rather than TCP reachability.
-- [Phase 02]: 02-11: Compile failure controls only with the integration tag; default builds contain unconditional no-ops and read no failure environment settings.
-- [Phase 02]: 02-11: Use private once-only file barriers to prove exact durable boundaries before pausing or killing test-owned resources.
-- [Phase 02]: 02-11: Treat Kafka topic-leader metadata, not broker-only Ping, as producer readiness after an outage.
-- [Phase 02]: 02-12: Build all service binaries once into a digest-pinned distroless image and select each process with a Compose entrypoint.
-- [Phase 02]: 02-12: Restrict the static health probe to literal loopback HTTP URLs so container probes cannot become an SSRF primitive.
-- [Phase 02]: 02-12: Complete topics and migrations before starting the three Phase 2 application services.
-- [Phase 02]: Verify the exact current-run manifest ID set under tenant and run-start bounds so historical rows cannot satisfy seed acceptance.
-- [Phase 02]: Keep demo keys in private local files and pass secrets only through child environment, never argv or logs.
-- [Phase 02]: Guard each Phase 2 integration behavior family independently in CI and preserve go-list failures before policy matching.
-- [Phase 03]: 03-01: AUTH retains fired-window pins and commits format-2 metadata only after acknowledged alert publication.
-- [Phase 03]: 03-01: Final cross-window cooldown depends on the later PostgreSQL decision ledger; the initial AUTH slice does not certify DET-08.
-- [Phase 03]: 03-06: Live scenarios require a private caught-up schedule; plan 03-21 owns snapshot acquisition and clock waiting.
-- [Phase 03]: 03-06: All-mode drains share the latest relevant window end plus 30 seconds to avoid partition-watermark regression.
-- [Phase 03]: 03-02: Per-alert transaction locks cover PG winner and retained CH orphan preflight through CH acknowledgement and insert-only PG commit.
-- [Phase 03]: 03-02: Preserve the complete first-pipe AUTH principal suffix and keep native store helpers cohesive until immediate 03-17 extraction.
-- [Phase 03]: 03-15: Preserve existing AUTH and strict loader behavior with passing characterization guards before source-only extraction.
-- [Phase 03]: 03-16: Extract existing Kafka adapters through explicit transport interfaces and detector compatibility wrappers; detection retains checkpoint/topic type ownership.
-- [Phase 03]: 03-03: Rule-qualified shared windows count exact distinct ports separately from accepted unique-event evidence; fired SCAN state retains replay pins until event-time expiry.
-- [Phase 03]: 03-03: Enable startup SCAN only alongside implemented AUTH; configured 30s cooldown is retained while durable cross-window suppression remains the 03-19 obligation.
-- [Phase 03]: 03-17: Extract native stores without changing global alert-ID preflight lock, immutable winner, CH acknowledgement, insert-only PG commit or durable source-prefix order.
-- [Phase 03]: 03-17: Share immutable fingerprint and conflict identity through the immutable storage adapter; storage accepts contracts.Alert and never imports the writer.
-- [Phase 03]: 03-18: Require real PG at startup and before nonempty source processing; inject bounded pool/budgets explicitly, with durable cooldown transactions reserved for 19.
-- [Phase 03]: 03-18: Profile Compose workers and gate detector on existing pinned tern migrations; retain dev-up activation for 13.
-- [Phase 03]: 03-04: Enable exactly all four implemented built-ins; FLOOD/DENY reuse shared windows with source-only DedupeKey components.
-- [Phase 03]: 03-04: Cross-window alert suppression remains the durable 03-19 obligation; configured durations and one-per-window firing are not that proof.
-- [Phase 03]: 03-10: Preserve proven global-ID lock/native-store guards and skip workflow INSERT entirely for an equal authoritative winner.
-- [Phase 03]: 03-10: Inject the existing bounded DLQ publisher for permanent identity/content conflicts; infrastructure failures remain uncommitted and never poison.
-- [Phase 03]: 03-05: ApplySource receives actual Kafka topic/partition/offset; legacy Apply is alert-only without fabricated candidate source.
-- [Phase 03]: 03-05: Fixed rule ordinals AUTH=0, SCAN=1, FLOOD=2, DENY=3 govern evaluation and future decision frontiers independently of YAML sorting.
-- [Phase 03]: 03-05: Candidate fingerprints clear workflow status and detected_at using immutable storage policy; full canonical open payload is retained separately.
-- [Phase 03]: 03-19: Every runtime candidate commits immutable PG allow/suppress before allowed stored-byte publication; suppressions have no Kafka/CH/workflow effect.
-- [Phase 03]: 03-19: Lock current partition fence, read globally unique alert_id before any cursor access, then atomically persist a missing ordered decision/cursor/frontier.
-- [Phase 03]: 03-19: Derive incarnation from configured group, exclude it from fence primary key and reject generation/member/token rollback.
-- [Phase 03]: 03-19: Checkpoint last fully effected decision and verify immutable PG row plus a fence at least that far on restore; legitimate PG ahead is allowed.
-- [Phase 03-07]: Require complete format-2 recovery fields, explicit nullable clocks, unique JSON members and non-null gates/frontiers before restoring source state.
-- [Phase 03-07]: Adopt checkpoints only after complete successful synchronous callback and unchanged assignment tokens; record verified retained history start.
-- [Phase 03-07]: Replay uses uninterrupted canonical bytes and exact independent shared fixture IDs; SCAN summary mismatch was unresolved at that point and is now resolved by 03-13 full canonical proof.
-- [Phase 03-08]: Persist actual prior rule definitions and exact acknowledged drain in existing PG partition fences; changed-rule versions are checked against saved semantics.
-- [Phase 03-08]: Changed-config startup requires zero old members before joining and sole membership afterward; unchanged-config replicas retain normal multi-member operation.
-- [Phase 03-08]: Persist both handover checkpoints and all four aligned effective gates so PG-before-Kafka failures resume the same authorization without resetting group/fence identity.
-- [Phase 03-08]: Idle checkpoint restoration defers only demonstrably changed assignment snapshots; nonempty source processing retains strict current-owner fencing.
-- [Phase 03-09]: Share one process budget across partitions and reserve complete prospective changes before recoverable mutation; 64 MiB state and 256 MiB resources are documented accounting limits, not RSS guarantees.
-- [Phase 03-09]: Readiness compares current callback-observed assignment against completed restoration; genuine joined-empty replicas are valid only after their assignment callback.
-- [Phase 03-09]: Retained cooperative assignments keep lifetime tokens and reducer state while current-generation PG registration verifies the fully effected frontier before changing owner; revoked or newly acquired assignments restore fully.
-- [Phase 3]: 03-21: Retained-history scans reconstruct maxima only; nonempty live admission still requires compatible format-2 processed_next equal to stable source end.
-- [Phase 3]: 03-21: Use sealed_through plus lateness, explicit empty partitions, actual keyed partition mapping and private schema-2 live schedules; fixed fixtures remain unchanged.
-- [Phase 3]: 03-21: Reserve unchanged per-batch sender budgets and enforce one original 15-minute deadline with interruptible waits and a POSIX main-thread timer.
-- [Phase 3]: 03-11: Acknowledge poison source bookkeeping only after durable DLQ; preserve clocks, windows, evidence and strict replay pins.
-- [Phase 3]: 03-11: Share failed-attempt/backoff allowance and effects deadline across each owned batch; reserve independent final commit time under the original parent.
-- [Phase 3]: 03-12: Observe exact incorporated-record, acknowledged-publication and successful-checkpoint boundaries through private integration-only files; production hooks read no environment.
-- [Phase 3]: 03-12: Prove actual seeded target oldOwner != newOwner and restored broker metadata before event ten; live replay pin is not consumed-next.
-- [Phase 3]: 03-12: New assignment lifetimes remain pending until complete authoritative offset/history/config validation; stale token/member/generation completion cannot unlock processing, readiness or commit.
-- [Phase 3]: 03-20: Observe decision Commit inside the transaction and post-commit only after independent rollback cleanup and connection release; failed observation authorizes no publication and requires immutable replay.
-- [Phase 3]: 03-20: Preserve immutable decision-frontier and actual Kafka owner fences; missing, older or mismatched PG recovery fails with unchanged Kafka metadata, never treating processed_next as decision evidence.
-- [Phase 3]: 03-13: Preserve independent canonical SCAN fixture wording; align only runtime summary and the two old expectations, never regenerate goldens.
-- [Phase 3]: 03-13: Fix fresh documentation IPv6 mapping before actual partition snapshot and schedule; reuse pinned generator functions and canonical identity.
-- [Phase 3]: 03-13: Require current Kafka range plus exact CH/PG payloads and original UTC-ms received-at bound for current events; preserve full prior historical rows and workflow seq.
-- [Phase 3]: 03-13: Use bounded typed full-row event batches with existing received_at ASC earliest-row policy; retain10s query/60s reconciliation/original15m budgets.
-
-### Pending Todos
-
-None yet.
-
-### Planning Continuation
-
-- Read-onlyGitHubcheckfoundorigin/mainalready19db519andolderhosted39457945227failed(createdOct20T16:29:50Z),notcurrentcandidate. Oldintegrationworkflow_payloadmatchesnowrepairedfixture; additionalpythonjobusesplainpythonoutsidegeneratorlockedhttpxenv(twoModuleNotFoundError),secretsjobhistoricalgeneric-api-keyfindingin03-08PLAN171497e5line148requiresclassification. Freshworker/root/phase3_ci_repairs ownsCI/guardregression+narrowgitleaksclassification; neverprintsecret, noignoreifgenuine/no broadbypass. Executorstillserial7Phase2groupssession66651 afterpreservedstartup0/48.69s, holdsSUMMARYuntilCIrepairreview/localgatesgreen. Verifierprepreadonly/finalheld. ROOTnopushincurrentresume,alllocalsmustpassbeforeauthorizedpush;oldremoteadvanceattributedonlyobservedstate.
-- Latestresume(Oct21IST) recoveredactualpersistentfullPASS: .local/phase3-acceptance/full-integ-restored.log start17:16:37Z,make test-integ pkg1845.917s,elapsed1849.21EXIT0/RETURNED_EXIT0,end17:47:26ZOct20UTC. Rootreadrawlog; noactiveprocesses/oldagents. DoNOTrepeatcompletedfullsuite. Fresh /root/phase3_final_closeout gsd-executor ownsremaining7CIexactPhase2selectors(prepared.local/phase3-acceptance/phase2-selectors.sh),freshfinalstaticsasneeded,truthfuldocs/evidenceand03-14SUMMARYcommitbeforetracking. Roothandlesreview/rootgate/push/CI/goalverificationafterlocalsgreen. Earlierlost46545remainsUNKNOWN,firstfailingaggregate/historyretained. Userconfig/.serenaonlyoriginaldirtpreserved. Conditionalremoteauthorizationvalidbutnopushyet;stopbeforePhase4.
-- Freshrecoveryexecutor /root/phase3_14_restore completedexact5appstop0,infraup0/7.54s,read-onlycurrentauthoritymap0/0.57s(163workflows,72reservations,163physical/globalCHIDs,noauthority/fingerprintmismatch;NOclaimhistoricalfullrehash),migratenoop0/0.42s,dev-up0/45.07s,check-stack0/15.42s. No data/volumesremoved,no runtimechange. Repeatedinterruptedexactmake test-integ32m active82980, privatepersistentlog.local/phase3-acceptance/full-integ-restored.log. SevenPhase2CIexactselectorspreparedafterfullreturns. Lost46545resultstaysUNKNOWN. Localgatesmustallpassbeforeauthorizedrootpush/CI. Rootnotcompetingwithliveproducer; executorupdatesactualexitsdurably.
-- Userresume17:12:34Z foundallprioragentsabsent, noactiveprocesses and/tmp/sentinel-03-14-after-fixture-full-integ.logmissing. Repairedfullsession46545lastobserved~17:06active20m50; finalexitUNKNOWN/INTERRUPTED, notsuccessorfailureinferred. Composeall4depsstopped~17:07; applicationsCreatedorrestartloop, migrationexit2/topic-init137. Existingnamedvolumesmustpreserve. Fresh /root/phase3_14_restore gsd-executor explicitlyowns safeexistingstackrecovery thenrepeatonlyinterruptedfullgate32m+remaining7Phase2selectors/finaldocs/SUMMARYbeforetracking. Newlonglogsprivateworkspaceignored.local/phase3-acceptanceinsteadvolatile/tmp. Completed46matrix/seed/repairedscenario/staticreviews remainindurableartifacts andarenotredispatchedblind. Runtimeunchanged;nohostedpushuntilalllocalpass. Priorverifierprepcanberestoredfromrootcontext; no03-VERIFICATIONexists. StopbeforePhase4.
-- FixtureR2reviewad64731clean, noproductionchange. OriginalcombinedcausalGREEN0/43.02s/pkg39.230s. Finalpostfixtureunit/race/web6/Python121/lint/build/default+integrationvet/integrationlintbundlePASS0/47.43s. CompleteaffectedTestDetectionScenariosPASS0/282.50s(pkg279.476,family247.18,staticall4.05/liveedges237.30) withstrictverifierandcanonicalfixturesunchanged. Nowrepairedfullmake test-integ32m serialsession46545/log/tmp/sentinel-03-14-after-fixture-full-integ.log started16:45:49Z. SevenindependentPhase2selectorsstillqueued. NoSUMMARY/tracking/phasepass/pushyet. Goalverifierprepcomplete54truths/72artifactdecls(68paths)/46links/all14IDs, finalheld. Historical46wholematrixPASSbeforefixture-onlydelta plusaffectedselectorPASSafterdelta areseparateproof, notinventedfreshwhole46run.
-- Fullsuitefailurecausereproduced withnativeConcurrentReplay→staticall inonepackage: sharedPGunexpectedworkflowonsame192.0.2.10source matches strictworkflowquery, whileCH/topicswereprivate; actualREDexit1/84.37sameworkflow_payload. PermanentregressionREDb336634 preservespreexistingworkflowfullrowandfailsintendedstage (112.80s;initialKafkaCOORDINATORsetupfailureexplicitlynotRED). Fixture-onlydf0bfbb givesstaticfixtureuniqueUUIDPGdatabase/allmigrations andwiresworkers/ingestkey/verifier; cleanup10sONLYownedDBafterchildrenLIFO. No runtime/golden/verifier/assertion/budgetchange. FocusedGREEN0/51.89pkg44.876static4.76; originalcombinedGREEN/fullscenario rerunsactive. IndependentonefileR2review /root/phase3_final_review writes03-REVIEW-FINAL-FIXTURE-R2.md; rootwillnotduplicatescope/livework. New32mfullaggregatehelduntilreviewclean. Original46matrixpassedbeforethisfixture-onlydelta; doNOTclaimitranagain. Conditionalpushstillhelduntilalllocalsucceed.
-- Latestresume recovered actual fullmake test-integ EXIT2/1824.17s/package1822.485s, below32mcap, not timeout. Onlynamedfailure foundininitiallogscan: TestDetectionScenarios/isolated-static-all60.83s (family300.79s), despiteexactfamilymatrixpassing. Noactiveproducer/testprocessremains. Originalexecutor hitusageerrorwhilefullprocesscompleted; followedup todiagnosepreservedstage-specificlog andproposecausalrepair, no blindrerun/deadlinerelaxation/reset. RootholdsconditionalpushbecausealllocalcheckspreconditionFAILED. Goalverifierprepalsohitusageerrorandwasresumed, finalverdictheld.46matrix/seed/reviews/securityremainrecordedpassesbutnotfullacceptance. SevenPhase2groups/finalunitlint/03-14SUMMARY/tracking/CI/goalcompletionstillpending.
-- Exact final46-family matrix completed exit0/2545.66s, all46topfamilies nonemptyPASS. Scenariofamily229.18s inclpreservedliveedges; finalpreservedrepeat583.03s/package599.067s verifies exacttwoMakecommands withfirstmanifestpreserved. Documented make seed thenpassed0/43.83s:1000sent/accepted/visible,3APIchecks,tenant-isolation1,retries0. Actualfullmake test-integ32m nowruns serially in executor session12713/log/tmp/sentinel-03-14-final-full-integ.log, started15:42:15Z. SevenindependentretainedPhase2selectors and finalunit/lintaftertest-only26f3f8a remainqueued. No fullsuite/hostedCI/03-14completion yet. Root onlypushes afteralllocalchecks asapproved;45mCIjobremainsunchanged despite42m26smeasuredexactmatrix and mustbeobserved honestly.
-- User explicitly answered “Approve push and hosted CI after local checks pass” to the root approval question. This supersedes the earlier no-push boundary only after all required local checks pass. Root alone will push committedPhase3work to configuredGitHubmain and monitor hostedCI; executor remains local-only. User uncommittedconfig/.serena excluded. HostedCI is stillpending, no push performed yet. Actual45thfamilyTestDetectionScenarios passed229.18s inclstaticboundary/lateness/all andpreservedliveedges223.18s; finalpreservedrepeat nowrunning, fullintegrationstillqueued.
-- Independent remaining73-artifact review found one test-causality WARNING only. Root reproduced bothfalsepassmutants, strengthened2generatornegative-testfiles in26f3f8a without runtime/golden/dependency changes, observed bothmutantsfail atrealkey-loadsentinel, normal7cases/67fullfiletests andRuff/mypyPASS. Independent2fileR1clean closeswarning. Canonical03-REVIEW.md aggregates129uniquechanged artifacts and allpriorfindingsresolved.03-SECURITY.md verifies78/78registereddispositions (57mitigate/21originalSCaccept), open0/unregistered0; eventual03-14SUMMARY/finalgatesreconciliationstillpending. Exact46matrix haspassed allnewnative reservationfamilies includingactualEOF/2784byteACKloss and93.22sprocessrestart; cooldowncrashongoing, noFAILsofar. Fullmakeintegration32m/operator/repeat/Phase2regressions/rootgoalverification remainunclaimed. Executorwillrerunfullunit/lintaftertest-onlyfix. Userconfig/.serenapreserved, nohostedCI orPhase4authority.
-- Latest user resume recovered successful executor startup/check-stack sessions (dev-up0; checker0/13.32s), no abandoned active producer processes. Final implementation/wiring frozen62099b2: timeout300s make test0/10.56s (race,web6,Python121), make lint0/6.65s, boundedbuild/default+integrationvet/integrationlint/defaultthree-worker file checks0/6.11s. These are executor-returned results, not root reruns. Actual46-family script now runs serially in executor session77648/log/tmp/sentinel-03-14-final-phase3.log, followed by fullintegration/operator/Phase2regressions. Independent final remaining73-file STANDARD review /root/phase3_final_review writes03-REVIEW-FINAL-DELTA.md; completeplan-time threat auditor /root/phase3_threat_audit writes03-SECURITY.md against frozen62099b2. Root does not duplicate either source audit or compete with live runs. Historical reviews cover41productionfiles+16reservationfiles; remaining scope explicitly accounts for all other changed nonplanning artifacts. No03-14SUMMARY/tracking/phasecomplete yet.
-- Root completed preserved-stack reconciliation: all five old apps stopped, old CH server previously exited0, infrastructure-only restore healthy. Every91physical alert's canonical hash and global tenant/ID/fingerprint matches91PGworkflows, with no conflicts/orphans/missing evidence. Additive make migrate passed to006; full workflow/physical snapshot hashes unchanged and reservations0. See03-RESERVATION-ROLLOUT-CHECK.md. Explicitly released original03-14executor for new-image startup and sequential scoped/full46-family/integration/operator gates; root will not compete with live suites. Task4 fakeguardRED0d6d82d/GREEN1a637d4 passed46families; docs/evidence3b0d814/0bad200 reviewed. Final acceptance/security/goalverification/hostedCI remain pending; no phase completion.
-- Resumed automatically on user request. Root read the final 16-file whole-fix R2 report: clean, zero findings, CR-02-R1 addressed for conforming reservation writers. Native lost-ACK proof remains distinct from the controlled delayed-visibility model; exact native pre-visibility pause remains unproved. Task3 missing separate RED commit and both fixture rulings remain explicit. Original 03-14 executor continues the disjoint Task4 registry/docs/evidence subset; no final full/live gates released yet. Root is restoring only Kafka/CH/PG/Redis with all five old apps confirmed stopped, then reconciling retained physical alerts/workflows before any new writer starts. No volumes removed; no hosted CI/phase completion claimed. Phase3 remains20/21; stop before Phase4.
-- Task3 independent spec/quality review approved with no findings; complete through3a26feb with explicit missing-separateREDcommitlimit, unchanged crash-helper ruling and native/model evidence separation. Whole-fixdeepR2agent /root/reservation_whole_review_r2 nowjudges complete16backendfile repairfa33ed0..3a26feb via frozenpackage andscope03-RESERVATION-REVIEW-SCOPE.md, writingnew03-REVIEW-PRODUCTION-R2.md only. Backend frozen/rootsame-scopeworkstopped. Original03-14executor /root/execute_phase3_14 was explicitly handed disjoint Task4scripts/docs/evidence subset:7newexactfamilies→46total, actualfakeguardRED/GREEN, truthfulreservation/rolloutdocs andpersistentevidence. NoGo/full/livegates/dev-up/migrate/restart/seed untilrootR2goandold-writerdrain/outcomecheck. No03-14SUMMARY/SDKtracking/phaseclaim. Useroriginalconfig/.serenaandpendingdraftspreserved; Phase3remains20/21.
-- Task3 committed at3a26feb after actual compiled restart RED and final native/model/process acceptance, including two fresh nativeACKloss and two restart repeats. Root read full report and verified seven-file scope/diff check. Native fault produces real socketEOF after independent A physical visibility; separate PG/model schedule covers invisibleA/localerror/B/lateA, never claimed native previsibility pause. Fresh Task3 spec/quality reviewer /root/reservation_faults_review is active. Task3report admits genuine RED was not separately committed before implementation; do not reconstruct history. Broad unit/lint/build/vet/default-nohook/integration-static results passed. Existing crash-specific waitRecoveryOffset correction and physical-evidence preservation controls are recorded for review. Task3 completion/CR-02-R1 closure await independent review, then whole-fix R2 and Task4 registration/docs/full phase gates. Preserve user/03-14 dirt. Phase3 remains20/21.
-- Task 3 resume at 2026-10-20T11:28:47Z after worker usage-limit failure: no matching active test processes or final report/commits were found; uncommitted integration-only hooks/tests are preserved. Same /root/reservation_faults_t3 was followed up to recover actual results before remaining work. Recorded proof so far: real compiled restart RED22.12s and first exact native ACK-loss GREEN19.299s package, with actual socket EOF after A physical visibility, independent PG lock release/sourceAoffset0, conflicting B rejected by fresh process before A recovery. This is not exact native delayed-visibility proof or Task3completion. Test-owned SIGKILL recovery may use the existing waitRecoveryOffset helper (45s Kafka session expiry versus ordinary12s replay wait), with original production deadlines/6m cap unchanged and failure history retained. Tasks1–2 stay complete; CR-02-R1/03-14/full matrix/security/CI remain open. No renewed user approval is needed.
-- Reservation repair Tasks 1–2 are now implemented and independently task-reviewed. Task 2 RED 59cb7ac / GREEN a5a564e commits immutable PG reservation before any CH insert, reloads saved authority in the second locked phase, preserves source/workflow order and original budgets. All nine exact native families, pure/focused race, full make test, default lint and bounded build/vet have recorded passing outputs; missing post-interruption native results were rerun, not inferred. Fresh Task 2 reviewer found no Critical/Important findings; one odd/even transaction-label test-helper fragility is explicitly deferred for final review. Upstream schema-test integration lint was reproduced and repaired in cf9b879 without changing any scenarios/assertions/deadlines; original reviewer confirmed all seven findings addressed and all46 cases retained. Full integration lint now reports 0 issues, native schema and full make test pass. Root read both complete reports and verified exact VCS scopes/diff checks. Task 3 real process restart/native ACK-loss plus separate controlled delayed-visibility proof is next; no CR-02-R1 final closure or Phase 3 completion is claimed. Phase remains 20/21; existing 03-14/full matrix/security/CI gates still pending.
-- Resume after Task 2 usage-limit interruption: user explicitly continued at 2026-10-20T11:07:46Z. Same /root/reservation_protocol_t2 agent resumed; source/tests are preserved uncommitted after behavioral RED 59cb7ac, no final report or GREEN commit yet. Old session/logs are unavailable; completed outputs exist for native Reservation/Conflict/ConcurrentReplay/WorkflowReplay, full make test, bounded build/vet/default lint. Rerun only the five unreturned native families, then finish the report/owned commits and independent review. Integration lint exposed seven issues in Task 1's schema test (gocognit plus six long lines), not waived: original Task 1 implementer will repair that file after the current native loop stops, without changing semantics/assertions/deadlines. CR-02-R1 and Phase 3 closeout remain open. No new routine user approval needed.
-- Reservation repair Task 1 is complete and independently approved: tests-only compiled RED f08a060, additive immutable migration GREEN ca7a4cd. Both real fresh and version-5 upgrade paths passed (46 nested boundary/null cases), preserving resolved workflow JSON/seq and requiring no-op rerun, global uniqueness, payload limits and UPDATE/DELETE refusal. Full make test passed (Go race/web 6/Python 121); root confirmed the three-file range and diff check. Fresh spec/quality reviewer found no issues; root resolved its unchanged tenant-policy and throwaway-fixture provenance checks. Runtime writer is still unchanged, so CR-02-R1 remains open. Task 2 follows sequentially. One recorded execution ruling extends Task 2's cancellation-fixture ownership only to exclude deferred no-op cleanup after a positively committed reservation tx while retaining all assertions on the live CH-effect tx and deadlines; otherwise the old one-slot observer falsely reports early rollback and can block. Root has not edited runtime/tests. Phase 3 remains 20/21 complete.
-- Implementation-plan approval received with “okk” after the final plan-review request. Sequential specialist execution is authorized without more routine design/method approvals. Baseline timeout 300s make test passed (Go race, six web tests, 121 generator tests; some Go results cached). Created the plan-scoped SDD ledger and completed the per-task/shared-interface preflight scan with no conflicts. Preserve the user-approved shared-main/no-worktree policy and dirty CI/docs/config/.serena files. Task 1 schema/migration safety is next, followed by an independent spec/quality review before Task 2. No repair task is complete yet; Phase 3 remains 20/21. Original two scenario failures and phase-wide gates remain pending.
-- Written-design approval received with “approve” after the user asked why the reservation is needed and which option is best. Created and inline self-reviewed 03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md: four sequential tasks cover the additive immutable schema, native reservation helpers/two-phase writer ordering, real process/native ACK-loss plus controlled delayed-visibility proofs, and seven exact new acceptance families/46-family registry before return to 03-14. Preserves existing GSD specialist execution, shared branch, old proof, user data and all pending CI/docs drafts. The writing-plans skill requires user review of this implementation plan before execution; the next approval is that plan gate, not a repeat of design or execution-method choice. No runtime/schema/test changes or new test passes are claimed. CR-02-R1 and all unfinished phase gates remain open; 20/21 plan count is unchanged.
-- User approved the requested durable PostgreSQL alert reservation/migration/recovery-test expansion with “okk do it.” Wrote and self-reviewed 03-ALERT-RESERVATION-DESIGN.md against existing writer/native-store/migration contracts: committed immutable canonical-payload authority before CH; post-CH insert-only workflows; same deadlines; no automatic claim GC; additive stopped-writer rollout. The newly available architectural brainstorming skill requires user review of the written design before implementation planning, followed by plan review; no product code, migration or tests were changed in this design stage. Read-only specialist guidance establishes a feasible native ACK-loss acceptance path plus a separate deterministic delayed-visibility protocol model; no stock-server pre-visibility barrier was established, and that evidence limit remains explicit for scoped re-review. The selected GSD specialist execution method is preserved. Await review of the written design, not renewed approval of the already-approved feature scope. Phase 3 remains 20/21 complete, CR-02-R1 remains open, and prior CI/docs/guard drafts plus unrelated user edits are preserved.
-- Latest checkpoint (2026-10-20): Wave 13 gate is passed; 20/21 Phase 3 plans remain complete. Plan 03-14 Task 1 is complete, while final CI/full gates and docs verification remain incomplete; there is no 03-14 SUMMARY or phase completion. Integration lint debt was repaired at 6b1ea2a. The 32-minute full integration attempt exited 2 after 974.03s with two scenario failures, not a timeout; the subsequently permitted exact isolated-static-all rerun on cbc13f2 passed (package 47.449s, test 4.80s), but does not explain that earlier failure or prove the preserved-repeat case. The final 39-family package-and-name-scoped fake-Go guard characterization passed five tests in 108.131s; the actual whole 39-family matrix has not passed. CI/Make/docs/guard drafts remain unstaged and preserved, alongside unrelated user config/.serena data. Scoped repair evidence is committed at 17efe8c and cbc13f2. Production R1 addresses CR-01 and WR-01 and the reproduced live-caller five-second lock expiry, but leaves CR-02-R1 BLOCKER: a local CH error can precede remote insertion finality; PG rollback then releases the only winner authority. The exact delayed-remote-commit interleaving has not been executed. See 03-REVIEW-PRODUCTION-R1.md. A committed fingerprint/canonical-payload reservation before CH, or a proven sink ownership barrier, requires explicit schema/protocol design approval. No such expansion is implemented or approved; new long/live gates are held pending that decision. Preserve all previous proof and failure history; phase-wide review/security/verification and CI completion remain pending. Stop before Phase 4.
-- Plan 03-13 completed after two quota interruptions and normal preserved-stack recovery. Assertion RED 97797ef, healthy workers/canonical SCAN GREEN a8ff12e, constructor RED/GREEN 2e17dd3/184084a, exact bounded batch RED/GREEN 3ad49a6/e0f3777, current-row RED 765ecaa and final operator GREEN f686b61 are committed; verified SUMMARY 80f455c was committed immediately before serialized SDK tracking. Actual final independent preserved repeat passed 315.63s (legacy 1000 seed then two exact Make commands, same topics/groups/volumes, prior full rows/workflows retained, normal deltas 0, drained); actual fixed/default-binary and preserved live-edge selector passed 559.28s (full canonical payloads, ten alerts, expected edge delta 1). Original UTC-ms start/15-minute budget and final 60 seconds remain binding; restart/reset refuses. Initial N+1 reconciliation failure, interrupted second run, stopped-stack setup failure and pinned migration network-reset/retry are preserved in SUMMARY. Full Go race/web six/Python 121, standard lint, owned integration lint, bounded build and integration vet passed; only prior recovery_test.go:162 integration lint remains for 03-14. Twenty of twenty-one Phase 3 summaries and 55/56 overall plans are complete (98%). SDK again wrote 33% and misplaced its metric; reconciled against actual artifacts. Parent Wave 13 spotcheck/gate then 03-14 remain; global requirements/phase completion are pending. Stop before Phase 4.
-- Plan 03-20 completed: compiling callback/crash assertion RED 4219745, bounded transaction observations/frontier proof GREEN 5ffb8ca and runtime four-cut GREEN 3294fc3; verified SUMMARY dabe5a8 was committed before serialized tracking. Four independent cooldown families pass: final partition-1 four cuts preserve full canonical bytes, resolved workflow rows and post-commit checkpoint; actual third-owner moved target rejects concurrent stale identities without any PG operational mutation; real PG outage/commit-outcome replay/lock rollback and advanced-pin lost-seed restore with zero actual DLQ records pass. Pure worker/frontier/transaction race families, retained exact CrashBoundaries/ThirdReplica, full make test/race (web 6, Python 121), standard lint, bounded build and integration vet pass. Only existing recovery_test.go:162 integration-lint debt remains. Existing source/ownership/pending-fetch invariants were preserved as passing characterization. Nineteen of twenty-one Phase 3 summaries and 54/56 overall plans are complete (96% rounded). SDK again wrote 33% and misplaced the metric; tracking reconciles both against actual artifacts. Parent Wave 12 gate is next, then 03-13 actual preserved-data acceptance. Global requirements/phase completion remain pending; stop before Phase 4.
-- Plan 03-12 completed after the intentional interruption: causal fixture RED dcd085f, observer RED d832c62, private hooks GREEN 6574c22 and callback/actual-target GREEN c14ffc7; approved inherited sibling-cancellation RED/GREEN 7ae8cfe/e01326d and pending-offset-fetch RED/GREEN 8392c89/cf9367b. Verified SUMMARY 4c80754 was committed before serialized tracking. Final independent real MidWindow, all three CrashBoundaries, actual seeded ThirdReplica count=3, Checkpoint and ReadyzDependencies pass after the last source change; full make test/race (six web, 121 Python), standard lint, bounded build and integration vet pass. Only existing recovery_test.go:162 integration-lint debt remains. An earlier third-target restore timeout remains explicitly unexplained; the separately proven pending-fetch safety gap is not claimed as its confirmed cause. Newly acquired lifetimes cannot restore/process/become ready/commit before authoritative fetch/history/config completion; retained tokens and fences remain intact. Eighteen of twenty-one Phase 3 summaries and 53/56 overall plans are complete (95% rounded). SDK again wrote 33% and misplaced the metric; tracking reconciles both against actual artifacts. Parent Wave 11 gate is next, then 03-20. Global requirements and phase completion remain pending; stop before Phase 4.
-- Plan 03-11 completed: assertion RED f37731d, detector GREEN a552d03, pending-effect guard 3acb983 and shared writer retry GREEN 27c3774; verified SUMMARY 3ee9366 committed before serialized tracking. Both real worker poison/outage families and 400-record aggregate proofs pass, as do the three independent retained Phase 2 poison/DLQ/slow-rebalance families, native partial/ambiguous storage, resolved workflow replay, real detector capacity/retained-owner and AUTH regressions. Full make test/race (web 6, Python 121), standard lint, bounded build and integration vet pass; integration lint retains only recovery_test.go:162. Parent approved one reducer.go extension for bounded event-free poison acknowledgement; no synthetic event clock was introduced. Seventeen of twenty-one Phase 3 summaries and 52/56 overall plans are complete (93%); parent Wave 10 gate is next, then 03-12. SDK regenerated 33% frontmatter and misplaced the metric; tracking reconciles both to actual artifacts. Global requirement and phase-completion checkboxes remain pending; stop before Phase 4.
-- Plan 03-21 completed: compiling declaration/assertion RED ae48ca8, private snapshot/live scheduler GREEN f404916 and verified SUMMARY abdd693 committed before serialized tracking. Stable source ends plus strict current format-2 processed_next, explicit empty/idle state, sealed maximum, bounded retained-history reconstruction and actual key/partition mapping pass. Missing metadata never fabricates detector effect completion. All 22 live fake-clock/protocol/sender/deadline tests and 112 focused Python tests pass; full make test/race (121 Python, six web), standard lint, build, integration compile/vet pass. Integration-tag lint has only the existing recovery_test.go:162 debt. TestDetectionScenariosPreservedRepeat is created but unexecuted: Plan 13 supplies the private --output/--preserve-manifest operator path and actual Kafka/CH/PG/prior-row/late/drain proof; the summary records its exact contract. Sixteen of twenty-one summaries exist; parent Wave 9 gate is next, then 03-11. SDK wrote 33% into frontmatter despite counting 51/56 correctly and appended the metric after the table; closeout reconciled both to actual artifact counts. Global requirement checkboxes remain pending; stop before Phase 4.
-- Plan 03-09 completed after the quota interruption: admission RED 91fa195, shared bounds a8c9bb8, scalar refinement 6cb4f89, runtime metric 5401b1a, inherited readiness RED 5dcaed2 and current-assignment/retained-state repair 433fb4b; verified SUMMARY 5076101 was committed before tracking. Actual aggregate 10k-window/100k same-time ledger/64 MiB/4096-ID proofs, exactly one internal late count, real terminal capacity with unchanged broker metadata, restored-assignment readiness, and nine-event checkpoint before join/leave then exact ten-event evidence pass. Untouched 945c972 archive independently reproduced the inherited early-ready PG restore race. Full make test/race, standard lint, build and integration vet pass; only known recovery_test.go:162 integration lint debt remains. Fifteen of twenty-one summaries exist; 03-21 is next, and the parent Wave 9 gate follows it. No global requirements or Phase 3 completion claim.
-- Wave 8 plan 03-08 is complete: e53d4b5 assertion RED, 29289eb strict rules/PG manifest authorization, e9d124e runtime/docs, and verified SUMMARY 90f4bb3 were committed before tracking. Corrected real baseline RED and final real restart (41.180s) prove active/equal-version rejection, acknowledged drain, pre-join stopped-member admission preserving old member identity, normal unchanged two-member coexistence, the intentional 300→600 gap and exact version-2 replay. Real PG handover proves saved semantic version checks, immutable allow/suppress retention and PG-before-Kafka gate recovery. Six named unit families, six affected real integration families, full make test/race, standard lint and bounded build/integration vet pass. The parent recorded the passing Wave 8 cross-plan gate at 945c972 before dispatching 03-09. Global requirements and Phase 3 completion remain unclaimed.
-- Wave 7 plan 03-07 completed after quota interruption; proof/model/adapter commits d255ef0, 48dac29, b8351c6 and 0e93039 plus SUMMARY 47daeb5 preserve exact canonical bytes/live state across 3,410 restart cuts and 156 successive restarts. Real metadata/corruption/retention and stored-byte restart proofs passed; root recorded the passing Wave 7 cross-plan gate at 6f38f80. Shared SCAN wording and integration-lint debts remain explicit.
-- Current Phase 3 work: user requested `$gsd-plan-phase 3 --auto`, explicitly approved specialist sub-agents and the operator story, then invoked `$gsd-resume-work`. The interrupted planner was resumed and its revision saved: 21 plans / 52 tasks / 14 waves. Independent 03-PLAN-CHECK-R2.md approves all 14 requirement IDs and five criteria with zero open planning blockers/warnings; registered structure/field/shell checks also pass. Wave 1 plans 03-01/03-06 and Wave 2 plans 03-02/03-15/03-16 are implemented with committed SUMMARYs; both cross-plan gates passed. Wave 3 plans 03-03 (SCAN), 03-17 (native stores) and 03-18 (real PG dependency/fixtures) have committed proof/SUMMARY evidence. Automatic execution continues after the parent Wave 3 gate, stopping before Phase 4.
-- Waves 1–6 passed their cross-plan gates, with Wave 6 recorded at a09cc92. Plan 03-19 has committed assertion RED/GREEN (99e19cb/b385283) and verified SUMMARY (b8c7d99): real PG immutable allow/suppress decisions, monotone entity cursors and current Kafka membership fences precede stored-byte publication; populated fully effected checkpoint frontiers are verified against PG on restore. All five independent cooldown/transaction/schema families pass, including actual 299s/301s visibility in Kafka/CH/workflow, equality, immutable old replay, ownership rejection, legitimate PG ahead/restore-behind checks and real PG fence-lock failure preserving exact previous broker checkpoint metadata. Actual restart republishes identical stored bytes. Full make test/race, standard lint, build/integration vet and independent AUTH/SCAN/Volume/PG dependency/writer/workflow/readiness regressions pass. Full crash/rebalance/outage/restore-behind worker matrix remains 03-20, drained config handover remains 03-08, and existing integration lint recovery_test.go:162 unparam remains 03-14.
-- User chose option 1: actual alert-level cooldown across nearby windows, rejecting candidate-only throttling. See 03-COOLDOWN-DECISION.md and amended research: durable PG allow/suppress decisions/cursors/fences, checkpoint decision_frontier consistency, event-time expiry, unchanged canonical IDs and Kafka window replay. Initial and R1 checker failures remain preserved; their issues are resolved by R2. Planning approval is not production proof. Preserve unrelated configuration/.serena edits and existing user volumes.
-- Phase 2 closeout evidence below is historical and remains valid; it is not the current Phase 3 authorization boundary.
-
-- Final status: readiness RED 2afe6b8 / repair eb7f6e4 passed full make test, twenty ops race repetitions, lint and three real readiness/lifecycle race repetitions (138.221s). Hosted run 38974983287 passed all eight jobs and seven guarded groups at 5e6a82684019e92333c4af90eb3a46468ed9df8a; the previously failing separate readiness group passed. Phase 2 is verified complete.
-
-- At the Phase 2 closeout, authorization covered Phase 2 only. The later Phase 3 --auto request now authorizes its workflow, subject to unresolved decision and verification gates above.
-- All 22 plans (02-00..21) across 14 waves are implemented and summarized. Final verdict passed: 5/5 roadmap criteria, 14/14 requirements, 61/61 artifacts and 30/30 decisions accounted for.
-- Hosted run 38974983287 passed all eight jobs at 5e6a82684019e92333c4af90eb3a46468ed9df8a, including full integration, seven nonempty groups and Compose. See 02-CI-CLOSEOUT.md for failed attempts, repairs and final proof.
-- Independent local code review is clean and the registered threat audit has zero open threats; root explicitly reviewed the readiness delta and rechecked affected threats. Root completed final inline goal verification; the quota-limited handoff remains byte-identical in a dated snapshot.
-- Registered phase.complete 02 was run. Its zero-padded lookup left unpadded roadmap rows unchanged and added completed-plan counts twice; root reconciled actual checkboxes/progress and the 35 summaries explicitly. Its two debt warnings refer only to intentionally preserved historical PRE-GAPS/PRE-CI snapshots, not the passed canonical verification or complete UAT.
-- The old next-action suggestion to discuss Phase 3 was superseded by the user's explicit planning request; no new discuss-phase decision document was fabricated.
-
-### Blockers/Concerns
-
-- CR-02-R1 is addressed by the clean whole-fix R2 review at frozen backend3a26feb; no open production finding remains in that repair scope. Existing-data rollout reconciliation is still required with old writers stopped. Phase 2 remains complete; Phase 3 remains20/21, with03-14, prior aggregate scenario failure reconciliation, actual46-family/full matrix, final CI/docs review, security/goal verification and hosted CI pending. Current odd/even test-helper limitation was explicitly triaged a non-finding on its actual callers. Earlier transfer timeout remains unexplained despite repeated final proof; group reset is stopped maintenance and changed-config rolling handover remains unsupported.
-- The SCAN canonical fixture debt discovered by 03-07 is resolved by approved 03-13 assertion RED and one runtime summary alignment to independently committed `Distinct destination ports probed`. No golden regeneration or ID/evidence/window/version/schema changes: complete fixed canonical Go/Python and actual Kafka/CH/PG payload proof pass. Historical failed records remain preserved; see 03-13-SUMMARY.md. The full legacy seed flow is not claimed zero-late: scenario baselines follow legacy/startup, normal runs require delta 0, explicit edge requires delta 1, and in-run restart/reset refuses.
-- Phase 3 selected research policies cover tumbling-window straddle, watermark recovery and drained rule-version handover; their production proofs remain execution requirements. Dashboard login flow belongs to Phase 4.
-- The pre-Phase-1 codebase map is stale; refresh before relying on it for future planning.
+Registered state.advance-plan returned last_plan/ready_for_verification.
+state.update-progress and roadmap.update-plan-progress miscount supplemental
+03-ALERT-RESERVATION-IMPLEMENTATION-PLAN as22ndplan and wrote33%frontmatter.
+Root reconciled against actual21numbered summaries:56/56plans overall, Phase3
+locally21/21, phaseacceptance pending. 03-14metric:~25helapsed/3tasks/29files.
+Earlier per-plan metrics and decisions remain in summaries and committed STATE history.
+Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic remap.
 
 ## Session Continuity
 
-Last session: 2026-10-20T14:58:44Z
-Stopped at: Frozen62099b2 static/unit gates passed; executor runs serial46-family/full/operator acceptance. Final73-file source review and registered-threat audit active; root waits without duplicating source work/live tests. Whole-fix R2/rollout already passed. No routine approvals or completed-task repetition. 03-14/phase closeout remain incomplete; stop before Phase4.
-Resume file: .planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md
+Last session:2026-10-20T23:30:00Z.
+Resume: read this state and03-14SUMMARY; recover current hostedCI run by actualSHA.
+Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
+No unfinishedlocalproducer. Do not repeat full integration or completed plans blindly.
