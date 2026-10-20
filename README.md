@@ -5,8 +5,8 @@ durable Kafka delivery, ClickHouse storage, investigation, and alerting. The
 current stack accepts scoped event batches, evaluates four deterministic
 event-time rules, persists detections and workflow rows, and serves tenant-scoped
 event lookups. Delivery is at-least-once with immediate visible deduplication.
-Phase 3 final regression and phase-wide verification are pending; dashboard login,
-alert query/triage APIs and SSE remain Phase 4 work.
+Phase 3 local acceptance gates passed; phase-wide goal verification and hosted CI
+remain pending. Dashboard login, alert query/triage APIs and SSE remain Phase 4 work.
 
 ## Prerequisites
 
@@ -188,11 +188,15 @@ The repository CI definition runs unit, integration, seed-orchestration,
 prohibited-module, and independently nonempty Phase 3 behavioral-group guards,
 while retaining every Phase 2 group. Ordinary families use six-minute ceilings,
 cooldown eight minutes, scheduled scenarios sixteen minutes and preserved repeat
-thirty-two minutes; relevant CI jobs are bounded to forty-five minutes. Final
-local gates remain pending; the scoped reservation R2 review is clean. The
+thirty-two minutes; relevant CI jobs are bounded to forty-five minutes. Local
+gates passed, including the 46 exact families with affected-fixture delta
+verification, repaired full integration and all seven retained Phase 2 selectors;
+the scoped reservation R2 review is clean. The
 [preserved-stack rollout check](.planning/phases/03-detection-alert-pipeline/03-RESERVATION-ROLLOUT-CHECK.md)
-records retained-data reconciliation and additive migration, not full acceptance. Hosted
-Phase 3 GitHub Actions status is pending; no workflow was started by this work.
+records retained-data reconciliation and additive migration. See the
+[local acceptance record](.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md)
+for actual exits and historical failures. The older hosted checkpoint failed;
+hosted acceptance of the repaired source and phase-wide goal verification remain pending.
 
 ## Documentation
 

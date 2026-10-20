@@ -1,6 +1,7 @@
 # Detection and alert operations
 
-Final Phase 3 regression and phase-wide verification are pending. The scoped
+Local Phase 3 acceptance gates passed; phase-wide goal verification and hosted CI
+remain pending. The scoped
 [reservation R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
 is clean; it does not establish deployment or current-stack acceptance. Use this
 as the selected operator protocol; the final acceptance record must accompany a
@@ -157,8 +158,11 @@ infrastructure-only restoration, full reconciliation of 91 physical alerts/IDs/
 workflows, and additive migration 006 with complete snapshots unchanged. Root
 then authorized new-protocol startup. The executor's subsequent `make dev-up`
 returned zero, followed by `scripts/check-stack.sh` (exit 0, 13.32s), observing all
-five applications and four dependencies healthy. These are local rollout/startup
-checks, not the still-pending final integration/operator acceptance or hosted CI.
+five applications and four dependencies healthy. The later preserved startup
+and health checks passed in 48.69s and 14.32s, respectively. Local full integration,
+operator/preserved-repeat and retained regression results are recorded in the
+[acceptance evidence](../.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md);
+these local results do not establish a hosted CI pass.
 
 `alert_reservations` is separate operational authority, not the workflow/list
 index or detector cooldown ledger. Its globally unique ID, tenant, fingerprint
@@ -192,8 +196,10 @@ The full suite has a finite 32m aggregate ceiling: a measured previous 10m run
 exhausted its limit before scenarios. Each exact Phase 3 family has its own
 nonempty runner invocation: ordinary 6m, cooldown 8m, pure families 60s,
 scheduled scenario 16m, preserved repeat 32m. The relevant CI jobs use 45m.
-Final local exits and hosted Phase 3 CI are pending; do not infer a pass from
-test existence or a broad regex. Production builds exclude integration hook
+The local acceptance record reports actual passing exits, including the repaired
+full integration run and seven independently nonempty retained Phase 2 groups.
+Hosted acceptance of the repaired source remains pending; test existence or a
+broad regex alone cannot establish a pass. Production builds exclude integration hook
 files and read no fault-control environment settings. Fault tests alone build
 integration binaries; there is no public failure-control endpoint.
 

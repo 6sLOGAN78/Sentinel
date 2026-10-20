@@ -1,10 +1,13 @@
 # Architecture
 
-Phase 3 final regression and phase-wide verification are pending. The scoped
+Phase 3 local acceptance gates passed; phase-wide goal verification and hosted CI
+remain pending. The scoped
 [reservation R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
 is clean and closes CR-02-R1 for conforming reservation-protocol writers. This
-document describes the selected detection/recovery contract; it does not certify
-the pending gates. Local scenario evidence is recorded in the
+document describes the implemented detection/recovery contract. Local gate
+results and their limits are recorded in the
+[acceptance evidence](../.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md),
+with earlier scenario proof in the
 [Plan 13 summary](../.planning/phases/03-detection-alert-pipeline/03-13-SUMMARY.md).
 
 ## Running flow
@@ -153,8 +156,8 @@ it does not promise remote cancellation or exactly-once insertion. The invariant
 requires intact PG durability and every active writer using this protocol. The
 native ACK-loss proof observes an insert before dropping its result; delayed
 pre-visibility completion is a separate controlled model, not an observed native
-server pause. The scoped whole-fix R2 review is clean; final regressions and
-preserved-stack reconciliation remain pending. See the
+server pause. The scoped whole-fix R2 review is clean; local regressions and
+preserved-stack reconciliation have recorded passing results. See the
 [reservation evidence](../.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md)
 and [stopped-writer rollout](operations.md#reservation-protocol-rollout).
 

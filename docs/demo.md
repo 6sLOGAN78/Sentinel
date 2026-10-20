@@ -1,12 +1,14 @@
 # Preserved-state detection demo
 
-Final Phase 3 regression and phase-wide verification are pending. Scoped
-reservation R2 review is clean; existing installations must complete the
+Local Phase 3 acceptance gates passed; phase-wide goal verification and hosted CI
+remain pending. Scoped reservation R2 review is clean; existing installations must complete the
 [stopped-writer rollout](operations.md#reservation-protocol-rollout) before these
 commands. Earlier
 actual preserved-stack, exact static/live and repeat results are recorded in
 [Plan 13](../.planning/phases/03-detection-alert-pipeline/03-13-SUMMARY.md).
-Its historical passes do not replace the pending final aggregate gates.
+The later repaired full integration, exact-family matrix with affected-fixture
+delta verification, seed and preserved-repeat results are recorded in the
+[local acceptance evidence](../.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md).
 
 Run from repository root using the prerequisites and private local `.env` setup
 in [README](../README.md). Examples use synthetic documentation-range addresses

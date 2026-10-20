@@ -1,7 +1,9 @@
 # Detection and alert pipeline threat model
 
-This is the scoped Phase 3 trust model, not a security certification. Final
-full local gates and the phase-wide security audit are pending. Scoped reservation
+This is the scoped Phase 3 trust model, not a security certification. Local
+acceptance gates passed. The registered-threat audit found all 78 declared
+threats closed; final summary reconciliation, phase-wide goal verification and
+hosted acceptance remain pending. Scoped reservation
 [R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
 is clean (zero findings), closing CR-02-R1 for conforming protocol writers without
 certifying deployment or this complete threat model. The [architecture](architecture.md) describes the selected protocol;
@@ -33,7 +35,7 @@ tenant separation and private producer credentials. The relevant boundaries are:
 | Stale owner writes or advances recovery | Kafka generation/member/assignment-token/config fencing, pending offset restoration, per-partition source ordering; actual moved-target ThirdReplica/CooldownOwners and callback tests |
 | Lost allowed alert across PG/Kafka/CH failure | PG decision before allowed publication, all-ISR acknowledgement before checkpoint, CH+PG before writer commit; observed decision/publication/checkpoint crash cuts and outage/partial-storage tests |
 | Divergent or older restored PG state silently starts fresh | Exact checkpoint decision row/fingerprint and fence at least its marker; legitimate PG-ahead replay allowed, behind/mismatch refuses with unchanged Kafka metadata; RestoreBehindCheckpoint/frontier tests |
-| Concurrent/late remote writer replaces the global winner | Commit immutable canonical reservation before any CH insert; revalidate under a second per-ID lock; use saved bytes only; ReservationProtocol/Reservation/Ambiguity/Restart/NativeAckLoss evidence, scoped R2 clean, final gates pending |
+| Concurrent/late remote writer replaces the global winner | Commit immutable canonical reservation before any CH insert; revalidate under a second per-ID lock; use saved bytes only; ReservationProtocol/Reservation/Ambiguity/Restart/NativeAckLoss evidence, scoped R2 clean, local gate results recorded |
 | Uncertain PG commit or corrupted claim permits unsafe progress | Any reservation commit error prohibits this attempt's CH insert; replay resolves durable outcome; strict saved-payload/identity/fingerprint validation fails operationally, not as poison |
 | Unbounded state, retries or hostile poison | Shared admission limits, finite owned-batch/effects deadlines, bounded buffers and DLQ framing, independent final commit allowance; StateBounds/Capacity and both worker Poison/aggregate-budget tests |
 | Late or sealed history becomes new evidence after replay | Pre-pin maximum reproduces lateness; durable sealed floor excludes closed windows; equality/+1ms, arbitrary restart-cut and retained-history tests |
@@ -44,8 +46,11 @@ tenant separation and private producer credentials. The relevant boundaries are:
 | Historical rows satisfy a new scenario | Original `run_start` receipt bound, captured current Kafka range, exact canonical bytes/store fields and independent full prior snapshots; CheckAlertsCurrentEventRange and preserved-run tests |
 
 The listed families identify obligations and recorded evidence; their presence is
-not an assertion that the pending final suite or hosted CI passed. The last full
-aggregate result and every scoped repair must be recorded in Plan 14's summary.
+not an assertion that hosted CI passed. The
+[local acceptance evidence](../.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md)
+records the repaired full-suite pass, exact-family and affected-fixture results,
+retained regressions and historical failures. Plan 14's summary consolidates
+those results for parent review.
 Reservations are the architectural repair for remote completion after a local
 transaction ends, not a claim of server-side rollback. Native ACK-loss evidence
 observes physical insertion before suppressing the response; a separate controlled
@@ -74,8 +79,8 @@ is not proof of remote completion. Mixed-protocol rolling deployment is unsafe;
 unresolved outcomes must block rollout. The separately recorded
 [rollout check](../.planning/phases/03-detection-alert-pipeline/03-RESERVATION-ROLLOUT-CHECK.md)
 reconciles all 91 retained identities and proves migration preservation before
-authorized new-protocol startup. Subsequent stack health is not a substitute for
-the final full integration/operator gates.
+authorized new-protocol startup. Subsequent stack health and the separately
+recorded full integration/operator passes provide distinct evidence.
 See [operations](operations.md#reservation-protocol-rollout).
 
 Changed-config rolling handover is unsupported. Live demos require quiescent

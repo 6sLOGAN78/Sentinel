@@ -3,8 +3,9 @@
 Checkpoint: implementation Tasks 1–3 are committed and task-reviewed. Independent
 [whole-fix R2 review](03-REVIEW-PRODUCTION-R2.md) is clean (zero findings), closing
 CR-02-R1 for conforming reservation-protocol writers at frozen backend `3a26feb`.
-R2 is read-only source review, not a fresh test execution. Final Phase 3 gates,
-preserved-stack reconciliation and hosted CI remain pending. This is evidence
+R2 is read-only source review, not a fresh test execution. Local Phase 3 gates
+and preserved-stack reconciliation subsequently passed, as recorded below;
+phase-wide goal verification and hosted acceptance remain pending. This is evidence
 provenance, not Phase 3 completion or security certification.
 The [approved design](03-ALERT-RESERVATION-DESIGN.md) defines the invariant and rollout.
 
@@ -197,3 +198,59 @@ and the existing topic/readiness/native checks passing. Fresh exact
 `make test-integ` (32m, serial `-p1`) is running in session82980; its persistent
 log is `.local/phase3-acceptance/full-integ-restored.log`. Actual final exit and
 seven retained selectors remain pending. No new runtime/fixture delta was made.
+
+## Recovered full-suite result and final retained selectors
+
+On the next resume, the persistent replacement log was read directly. Its exact
+`make test-integ` invocation started at `2026-10-20T17:16:37Z`, completed the
+integration package in 1,845.917s, and recorded `ELAPSED=1849.21 EXIT=0` plus
+`RETURNED_EXIT=0 END=2026-10-20T17:47:26Z`. This is the repaired full-suite PASS;
+the earlier session46545 remains UNKNOWN/INTERRUPTED. The successful run is
+not repeated merely because its original executor is no longer active.
+
+At `2026-10-20T23:17Z`, the preserved infrastructure was stopped after another
+environment restart. The installed reservation protocol was unchanged. Standard
+`timeout 10m make dev-up` returned exit 0 in 48.69s, and `timeout 180s
+scripts/check-stack.sh` returned exit 0 in 14.32s at `23:19:13Z`. All four
+dependencies, five applications, topic/retention, auto-create, port, readiness
+and native checks passed; no volume or retained data was removed.
+
+Seven retained Phase 2 commands were compared with committed CI for exact
+selectors, integration tags, `-p 1`, and original 4m/6m/4m/5m/6m/4m/5m budgets.
+Their serial execution started at `23:19:13Z`. The private persistent aggregate
+log is `.local/phase3-acceptance/phase2-selectors.log`; each `phase2-*.log`
+records its original HEAD, selector, budget, start, elapsed time and actual
+returned exit. Results remain pending until those commands return. Root owns
+separate hosted-CI repair, global acceptance and remote actions.
+
+The seven selectors subsequently all returned exit 0. Their aggregate completed
+at `2026-10-20T23:24:35Z` with `ELAPSED=321.83 EXIT=0` and
+`RETURNED_EXIT=0`; each nonempty runner required actual passing named tests.
+
+| Retained CI group | Original Go timeout | Actual elapsed | Returned exit |
+| --- | --- | --- | --- |
+| API key / ingest authentication | 4m | 32.08s | 0 |
+| Ingest | 6m | 41.64s | 0 |
+| Dedupe / event tenant scope / schema / TTL | 4m | 35.67s | 0 |
+| Event writer / DLQ / slow poison rebalance | 5m | 54.63s | 0 |
+| Writer crash / ingest retry / Kafka timeout | 6m | 75.49s | 0 |
+| Rate limit | 4m | 20.33s | 0 |
+| Readiness / health / binary lifecycle | 5m | 61.88s | 0 |
+
+The CI-only repair and its tests are recorded separately in
+`03-CI-REPAIR-EVIDENCE.md`: assertion RED `59b3498`, implementation `defe62e`,
+exact locked-generator interpreter GREEN, all 44 script tests passing, and the
+pinned full-history scanner passing with one exact historical prose-fingerprint
+exception. The older hosted run `39457945227` at `19db519` failed; it is not a
+current hosted pass. No runtime, golden, dependency, verifier or deadline changed.
+
+The fresh bounded static bundle at source HEAD `855cb60` started at
+`2026-10-20T23:24:55Z` and returned exit 0 at `23:25:15Z`, elapsed 20.59s.
+Its private `.local/phase3-acceptance/final-static.log` records an actual returned
+exit for every stage: `make test` 0/8.13s (Go race, web 6, generator 121),
+`make lint` 0/5.54s, default backend build 0/2.62s, default vet 0/0.21s,
+integration vet 0/0.23s, complete integration-tag lint 0/1.31s (zero issues),
+three-worker default file exclusion 0/0.08s, web formatting 0/0.34s and web build
+0/2.03s. Whitespace passed. The already-passing 44 script tests were not repeated
+after documentation-only changes; their repair-worker provenance remains
+separate. Build-generated files produced no tracked source delta.
