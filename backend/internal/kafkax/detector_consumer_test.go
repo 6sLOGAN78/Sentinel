@@ -2,7 +2,11 @@ package kafkax //nolint:testpackage // exercise real callback validation with a 
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"testing"
 	"time"
 
@@ -10,6 +14,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kversion"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
@@ -155,6 +160,152 @@ func TestDetectorPendingOffsetFetch(t *testing.T) {
 				require.False(t, c.ReadinessSnapshot().Observed)
 			}
 		})
+	}
+}
+
+func TestDetectorCooperativeOffsetFetch(t *testing.T) {
+	for _, missingNew := range []bool{false, true} {
+		t.Run(fmt.Sprintf("missing new pending=%t", missingNew), func(t *testing.T) {
+			client := detectorHistoryClient(t)
+			rules := &detection.Rules{SchemaVersion: 1}
+			checkpoint, err := detection.NewPartitionState(rules).Checkpoint()
+			require.NoError(t, err)
+			retained := detection.TopicPartition{Topic: "events", Partition: 0}
+			added := detection.TopicPartition{Topic: "events", Partition: 1}
+			driver := &readinessDriver{generation: 9}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var fatal error
+			c := &DetectorConsumer{client: driver, rules: rules, group: "detector-test", cancel: cancel,
+				settings: config.WriterConfig{OperationTimeout: time.Second}, sequence: 7,
+				onFatal: func(err error) { fatal = err },
+				assignments: map[detection.TopicPartition]DetectorAssignment{
+					retained: {Token: 7, Group: "detector-test", Member: "member-7", Generation: 9,
+						HistoryStart: 7, Checkpoint: &checkpoint},
+				}}
+			// Pinned v1.22.1 calls assigned with additions and fetchOffsets(ctx,
+			// added), not the entire cooperative assignment. Empty additions do
+			// not invoke OnOffsetsFetched at all.
+			driver.generation = 10
+			additions := []int32{1}
+			if missingNew {
+				additions = append(additions, 2)
+			}
+			c.assigned(ctx, nil, map[string][]int32{"events": additions})
+			before := c.Assignments()
+			require.False(t, before[retained].RestorePending)
+			require.True(t, before[added].RestorePending)
+			require.Equal(t, uint64(7), before[retained].Token)
+			require.Equal(t, int32(10), before[retained].Generation)
+			require.Equal(t, "member-7", before[retained].Member)
+			require.NotEqual(t, before[retained].Token, before[added].Token)
+			partitions := []kmsg.OffsetFetchResponseTopicPartition{{Partition: 1, Offset: -1}}
+			// Exercise the actual registered adapter callback, including native
+			// kadm metadata/ListOffsets validation through the in-memory wire.
+			err = c.fetched(ctx, client, &kmsg.OffsetFetchResponse{Topics: []kmsg.OffsetFetchResponseTopic{
+				{Topic: "events", Partitions: partitions},
+			}})
+			after := c.Assignments()
+			require.Equal(t, before[retained], after[retained], "retained state/token/current owner must not be restored again")
+			require.Equal(t, int64(12), after[added].HistoryStart, "actual broker history validation completed")
+			if missingNew {
+				require.ErrorContains(t, err, "restore response incomplete")
+				require.ErrorIs(t, fatal, err)
+				require.True(t, after[added].RestorePending)
+				require.True(t, after[detection.TopicPartition{Topic: "events", Partition: 2}].RestorePending)
+				require.ErrorIs(t, ctx.Err(), context.Canceled)
+				return
+			}
+			require.NoError(t, err, "cooperative fetch response legitimately omits the retained completed partition")
+			require.NoError(t, fatal)
+			require.False(t, after[added].RestorePending)
+			require.Equal(t, int64(12), after[added].HistoryStart)
+			require.Nil(t, after[added].Checkpoint, "validated absent broker offset remains a legitimate new group")
+			require.Equal(t, before[added].Token, after[added].Token)
+			require.True(t, c.ReadinessSnapshot().Observed)
+		})
+	}
+}
+
+// Supply only the broker history reads made by the real fetched callback. No
+// adapter restore/completion function is replaced and no external broker is used.
+func detectorHistoryClient(t *testing.T) *kgo.Client {
+	t.Helper()
+	client, err := kgo.NewClient(kgo.SeedBrokers("history:9092"), kgo.MaxVersions(kversion.V0_10_1()),
+		kgo.Dialer(func(context.Context, string, string) (net.Conn, error) {
+			local, remote := net.Pipe()
+			go func() {
+				defer remote.Close()
+				_ = serveDetectorHistory(remote)
+			}()
+			return local, nil
+		}))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+	return client
+}
+
+func serveDetectorHistory(conn net.Conn) error {
+	for {
+		var size [4]byte
+		if _, err := io.ReadFull(conn, size[:]); err != nil {
+			return err
+		}
+		length := binary.BigEndian.Uint32(size[:])
+		if length < 10 || length > 1<<20 {
+			return errors.New("invalid fixture request size")
+		}
+		raw := make([]byte, length)
+		if _, err := io.ReadFull(conn, raw); err != nil {
+			return err
+		}
+		request := kmsg.RequestForKey(int16(binary.BigEndian.Uint16(raw)))
+		request.SetVersion(int16(binary.BigEndian.Uint16(raw[2:])))
+		header := 10 + int(int16(binary.BigEndian.Uint16(raw[8:])))
+		if header < 10 || header > len(raw) {
+			return errors.New("invalid fixture request header")
+		}
+		if err := request.ReadFrom(raw[header:]); err != nil {
+			return err
+		}
+		var response kmsg.Response
+		switch req := request.(type) {
+		case *kmsg.ApiVersionsRequest:
+			response = &kmsg.ApiVersionsResponse{ApiKeys: []kmsg.ApiVersionsResponseApiKey{
+				{ApiKey: 2, MaxVersion: 1}, {ApiKey: 3}, {ApiKey: 18},
+			}}
+		case *kmsg.MetadataRequest:
+			topic := "events"
+			response = &kmsg.MetadataResponse{Brokers: []kmsg.MetadataResponseBroker{{NodeID: 1, Host: "history", Port: 9092}},
+				Topics: []kmsg.MetadataResponseTopic{{Topic: &topic, Partitions: []kmsg.MetadataResponseTopicPartition{
+					{Partition: 0, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
+					{Partition: 1, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
+					{Partition: 2, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}},
+				}}}}
+		case *kmsg.ListOffsetsRequest:
+			listed := &kmsg.ListOffsetsResponse{}
+			for _, topic := range req.Topics {
+				out := kmsg.ListOffsetsResponseTopic{Topic: topic.Topic}
+				for _, partition := range topic.Partitions {
+					offset := int64(12)
+					if partition.Timestamp == -1 {
+						offset = 23
+					}
+					out.Partitions = append(out.Partitions, kmsg.ListOffsetsResponseTopicPartition{
+						Partition: partition.Partition, Offset: offset, OldStyleOffsets: []int64{offset}})
+				}
+				listed.Topics = append(listed.Topics, out)
+			}
+			response = listed
+		default:
+			return fmt.Errorf("unexpected fixture request %T", request)
+		}
+		response.SetVersion(request.GetVersion())
+		wire := response.AppendTo(append([]byte(nil), raw[4:8]...))
+		binary.BigEndian.PutUint32(size[:], uint32(len(wire)))
+		if _, err := conn.Write(append(size[:], wire...)); err != nil {
+			return err
+		}
 	}
 }
 
