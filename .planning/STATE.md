@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Durable reservation design approved; implementation plan self-reviewed and awaiting user review
-last_updated: "2026-10-20T05:17:47Z"
+stopped_at: Durable reservation implementation plan approved; baseline passed, starting sequential Task 1
+last_updated: "2026-10-20T05:26:12Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-10-20)
 
 Phase: 3 (Detection & Alert Pipeline) — EXECUTING
 Plan: 21 of 21
-Status: Reservation design approved; implementation plan review pending — 03-14 incomplete; CR-02-R1 blocks closeout
+Status: Reservation plan approved and executing — 03-14 incomplete; CR-02-R1 blocks closeout
 Last activity: 2026-10-20
 
 Progress: [██████████] 98%
@@ -183,6 +183,7 @@ None yet.
 
 ### Planning Continuation
 
+- Implementation-plan approval received with “okk” after the final plan-review request. Sequential specialist execution is authorized without more routine design/method approvals. Baseline timeout 300s make test passed (Go race, six web tests, 121 generator tests; some Go results cached). Created the plan-scoped SDD ledger and completed the per-task/shared-interface preflight scan with no conflicts. Preserve the user-approved shared-main/no-worktree policy and dirty CI/docs/config/.serena files. Task 1 schema/migration safety is next, followed by an independent spec/quality review before Task 2. No repair task is complete yet; Phase 3 remains 20/21. Original two scenario failures and phase-wide gates remain pending.
 - Written-design approval received with “approve” after the user asked why the reservation is needed and which option is best. Created and inline self-reviewed 03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md: four sequential tasks cover the additive immutable schema, native reservation helpers/two-phase writer ordering, real process/native ACK-loss plus controlled delayed-visibility proofs, and seven exact new acceptance families/46-family registry before return to 03-14. Preserves existing GSD specialist execution, shared branch, old proof, user data and all pending CI/docs drafts. The writing-plans skill requires user review of this implementation plan before execution; the next approval is that plan gate, not a repeat of design or execution-method choice. No runtime/schema/test changes or new test passes are claimed. CR-02-R1 and all unfinished phase gates remain open; 20/21 plan count is unchanged.
 - User approved the requested durable PostgreSQL alert reservation/migration/recovery-test expansion with “okk do it.” Wrote and self-reviewed 03-ALERT-RESERVATION-DESIGN.md against existing writer/native-store/migration contracts: committed immutable canonical-payload authority before CH; post-CH insert-only workflows; same deadlines; no automatic claim GC; additive stopped-writer rollout. The newly available architectural brainstorming skill requires user review of the written design before implementation planning, followed by plan review; no product code, migration or tests were changed in this design stage. Read-only specialist guidance establishes a feasible native ACK-loss acceptance path plus a separate deterministic delayed-visibility protocol model; no stock-server pre-visibility barrier was established, and that evidence limit remains explicit for scoped re-review. The selected GSD specialist execution method is preserved. Await review of the written design, not renewed approval of the already-approved feature scope. Phase 3 remains 20/21 complete, CR-02-R1 remains open, and prior CI/docs/guard drafts plus unrelated user edits are preserved.
 - Latest checkpoint (2026-10-20): Wave 13 gate is passed; 20/21 Phase 3 plans remain complete. Plan 03-14 Task 1 is complete, while final CI/full gates and docs verification remain incomplete; there is no 03-14 SUMMARY or phase completion. Integration lint debt was repaired at 6b1ea2a. The 32-minute full integration attempt exited 2 after 974.03s with two scenario failures, not a timeout; the subsequently permitted exact isolated-static-all rerun on cbc13f2 passed (package 47.449s, test 4.80s), but does not explain that earlier failure or prove the preserved-repeat case. The final 39-family package-and-name-scoped fake-Go guard characterization passed five tests in 108.131s; the actual whole 39-family matrix has not passed. CI/Make/docs/guard drafts remain unstaged and preserved, alongside unrelated user config/.serena data. Scoped repair evidence is committed at 17efe8c and cbc13f2. Production R1 addresses CR-01 and WR-01 and the reproduced live-caller five-second lock expiry, but leaves CR-02-R1 BLOCKER: a local CH error can precede remote insertion finality; PG rollback then releases the only winner authority. The exact delayed-remote-commit interleaving has not been executed. See 03-REVIEW-PRODUCTION-R1.md. A committed fingerprint/canonical-payload reservation before CH, or a proven sink ownership barrier, requires explicit schema/protocol design approval. No such expansion is implemented or approved; new long/live gates are held pending that decision. Preserve all previous proof and failure history; phase-wide review/security/verification and CI completion remain pending. Stop before Phase 4.
@@ -217,6 +218,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-20T05:17:47Z
-Stopped at: Written reservation design approved; four-task implementation plan saved and self-reviewed. Await user plan review, then execute sequentially using the already selected specialist method. Do not ask the same design/method question again. CR-02-R1, 03-14 and phase closeout remain incomplete. Stop before Phase 4.
+Last session: 2026-10-20T05:26:12Z
+Stopped at: Implementation plan approved; baseline passed and plan-scoped ledger/preflight ready. Start Task 1 schema, then independent review and remaining sequential tasks. No more routine approval is needed. CR-02-R1, 03-14 and phase closeout remain incomplete. Stop before Phase 4.
 Resume file: .planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md
