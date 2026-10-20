@@ -123,4 +123,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-20 — reservation schema/protocol reviewed; process/native-fault proof next*
+*Last updated: 2026-10-20 — reservation whole-fix R2 clean; preserved-stack rollout reconciled; final Phase 3 gates in progress*

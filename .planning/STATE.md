@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Reservation whole-fix R2 clean; Task4 registry/docs and preserved-stack reconciliation in progress
-last_updated: "2026-10-20T11:49:00Z"
+stopped_at: Reservation R2 and retained-data rollout gates passed; 03-14 final acceptance resumed
+last_updated: "2026-10-20T12:09:43Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
@@ -183,6 +183,7 @@ None yet.
 
 ### Planning Continuation
 
+- Root completed preserved-stack reconciliation: all five old apps stopped, old CH server previously exited0, infrastructure-only restore healthy. Every91physical alert's canonical hash and global tenant/ID/fingerprint matches91PGworkflows, with no conflicts/orphans/missing evidence. Additive make migrate passed to006; full workflow/physical snapshot hashes unchanged and reservations0. See03-RESERVATION-ROLLOUT-CHECK.md. Explicitly released original03-14executor for new-image startup and sequential scoped/full46-family/integration/operator gates; root will not compete with live suites. Task4 fakeguardRED0d6d82d/GREEN1a637d4 passed46families; docs/evidence3b0d814/0bad200 reviewed. Final acceptance/security/goalverification/hostedCI remain pending; no phase completion.
 - Resumed automatically on user request. Root read the final 16-file whole-fix R2 report: clean, zero findings, CR-02-R1 addressed for conforming reservation writers. Native lost-ACK proof remains distinct from the controlled delayed-visibility model; exact native pre-visibility pause remains unproved. Task3 missing separate RED commit and both fixture rulings remain explicit. Original 03-14 executor continues the disjoint Task4 registry/docs/evidence subset; no final full/live gates released yet. Root is restoring only Kafka/CH/PG/Redis with all five old apps confirmed stopped, then reconciling retained physical alerts/workflows before any new writer starts. No volumes removed; no hosted CI/phase completion claimed. Phase3 remains20/21; stop before Phase4.
 - Task3 independent spec/quality review approved with no findings; complete through3a26feb with explicit missing-separateREDcommitlimit, unchanged crash-helper ruling and native/model evidence separation. Whole-fixdeepR2agent /root/reservation_whole_review_r2 nowjudges complete16backendfile repairfa33ed0..3a26feb via frozenpackage andscope03-RESERVATION-REVIEW-SCOPE.md, writingnew03-REVIEW-PRODUCTION-R2.md only. Backend frozen/rootsame-scopeworkstopped. Original03-14executor /root/execute_phase3_14 was explicitly handed disjoint Task4scripts/docs/evidence subset:7newexactfamilies→46total, actualfakeguardRED/GREEN, truthfulreservation/rolloutdocs andpersistentevidence. NoGo/full/livegates/dev-up/migrate/restart/seed untilrootR2goandold-writerdrain/outcomecheck. No03-14SUMMARY/SDKtracking/phaseclaim. Useroriginalconfig/.serenaandpendingdraftspreserved; Phase3remains20/21.
 - Task3 committed at3a26feb after actual compiled restart RED and final native/model/process acceptance, including two fresh nativeACKloss and two restart repeats. Root read full report and verified seven-file scope/diff check. Native fault produces real socketEOF after independent A physical visibility; separate PG/model schedule covers invisibleA/localerror/B/lateA, never claimed native previsibility pause. Fresh Task3 spec/quality reviewer /root/reservation_faults_review is active. Task3report admits genuine RED was not separately committed before implementation; do not reconstruct history. Broad unit/lint/build/vet/default-nohook/integration-static results passed. Existing crash-specific waitRecoveryOffset correction and physical-evidence preservation controls are recorded for review. Task3 completion/CR-02-R1 closure await independent review, then whole-fix R2 and Task4 registration/docs/full phase gates. Preserve user/03-14 dirt. Phase3 remains20/21.
@@ -225,6 +226,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-10-20T11:49:00Z
-Stopped at: Whole-fix R2 clean/CR-02-R1 addressed. Original03-14executor finishes Task4subset while root restores infrastructure only and reconciles retained outcomes with all old apps stopped. Full/live gates need explicit root release after reconciliation. Resume from SDDledger; no routine approvals or completed-task repetition. 03-14 and phase closeout remain incomplete; stop before Phase4.
+Last session: 2026-10-20T12:09:43Z
+Stopped at: Whole-fix R2 clean/CR-02-R1 addressed; retained-data rollout reconciled and additive006applied preserving all91workflows/physicalalerts. Original03-14executor explicitly released for final sequential new-image startup/test/operator gates. Root coordinates final review/security/goalverification. No routine approvals or completed-task repetition. 03-14/phase closeout remain incomplete; stop before Phase4.
 Resume file: .planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md
