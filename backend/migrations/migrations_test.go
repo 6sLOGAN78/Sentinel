@@ -23,6 +23,19 @@ func TestMigrationsEmbedPostgres(t *testing.T) {
 	}
 }
 
+func TestMigrationsEmbedAlertReservationsForward(t *testing.T) {
+	t.Parallel()
+
+	b, err := fs.ReadFile(migrations.Postgres(), "006_alert_reservations.sql")
+	if err != nil {
+		t.Fatalf("read forward reservation migration: %v", err)
+	}
+	up, down, found := strings.Cut(string(b), "---- create above / drop below ----")
+	if !found || strings.TrimSpace(up) == "" || strings.TrimSpace(down) == "" {
+		t.Fatal("reservation migration must embed nonempty forward and maintenance-down sections")
+	}
+}
+
 func TestMigrationsEmbedClickHouse(t *testing.T) {
 	t.Parallel()
 
