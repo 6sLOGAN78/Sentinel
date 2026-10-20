@@ -153,6 +153,21 @@ class Phase3GuardTests(unittest.TestCase):
         self.assertIn("timeout 32m", smoke)
         self.assertIn("^TestDetectionScenariosPreservedRepeat$", smoke)
 
+    def test_ci_scenario_tests_use_the_synced_generator_environment(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        python = workflow.split("\n  python:\n", 1)[1].split("\n  schema:\n", 1)[0]
+        scenario = python.split("      - name: scenario orchestration tests\n", 1)[1].split(
+            "      - name:", 1
+        )[0]
+        self.assertIn("working-directory: .", scenario)
+        self.assertIn(
+            "run: generator/.venv/bin/python -B -m unittest discover -s scripts "
+            "-p test_seed_scenarios.py",
+            scenario,
+            "scenario orchestration imports httpx from the locked generator environment",
+        )
+        self.assertLess(python.index("uv sync --locked"), python.index(scenario))
+
 
 if __name__ == "__main__":
     unittest.main()
