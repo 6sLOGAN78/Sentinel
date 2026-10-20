@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"os/exec"
@@ -46,19 +47,21 @@ func TestDetectionScenarios(t *testing.T) {
 			t.Run("isolated-static-"+fixture.Name, func(t *testing.T) { runStaticScenario(ctx, t, root, fixture) })
 		}
 	}
-	output := filepath.Join(t.TempDir(), "scenarios.json")
-	runPreservedCommand(ctx, t, root, "python3", "-B", "scripts/seed_scenarios.py", "--edges", "--output", output)
-	raw, err := os.ReadFile(output)
-	require.NoError(t, err)
-	var proof struct {
-		Verified bool              `json:"verified"`
-		Drained  bool              `json:"drained"`
-		Expected []json.RawMessage `json:"expected_alerts"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &proof))
-	require.True(t, proof.Verified)
-	require.True(t, proof.Drained)
-	require.Len(t, proof.Expected, 10, "two crossings per rule, benign zero, boundary and watermark equality")
+	t.Run("preserved-live-edges", func(t *testing.T) {
+		output := filepath.Join(t.TempDir(), "scenarios.json")
+		runPreservedCommand(ctx, t, root, "python3", "-B", "scripts/seed_scenarios.py", "--edges", "--output", output)
+		raw, readErr := os.ReadFile(output)
+		require.NoError(t, readErr)
+		var proof struct {
+			Verified bool              `json:"verified"`
+			Drained  bool              `json:"drained"`
+			Expected []json.RawMessage `json:"expected_alerts"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &proof))
+		require.True(t, proof.Verified)
+		require.True(t, proof.Drained)
+		require.Len(t, proof.Expected, 10, "two crossings per rule, benign zero, boundary and watermark equality")
+	})
 }
 
 type scenarioCase struct {
@@ -174,10 +177,29 @@ func staticVerifier(ctx context.Context, t *testing.T, root, mode, path string, 
 		cmd.Env = append(cmd.Env, name+"="+settings[name])
 	}
 	output, err := cmd.Output()
-	require.NoError(t, err, "private verifier %s failed", mode)
+	stage := "unclassified_child_failure"
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		stage = fixedVerifierStage(exit.Stderr)
+	}
+	require.NoError(t, err, "private verifier %s failed at %s", mode, stage)
 	var result map[string]any
 	require.NoError(t, json.Unmarshal(output, &result))
 	return result
+}
+
+// Child stderr is never printed: only these verifier-owned fixed stages can
+// reach diagnostics. Go's trailing exit-status line is deliberately ignored.
+func fixedVerifierStage(output []byte) string {
+	for _, stage := range []string{"source_checkpoint", "kafka_range", "clickhouse_set", "workflow_payload",
+		"exact_payload_set", "prior_read", "prior_content", "current_event_rows", "private_context"} {
+		for line := range strings.SplitSeq(string(output), "\n") {
+			if strings.TrimSpace(line) == "alert verification failed: "+stage {
+				return stage
+			}
+		}
+	}
+	return "unclassified_child_failure"
 }
 
 func postStaticScenario(ctx context.Context, t *testing.T, url, key string, events []*contracts.Event) []string {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,5 +78,30 @@ func runPreservedCommand(ctx context.Context, t *testing.T, root, name string, a
 	cmd.Env = os.Environ()
 	// Child tools own sanitized diagnostics; credentials only enter via env.
 	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "preserved operator command failed (%d diagnostic bytes)", len(out))
+	require.NoError(t, err, "preserved operator command failed at %s (%d diagnostic bytes)",
+		preservedCommandStage(out), len(out))
+}
+
+func preservedCommandStage(output []byte) string {
+	if stage := fixedVerifierStage(output); stage != "unclassified_child_failure" {
+		return stage
+	}
+	// Return only a fixed classification, never the captured line, argument,
+	// payload, credential or driver error that selected it.
+	text := string(output)
+	for _, known := range []struct{ marker, stage string }{
+		{"scenario seed failed:", "scenario_orchestration"},
+		{"seed failed:", "legacy_seed"},
+		{"is unhealthy", "compose_health"},
+		{"dependency failed to start", "compose_health"},
+		{"proxy.golang.org", "dependency_fetch"},
+		{"Error response from daemon", "docker_daemon"},
+		{"migrate] Error", "migration"},
+		{"dev-up] Error", "compose_startup"},
+	} {
+		if strings.Contains(text, known.marker) {
+			return known.stage
+		}
+	}
+	return "unclassified_child_failure"
 }
