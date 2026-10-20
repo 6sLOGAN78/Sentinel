@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: All46exactfamilies and documented seed passed; fullintegration and retainedPhase2groups pending
-last_updated: "2026-10-20T15:42:15Z"
+stopped_at: Fullintegration failed isolated-static-all; executor diagnosing, push held
+last_updated: "2026-10-20T16:29:44Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
@@ -183,6 +183,7 @@ None yet.
 
 ### Planning Continuation
 
+- Latestresume recovered actual fullmake test-integ EXIT2/1824.17s/package1822.485s, below32mcap, not timeout. Onlynamedfailure foundininitiallogscan: TestDetectionScenarios/isolated-static-all60.83s (family300.79s), despiteexactfamilymatrixpassing. Noactiveproducer/testprocessremains. Originalexecutor hitusageerrorwhilefullprocesscompleted; followedup todiagnosepreservedstage-specificlog andproposecausalrepair, no blindrerun/deadlinerelaxation/reset. RootholdsconditionalpushbecausealllocalcheckspreconditionFAILED. Goalverifierprepalsohitusageerrorandwasresumed, finalverdictheld.46matrix/seed/reviews/securityremainrecordedpassesbutnotfullacceptance. SevenPhase2groups/finalunitlint/03-14SUMMARY/tracking/CI/goalcompletionstillpending.
 - Exact final46-family matrix completed exit0/2545.66s, all46topfamilies nonemptyPASS. Scenariofamily229.18s inclpreservedliveedges; finalpreservedrepeat583.03s/package599.067s verifies exacttwoMakecommands withfirstmanifestpreserved. Documented make seed thenpassed0/43.83s:1000sent/accepted/visible,3APIchecks,tenant-isolation1,retries0. Actualfullmake test-integ32m nowruns serially in executor session12713/log/tmp/sentinel-03-14-final-full-integ.log, started15:42:15Z. SevenindependentretainedPhase2selectors and finalunit/lintaftertest-only26f3f8a remainqueued. No fullsuite/hostedCI/03-14completion yet. Root onlypushes afteralllocalchecks asapproved;45mCIjobremainsunchanged despite42m26smeasuredexactmatrix and mustbeobserved honestly.
 - User explicitly answered “Approve push and hosted CI after local checks pass” to the root approval question. This supersedes the earlier no-push boundary only after all required local checks pass. Root alone will push committedPhase3work to configuredGitHubmain and monitor hostedCI; executor remains local-only. User uncommittedconfig/.serena excluded. HostedCI is stillpending, no push performed yet. Actual45thfamilyTestDetectionScenarios passed229.18s inclstaticboundary/lateness/all andpreservedliveedges223.18s; finalpreservedrepeat nowrunning, fullintegrationstillqueued.
 - Independent remaining73-artifact review found one test-causality WARNING only. Root reproduced bothfalsepassmutants, strengthened2generatornegative-testfiles in26f3f8a without runtime/golden/dependency changes, observed bothmutantsfail atrealkey-loadsentinel, normal7cases/67fullfiletests andRuff/mypyPASS. Independent2fileR1clean closeswarning. Canonical03-REVIEW.md aggregates129uniquechanged artifacts and allpriorfindingsresolved.03-SECURITY.md verifies78/78registereddispositions (57mitigate/21originalSCaccept), open0/unregistered0; eventual03-14SUMMARY/finalgatesreconciliationstillpending. Exact46matrix haspassed allnewnative reservationfamilies includingactualEOF/2784byteACKloss and93.22sprocessrestart; cooldowncrashongoing, noFAILsofar. Fullmakeintegration32m/operator/repeat/Phase2regressions/rootgoalverification remainunclaimed. Executorwillrerunfullunit/lintaftertest-onlyfix. Userconfig/.serenapreserved, nohostedCI orPhase4authority.
