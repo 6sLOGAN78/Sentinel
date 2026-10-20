@@ -1,8 +1,11 @@
 # Durable Alert Reservation — Design for CR-02-R1
 
-Date: 2026-10-20  
-Status: Written design awaiting user review; not implemented  
-Baseline: `3cd0474`  
+Date: 2026-10-20
+
+Status: Written design awaiting user review; not implemented
+
+Baseline: `3cd0474`
+
 Related review: [03-REVIEW-PRODUCTION-R1.md](03-REVIEW-PRODUCTION-R1.md)
 
 ## Intent and authority
