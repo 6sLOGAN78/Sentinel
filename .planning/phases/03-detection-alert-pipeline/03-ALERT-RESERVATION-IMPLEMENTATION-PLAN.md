@@ -10,7 +10,7 @@
 
 **Spec:** [03-ALERT-RESERVATION-DESIGN.md](03-ALERT-RESERVATION-DESIGN.md), approved by user “approve” on 2026-10-20 after explanation of the selected approach.
 
-**Status:** User approved with “okk” on 2026-10-20; Tasks 1–2 implemented and independently reviewed, Task 3 next. This is a supplemental CR-02-R1 repair plan, not an additional SDK-counted phase plan. Phase 3 remains 20/21 complete.
+**Status:** User approved with “okk” on 2026-10-20; Tasks 1–3 implemented and independently reviewed, whole-fix R2 clean/CR-02-R1 addressed. Task4 registration/docs subset is committed and final acceptance is running under03-14. This is a supplemental repair plan, not an additional SDK-counted phase plan. Phase3 remains20/21 until03-14 actual gates finish.
 
 ## Global Constraints
 
@@ -96,6 +96,12 @@ Completed and independently reviewed at `a5a564e`; RED `59cb7ac`. All nine nativ
 Execution ruling: the existing cancellation fixture observes every deferred `Rollback`, including no-op cleanup after a successful reservation commit. Its one-slot channel otherwise reports an irrelevant pre-CH cleanup and can block the actual effect-tx rollback. Make that test-only observer phase-aware by excluding only cleanup after a positively acknowledged successful commit; preserve observation/assertions on the still-open CH-effect transaction, exact physical evidence, source status and all deadlines. This is not permission to suppress actual rollback or uncertainty evidence.
 
 ### Task 3: Prove reservation survival across process and remote-result boundaries
+
+Completed at3a26feb with independent task review and clean whole-fix R2.
+Actual native ACK loss and process restart passed repeatedly; controlled delayed
+visibility remains explicitly a model. Missing separate tests-only RED commit
+is a retained provenance deviation, not reconstructed history. See persistent
+reservation evidence/R2. Task4 final full/operator acceptance remains pending.
 
 **Files:**
 
