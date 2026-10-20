@@ -3,7 +3,7 @@ phase: 03-detection-alert-pipeline
 reviewed: 2026-10-20
 depth: mixed_deep_production_standard_remaining
 review_kind: aggregate_of_independent_scoped_reviews
-files_reviewed: 129
+files_reviewed: 130
 findings:
   critical: 0
   warning: 0
@@ -16,7 +16,7 @@ phase_acceptance: pending
 # Phase 3 aggregate source-review disposition
 
 No open source-review finding remains at runtime/wiring62099b2 plus test-only
-repair26f3f8a and fixture-only isolationdf0bfbb. This canonical artifact aggregates independent scoped reports;
+repair26f3f8a, fixture-only isolationdf0bfbb and CI-only repair855cb60. This canonical artifact aggregates independent scoped reports;
 it is not a newly executed all-source review or an acceptance/CI result.
 Historical reports and their original issue counts remain unchanged.
 
@@ -30,9 +30,11 @@ Historical reports and their original issue counts remain unchanged.
 | `03-REVIEW-FINAL-DELTA.md` | Remaining73changed artifacts at62099b2:64fullreads,8completebaseline diffs with context,1exhaustive structured fixture inspection | One test-causality WARNING, no runtime blocker |
 | `03-REVIEW-FINAL-DELTA-R1.md` | Full two-file test repair at26f3f8a | Final-delta WR-01 addressed; zero findings |
 | `03-REVIEW-FINAL-FIXTURE-R2.md` | Full one-file static scenario PG isolation/regression atdf0bfbb | No findings; strict verifier unchanged, unrelated complete workflow preserved; cleanup-proof limitation explicit |
+| `03-REVIEW-CI-REPAIR.md` | Full3-source CI/interpreter/guard/exact historical scanner exception at855cb60 | Clean; locked existing interpreter and one privately verified prose fingerprint, no broad scan bypass |
 
 The original production list, reservation R2 list and final remaining list cover
-129 unique changed non-planning artifacts. Lists, frozen heads, precise
+129 unique changed non-planning artifacts before the CI repair; the additional
+`.gitleaksignore` delta brings the reviewed union to130. Lists, frozen heads, precise
 coverage methods and direct-contract reads are retained in each report and the
 two explicit scope documents. This count does not pretend every artifact was
 reviewed at deep depth or count overlapping files twice. The large static
@@ -64,8 +66,11 @@ abort. Task3's missing separate RED commit and both bounded fixture rulings
 remain recorded. Existing-data rollout reconciliation passed separately; no
 mixed old/new writer deployment or data deletion was used.
 
-The78-threat static audit has zero open registered threats, but final46-family,
-full integration, operator/preserved-state and hosted CI acceptance remain
-separate pending obligations. Historical unexplained failures are not erased or
+The78-threat static audit has zero open registered threats. Full integration,
+all seven retained Phase2groups, operator/preserved-state, affected scenario and
+final static gates now have separately recorded passes. The46-family matrix
+passed before the fixture-only delta, which has its own passing affected-family
+and full-suite proof; it is not mislabeled as another whole-matrix run. Hosted CI
+is still pending. Historical unexplained failures are not erased or
 assigned invented causes. This clean review does not mark03-14 or Phase3 complete,
 certify performance/RSS, or authorize Phase4 or remote writes.

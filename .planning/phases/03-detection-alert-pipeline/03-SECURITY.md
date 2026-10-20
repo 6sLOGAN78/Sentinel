@@ -212,6 +212,19 @@ The separately recorded `03-RESERVATION-ROLLOUT-CHECK.md` establishes the local 
 
 ## Security audit trail
 
+Root CI-delta reconciliation at855cb60: `.github/workflows/ci.yml` uses the
+existing locked generator interpreter for orchestration tests; a new guard
+assertion catches the former missing-environment failure. All44scriptcases and
+the exact10-case CI command pass. Pinned8.30.1 full-history scan passes with zero
+findings after one exact historical commit/path/rule/line prose fingerprint.
+Independent03-REVIEW-CI-REPAIR.md privately verified it is not a credential and
+confirmed exact scanner matching; no broad exclusion or rule change occurred.
+Official archive/checksum verification preceded standalone ignored tool execution;
+no project dependency changed. Existing T-03-14-01/SC obligations remain closed,
+with no new accepted runtime risk. The full-suite1849.21sPASS, seven retained
+groups321.83sPASS and final static20.59sPASS are separately attributed execution,
+not fresh auditor tests. Eventual03-14SUMMARY/hostedCI/goal verdict remain pending.
+
 Root second post-audit delta check: b336634/df0bfbb change only the existing
 static scenario integration fixture. A real unrelated shared workflow is seeded
 and fully preserved; the scenario receives a unique quoted UUID database with
