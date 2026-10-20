@@ -187,6 +187,9 @@ func (w *Writer) persist(ctx context.Context, alert *contracts.Alert, fingerprin
 	}
 	// prepareReservation has returned (and released its pool connection) before
 	// another transaction begins, under the same original operation deadline.
+	if err = afterReservationBeforeInsert(ctx, alert.AlertID); err != nil {
+		return err
+	}
 	return w.persistReserved(ctx, attempt, fingerprint)
 }
 
