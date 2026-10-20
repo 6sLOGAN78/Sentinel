@@ -1,8 +1,11 @@
 # Alert reservation evidence and release boundary
 
 Checkpoint: implementation Tasks 1–3 are committed and task-reviewed. Independent
-whole-fix R2 review, CR-02-R1 disposition, final Phase 3 gates and hosted CI are
-pending. This is evidence provenance, not Phase 3 completion or security certification.
+[whole-fix R2 review](03-REVIEW-PRODUCTION-R2.md) is clean (zero findings), closing
+CR-02-R1 for conforming reservation-protocol writers at frozen backend `3a26feb`.
+R2 is read-only source review, not a fresh test execution. Final Phase 3 gates,
+preserved-stack reconciliation and hosted CI remain pending. This is evidence
+provenance, not Phase 3 completion or security certification.
 The [approved design](03-ALERT-RESERVATION-DESIGN.md) defines the invariant and rollout.
 
 ## Durable invariant
@@ -107,6 +110,9 @@ uncertain remote effects; stopped local processes alone are insufficient. At the
 current parent preflight Kafka/PG/CH/Redis were stopped and all five old apps were
 restart-looping. The parent stopped exactly those five applications with Compose
 (`stop --timeout 30`, exit 0), without removing containers, data or volumes.
-Dependencies remain down. No migration, new writer startup, healthy stack or
-current preserved-stack acceptance is claimed. New live/full gates remain held
-until root clears R2 and explicitly checks the rollout preconditions.
+Dependencies were down at that preflight. No migration, new writer startup,
+healthy stack or current preserved-stack acceptance is claimed. R2 permits
+restoring infrastructure with all writers disabled, confirming old CH server
+termination and reconciling retained global workflow/physical CH outcomes. No
+such reconciliation is claimed here. New live/full gates remain held until root
+explicitly checks those rollout preconditions and releases the gates.

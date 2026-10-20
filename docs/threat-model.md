@@ -1,8 +1,10 @@
 # Detection and alert pipeline threat model
 
 This is the scoped Phase 3 trust model, not a security certification. Final
-production-review repairs, full local gates and the phase-wide security audit
-are pending. The [architecture](architecture.md) describes the selected protocol;
+full local gates and the phase-wide security audit are pending. Scoped reservation
+[R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
+is clean (zero findings), closing CR-02-R1 for conforming protocol writers without
+certifying deployment or this complete threat model. The [architecture](architecture.md) describes the selected protocol;
 per-plan execution summaries distinguish observed tests from pending evidence.
 
 ## Assets and boundaries
@@ -31,7 +33,7 @@ tenant separation and private producer credentials. The relevant boundaries are:
 | Stale owner writes or advances recovery | Kafka generation/member/assignment-token/config fencing, pending offset restoration, per-partition source ordering; actual moved-target ThirdReplica/CooldownOwners and callback tests |
 | Lost allowed alert across PG/Kafka/CH failure | PG decision before allowed publication, all-ISR acknowledgement before checkpoint, CH+PG before writer commit; observed decision/publication/checkpoint crash cuts and outage/partial-storage tests |
 | Divergent or older restored PG state silently starts fresh | Exact checkpoint decision row/fingerprint and fence at least its marker; legitimate PG-ahead replay allowed, behind/mismatch refuses with unchanged Kafka metadata; RestoreBehindCheckpoint/frontier tests |
-| Concurrent/late remote writer replaces the global winner | Commit immutable canonical reservation before any CH insert; revalidate under a second per-ID lock; use saved bytes only; ReservationProtocol/Reservation/Ambiguity/Restart/NativeAckLoss evidence, whole-fix review and final gates pending |
+| Concurrent/late remote writer replaces the global winner | Commit immutable canonical reservation before any CH insert; revalidate under a second per-ID lock; use saved bytes only; ReservationProtocol/Reservation/Ambiguity/Restart/NativeAckLoss evidence, scoped R2 clean, final gates pending |
 | Uncertain PG commit or corrupted claim permits unsafe progress | Any reservation commit error prohibits this attempt's CH insert; replay resolves durable outcome; strict saved-payload/identity/fingerprint validation fails operationally, not as poison |
 | Unbounded state, retries or hostile poison | Shared admission limits, finite owned-batch/effects deadlines, bounded buffers and DLQ framing, independent final commit allowance; StateBounds/Capacity and both worker Poison/aggregate-budget tests |
 | Late or sealed history becomes new evidence after replay | Pre-pin maximum reproduces lateness; durable sealed floor excludes closed windows; equality/+1ms, arbitrary restart-cut and retained-history tests |
@@ -50,7 +52,8 @@ observes physical insertion before suppressing the response; a separate controll
 model exercises invisible deferred completion after PG transaction end and B's
 attempt. Process-restart evidence observes a committed claim before any CH effect.
 These proof classes are not interchangeable. Exact native pre-visibility delay is
-unproved; independent whole-fix review determines CR-02-R1 closure. See the
+unproved; independent whole-fix R2 closes CR-02-R1 through the durable admission
+invariant rather than assumed remote abort. See the
 [reservation evidence](../.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md).
 
 ## Residual limits and operator obligations

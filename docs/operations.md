@@ -1,6 +1,8 @@
 # Detection and alert operations
 
-Final Phase 3 regression and production-review verification is pending. Use this
+Final Phase 3 regression and phase-wide verification are pending. The scoped
+[reservation R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
+is clean; it does not establish deployment or current-stack acceptance. Use this
 as the selected operator protocol; the final acceptance record must accompany a
 release. [Rules](rules.md) and [ADR 0007](decisions/0007-event-time-state-pin-recovery.md)
 define the recovery contract. [Event storage](event-storage.md) covers the existing
@@ -124,8 +126,8 @@ authoritative checkpoint callbacks cannot authorize later unsafe progress.
 Decision commit uncertainty is resolved through immutable replay. Logs use fixed
 sanitized errors; do not export raw DLQ values as ordinary debug logs.
 
-Remote CH commit after disconnect remains a review question. A local canceled
-context is not proof that the remote insert never committed. Permanent PG
+Remote CH commit after disconnect remains possible. A local canceled context is
+not proof that the remote insert never committed. Permanent PG
 reservations constrain conforming writers' effects to committed canonical bytes;
 local lock/cancellation tests alone are not a remote-abort guarantee. See the
 [proof boundaries](../.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md).
@@ -146,14 +148,17 @@ equal replay retains the original sequence and analyst state.
    allowing a guessed winner or a new producer run.
 3. Only after that gate, use the normal additive migration/startup path with the
    new binary. Verify schema 006 and that every active writer uses reservations
-   before admitting traffic. Final independent review and local acceptance must
-   also pass before release.
+   before admitting traffic. Scoped R2 is clean, but final local acceptance and
+   phase-wide verification must also pass before release.
 
 The current checkpoint is **not** a completed rollout: the parent observed
 Kafka/PG/CH/Redis stopped, then stopped the five restart-looping old applications.
-Dependencies remain down; no reservation migration, new-binary startup or healthy
-stack acceptance is established by that preflight. Earlier healthy-stack evidence
-is historical, not current acceptance.
+Dependencies were down at that preflight; no reservation migration, new-binary
+startup or healthy-stack acceptance is established by it. Restore infrastructure
+with all writers disabled before retained-outcome reconciliation. Confirmed old
+CH server termination ends requests on that instance; it does not prove retained
+data consistent. Earlier healthy-stack evidence is historical, not current
+acceptance. Root coordinates this gate before authorizing new traffic.
 
 `alert_reservations` is separate operational authority, not the workflow/list
 index or detector cooldown ledger. Its globally unique ID, tenant, fingerprint
