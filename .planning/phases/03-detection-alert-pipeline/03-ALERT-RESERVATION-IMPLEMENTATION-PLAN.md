@@ -44,6 +44,8 @@ Commands below run from the repository root unless explicitly prefixed with `cd 
 
 ### Task 1: Add the immutable reservation schema without changing runtime behavior
 
+Completed and independently reviewed at `ca7a4cd`; RED `f08a060`. Detailed execution tracking is in the plan-scoped SDD ledger. Runtime protection remains Task 2 onward.
+
 **Files:**
 
 - Create: `backend/migrations/postgres/006_alert_reservations.sql`.
@@ -71,6 +73,7 @@ Commands below run from the repository root unless explicitly prefixed with `cd 
 - Modify: `backend/internal/alertwriter/writer_test.go` (transaction-aware fake and ordering expectations, without weakening effects/prefix assertions).
 - Create: `backend/internal/alertwriter/reservation_test.go`.
 - Create: `backend/test/alertwriter_reservation_test.go` (`integration`).
+- Modify: `backend/test/alertwriter_lock_lifetime_test.go` only to distinguish deferred cleanup of a successfully committed reservation transaction from rollback of the still-open native-effect transaction (execution ruling below).
 
 **Interfaces:**
 
@@ -87,6 +90,8 @@ Commands below run from the repository root unless explicitly prefixed with `cd 
 - [ ] **Step 3 — Implement the port/native helpers and two-phase protocol.** `prepareReservation` acquires the current lock, validates global workflow/reservation authority, performs CH orphan preflight only if reservation is absent, serializes/selects saved bytes and inserts/re-reads a missing reservation. Validate strict schema/identity, stored tenant/ID, recomputed fingerprint and 1..1048576 serialization bound. Commit before return; any commit error returns without CH insertion. A fresh statement must read the selected row after insert-or-ignore. `persistReserved` reacquires under the same deadline, validates reservation/workflow again, uses the earlier preflight result or performs exactly one now, inserts only the selected saved alert, and creates only a missing workflow after CH evidence succeeds. Each transaction gets independent deferred rollback and releases its connection before the next begins.
 - [ ] **Step 4 — Complete focused acceptance cases.** Assert: reservation alone never creates workflow/source commit; conflicting immutable input is quarantined without CH insertion; equal incoming mutable-only changes use the saved payload; legacy resolved workflow and matching retained orphan are preserved; differing orphan creates no claim; CH failure retains claim but not workflow/source acknowledgement; reservation commit failure has zero CH calls in that attempt; workflow commit failure preserves claim; corrupt reservation is operational/uncommitted, not DLQ poison. Cover missing/invalid payload, mismatched ID/tenant/fingerprint and same-ID conflict. Include a single-connection PG pool case proving phase 1 releases its connection before phase 2. Test SQL helpers directly under native transactions now that the API exists; use independent reads to distinguish uncommitted from committed rows.
 - [ ] **Step 5 — Verify, commit and review.** Run both exact new families; then `cd backend && go test -race -timeout 120s ./internal/alertwriter/... ./internal/storage/postgres/...`. Independently run native `TestAlertWriterConflict`, `TestAlertWriterConcurrentReplay`, `TestAlertWorkflowReplay`, `TestAlertWriterPartialStorage`, `TestAlertWriterPoison`, `TestAlertWriterLockLifetime`, `TestAlertWriterDifferingPayloadLockLifetime`, `TestAlertWriterCancellationLockLifetime`, each through the nonempty runner with its existing 6m bound. Run bounded backend build/vet and default/integration lint. Do not change the old live-delay tests to hide an extra CH read or loosen deadlines. Review the runtime diff before Task 3; CR-02-R1 is not closed by these tests alone.
+
+Execution ruling: the existing cancellation fixture observes every deferred `Rollback`, including no-op cleanup after a successful reservation commit. Its one-slot channel otherwise reports an irrelevant pre-CH cleanup and can block the actual effect-tx rollback. Make that test-only observer phase-aware by excluding only cleanup after a positively acknowledged successful commit; preserve observation/assertions on the still-open CH-effect transaction, exact physical evidence, source status and all deadlines. This is not permission to suppress actual rollback or uncertainty evidence.
 
 ### Task 3: Prove reservation survival across process and remote-result boundaries
 
