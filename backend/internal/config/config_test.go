@@ -209,6 +209,37 @@ func TestLoadEventWriterDefaults(t *testing.T) {
 	require.Equal(t, 64<<10, cfg.Writer.DLQMaxBytes)
 }
 
+func TestLoadAlertWriterResourceAdmission(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		setCompleteEnv(t)
+		cfg, err := config.Load(config.ServiceAlertWriter)
+		require.NoError(t, err)
+		require.Equal(t, 10*time.Second, cfg.Writer.OperationTimeout)
+		require.Equal(t, int32(16<<20), cfg.Writer.FetchMaxBytes)
+		require.Equal(t, 2, cfg.Writer.MaxConcurrentFetches)
+		require.Equal(t, 64<<10, cfg.Writer.DLQMaxBytes)
+	})
+	for _, tc := range []struct {
+		name    string
+		env     map[string]string
+		message string
+	}{
+		{"aggregate fetch", map[string]string{"SENTINEL_WRITER.FETCH_MAX_BYTES": "67108864",
+			"SENTINEL_WRITER.MAX_CONCURRENT_FETCHES": "8"}, "aggregate fetch memory exceeds 128 MiB"},
+		{"DLQ cap", map[string]string{"SENTINEL_WRITER.DLQ_MAX_BYTES": "2097152"}, "DLQ record cap exceeds 1 MiB"},
+		{"struct bounds", map[string]string{"SENTINEL_WRITER.MAX_CONCURRENT_FETCHES": "0"}, "writer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setCompleteEnv(t)
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+			_, err := config.Load(config.ServiceAlertWriter)
+			require.ErrorContains(t, err, tc.message, "alert-writer must use existing writer admission")
+		})
+	}
+}
+
 func TestWriterBudgetRejectsOversizedOwnership(t *testing.T) {
 	for _, values := range []map[string]string{
 		{"FLUSH_INTERVAL": "4m"},
