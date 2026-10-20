@@ -4,3 +4,6 @@
 # (including elsewhere in this test file) remain subject to the full scan.
 6a88f9e6b2610d67104500a37048a2725c22e4ea:backend/internal/apikeys/keys_test.go:generic-api-key:34
 996d2d610df8eb020423de3caa980bab3332fce6:backend/internal/apikeys/keys_test.go:generic-api-key:35
+# Historical YAML-validation plan prose describing duplicated or absent fields;
+# the match is policy wording, not a credential. Exempt only this fingerprint.
+171497e5baeccbeb44d12b698be02ceec6b91d65:.planning/phases/03-detection-alert-pipeline/03-08-PLAN.md:generic-api-key:148
