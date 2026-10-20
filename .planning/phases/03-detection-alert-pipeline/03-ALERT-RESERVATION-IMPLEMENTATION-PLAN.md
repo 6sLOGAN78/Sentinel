@@ -10,7 +10,7 @@
 
 **Spec:** [03-ALERT-RESERVATION-DESIGN.md](03-ALERT-RESERVATION-DESIGN.md), approved by user “approve” on 2026-10-20 after explanation of the selected approach.
 
-**Status:** User approved with “okk” on 2026-10-20; execution starting. This is a supplemental CR-02-R1 repair plan, not an additional SDK-counted phase plan. Phase 3 remains 20/21 complete.
+**Status:** User approved with “okk” on 2026-10-20; Tasks 1–2 implemented and independently reviewed, Task 3 next. This is a supplemental CR-02-R1 repair plan, not an additional SDK-counted phase plan. Phase 3 remains 20/21 complete.
 
 ## Global Constraints
 
@@ -64,6 +64,8 @@ Completed and independently reviewed at `ca7a4cd`; RED `f08a060`. Detailed execu
 - [ ] **Step 5 — Commit and review.** Commit only the named schema/tests, retain RED/GREEN evidence, then review migration safety and spec coverage before Task 2. A schema-only commit does not claim that runtime insertion is protected.
 
 ### Task 2: Enforce committed reservations in the existing writer path
+
+Completed and independently reviewed at `a5a564e`; RED `59cb7ac`. All nine native families, pure protocol/race, full unit/static gates pass. Upstream schema-test integration lint was repaired/reviewed at `cf9b879`; one nonblocking transaction-label test-helper fragility is deferred for final review. Task 3 evidence and CR-02-R1 closure are not claimed.
 
 **Files:**
 

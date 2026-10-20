@@ -2,7 +2,7 @@
 
 Date: 2026-10-20
 
-Status: User approved 2026-10-20; implementation plan awaiting review; not implemented
+Status: Design and implementation plan user approved 2026-10-20; schema/protocol implemented and task-reviewed; fault/restart and final phase gates pending
 
 Baseline: `3cd0474`
 
