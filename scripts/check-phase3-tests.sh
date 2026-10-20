@@ -11,7 +11,11 @@ for name in \
   TestAlertWriterPipeline TestAlertWriterConflict TestAlertWriterConcurrentReplay \
   TestAlertWriterPartialStorage TestAlertWriterPoison TestAlertWorkflowReplay TestDetectorPoison \
   TestConfigLedgerHandover TestDetectorPGDependency TestAlertsSchema TestDetectionDecisionsSchema \
-  TestDetectorCooldownFixtureIsolation; do
+  TestDetectorCooldownFixtureIsolation TestDetectorCooperativeAcquisition \
+  TestAlertWriterLockLifetime TestAlertWriterDifferingPayloadLockLifetime \
+  TestAlertWriterCancellationLockLifetime \
+  TestAlertReservationsSchema TestAlertWriterReservation TestAlertWriterReservationAmbiguity \
+  TestAlertWriterReservationRestart TestAlertWriterReservationNativeAckLoss; do
   bash scripts/go-test-nonempty.sh './test/...' "^${name}$" -tags=integration -timeout 6m -p 1
 done
 
@@ -21,6 +25,11 @@ done
 
 for name in TestConfigWindowEnlargement TestConfigLedgerHandover; do
   bash scripts/go-test-nonempty.sh './internal/detection/...' "^${name}$" -timeout 60s
+done
+bash scripts/go-test-nonempty.sh './internal/kafkax/...' '^TestDetectorCooperativeOffsetFetch$' -timeout 60s
+bash scripts/go-test-nonempty.sh './internal/config/...' '^TestLoadAlertWriterResourceAdmission$' -race -timeout 60s
+for name in TestAlertWriterReservationProtocol TestAlertWriterFailpointBuildBoundary; do
+  bash scripts/go-test-nonempty.sh './internal/alertwriter/...' "^${name}$" -race -timeout 60s
 done
 
 # One original 15m orchestration per scenario; repeat covers two plus setup.
