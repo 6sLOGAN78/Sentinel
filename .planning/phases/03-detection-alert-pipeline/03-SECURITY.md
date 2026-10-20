@@ -212,6 +212,16 @@ The separately recorded `03-RESERVATION-ROLLOUT-CHECK.md` establishes the local 
 
 ## Security audit trail
 
+Root second post-audit delta check: b336634/df0bfbb change only the existing
+static scenario integration fixture. A real unrelated shared workflow is seeded
+and fully preserved; the scenario receives a unique quoted UUID database with
+ordinary migrations and private environment wiring. Strict verification/runtime
+are unchanged. Independent03-REVIEW-FINAL-FIXTURE-R2.md is clean and documents
+bounded owned-database cleanup plus its unobserved-process-join limitation.
+This maps to existing T-03-13-02/03 acceptance-isolation/ownership obligations;
+no public surface, dependency, accepted risk or mitigation removal was added.
+The failed full aggregate is not waived: repaired-source rerun remains pending.
+
 Root post-audit delta check: `26f3f8a` changes only two generator test files,
 adding fail-if-key-load sentinels and stage-specific refusal diagnostics. No
 runtime, schema, dependency, credential flow or control boundary changed.

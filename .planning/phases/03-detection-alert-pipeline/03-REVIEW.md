@@ -16,7 +16,7 @@ phase_acceptance: pending
 # Phase 3 aggregate source-review disposition
 
 No open source-review finding remains at runtime/wiring62099b2 plus test-only
-repair26f3f8a. This canonical artifact aggregates independent scoped reports;
+repair26f3f8a and fixture-only isolationdf0bfbb. This canonical artifact aggregates independent scoped reports;
 it is not a newly executed all-source review or an acceptance/CI result.
 Historical reports and their original issue counts remain unchanged.
 
@@ -29,6 +29,7 @@ Historical reports and their original issue counts remain unchanged.
 | `03-REVIEW-PRODUCTION-R2.md` | Deep complete16-file reservation repair at3a26feb plus17bounded unchanged contracts | CR-02-R1 addressed for conforming reservation writers; zero findings |
 | `03-REVIEW-FINAL-DELTA.md` | Remaining73changed artifacts at62099b2:64fullreads,8completebaseline diffs with context,1exhaustive structured fixture inspection | One test-causality WARNING, no runtime blocker |
 | `03-REVIEW-FINAL-DELTA-R1.md` | Full two-file test repair at26f3f8a | Final-delta WR-01 addressed; zero findings |
+| `03-REVIEW-FINAL-FIXTURE-R2.md` | Full one-file static scenario PG isolation/regression atdf0bfbb | No findings; strict verifier unchanged, unrelated complete workflow preserved; cleanup-proof limitation explicit |
 
 The original production list, reservation R2 list and final remaining list cover
 129 unique changed non-planning artifacts. Lists, frozen heads, precise
@@ -39,6 +40,16 @@ fixture was exhaustively parsed/normalized and independently checked, not visual
 read as45,311repetitive lines or regenerated. No unreviewed listed scope remains.
 
 ## Execution and safety limits
+
+The later full suite failed at strict workflow-payload reconciliation even though
+the exact-family matrix had passed. Native ConcurrentReplay→static-all reproduced
+shared-PG contamination; regressionREDb336634/private-PGGREENdf0bfbb isolates
+the fixture without changing runtime, canonical goldens, verifier predicates or
+budgets. Independent R2 reviewed the complete changed file and direct contracts.
+This does not retroactively establish causes of older discarded-diagnostic failures.
+Existing process cleanup requests kill without an explicit join; PG18's bounded
+session wait mitigates ordinary disconnect. R2 did not establish a concrete bug
+or claim completed join evidence. Full aggregate acceptance must still be rerun.
 
 Reviewers ran no project tests, builds, live operations, staging or commits.
 Root/executor execution evidence is separately attributed in repair/evidence
