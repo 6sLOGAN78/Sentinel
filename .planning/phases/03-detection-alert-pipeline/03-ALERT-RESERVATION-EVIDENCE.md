@@ -172,3 +172,28 @@ consistent with the reproduced mechanism but not retroactively proven by it.
 
 The user subsequently authorized root alone to push and monitor hosted CI after
 all local gates pass. No remote action or hosted success is claimed by this agent.
+
+## Interrupted aggregate and preserved-stack recovery
+
+The repaired full aggregate started at 16:45:49Z in session46545 was last
+observed active around17:06Z. On resume at17:12:34Z no process or volatile log
+remained, so its final result is **UNKNOWN/INTERRUPTED**, never inferred from
+container state. This attempt is not the earlier measured exit2 failure above.
+
+The replacement executor stopped exactly the five application services (exit0),
+then restored only Kafka/CH/PG/Redis with a180s wrapper and150s readiness bound:
+exit0/7.54s. Existing named volumes were preserved. A bounded read-only comparison
+with applications stopped found163 workflows,72 reservations and163 physical CH
+rows/globalIDs: zero cross-store tenant/fingerprint disagreements, zero workflows
+missing CH evidence and zero physical rows lacking workflow/reservation authority
+(exit0/0.57s). This checks current header identity/authority consistency, not a
+repeat of the historical complete canonical-payload hash audit or its91-row count.
+`timeout180s make migrate` returned0/0.42s with existing migrations applied; no downgrade
+or data reset was performed. New long logs are private beneath ignored
+`.local/phase3-acceptance/` (directory0700), surviving volatile `/tmp` loss.
+Recovery `timeout10m make dev-up` returned0/45.07s; `timeout180s
+scripts/check-stack.sh` returned0/15.42s with all dependencies/applications healthy
+and the existing topic/readiness/native checks passing. Fresh exact
+`make test-integ` (32m, serial `-p1`) is running in session82980; its persistent
+log is `.local/phase3-acceptance/full-integ-restored.log`. Actual final exit and
+seven retained selectors remain pending. No new runtime/fixture delta was made.
