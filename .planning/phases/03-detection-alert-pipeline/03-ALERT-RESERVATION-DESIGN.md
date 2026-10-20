@@ -2,7 +2,7 @@
 
 Date: 2026-10-20
 
-Status: Written design awaiting user review; not implemented
+Status: User approved 2026-10-20; implementation plan awaiting review; not implemented
 
 Baseline: `3cd0474`
 
