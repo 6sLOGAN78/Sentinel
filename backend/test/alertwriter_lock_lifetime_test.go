@@ -207,11 +207,23 @@ func (s *observedWorkflowStore) BeginLocked(ctx context.Context, id string) (pgx
 
 type observedLifetimeTx struct {
 	pgx.Tx
-	returned <-chan struct{}
-	rollback chan bool
+	returned  <-chan struct{}
+	rollback  chan bool
+	committed bool
+}
+
+func (tx *observedLifetimeTx) Commit(ctx context.Context) error {
+	err := tx.Tx.Commit(ctx)
+	tx.committed = err == nil
+	return err
 }
 
 func (tx *observedLifetimeTx) Rollback(ctx context.Context) error {
+	// A positively acknowledged reservation commit already released its lock.
+	// Observe all still-open/uncertain effect transactions exactly as before.
+	if tx.committed {
+		return tx.Tx.Rollback(ctx)
+	}
 	returned := false
 	select {
 	case <-tx.returned:

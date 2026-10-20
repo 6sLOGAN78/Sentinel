@@ -78,7 +78,9 @@ func (s *protocolWorkflows) FindReservation(_ context.Context, tx pgx.Tx, _ stri
 	return r.tenant, r.fingerprint, append([]byte(nil), r.payload...), nil
 }
 
-func (s *protocolWorkflows) InsertReservation(_ context.Context, tx pgx.Tx, _, tenant, fp string, payload []byte) error {
+func (s *protocolWorkflows) InsertReservation(_ context.Context, tx pgx.Tx,
+	_, tenant, fp string, payload []byte,
+) error {
 	if s.reservation == nil {
 		tx.(*protocolTx).reservation = &protocolReservation{tenant, fp, append([]byte(nil), payload...)}
 	}
@@ -294,7 +296,9 @@ func TestAlertWriterReservationProtocol(t *testing.T) {
 }
 
 func testCorruptReservations(t *testing.T) {
-	for _, kind := range []string{"missing payload", "invalid JSON", "oversized", "unknown field", "schema", "identity", "ID", "tenant", "fingerprint"} {
+	for _, kind := range []string{
+		"missing payload", "invalid JSON", "oversized", "unknown field", "schema", "identity", "ID", "tenant", "fingerprint",
+	} {
 		t.Run(kind, func(t *testing.T) {
 			a := identityAlert(t)
 			r := savedProtocolReservation(t, a)

@@ -39,11 +39,13 @@ type DetectionStore interface {
 	Get(context.Context, string, string) (*contracts.Alert, error)
 }
 
-// WorkflowStore holds the per-ID transaction lock until both sinks are durable.
+// WorkflowStore commits immutable authority before the locked sink effects.
 type WorkflowStore interface {
 	BeginLocked(context.Context, string) (pgx.Tx, error)
 	Find(context.Context, pgx.Tx, string) (string, string, error)
 	Ensure(context.Context, pgx.Tx, *contracts.Alert, string) error
+	FindReservation(context.Context, pgx.Tx, string) (string, string, []byte, error)
+	InsertReservation(context.Context, pgx.Tx, string, string, string, []byte) error
 }
 
 // QuarantinePublisher acknowledges the existing bounded, sanitized DLQ envelope.
@@ -179,42 +181,13 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record, budgets con
 }
 
 func (w *Writer) persist(ctx context.Context, alert *contracts.Alert, fingerprint string) error {
-	tx, err := w.workflows.BeginLocked(ctx, alert.AlertID)
+	attempt, err := w.prepareReservation(ctx, alert, fingerprint)
 	if err != nil {
 		return err
 	}
-	defer rollback(tx)
-	tenant, winner, err := w.workflows.Find(ctx, tx, alert.AlertID)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return err
-	}
-	if err == nil && (tenant != alert.TenantID || winner != fingerprint) {
-		return ErrConflict
-	}
-	hasWinner := err == nil
-	retained, getErr := w.detections.Get(ctx, alert.TenantID, alert.AlertID)
-	if getErr != nil && !errors.Is(getErr, storageclickhouse.ErrNotFound) {
-		return getErr
-	}
-	if getErr == nil {
-		retainedFingerprint, fpErr := ImmutableFingerprint(retained)
-		if fpErr != nil {
-			return fpErr
-		}
-		if retainedFingerprint != fingerprint {
-			return ErrConflict
-		}
-	} else if err = w.detections.InsertBatch(ctx, []*contracts.Alert{alert}); err != nil {
-		return err
-	}
-	// Equal winners already own the workflow. Avoid even ON CONFLICT INSERT:
-	// defaults allocate seq before conflict detection, and replay needs no write.
-	if !hasWinner {
-		if err = w.workflows.Ensure(ctx, tx, alert, fingerprint); err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
+	// prepareReservation has returned (and released its pool connection) before
+	// another transaction begins, under the same original operation deadline.
+	return w.persistReserved(ctx, attempt, fingerprint)
 }
 
 func rollback(tx pgx.Tx) {

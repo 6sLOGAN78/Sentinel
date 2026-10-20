@@ -47,12 +47,20 @@ func (c *orderConsumer) CommitRecords(_ context.Context, records ...*kgo.Record)
 
 type orderTx struct {
 	pgx.Tx
-	t         *testing.T
-	order     *[]string
-	commitErr error
+	t           *testing.T
+	order       *[]string
+	commitErr   error
+	store       *orderWorkflows
+	reservation *protocolReservation
+	preparing   bool
 }
 
 func (tx *orderTx) Commit(context.Context) error {
+	if tx.preparing {
+		*tx.order = append(*tx.order, "reservation-commit")
+		tx.store.reservation = tx.reservation
+		return nil
+	}
 	*tx.order = append(*tx.order, "pg-commit")
 	return tx.commitErr
 }
@@ -67,15 +75,32 @@ func (tx *orderTx) Rollback(ctx context.Context) error {
 }
 
 type orderWorkflows struct {
-	tx        *orderTx
-	ensureErr error
-	findErr   error
-	winner    *contracts.Alert
+	tx          *orderTx
+	ensureErr   error
+	findErr     error
+	winner      *contracts.Alert
+	reservation *protocolReservation
+	begins      int
 }
 
 func (s *orderWorkflows) BeginLocked(context.Context, string) (pgx.Tx, error) {
 	*s.tx.order = append(*s.tx.order, "lock")
-	return s.tx, nil
+	s.begins++
+	tx := *s.tx
+	tx.store, tx.preparing = s, s.begins%2 == 1
+	tx.reservation = s.reservation
+	return &tx, nil
+}
+func (s *orderWorkflows) FindReservation(_ context.Context, tx pgx.Tx, _ string) (string, string, []byte, error) {
+	r := tx.(*orderTx).reservation
+	if r == nil {
+		return "", "", nil, pgx.ErrNoRows
+	}
+	return r.tenant, r.fingerprint, r.payload, nil
+}
+func (*orderWorkflows) InsertReservation(_ context.Context, tx pgx.Tx, _, tenant, fp string, payload []byte) error {
+	tx.(*orderTx).reservation = &protocolReservation{tenant, fp, payload}
+	return nil
 }
 func (s *orderWorkflows) Find(context.Context, pgx.Tx, string) (string, string, error) {
 	*s.tx.order = append(*s.tx.order, "pg-preflight")
@@ -123,12 +148,16 @@ func TestAlertWriterOrdering(t *testing.T) {
 		want                             []string
 	}{
 		{"success", nil, nil, nil, nil,
-			[]string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "pg-commit", "rollback", "source-commit"}},
-		{"CH failure", failure, nil, nil, nil, []string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "rollback"}},
+			[]string{"lock", "pg-preflight", "ch-preflight", "reservation-commit", "rollback",
+				"lock", "pg-preflight", "ch-ack", "pg-ensure", "pg-commit", "rollback", "source-commit"}},
+		{"CH failure", failure, nil, nil, nil, []string{"lock", "pg-preflight", "ch-preflight",
+			"reservation-commit", "rollback", "lock", "pg-preflight", "ch-ack", "rollback"}},
 		{"PG failure after CH", nil, failure, nil, nil,
-			[]string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "rollback"}},
+			[]string{"lock", "pg-preflight", "ch-preflight", "reservation-commit", "rollback",
+				"lock", "pg-preflight", "ch-ack", "pg-ensure", "rollback"}},
 		{"PG commit failure", nil, nil, failure, nil,
-			[]string{"lock", "pg-preflight", "ch-preflight", "ch-ack", "pg-ensure", "pg-commit", "rollback"}},
+			[]string{"lock", "pg-preflight", "ch-preflight", "reservation-commit", "rollback",
+				"lock", "pg-preflight", "ch-ack", "pg-ensure", "pg-commit", "rollback"}},
 		{"preflight failure", nil, nil, nil, failure, []string{"lock", "pg-preflight", "rollback"}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
@@ -167,7 +196,8 @@ func TestAlertWriterOrdering(t *testing.T) {
 		writer := alertwriter.New(consumer, &orderDetections{order: &order, retained: winner},
 			&orderWorkflows{tx: tx, winner: winner, ensureErr: errors.New("replay must not INSERT")}, settings, zerolog.Nop())
 		require.NoError(t, writer.Run(ctx), "an authoritative identical winner needs no new workflow INSERT")
-		require.Equal(t, []string{"lock", "pg-preflight", "ch-preflight", "pg-commit", "rollback", "source-commit"}, order)
+		require.Equal(t, []string{"lock", "pg-preflight", "ch-preflight", "reservation-commit", "rollback",
+			"lock", "pg-preflight", "pg-commit", "rollback", "source-commit"}, order)
 	})
 }
 
@@ -260,6 +290,7 @@ func TestAlertWriterPoisonPrefix(t *testing.T) {
 		}
 		require.Equal(t, 2, countOrder(*order, "ch-ack"))
 		require.Equal(t, 2, countOrder(*order, "pg-commit"))
+		require.Equal(t, 2, countOrder(*order, "reservation-commit"))
 		require.Equal(t, 1, c.released)
 	})
 	t.Run("reject before sink and release winner lock before quarantine", testAlertPoisonClassification)
