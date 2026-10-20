@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-stopped_at: Runtime interrupted; repaired fullsuite exit/log unavailable, stack recovery and repeat required
-last_updated: "2026-10-20T17:12:34Z"
+stopped_at: Stack recovered with volumes preserved; interrupted fullgate repeating with persistent logs
+last_updated: "2026-10-20T17:17:00Z"
 last_activity: 2026-10-20
 progress:
   total_phases: 6
@@ -183,6 +183,7 @@ None yet.
 
 ### Planning Continuation
 
+- Freshrecoveryexecutor /root/phase3_14_restore completedexact5appstop0,infraup0/7.54s,read-onlycurrentauthoritymap0/0.57s(163workflows,72reservations,163physical/globalCHIDs,noauthority/fingerprintmismatch;NOclaimhistoricalfullrehash),migratenoop0/0.42s,dev-up0/45.07s,check-stack0/15.42s. No data/volumesremoved,no runtimechange. Repeatedinterruptedexactmake test-integ32m active82980, privatepersistentlog.local/phase3-acceptance/full-integ-restored.log. SevenPhase2CIexactselectorspreparedafterfullreturns. Lost46545resultstaysUNKNOWN. Localgatesmustallpassbeforeauthorizedrootpush/CI. Rootnotcompetingwithliveproducer; executorupdatesactualexitsdurably.
 - Userresume17:12:34Z foundallprioragentsabsent, noactiveprocesses and/tmp/sentinel-03-14-after-fixture-full-integ.logmissing. Repairedfullsession46545lastobserved~17:06active20m50; finalexitUNKNOWN/INTERRUPTED, notsuccessorfailureinferred. Composeall4depsstopped~17:07; applicationsCreatedorrestartloop, migrationexit2/topic-init137. Existingnamedvolumesmustpreserve. Fresh /root/phase3_14_restore gsd-executor explicitlyowns safeexistingstackrecovery thenrepeatonlyinterruptedfullgate32m+remaining7Phase2selectors/finaldocs/SUMMARYbeforetracking. Newlonglogsprivateworkspaceignored.local/phase3-acceptanceinsteadvolatile/tmp. Completed46matrix/seed/repairedscenario/staticreviews remainindurableartifacts andarenotredispatchedblind. Runtimeunchanged;nohostedpushuntilalllocalpass. Priorverifierprepcanberestoredfromrootcontext; no03-VERIFICATIONexists. StopbeforePhase4.
 - FixtureR2reviewad64731clean, noproductionchange. OriginalcombinedcausalGREEN0/43.02s/pkg39.230s. Finalpostfixtureunit/race/web6/Python121/lint/build/default+integrationvet/integrationlintbundlePASS0/47.43s. CompleteaffectedTestDetectionScenariosPASS0/282.50s(pkg279.476,family247.18,staticall4.05/liveedges237.30) withstrictverifierandcanonicalfixturesunchanged. Nowrepairedfullmake test-integ32m serialsession46545/log/tmp/sentinel-03-14-after-fixture-full-integ.log started16:45:49Z. SevenindependentPhase2selectorsstillqueued. NoSUMMARY/tracking/phasepass/pushyet. Goalverifierprepcomplete54truths/72artifactdecls(68paths)/46links/all14IDs, finalheld. Historical46wholematrixPASSbeforefixture-onlydelta plusaffectedselectorPASSafterdelta areseparateproof, notinventedfreshwhole46run.
 - Fullsuitefailurecausereproduced withnativeConcurrentReplay→staticall inonepackage: sharedPGunexpectedworkflowonsame192.0.2.10source matches strictworkflowquery, whileCH/topicswereprivate; actualREDexit1/84.37sameworkflow_payload. PermanentregressionREDb336634 preservespreexistingworkflowfullrowandfailsintendedstage (112.80s;initialKafkaCOORDINATORsetupfailureexplicitlynotRED). Fixture-onlydf0bfbb givesstaticfixtureuniqueUUIDPGdatabase/allmigrations andwiresworkers/ingestkey/verifier; cleanup10sONLYownedDBafterchildrenLIFO. No runtime/golden/verifier/assertion/budgetchange. FocusedGREEN0/51.89pkg44.876static4.76; originalcombinedGREEN/fullscenario rerunsactive. IndependentonefileR2review /root/phase3_final_review writes03-REVIEW-FINAL-FIXTURE-R2.md; rootwillnotduplicatescope/livework. New32mfullaggregatehelduntilreviewclean. Original46matrixpassedbeforethisfixture-onlydelta; doNOTclaimitranagain. Conditionalpushstillhelduntilalllocalsucceed.
