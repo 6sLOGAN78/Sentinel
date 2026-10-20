@@ -133,6 +133,7 @@ class Phase3GuardTests(unittest.TestCase):
 
     def test_ci_requires_phase3_and_retains_phase2_with_live_prerequisites(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn("./internal/detector ./internal/eventwriter ./internal/alertwriter", workflow)
         integration = workflow.split("\n  integration:\n", 1)[1].split("\n  #", 1)[0]
         self.assertIn("make test-integ", integration)
         for group in ("API key", "ingest", "dedupe schema and TTL", "writer and DLQ",
