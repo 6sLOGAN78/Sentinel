@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
+from sentinel_generator import cli
 from sentinel_generator.cli import main
 from sentinel_generator.live_schedule import build_live_schedule, delivery_deadline, wait_for_batch
 from sentinel_generator.scenarios import RULES, build_scenario
@@ -292,7 +293,15 @@ def test_private_schedule_cli_and_live_sender_waits(
     assert result["source_partitions"] == json.loads(schedule_path.read_text())["source_partitions"]
 
 
-def test_live_cli_refuses_tampered_schedule_before_key_loading(tmp_path: Path) -> None:
+def test_live_cli_refuses_tampered_schedule_before_key_loading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def forbidden_key_load(**_kwargs: object) -> str:
+        pytest.fail("invalid schedule reached credential loading")
+
+    monkeypatch.setattr(cli, "_load_api_key", forbidden_key_load)
     schedule, _ = build_live_schedule(
         snapshot=snapshot(),
         name="auth-brute-force",
@@ -323,6 +332,10 @@ def test_live_cli_refuses_tampered_schedule_before_key_loading(tmp_path: Path) -
             utc_now=lambda: NOW,
         )
         == 1
+    )
+    assert (
+        "live schedule does not match the derived events, windows and waits"
+        in capsys.readouterr().err
     )
     assert not (tmp_path / "absent.json").exists()
 

@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
+from sentinel_generator import cli
 from sentinel_generator.cli import main
 from sentinel_generator.scenarios import SCENARIO_NAMES, build_scenario
 
@@ -292,9 +293,17 @@ def test_ready_schedule_reuses_authenticated_identical_retry_bytes_per_batch(
 
 @pytest.mark.parametrize("defect", ["catchup", "future", "deadline", "ids", "tenant", "symlink"])
 def test_schedule_refuses_before_injection(
-    defect: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    defect: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.delenv("SENTINEL_API_KEY", raising=False)
+
+    def forbidden_key_load(**_kwargs: object) -> str:
+        pytest.fail("invalid schedule reached credential loading")
+
+    monkeypatch.setattr(cli, "_load_api_key", forbidden_key_load)
     path = _schedule(tmp_path)
     schedule = json.loads(path.read_text())
     if defect == "catchup":
@@ -331,4 +340,13 @@ def test_schedule_refuses_before_injection(
         )
         == 1
     )
+    diagnostic = {
+        "catchup": "source partitions are not caught up",
+        "future": "scheduled batch requires the operator clock-wait scheduler",
+        "deadline": "caught-up schedule is expired or exceeds the 15-minute deadline",
+        "ids": "scheduled batch event IDs do not match the run",
+        "tenant": "caught-up schedule does not match this run",
+        "symlink": "key file is not a regular file",
+    }
+    assert diagnostic[defect] in capsys.readouterr().err
     assert not (tmp_path / "run.json").exists()
