@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -103,6 +104,28 @@ func scenarioEnvironment(t *testing.T, service string, settings map[string]strin
 	return result
 }
 
+func newStaticScenarioPG(ctx context.Context, t *testing.T) config.DatabaseConfig {
+	t.Helper()
+	admin, err := pgx.Connect(ctx, database.ConnString(pgCfg))
+	require.NoError(t, err)
+	pg := pgCfg
+	pg.Name = "static_scenario_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	identifier := pgx.Identifier{pg.Name}.Sanitize()
+	_, err = admin.Exec(ctx, "CREATE DATABASE "+identifier)
+	require.NoError(t, err)
+	// Registered before service cleanups: LIFO stops/joins every owned process
+	// before dropping only this fixture's unique database, never shared rows.
+	t.Cleanup(func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		defer admin.Close(cleanup)
+		_, dropErr := admin.Exec(cleanup, "DROP DATABASE "+identifier)
+		require.NoError(t, dropErr)
+	})
+	require.NoError(t, database.Migrate(ctx, pg, zerolog.Nop()))
+	return pg
+}
+
 func runStaticScenario(ctx context.Context, t *testing.T, root string, fixture scenarioCase) {
 	t.Helper()
 	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafkaCfg.Brokers, ",")...))
@@ -122,12 +145,14 @@ func runStaticScenario(ctx context.Context, t *testing.T, root string, fixture s
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(rules, rulesBytes, 0o600))
 	ch, _ := newRecoveryDatabase(t)
+	pg := newStaticScenarioPG(ctx, t)
 	settings := map[string]string{
 		"SENTINEL_KAFKA.EVENTS_TOPIC": topic, "SENTINEL_KAFKA.ALERTS_TOPIC": alerts,
 		"SENTINEL_KAFKA.DETECTOR_GROUP":     group,
 		"SENTINEL_KAFKA.EVENT_WRITER_GROUP": "scenario-events-" + uuid.NewString(),
 		"SENTINEL_KAFKA.ALERT_WRITER_GROUP": "scenario-writer-" + uuid.NewString(),
 		"SENTINEL_DETECTOR.RULES_PATH":      rules, "SENTINEL_CLICKHOUSE.DATABASE": ch.Database,
+		"SENTINEL_DATABASE.NAME":         pg.Name,
 		"SENTINEL_WRITER.FLUSH_INTERVAL": "100ms",
 	}
 	for _, service := range []string{"detector", "event-writer", "alert-writer"} {
@@ -146,7 +171,7 @@ func runStaticScenario(ctx context.Context, t *testing.T, root string, fixture s
 			port = strings.TrimPrefix(value, "SENTINEL_SERVER.PORT=")
 		}
 	}
-	db, err := database.New(ctx, pgCfg, zerolog.Nop())
+	db, err := database.New(ctx, pg, zerolog.Nop())
 	require.NoError(t, err)
 	defer db.Close()
 	key, err := apikeys.NewStore(db.Pool).Create(ctx, "demo", []string{apikeys.ScopeWrite}, "scenario-"+uuid.NewString())
@@ -173,25 +198,25 @@ func runStaticScenario(ctx context.Context, t *testing.T, root string, fixture s
 		expected = append(expected, string(raw))
 	}
 	manifest["expected_alert_bytes"] = expected
-	manifest = staticVerifier(ctx, t, root, "capture", path, manifest, settings, ch)
+	manifest = staticVerifier(ctx, t, root, "capture", path, manifest, settings, ch, pg)
 	ids := postStaticScenario(ctx, t, "http://127.0.0.1:"+port, key, fixture.Events)
 	manifest["event_ids"] = ids
-	proof := staticVerifier(ctx, t, root, "verify", path, manifest, settings, ch)
+	proof := staticVerifier(ctx, t, root, "verify", path, manifest, settings, ch, pg)
 	require.Equal(t, true, proof["verified"])
 	require.Equal(t, true, proof["drained"])
 }
 
 func staticVerifier(ctx context.Context, t *testing.T, root, mode, path string, manifest map[string]any,
-	settings map[string]string, ch config.ClickHouseConfig) map[string]any {
+	settings map[string]string, ch config.ClickHouseConfig, pg config.DatabaseConfig) map[string]any {
 	t.Helper()
 	raw, err := json.Marshal(manifest)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, raw, 0o600))
 	cmd := exec.CommandContext(ctx, "go", "run", "./tools/check-alerts", mode, "--manifest", path)
 	cmd.Dir = filepath.Join(root, "backend")
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"), "PGHOST=" + pgCfg.Host,
-		"PGPORT=" + strconv.Itoa(pgCfg.Port), "PGUSER=" + pgCfg.User, "PGPASSWORD=" + pgCfg.Password,
-		"PGDATABASE=" + pgCfg.Name, "PGSSLMODE=disable", "SENTINEL_KAFKA.BROKERS=" + kafkaCfg.Brokers,
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"), "PGHOST=" + pg.Host,
+		"PGPORT=" + strconv.Itoa(pg.Port), "PGUSER=" + pg.User, "PGPASSWORD=" + pg.Password,
+		"PGDATABASE=" + pg.Name, "PGSSLMODE=" + pg.SSLMode, "SENTINEL_KAFKA.BROKERS=" + kafkaCfg.Brokers,
 		"SENTINEL_CLICKHOUSE.NATIVE_ADDRESS=" + ch.NativeAddress, "SENTINEL_CLICKHOUSE.USER=" + ch.User,
 		"SENTINEL_CLICKHOUSE.PASSWORD=" + ch.Password, "SENTINEL_CLICKHOUSE.DATABASE=" + ch.Database}
 	for _, name := range []string{"SENTINEL_KAFKA.EVENTS_TOPIC", "SENTINEL_KAFKA.ALERTS_TOPIC",
