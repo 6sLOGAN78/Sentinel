@@ -124,3 +124,51 @@ scripts/check-stack.sh` returned exit 0 in 13.32s: four dependencies, all five
 applications, topic partitions/retention, auto-create refusal, ports, readiness
 and native dependency checks passed. This is startup evidence; final full/script/
 operator gates and hosted CI remain pending.
+
+## Resumed local closeout evidence
+
+The exact 46-family `make test-phase3` invocation returned exit 0 in 2,545.66s
+(42m26s), with 46 separate top-level named PASS results. Its scenario parent
+passed in 229.18s and preserved repeat in 583.03s; the repeat actually executed
+the legacy seed and both documented `timeout 16m make seed-scenarios` commands,
+checking distinct current IDs, prior workflow/event/CH preservation, drained
+checkpoints and zero new late drops. This measured duration leaves tight fresh-
+setup headroom in the unchanged 45m CI job; no hosted result is inferred.
+The separate documented `timeout 10m make seed` wrapper returned exit 0 in
+43.83s: 1,000 sent/accepted/visible, three API checks, tenant isolation and no retry.
+
+The subsequent full aggregate **failed**: exit 2 in 1,824.17s, package 1,822.485s,
+within its 32m ceiling. Its only failure was static-all at fixed `workflow_payload`
+after 60.83s. A causal two-fixture run (`TestAlertWriterConcurrentReplay` followed
+by `TestDetectionScenarios/isolated-static-all` in one package/PG) reproduced that
+stage: writer passed, static failed, exit 1/84.37s. Static topics and CH were private
+but PG was shared; an unrelated workflow's source `192.0.2.10` matched the verifier's
+deliberately strict all-source query. Do not weaken that query or delete its rows.
+
+Tests-only `b336634` adds a real-writer same-source prior workflow and full-row
+preservation assertion to static-all. It failed at the intended stage before the
+fix (exit 1/112.80s). An earlier new-setup attempt hit Kafka coordinator discovery
+and is explicitly not the regression RED. `df0bfbb` gives each static fixture a
+unique native PG database, existing migrations and consistent worker/key/verifier
+settings. It changes only the test fixture, not runtime, canonical goldens,
+verifier checks or budgets. Cleanup drops only that owned database within 10s;
+existing process cleanup is not claimed as an observed join. Independent fixture
+R2 is clean in `03-REVIEW-FINAL-FIXTURE-R2.md` (`ad64731`).
+
+Focused regression GREEN returned exit 0/51.89s; the exact original combined
+causal command then returned exit 0/43.02s. The complete affected
+`^TestDetectionScenarios$` family returned exit 0/282.50s (package 279.476s):
+static boundary/lateness/all and preserved live edges all passed. The 45 unchanged
+families retain their actual earlier independent invocation evidence; this is
+explicit affected-test delta verification, not a fabricated second whole-46 run.
+
+After both the fixture fix and root's generator-test-only strengthening `26f3f8a`,
+full `make test`, `make lint`, bounded build, default/integration vet and full
+integration-tag lint returned exit 0 as one serial 47.43s bundle (Go race, web 6,
+generator 121; lint zero issues). All script unit tests previously passed 43/43
+in 82.764s. A fresh post-fix full 32m aggregate and seven retained Phase 2 selector
+groups remain pending at this checkpoint. Historical unknown failures above are
+consistent with the reproduced mechanism but not retroactively proven by it.
+
+The user subsequently authorized root alone to push and monitor hosted CI after
+all local gates pass. No remote action or hosted success is claimed by this agent.
