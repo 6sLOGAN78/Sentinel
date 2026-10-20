@@ -212,6 +212,14 @@ The separately recorded `03-RESERVATION-ROLLOUT-CHECK.md` establishes the local 
 
 ## Security audit trail
 
+Root post-audit delta check: `26f3f8a` changes only two generator test files,
+adding fail-if-key-load sentinels and stage-specific refusal diagnostics. No
+runtime, schema, dependency, credential flow or control boundary changed.
+The counterexample mutations now fail, normal67tests/static checks pass, and
+independent `03-REVIEW-FINAL-DELTA-R1.md` closes the test-only warning. Existing
+mitigation-presence closures remain applicable; the missing03-14 summary and
+final gate reconciliation remain pending, not silently checked off.
+
 | Audit date | Threats total | Mitigate closed | Accepted closed | Transfer closed | Open | Unregistered warnings | Run by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-20 | 78 | 57 | 21 | 0 | 0 | 0 | gsd-security-auditor; frozen-source read-only verification |
