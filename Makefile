@@ -16,7 +16,7 @@ PG_HOST ?= 127.0.0.1
 PG_PORT ?= 15432
 CH_ADDR ?= http://127.0.0.1:18123
 
-.PHONY: help dev-up dev-down reset migrate test test-integ lint seed seed-scenarios bench run
+.PHONY: help dev-up dev-down reset migrate test test-integ test-phase3 lint seed seed-scenarios bench run
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
@@ -54,8 +54,15 @@ test: web/node_modules generator/.venv ## Run unit tests for backend, web and ge
 	cd web && npm test
 	cd generator && uv run --locked pytest
 
-test-integ: ## Run integration tests (needs Docker)
-	cd backend && go test -tags=integration -timeout 10m -p 1 ./test/...
+# The measured full suite exhausted 10m before scenarios. It now includes all
+# causal crash cuts plus 16m scheduled / 32m preserved-repeat subtests, so the
+# aggregate gate has a finite 32m ceiling. Individual family caps stay unchanged.
+test-integ: ## Run all integration tests (needs Docker and make dev-up)
+	cd backend && go test -tags=integration -timeout 32m -p 1 ./test/...
+
+# Ordinary groups 6m, cooldown 8m, scheduled scenario 16m, preserved repeat 32m.
+test-phase3: ## Run each exact Phase 3 acceptance family (needs healthy dev stack)
+	bash scripts/check-phase3-tests.sh
 
 lint: web/node_modules generator/.venv ## Run linters for backend, web and generator
 	cd backend && go tool -modfile=tools.mod golangci-lint run ./...

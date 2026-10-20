@@ -151,14 +151,14 @@ equal replay retains the original sequence and analyst state.
    before admitting traffic. Scoped R2 is clean, but final local acceptance and
    phase-wide verification must also pass before release.
 
-The current checkpoint is **not** a completed rollout: the parent observed
-Kafka/PG/CH/Redis stopped, then stopped the five restart-looping old applications.
-Dependencies were down at that preflight; no reservation migration, new-binary
-startup or healthy-stack acceptance is established by it. Restore infrastructure
-with all writers disabled before retained-outcome reconciliation. Confirmed old
-CH server termination ends requests on that instance; it does not prove retained
-data consistent. Earlier healthy-stack evidence is historical, not current
-acceptance. Root coordinates this gate before authorizing new traffic.
+The [preserved-stack rollout check](../.planning/phases/03-detection-alert-pipeline/03-RESERVATION-ROLLOUT-CHECK.md)
+records confirmed old CH server termination, all five old applications stopped,
+infrastructure-only restoration, full reconciliation of 91 physical alerts/IDs/
+workflows, and additive migration 006 with complete snapshots unchanged. Root
+then authorized new-protocol startup. The executor's subsequent `make dev-up`
+returned zero, followed by `scripts/check-stack.sh` (exit 0, 13.32s), observing all
+five applications and four dependencies healthy. These are local rollout/startup
+checks, not the still-pending final integration/operator acceptance or hosted CI.
 
 `alert_reservations` is separate operational authority, not the workflow/list
 index or detector cooldown ledger. Its globally unique ID, tenant, fingerprint

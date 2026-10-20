@@ -110,9 +110,17 @@ uncertain remote effects; stopped local processes alone are insufficient. At the
 current parent preflight Kafka/PG/CH/Redis were stopped and all five old apps were
 restart-looping. The parent stopped exactly those five applications with Compose
 (`stop --timeout 30`, exit 0), without removing containers, data or volumes.
-Dependencies were down at that preflight. No migration, new writer startup,
-healthy stack or current preserved-stack acceptance is claimed. R2 permits
-restoring infrastructure with all writers disabled, confirming old CH server
-termination and reconciling retained global workflow/physical CH outcomes. No
-such reconciliation is claimed here. New live/full gates remain held until root
-explicitly checks those rollout preconditions and releases the gates.
+Root subsequently completed the [rollout check](03-RESERVATION-ROLLOUT-CHECK.md),
+committed as `30b7808`: infrastructure-only restoration with applications stopped;
+all 91 physical rows/global IDs/workflows reconciled with canonical immutable
+hashes; zero conflicts/orphans/missing evidence; additive schema 006 and zero
+reservations; full workflow and physical CH snapshots unchanged. Confirmed old
+CH server termination excludes a still-running request on that local instance.
+Root explicitly released sequential new-protocol startup and final gates.
+
+`timeout 10m make dev-up` returned exit 0 on the final backend, preserving volumes
+and building the new images. `/usr/bin/time -f 'ELAPSED=%e EXIT=%x' timeout 180s
+scripts/check-stack.sh` returned exit 0 in 13.32s: four dependencies, all five
+applications, topic partitions/retention, auto-create refusal, ports, readiness
+and native dependency checks passed. This is startup evidence; final full/script/
+operator gates and hosted CI remain pending.

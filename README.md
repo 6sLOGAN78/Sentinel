@@ -2,8 +2,11 @@
 
 Sentinel is a distributed security-event platform for authenticated ingestion,
 durable Kafka delivery, ClickHouse storage, investigation, and alerting. The
-current Phase 2 stack accepts scoped event batches, persists them with
-at-least-once semantics, and serves tenant-scoped event lookups.
+current stack accepts scoped event batches, evaluates four deterministic
+event-time rules, persists detections and workflow rows, and serves tenant-scoped
+event lookups. Delivery is at-least-once with immediate visible deduplication.
+Phase 3 final regression and phase-wide verification are pending; dashboard login,
+alert query/triage APIs and SSE remain Phase 4 work.
 
 ## Prerequisites
 
@@ -27,7 +30,11 @@ Replace the `change-me-local` values with local-only passwords. Keep
 plain names configure Compose while the dotted names support host-run tools.
 Never commit `.env`.
 
-Start the complete Phase 2 path:
+Start the five-application path:
+
+Existing deployments must first follow the
+[stopped-writer reservation rollout](docs/operations.md#reservation-protocol-rollout).
+Do not mix old and new writer protocols or reconnect unresolved old native writes.
 
 ```sh
 make dev-up
@@ -36,8 +43,9 @@ scripts/check-stack.sh
 
 `make dev-up` is ordered and idempotent: it waits for Kafka, ClickHouse,
 PostgreSQL, and Redis; creates the declared topics; applies PostgreSQL and
-ClickHouse migrations; then builds and waits for `ingest`, `event-writer`, and
-`query-api`. Repeating it preserves existing volumes and reapplies the current
+ClickHouse migrations; then builds and waits for `ingest`, `detector`,
+`event-writer`, `alert-writer`, and `query-api`. Detector rules are mounted
+read-only from `config/rules.yaml`. Repeating startup preserves existing volumes and reapplies the current
 ClickHouse TTL and Kafka topic retention policies. `EVENTS_RETENTION_MS`,
 `ALERTS_RETENTION_MS`, and `DLQ_RETENTION_MS` in `.env` (or overriding shell
 environment values) apply to existing topics on every `make dev-up`.
@@ -106,6 +114,13 @@ TTL of 30 seconds. Redis-backed rate limiting fails closed by default, so a
 Redis outage rejects ingest instead of bypassing quota unless local config
 explicitly selects the audited fail-open mode.
 
+For exact malicious, benign, boundary and lateness expectations, follow the
+[preserved-state demo](docs/demo.md). With other producers paused, it runs
+`make seed` then two bounded `make seed-scenarios` commands on the same topics,
+groups and volumes. Each normal scenario run expects eight current alerts,
+preserves prior rows/workflows, and requires zero new late drops. Historical
+seed traffic itself is not claimed to produce zero late drops.
+
 ## Endpoints and readiness
 
 Every published port binds to `127.0.0.1` only.
@@ -115,7 +130,9 @@ Every published port binds to `127.0.0.1` only.
 | Ingest API | `http://127.0.0.1:8080` |
 | Query API | `http://127.0.0.1:8081` |
 | Ingest readiness | `http://127.0.0.1:9101/readyz` |
+| Detector readiness / internal late counter | `http://127.0.0.1:9102/readyz` / `/metrics` |
 | Event-writer readiness | `http://127.0.0.1:9103/readyz` |
+| Alert-writer readiness | `http://127.0.0.1:9104/readyz` |
 | Query readiness | `http://127.0.0.1:9105/readyz` |
 | Kafka external listener | `127.0.0.1:29092` |
 | PostgreSQL | `127.0.0.1:15432` |
@@ -143,15 +160,15 @@ make run SVC=ingest
 
 `make run` forces public and operations listeners to `127.0.0.1` while
 preserving `SENTINEL_ENV_FILE`. Valid service names are `ingest`, `detector`,
-`event-writer`, `alert-writer`, and `query-api`; detector and alert-writer
-containers are intentionally deferred to Phase 3.
+`event-writer`, `alert-writer`, and `query-api`.
 
 ## Stop and verify
 
 ```sh
 make dev-down     # stops containers; named volumes are preserved
 make test         # Go, web, and generator unit tests
-make test-integ   # real dependency integration tests
+make test-integ   # full real-dependency suite; healthy dev stack required; 32m ceiling
+make test-phase3  # each exact Phase 3 family; healthy dev stack required
 make lint         # Go, web, and generator linters/type checks
 ```
 
@@ -168,13 +185,21 @@ its settings as a production deployment; production packaging, TLS, and secret
 distribution are later-phase work.
 
 The repository CI definition runs unit, integration, seed-orchestration,
-prohibited-module, and nonempty behavioral-group guards. These checks have
-been run locally; hosted GitHub Actions status remains pending until a branch
-is pushed and an actual workflow run completes.
+prohibited-module, and independently nonempty Phase 3 behavioral-group guards,
+while retaining every Phase 2 group. Ordinary families use six-minute ceilings,
+cooldown eight minutes, scheduled scenarios sixteen minutes and preserved repeat
+thirty-two minutes; relevant CI jobs are bounded to forty-five minutes. Final
+local gates remain pending; the scoped reservation R2 review is clean. The
+[preserved-stack rollout check](.planning/phases/03-detection-alert-pipeline/03-RESERVATION-ROLLOUT-CHECK.md)
+records retained-data reconciliation and additive migration, not full acceptance. Hosted
+Phase 3 GitHub Actions status is pending; no workflow was started by this work.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Architecture decisions](docs/decisions/)
 - [Event storage operations](docs/event-storage.md)
+- [Detection and alert operations](docs/operations.md)
+- [Preserved-state demo](docs/demo.md)
+- [Threat model](docs/threat-model.md)
 - [Benchmarks](benchmarks/README.md)

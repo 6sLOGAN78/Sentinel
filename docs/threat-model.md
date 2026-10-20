@@ -71,8 +71,11 @@ retention/compliance duration is invented.
 The additive schema rollout requires drained/stopped old writers and explicit
 reconciliation of old uncertain remote writes before new traffic. Process death
 is not proof of remote completion. Mixed-protocol rolling deployment is unsafe;
-unresolved outcomes must block rollout. The observed stopped dependencies and
-stopped five old applications are not a healthy-stack or migrated-stack proof.
+unresolved outcomes must block rollout. The separately recorded
+[rollout check](../.planning/phases/03-detection-alert-pipeline/03-RESERVATION-ROLLOUT-CHECK.md)
+reconciles all 91 retained identities and proves migration preservation before
+authorized new-protocol startup. Subsequent stack health is not a substitute for
+the final full integration/operator gates.
 See [operations](operations.md#reservation-protocol-rollout).
 
 Changed-config rolling handover is unsupported. Live demos require quiescent
