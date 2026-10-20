@@ -365,7 +365,7 @@ func requiredSections() map[string][]string {
 		ServiceIngest:      {sectionRedis, sectionKafka, sectionDatabase, sectionIngest},
 		ServiceDetector:    {sectionKafka, sectionDatabase, sectionDetector},
 		ServiceEventWriter: {sectionKafka, sectionClickHouse, sectionWriter},
-		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse},
+		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse, sectionWriter},
 		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis},
 	}
 }
