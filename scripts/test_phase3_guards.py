@@ -20,22 +20,32 @@ ORDINARY = (
     "TestAlertWorkflowReplay", "TestDetectorPoison", "TestConfigLedgerHandover",
     "TestDetectorPGDependency", "TestAlertsSchema", "TestDetectionDecisionsSchema",
     "TestDetectorCooldownFixtureIsolation",
+    "TestDetectorCooperativeAcquisition",
+    "TestAlertWriterLockLifetime", "TestAlertWriterDifferingPayloadLockLifetime",
+    "TestAlertWriterCancellationLockLifetime",
+    "TestAlertReservationsSchema", "TestAlertWriterReservation",
+    "TestAlertWriterReservationAmbiguity", "TestAlertWriterReservationRestart",
+    "TestAlertWriterReservationNativeAckLoss",
 )
 COOLDOWN = tuple("TestDetectorCooldown" + suffix for suffix in (
     "Visible", "Expiry", "Replay", "Crash", "Outage", "Owners", "RestoreBehindCheckpoint",
 ))
 UNIT = ("TestConfigWindowEnlargement", "TestConfigLedgerHandover")
+RESERVATION_UNIT = ("TestAlertWriterReservationProtocol", "TestAlertWriterFailpointBuildBoundary")
 EXPECTED = (
     [("./test/...", name, "6m", True) for name in ORDINARY]
     + [("./test/...", name, "8m", True) for name in COOLDOWN]
     + [("./internal/detection/...", name, "60s", False) for name in UNIT]
+    + [("./internal/kafkax/...", "TestDetectorCooperativeOffsetFetch", "60s", False)]
+    + [("./internal/config/...", "TestLoadAlertWriterResourceAdmission", "60s", False)]
+    + [("./internal/alertwriter/...", name, "60s", False) for name in RESERVATION_UNIT]
     + [("./test/...", "TestDetectionScenarios", "16m", True),
        ("./test/...", "TestDetectionScenariosPreservedRepeat", "32m", True)]
 )
 
 
 class Phase3GuardTests(unittest.TestCase):
-    def run_guard(self, *, empty: str = "", failed: str = "", direct: bool = False):
+    def run_guard(self, *, empty: str = "", failed: str = "", package: str = "", direct: bool = False):
         """Run the real shell entry point/nonempty runner against a fake Go process."""
         with tempfile.TemporaryDirectory(prefix="sentinel-phase3-guard-") as directory:
             root = Path(directory)
@@ -51,10 +61,12 @@ class Phase3GuardTests(unittest.TestCase):
                 "with open(os.environ['PHASE3_CALLS'], 'a') as log:\n"
                 "    log.write(json.dumps({'args': args, 'cwd': os.getcwd()}) + '\\n')\n"
                 "selector = args[args.index('-run') + 1]\n"
-                "if selector == os.environ['PHASE3_FAILED']:\n"
+                "package = next(arg for arg in args if arg.startswith('./'))\n"
+                "selected_package = os.environ['PHASE3_PACKAGE'] in ('', package)\n"
+                "if selected_package and selector == os.environ['PHASE3_FAILED']:\n"
                 "    print('--- PASS: misleading_prior_success (0.00s)')\n"
                 "    sys.exit(7)\n"
-                "if selector != os.environ['PHASE3_EMPTY']:\n"
+                "if not selected_package or selector != os.environ['PHASE3_EMPTY']:\n"
                 "    print('--- PASS: ' + selector.strip('^$') + ' (0.00s)')\n"
                 "print('ok synthetic')\n",
                 encoding="utf-8",
@@ -62,7 +74,8 @@ class Phase3GuardTests(unittest.TestCase):
             fake.chmod(0o700)
             log = root / "calls.jsonl"
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ.get("PATH", ""),
-                       PHASE3_CALLS=str(log), PHASE3_EMPTY=empty, PHASE3_FAILED=failed)
+                       PHASE3_CALLS=str(log), PHASE3_EMPTY=empty, PHASE3_FAILED=failed,
+                       PHASE3_PACKAGE=package)
             command = ["bash", str(root / "scripts" / "check-phase3-tests.sh")]
             if direct:
                 command = ["bash", str(root / "scripts" / "go-test-nonempty.sh"),
@@ -91,21 +104,23 @@ class Phase3GuardTests(unittest.TestCase):
             self.assertEqual("-tags=integration" in args, integration)
             if integration:
                 self.assertEqual(args[args.index("-p") + 1], "1")
+            if package == "./internal/alertwriter/...":
+                self.assertIn("-race", args)
             actual.append((package, selector[1:-1], args[args.index("-timeout") + 1], integration))
         self.assertCountEqual(actual, EXPECTED)
 
     def test_each_empty_family_fails_even_if_other_families_pass(self):
-        for _, name, _, _ in EXPECTED:
-            with self.subTest(family=name):
-                result, calls = self.run_guard(empty="^" + name + "$")
+        for package, name, _, _ in EXPECTED:
+            with self.subTest(package=package, family=name):
+                result, calls = self.run_guard(empty="^" + name + "$", package=package)
                 self.assertNotEqual(result.returncode, 0, "empty family was accepted: " + name)
                 self.assertIn("no passing tests matched", result.stderr)
-                self.assertTrue(any("^" + name + "$" in args for args in calls))
+                self.assertTrue(any(package in args and "^" + name + "$" in args for args in calls))
 
     def test_each_go_failure_is_propagated_despite_a_pass_line(self):
-        for _, name, _, _ in EXPECTED:
-            with self.subTest(family=name):
-                result, _ = self.run_guard(failed="^" + name + "$")
+        for package, name, _, _ in EXPECTED:
+            with self.subTest(package=package, family=name):
+                result, _ = self.run_guard(failed="^" + name + "$", package=package)
                 self.assertNotEqual(result.returncode, 0, "failed family was accepted: " + name)
                 self.assertIn("go test failed", result.stderr)
 
