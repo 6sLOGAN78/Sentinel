@@ -20,6 +20,15 @@ No broad system/image/container/volume prune, reset or data deletion was used.
 
 Kafka's normal preserved-volume `compose up -d --wait kafka` recovery exited0,
 11:42:00Z–11:42:18Z. Other infrastructure was observed stopped at that point;
-normal startup of all nine services using existing images/volumes is pending.
+Normal startup of all nine services using existing images/volumes then exited0,
+11:42:59Z–11:43:26Z; all nine were healthy. No rebuild or reset was used.
 The source/runtime is unchanged since the reviewed repairs. New full native
 acceptance and hosted CI remain pending; cleanup itself is not a test pass.
+
+The next exact `make test-integ` is isolated in transient user unit
+`sentinel-phase3-post-cache-20261021.service`, with private ignored harness and
+mode600 `post-cache-full-integ.log`. The Go32m timeout is unchanged; the outer
+unit ceiling45m matches the existing hosted job cap. This execution arrangement
+retains an independently queryable producer state if the terminal detaches.
+Running-state ExecMainStatus0 is not a completed test result. Final actual
+RETURNED_EXIT/END and terminal unit status must be checked before claiming PASS.

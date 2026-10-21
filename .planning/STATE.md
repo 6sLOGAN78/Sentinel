@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase3 approved build-cache cleanup complete; preserved full-stack recovery active before full acceptance retry
-last_updated: 2026-10-21T11:43:00Z
+stopped_at: Phase3 cache cleanup and healthy recovery complete; persistent full-test unit sentinel-phase3-post-cache-20261021 active
+last_updated: 2026-10-21T11:47:00Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -201,3 +201,15 @@ Kafka normalpreservedup PASS0,11:42:00Z–11:42:18Z. Otherinfraobservedstopped;
 normalall9service upusingexistingimages/volumes is active, no rebuild/reset.
 Then actualfreshfullintegration, finalscanner, authorizedpush/newgreenCI and
 verificationclosure required. Priorinterrupted95255 remainsUNKNOWN, notPASS.
+
+All9recovery actuallyreturned0,11:42:59Z–11:43:26Z, everyservicehealthy.
+Freshnativefullproducer is now transientuserunit
+sentinel-phase3-post-cache-20261021.service (NOTterminalsession). It runs exact
+make test-integ with unchangedGo32mtimeout; outerunitRuntimeMaxSec45min matches
+the existing hostedjob ceiling, not a changedtestdeadline. Normaltestumask022;
+privateharness/logumask077, post-cache-full-integ.log mode600. FrozenHEAD10ddd71;
+privateharnessrun-post-cache-full.sh is ignored orchestration only, no sourcechange.
+Pollsystemctl ActiveState/SubState plus actuallogRETURNED_EXIT/END; status0 while
+SubStaterunning is NOTa testPASS. Aftercompletion collectactualexit and stoponly
+this namedtemporaryunit. Monitordiskavailability; no furthercacheprune authorized
+or needed whilehealthy12GBmargin persists. No otherheavyproducer/Phase4work.
