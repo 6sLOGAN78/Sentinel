@@ -96,8 +96,16 @@ Third-replica repetitions took6.65s/8.63s/8.56s and cooperative repetitions
 the invocation shared its native TestMain dependency containers. These are
 actual executions, not cached integration results.
 
-Independent review and complete new acceptance/hosted results are pending at
-this evidence draft. No full-suite,
+Independent deep review at e342337 is clean across both source files, zero
+findings; see03-REVIEW-COOPERATIVE-REPEAT.md (committed64fd7c8).
+Fresh root static gates passed05:33:34Z–05:33:47Z: make test5.22s, make lint3.90s,
+backendbuild/default+integrationvet/integrationlint3.43s, all exits0.
+All44scriptcases passed75.114s (elapsed75.21s/exit0),05:33:47Z–05:35:02Z.
+Pinnedfull-historyscanner exit0 atd157b5d,05:34:19Z. Persistent private logs:
+cooperative-final-static.log,cooperative-final-scripts.log,cooperative-final-gitleaks.log
+and redactedJSONreport. No new scanner exclusion was introduced.
+Full aggregate started05:33:20Z at64fd7c8 with unchanged32mcap; result pending.
+Complete new acceptance/hosted results remain pending. No full-suite,
 new46-family matrix or fresh hosted success is implied by the focused checks.
 Root owns acceptance tracking, remaining gates and any authorized remote push.
 User `.planning/config.json` and `.serena/` were preserved. No volume deletion,

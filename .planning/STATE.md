@@ -61,8 +61,14 @@ owner map. Package1684.173s, Makeexit2; not an aggregate timeout. Seven follow-o
 selectors were skipped, not passed. Prior green39515550386 remains real evidence.
 Worker cooperative_snapshot_fix owns causal RED and minimal test-only current-owner
 snapshot readiness repair; no production change authorized without evidence.
-Root must obtain independent review, affected native repeats, fresh full aggregate,
-static gates and green hosted CI, then reconcile verification/closure again.
+RepairGREENe342337 (REDc8b4310), evidencecfe3cdc and independentdeepreview64fd7c8
+are committed; nofindings across2files. Both original native tests passed3times
+each (sixpasses/package70.937s). Full test suite session96944 began05:33:20Z with
+unchanged32mcap; logcooperative-full-integ.log (persistent/ignored/private).
+Fresh staticmake test/lint/build/default+integrationvet/integrationlint PASS0,
+all44scriptcases PASS0/75.21s and pinnedfullhistoryscanner PASS0.
+Root must awaitactualfullsuiteexit, then authorizedpush/green hostedCI and reconcile
+verification/closure again. No productionfilechanged.
 Private failed log: .local/phase3-acceptance/ci-repeat-39544892831-failed.log.
 
 Historical closure before the repeat failure:
