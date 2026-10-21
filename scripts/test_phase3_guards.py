@@ -158,7 +158,10 @@ class Phase3GuardTests(unittest.TestCase):
 
     def assert_phase3_workflow(self, workflow):
         self.assertEqual(workflow.count("\n  phase3:\n"), 1)
-        phase3 = workflow.split("\n  phase3:\n", 1)[1].split("\n  #", 1)[0]
+        self.assertEqual(workflow.count("\n  compose-smoke:\n"), 1)
+        # Comments do not end YAML mappings; retain everything until the next
+        # actual job key, including fields following the separator comment.
+        phase3 = workflow.split("\n  phase3:\n", 1)[1].split("\n  compose-smoke:\n", 1)[0]
         # This small job is a closed policy: compare complete fields/commands,
         # not substrings that accept conditional skips or `|| true`. Deliberate
         # job changes must update this approval and its negative fixtures.
@@ -183,6 +186,8 @@ class Phase3GuardTests(unittest.TestCase):
       - name: tear down
         if: always()
         run: make dev-down
+
+  # Preserved-volume legacy seed followed by two exact scheduled scenario runs.
 """)
 
     def test_ci_guard_rejects_skips_masks_and_incomplete_matrices(self):
