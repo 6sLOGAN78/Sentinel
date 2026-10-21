@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase3 CI39598061416 has8success/phase3timeout; shard repair in progress without budget increases
-last_updated: 2026-10-21T13:06:01Z
+stopped_at: Resumed Phase3; shard guard WR-01 RED/GREEN complete, full script checks and independent re-review next
+last_updated: 2026-10-21T13:48:43Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -26,7 +26,7 @@ Current focus: Phase3 final acceptance reopened after repeat CI; Phase4 not star
 
 Phase: 3 of6 — repeat verification pending; Phase4 not started.
 Plan: 21 of21Phase3 implemented and summarized; final CI reliability follow-up open.
-Status: Prior all-green acceptance preserved; latest repeat CI failed one test.
+Status: Latest hosted run has eight successes and a Phase3 job-cap cancellation; bounded shard repair awaits review/hosted proof.
 Progress: 56/56 currently planned tasks/plans complete (13Phase1+22Phase2+21Phase3).
 Overallphaseprogress2/6=33%; currentlyplanned56/56=100%. Phase3acceptance reopened.
 
@@ -157,10 +157,10 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-21T05:30:00Z.
-Resume: Phase3 repeat-CI repair; read03-VERIFICATION/CI-CLOSEOUT and worker report.
+Last session:2026-10-21T13:48:43Z.
+Resume: Phase3 CI shard guard follow-up; read03-REVIEW-CI-SHARDS and R1 evidence.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
-Current producer: cooperative_snapshot_fix, focused fixture diagnosis/tests.
+Current producer: root, CI-only guard follow-up after worker usage-limit interruption.
 Do not rerun the expensive aggregate before repair and independent review are clean.
 No runtime/config/test/CI-code change existed between green80d2d87 and repeat-failed
 eee632f. Preserve this distinction; do not relabel the latest failure green.
@@ -245,3 +245,16 @@ permanentunion/disjoint/failureguards, independentreview, finalstatic/scan then
 authorizedpush/newCI needed. Do not raisecaps or countcancelledmatrixasPASS.
 Go/production/scenario source unchanged; localfullPASS0/1650.77s remainsactualproof.
 No newnative/fullproducer is authorized beforeCIrepairindependentreview.
+
+Resume update: shardGREEN84352ad retains44core+2scenario selectors and every
+existing cap. Independent03-REVIEW-CI-SHARDS found one guard-policy WARNING,
+not a present workflow bypass. Root implemented tests-onlyRED782c891: the
+actual current checker falsely accepted seven skip/mask mutations; six existing
+negative controls were already rejected. GREENf6618e3 compares the complete
+approved small Phase3 job block; both focused tests pass, all13mutations reject.
+Only scripts/test_phase3_guards.py changed since84352ad; workflow/runner unchanged.
+Full script suite is running in privateci-shard-guard-r1-scripts.log. Static
+shell/YAML semantic comparison passes; other eight job definitions unchanged.
+Next: actual suite result, independentR1review, aggregate/validation reconciliation,
+finalscanner, authorizedpush and all10actualhostedjob successes, finalverification.
+Do not close Phase3 or startPhase4 on guard/model proof alone.
