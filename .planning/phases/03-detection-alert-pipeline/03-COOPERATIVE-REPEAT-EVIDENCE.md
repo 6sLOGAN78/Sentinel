@@ -104,8 +104,24 @@ All44scriptcases passed75.114s (elapsed75.21s/exit0),05:33:47Z–05:35:02Z.
 Pinnedfull-historyscanner exit0 atd157b5d,05:34:19Z. Persistent private logs:
 cooperative-final-static.log,cooperative-final-scripts.log,cooperative-final-gitleaks.log
 and redactedJSONreport. No new scanner exclusion was introduced.
-Full aggregate started05:33:20Z at64fd7c8 with unchanged32mcap; result pending.
-Complete new acceptance/hosted results remain pending. No full-suite,
+Full aggregate started05:33:20Z at64fd7c8 with unchanged32m Go test timeout.
+It actually returned2, package1581.355s, externalELAPSED19688.54s, end11:01:29Z.
+Two named failures: TestDetectionScenarios/preserved-live-edges at0.08s
+(unclassified261bytes), and TestDetectionScenariosPreservedRepeat at660.48s
+(compose_startup). No owner assertion was reported failing. Long wall-clock gaps
+were observed while the producer remained active; their exact cause and the
+external-versus-package elapsed difference are not established or called a
+timeout-compliant wall-clock benchmark.
+Root reproduced the first concrete failure using systemPython3.10.12:
+`python3 -B scripts/seed_scenarios.py --help` fails importingdatetime.UTC before
+the script reaches its lockedPython3.13.11 reexec. A separate bootstrap repair
+with causal regression is required. Retained migrationcontainer logs identify
+the second concrete failure: pinnedgolang.org/x/textv0.41.0 zip download from
+proxy.golang.org reset the connection, postgres-migrate exited1, and detector /
+alert-writer stayedCreated behind that failed dependency. Normal preserved-volume
+startup recovery is pending; no migration/dependency version or storeddata changed.
+Private logs: cooperative-full-integ.log andcooperative-postgres-migrate-failed.log.
+Complete replacement acceptance/hosted results remain pending. No passing full-suite,
 new46-family matrix or fresh hosted success is implied by the focused checks.
 Root owns acceptance tracking, remaining gates and any authorized remote push.
 User `.planning/config.json` and `.serena/` were preserved. No volume deletion,
