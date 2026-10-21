@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: CI shard repair independently reviewed clean; all51script tests pass; final scan then authorized hosted replacement
-last_updated: 2026-10-21T13:59:30Z
+stopped_at: Pushed reviewed shard candidate7a72028; hosted39613182464 running; no closure until actual all10 successes
+last_updated: 2026-10-21T14:03:10Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -157,10 +157,10 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-21T13:59:30Z.
-Resume: Phase3 reviewedCIpartition; read03-REVIEW-CI-SHARDS-R2/CI-CLOSEOUT.
+Last session:2026-10-21T14:03:10Z.
+Resume: Monitor hosted39613182464 at7a72028, then release finalverification only afterall10success.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
-Current producer: root, finalscanner and authorizedhosted replacement pending.
+Current producer: gh run watch39613182464, session70625; persistentprivatewatchlog.
 Do not rerun the expensive aggregate before repair and independent review are clean.
 No runtime/config/test/CI-code change existed between green80d2d87 and repeat-failed
 eee632f. Preserve this distinction; do not relabel the latest failure green.
@@ -269,3 +269,13 @@ Phase3fields. Workflow/runner unchanged84352ad; runtime/scenario/deployments
 unchanged10ddd71. Union131reviewedartifacts,78closedthreatdispositionsretained.
 Next finalhistoryscan, authorizednormalpush/all10hosted successes, released
 finalverification and closure. NoPhase4work. Userconfig/.serenadirtpreserved.
+
+Finalscanner7a72028 PASS0/467commits/no leaks,14:01:29Z. Authorizednormalpush
+a69d158→7a72028cd7af506cc27097317d61fec0ea918d89 succeeded. Newhosted
+39613182464 created14:01:44Z atthatexacthead, inprogress atcapture:
+https://github.com/6sLOGAN78/Sentinel/actions/runs/39613182464
+Watchpersistentlog hosted-ci-39613182464-watch.log, actualWATCH_RETURNED_EXIT
+required. There are10expandedinstances now. Do not pushtrackingwhilewatching
+(wouldcancelcurrentrun); no sourcechangesplanned. Onactualall10green retain
+fullAPIresult, releaseindependentfinalverification, reconciletracking/close3.
+If interrupted, queryactualrunstatus beforestartingduplicatework. Phase4idle.

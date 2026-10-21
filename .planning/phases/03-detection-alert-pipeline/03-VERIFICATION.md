@@ -15,9 +15,11 @@ tested_commit: 80d2d873762e4832abf4c87e2d36c22d359d8337
 hosted_ci_run: 39515550386
 hosted_ci_conclusion: success
 re_verification_pending: true
-latest_hosted_ci_run: 39544892831
-latest_hosted_ci_head: eee632f
-latest_hosted_ci_conclusion: failure
+latest_hosted_ci_run: 39613182464
+latest_hosted_ci_head: 7a72028cd7af506cc27097317d61fec0ea918d89
+latest_hosted_ci_conclusion: pending
+latest_completed_hosted_ci_run: 39598061416
+latest_completed_hosted_ci_conclusion: cancelled; eight successes and explicit Phase3 45m job cap
 scoped_repair_head: e3423373a80d1bbcb8737be99fcb08d5cfd22a11
 scoped_repair_review: clean; two test files only; acceptance still pending
 scoped_bootstrap_repair_head: 2d446775ebb4d2ff2e8a0145dd66e28a06c769b9
@@ -53,6 +55,16 @@ gaps:
 **Phase Goal:** As a system operator, I want to receive deterministic, evidence-backed alerts from malicious traffic, so that crashes, restarts and replay cannot lose or duplicate detections.
 
 **Status:** gaps_found — re-verification pending. **BLOCKER: required replacement full and hosted acceptance are incomplete; Phase 3 closure is held.** No override was requested or applied.
+
+> **Root latest execution update,14:03Z:** LocalfullPASS10ddd71 remains valid.
+> Latest completedhosted39598061416 has8success/Phase3explicit45mcapcancellation,
+> not an assertion failure or46-familyPASS. ReviewedCI-only84352ad partitions
+> unchanged44core+2scenario families; finalguarda31af33 has independentR2clean
+> review and51scriptcasesPASS0/150.750s. Runtime/scenario/deploymentdiff from
+> localfullPASS is empty. Finalscanner7a72028 zero; authorizedpush succeeded.
+> Replacement39613182464 is running at7a72028, teninstances. Freshactualall10
+> successes and releasedfinalverification remain required. Earlierfailure/disk
+> holds below are historical, not a claim that localfullacceptance is stillabsent.
 
 > **Root execution update,12:13Z:** The user approved unused-build-cache cleanup;
 > Docker reclaimed9.189GB with image/container/volume inventories unchanged.
