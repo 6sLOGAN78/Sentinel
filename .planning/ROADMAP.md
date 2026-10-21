@@ -10,7 +10,7 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 
 - [x] **Phase 1: Foundations & Contracts** - Clean Go module with five binaries, Compose stack, schemas, OpenAPI skeleton, ADRs, CI skeleton (completed 2026-10-11)
 - [x] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (22/22 plans; verified complete 2026-10-17)
-- [x] **Phase 3: Detection & Alert Pipeline** - Four event-time rules, deterministic alerts, crash-safe recovery, alert persistence (completed 2026-10-21)
+- [ ] **Phase 3: Detection & Alert Pipeline** - 21/21 plans implemented; final acceptance reopened after repeat CI39544892831 cooperative-acquisition fixture failure (2026-10-21)
 - [ ] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
 - [ ] **Phase 5: Observability, Resilience & Scale** - Metrics, tracing, Grafana, failure suites, overload behavior, benchmark report
 - [ ] **Phase 6: Kubernetes, Hardening & Docs** - Kustomize manifests, hardened CI, threat model, docs, end-to-end demo
@@ -165,6 +165,12 @@ Plans:
 
 **Plans**: 21 plans in 14 waves
 
+**Latest acceptance gate (2026-10-21):** Prior all-nine-job green CI39515550386 at
+80d2d87 and 59/59 verification remain historical proof. Documentation-only repeat
+CI39544892831 at eee632f failed integration's cooperative-acquisition retained-owner
+assertion; the other eight jobs passed. Test-fixture diagnosis/repair, independent
+review and fresh local/hosted verification are pending. Phase4 is not started.
+
 Plans:
 **Wave 1**
 
@@ -292,7 +298,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
-| 3. Detection & Alert Pipeline | 21/21 | Complete | 2026-10-21 |
+| 3. Detection & Alert Pipeline | 21/21 | Repeat CI repair / re-verification | reopened 2026-10-21 |
 | 4. Query API & Analyst Dashboard | 0/TBD | Not started | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |

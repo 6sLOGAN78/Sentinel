@@ -1,5 +1,23 @@
 # Phase 3 hosted CI closeout
 
+## Latest repeat gate: reopened
+
+Documentation-only closure commit `eee632febdf601286d2ba8ec3de1e3f75febe2cd`
+triggered [repeat run39544892831](https://github.com/6sLOGAN78/Sentinel/actions/runs/39544892831).
+It completed with eight successful jobs and one failed integration job119042234176.
+`TestDetectorCooperativeAcquisition` failed at detector_rebalance_test.go:94 because
+the retained-owner map was empty. Full package elapsed1684.173s, Makeexit2; this
+was an assertion failure, not the 32-minute aggregate timeout. The seven subsequent
+retained selectors were skipped. The independent all46-family phase3job succeeded.
+There was no runtime, test, workflow or configuration change between80d2d87 and
+eee632f. This is a newly exposed reliability gap, not erased by the prior green.
+Private failed output is retained in
+`.local/phase3-acceptance/ci-repeat-39544892831-failed.log`; watch returned1.
+Causal fixture diagnosis/repair, independent review and fresh local/hosted proof
+are required before closing Phase3 again. Phase4 is not started.
+
+## Prior all-green acceptance (historical, unchanged)
+
 Verified run: [39515550386](https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386).
 Tested candidate: `80d2d873762e4832abf4c87e2d36c22d359d8337`.
 Root's authorized fast-forward push advanced `origin/main` from19db519 to80d2d87

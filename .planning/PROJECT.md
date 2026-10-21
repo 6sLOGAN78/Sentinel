@@ -62,6 +62,12 @@ Validated in Phase3: Detection & Alert Pipeline (2026-10-21):
 
 ## Context
 
+- **Latest acceptance hold (2026-10-21):** Documentation-only closure push eee632f
+  triggered repeat CI39544892831: eight jobs passed, integration failed the
+  cooperative-acquisition test's retained-owner assertion. Phase3 final acceptance
+  is reopened for causal fixture repair and fresh review/local/hosted proof.
+  Prior green39515550386 and implementation verification below are preserved as
+  historical evidence, not a claim that the latest run passed. Phase4 remains idle.
 - **Verified Phase3 complete (2026-10-21):** All21numbered plans are committed and summarized. Final03-VERIFICATION.md passes59/59truths,72artifact declarations,46links andall14requirements. Source-review aggregate is clean over130unique changed artifacts; registeredsecurityaudit has78closed/0open threats. Hosted[run39515550386](https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386) passed all9jobs at80d2d87, includingfullintegration, all46independentPhase3families andpreservedCompose/seed/twoscenario acceptance. Localcompletefullsuite passed1849.21s; all7retainedPhase2groups321.83s, finalrace/static/script/scanner gates passed. Fourrules, canonicalevidence, durablecooldown, state-pin recovery/current-owner fences, permanentpre-CHreservations andinsert-onlyworkflow replay areimplemented andwired. Historicalfailures/unknowninterruptions, native-versus-model prooflimits and missingseparateTask3REDcommit remainexplicit in the summaries/reviews. At-least-once delivery and bounded fail-closed recovery are not exactly-once effects, performance/RSS promises, or security certification. Phase4auth/query/triage/UI/SSE/backfill is notstarted. See03-VERIFICATION.md,03-CI-CLOSEOUT.md and03-14-SUMMARY.md.
 - **Verified Phase 2 baseline (2026-10-17):** all 22 plans deliver the scoped producer → ingest → Kafka → event-writer → ClickHouse → tenant lookup slice. Readiness repair eb7f6e4 passed deterministic regressions, repeated real lifecycle/outage tests and hosted run 38974983287 at 5e6a826; all eight jobs and seven guarded groups passed.
   - One Go 1.26 module builds five binaries; ingest, event-writer and minimal query lookup are live application paths. Detection and alert business logic remain Phase 3 work.
@@ -126,4 +132,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-21 — Phase3 verifiedcomplete21/21; Phase4 notstarted*
+*Last updated: 2026-10-21 — Phase3 21/21 implemented; repeat-CI acceptance reopened; Phase4 notstarted*

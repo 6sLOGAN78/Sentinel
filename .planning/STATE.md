@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase3 verifiedcomplete21/21; Phase4 notstarted and awaits explicit request
-last_updated: 2026-10-21T04:30:51.591Z
+status: verifying
+stopped_at: Phase3 repeat CI integration failure; cooperative snapshot fixture repair in progress; Phase4 notstarted
+last_updated: 2026-10-21T05:30:00Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 2
   total_plans: 56
   completed_plans: 56
-  percent: 50
+  percent: 33
 ---
 
 # Project State
@@ -20,15 +20,15 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase3 closed. Phase4 awaits an explicit request; not started.
+Current focus: Phase3 final acceptance reopened after repeat CI; Phase4 not started.
 
 ## Current Position
 
-Phase: 3 of6 — COMPLETE; nextPhase4 not started.
-Plan: 21 of21Phase3 locally executed and finally verified.
-Status: All local/hosted/source/security/goal gates passed; no remainingPhase3work.
+Phase: 3 of6 — repeat verification pending; Phase4 not started.
+Plan: 21 of21Phase3 implemented and summarized; final CI reliability follow-up open.
+Status: Prior all-green acceptance preserved; latest repeat CI failed one test.
 Progress: 56/56 currently planned tasks/plans complete (13Phase1+22Phase2+21Phase3).
-Overallphaseprogress3/6=50%; currentlyplanned56/56=100%. Phase3acceptancepassed.
+Overallphaseprogress2/6=33%; currentlyplanned56/56=100%. Phase3acceptance reopened.
 
 ## Latest Verified Evidence
 
@@ -52,6 +52,20 @@ Overallphaseprogress3/6=50%; currentlyplanned56/56=100%. Phase3acceptancepassed.
   committed03-14summary and final local evidence reconciled, no certification claim.
 
 ## Current Work / Next Action
+
+Latest gate supersedes the historical completion below: documentation-only HEAD
+eee632febdf601286d2ba8ec3de1e3f75febe2cd triggered repeat CI39544892831.
+Eight jobs passed (including all46Phase3families); integration failed at
+TestDetectorCooperativeAcquisition, detector_rebalance_test.go:94: empty retained
+owner map. Package1684.173s, Makeexit2; not an aggregate timeout. Seven follow-on
+selectors were skipped, not passed. Prior green39515550386 remains real evidence.
+Worker cooperative_snapshot_fix owns causal RED and minimal test-only current-owner
+snapshot readiness repair; no production change authorized without evidence.
+Root must obtain independent review, affected native repeats, fresh full aggregate,
+static gates and green hosted CI, then reconcile verification/closure again.
+Private failed log: .local/phase3-acceptance/ci-repeat-39544892831-failed.log.
+
+Historical closure before the repeat failure:
 
 1. Final03-VERIFICATION.md800b084 PASSED59/59 (5roadmapSC+54plantruths),
    72artifactdeclarations/68paths,46links and14requirements; nooverride/humanhold/gap.
@@ -104,16 +118,18 @@ state.update-progress and roadmap.update-plan-progress miscount supplemental
 03-ALERT-RESERVATION-IMPLEMENTATION-PLAN as22ndplan and wrote33%frontmatter.
 Root reconciled against actual21numbered summaries:56/56plans overall, Phase3
 21/21finallyverified. phase.complete3 succeeded and all14IDs arecomplete.
-Overall3/6phasescomplete; planned56/56. 03-14metric:~25helapsed/3tasks/29files.
+Historical closure recorded3/6; reopened final gate now2/6. Planned56/56 unchanged.
+03-14metric:~25helapsed/3tasks/29files.
 Earlier per-plan metrics and decisions remain in summaries and committed STATE history.
 Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic remap.
 
 ## Session Continuity
 
-Last session:2026-10-21T04:31:00Z.
-Resume: Phase3isclosed; read03-VERIFICATION/CI-CLOSEOUT before any newPhase4request.
+Last session:2026-10-21T05:30:00Z.
+Resume: Phase3 repeat-CI repair; read03-VERIFICATION/CI-CLOSEOUT and worker report.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
-No unfinishedlocalproducer. Do not repeat full integration or completed plans blindly.
-Final closure documentation is pushed normally; if that triggers anotherCI run,
-recover it by latestmainSHA. It contains no runtime/config/test/CI-code change
-from the already green80d2d87 candidate. Do not start Phase4 while monitoring it.
+Current producer: cooperative_snapshot_fix, focused fixture diagnosis/tests.
+Do not rerun the expensive aggregate before repair and independent review are clean.
+No runtime/config/test/CI-code change existed between green80d2d87 and repeat-failed
+eee632f. Preserve this distinction; do not relabel the latest failure green.
+No Phase4 work while closing the repeat-CI acceptance gap.
