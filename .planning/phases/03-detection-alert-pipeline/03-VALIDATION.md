@@ -9,6 +9,11 @@ created: 2026-10-17
 
 # Phase3 — Validation Strategy
 
+Post-repair local gate: exactfullmake test-integ at10ddd71 passed0/1650.77s,
+package1648.087s,11:45:21Z–12:12:52Z, after both reviewed repairs and authorized
+unused-buildcache cleanup/preserved recovery. Earlier failed and UNKNOWN runs
+remain historical. Alllocalgates actualpasses; newhostedCI/finalverification pending.
+
 Latest gate: repeat CI39544892831 at documentation-only eee632f failed integration's
 cooperative retained-owner fixture assertion; eight other jobs passed. Prior
 results below are historical. REDc8b4310/GREENe342337 test-only repair is independently

@@ -23,6 +23,12 @@ summary_reconciliation_pending: false
 
 # Phase 03 — Security
 
+Additional scoped follow-up: the portableUTC bootstrapalias2d44677 and exact
+locked-handoff regression have clean independentdeepreviewda2733b. Generator
+requirements, environment/credential handling, schedules, canonical payloads,
+verifier/deadline controls and all registered runtime mitigations are unchanged.
+Fresh repaired fullintegration passed0/1650.77s; newhostedCI remains pending.
+
 Latest acceptance follow-up: repeat CI39544892831 failed a cooperative ownership
 test precondition. Independently reviewed test-only repaire342337 changes no
 production control, hook, payload assertion or registered mitigation. The78-threat

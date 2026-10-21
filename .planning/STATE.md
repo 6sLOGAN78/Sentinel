@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase3 cache cleanup and healthy recovery complete; persistent full-test unit sentinel-phase3-post-cache-20261021 active
-last_updated: 2026-10-21T11:47:00Z
+stopped_at: Phase3 repaired full integration PASS0/1650.77s; final scan and authorized push/hosted CI next
+last_updated: 2026-10-21T12:13:06Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -213,3 +213,10 @@ Pollsystemctl ActiveState/SubState plus actuallogRETURNED_EXIT/END; status0 whil
 SubStaterunning is NOTa testPASS. Aftercompletion collectactualexit and stoponly
 this namedtemporaryunit. Monitordiskavailability; no furthercacheprune authorized
 or needed whilehealthy12GBmargin persists. No otherheavyproducer/Phase4work.
+
+Latest full actualPASS0:11:45:21Z–12:12:52Z, elapsed1650.77s, frozenHEAD10ddd71.
+post-cache-full-integ.log has packagePASS/ELAPSED EXIT0/RETURNED_EXIT0/END.
+UnitSubStateexited/ExecMainStatus0 recorded, completedtemporaryunitstopped.
+No sourcechangesaftertestedcandidate; all9GB+free remainedduringrun. Alllocal
+gates nowactualpasses; finalhistoryscan then authorizednormalpush and newhosted
+CI stillrequired. See03-POST-REPAIR-ACCEPTANCE.md; no prematurephasecomplete.

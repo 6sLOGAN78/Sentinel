@@ -22,8 +22,8 @@ scoped_repair_head: e3423373a80d1bbcb8737be99fcb08d5cfd22a11
 scoped_repair_review: clean; two test files only; acceptance still pending
 scoped_bootstrap_repair_head: 2d446775ebb4d2ff2e8a0145dd66e28a06c769b9
 scoped_bootstrap_repair_review: clean; two script files; independent review da2733b
-latest_completed_local_full_result: failed; session 96944; make exit 2
-latest_attempted_local_full_result: unknown interruption; session 95255; no returned test result
+latest_completed_local_full_result: success; post-cache unit; make exit 0; elapsed 1650.77s
+latest_attempted_local_full_result: success; ended 2026-10-21T12:12:52Z at source 10ddd71
 re_verification:
   previous_status: passed
   previous_score: 59/59
@@ -53,6 +53,15 @@ gaps:
 **Phase Goal:** As a system operator, I want to receive deterministic, evidence-backed alerts from malicious traffic, so that crashes, restarts and replay cannot lose or duplicate detections.
 
 **Status:** gaps_found — re-verification pending. **BLOCKER: required replacement full and hosted acceptance are incomplete; Phase 3 closure is held.** No override was requested or applied.
+
+> **Root execution update,12:13Z:** The user approved unused-build-cache cleanup;
+> Docker reclaimed9.189GB with image/container/volume inventories unchanged.
+> Normal preserved-stack recovery passed. Fresh exact full integration at10ddd71
+> now actually passed: package1648.087s,elapsed1650.77s,makeexit0/RETURNED_EXIT0,
+> 11:45:21Z–12:12:52Z. Root saved the completed unit status and persistent log.
+> This supersedes the local disk/full hold below; historical failures/UNKNOWN
+> remain unchanged. Only new hosted CI and released final re-verification remain
+> pending. See03-POST-REPAIR-ACCEPTANCE.md and03-CACHE-CLEANUP-EVIDENCE.md.
 
 > **Parent follow-up hold:** Root reported new counterevidence from [CI 39544892831](https://github.com/6sLOGAN78/Sentinel/actions/runs/39544892831) at `eee632f`. Eight jobs succeeded, including all 46 Phase 3 families and Compose; the required full integration job failed (package 1684.173s, make exit 2). `TestDetectorCooperativeAcquisition` failed after 2.85s at `backend/test/detector_rebalance_test.go:94`: the retained map was empty, failing “survivor must retain incorporated state while acquiring additions.” This was an assertion failure, not a timeout. Root retained the failed log at `.local/phase3-acceptance/ci-repeat-39544892831-failed.log`. The assigned specialist's two-file test repair is now independently reviewed, including the scoped verifier assessment below; required replacement full/hosted gates remain pending. Do not restore `passed` until those gates actually pass and root explicitly releases re-verification.
 
