@@ -71,8 +71,20 @@ At06:55Z wallclock had advanced substantially beyond the05:33Z start while Go's
 unchanged32m test process remained active with fresh child services progressing.
 The clock gap's cause is unestablished; do not infer elapsed duration, timeout
 compliance, interruption or PASS before actual producerexit/ELAPSED evidence.
-Root must awaitactualfullsuiteexit, then authorizedpush/green hostedCI and reconcile
-verification/closure again. No productionfilechanged.
+Fullproducerreturnedexit2: package1581.355s, externalELAPSED19688.54s,
+END11:01:29Z. Two failures: TestDetectionScenarios/preserved-live-edges immediate
+unclassified261bytes; TestDetectionScenariosPreservedRepeat compose_startup660.48s.
+Rootreproduced first via python3 -B scripts/seed_scenarios.py --help: systemPython
+3.10 cannot importdatetime.UTC before lockedvenv reexec. Worker owns minimal
+bootstrapcompatibility repair/regression in scripts only; currentlockedPython3.13.11.
+Second concrete diagnostic: postgres-migrate exited1 after pinnedgolang.org/x/text
+v0.41.0 zip connectionreset fromproxy.golang.org. Detector/alert-writer remained
+Created behind faileddependency. Rootnormalpreservedvolume make dev-up retry
+session83364 pending; no reset/deletion.
+Latest fullfailure is not a PASS despite earlierfocusedproof. No reported owner
+assertion failure in this run; do not infer exact clock-gapcause or durationbound.
+Root must finishbootstraprepair/review, recoverhealthy stack, then freshfullsuite,
+authorizedpush/green hostedCI and reconcileverification/closure. No productionfilechanged.
 Private failed log: .local/phase3-acceptance/ci-repeat-39544892831-failed.log.
 
 Historical closure before the repeat failure:
