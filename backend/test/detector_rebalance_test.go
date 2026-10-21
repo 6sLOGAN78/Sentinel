@@ -294,16 +294,25 @@ func incorporatedOwners(t *testing.T, f *cooldownFixture, dirs []string) map[int
 		if err != nil || group.Err != nil {
 			return false
 		}
-		for _, dir := range dirs {
-			for _, o := range detectorObservations(t, dir) {
-				if o.Boundary == "committed" && observationAtNine(o) && groupOwns(group, o.Member, o.Topic, o.Partition) {
-					owners[o.Partition] = o.Member
-				}
-			}
+		observations := make([][]detectorObservation, len(dirs))
+		for i, dir := range dirs {
+			observations[i] = detectorObservations(t, dir)
 		}
-		return len(owners) == 12
+		return collectIncorporatedOwners(owners, group, f.kafka.EventsTopic, observations)
 	}, 20*time.Second, 25*time.Millisecond, "missing actual per-process incorporated-nine checkpoint observations")
 	return owners
+}
+
+func collectIncorporatedOwners(owners map[int32]string, group kadm.DescribedGroup, topic string,
+	observations [][]detectorObservation) bool {
+	for _, process := range observations {
+		for _, o := range process {
+			if o.Boundary == "committed" && observationAtNine(o) && groupOwns(group, o.Member, o.Topic, o.Partition) {
+				owners[o.Partition] = o.Member
+			}
+		}
+	}
+	return len(owners) == 12
 }
 
 func seedTransferPartitions(t *testing.T, f *cooldownFixture,
