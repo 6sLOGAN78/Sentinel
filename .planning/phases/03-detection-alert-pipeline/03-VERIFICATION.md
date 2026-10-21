@@ -18,6 +18,8 @@ re_verification_pending: true
 latest_hosted_ci_run: 39544892831
 latest_hosted_ci_head: eee632f
 latest_hosted_ci_conclusion: failure
+scoped_repair_head: e3423373a80d1bbcb8737be99fcb08d5cfd22a11
+scoped_repair_review: clean; two test files only; acceptance still pending
 re_verification:
   previous_status: passed
   previous_score: 59/59
@@ -32,9 +34,8 @@ gaps:
     reason: "Latest repeat CI 39544892831 at eee632f failed its required integration job: TestDetectorCooperativeAcquisition had an empty retained map. Earlier successful execution remains valid historical evidence; this does not establish a new runtime defect."
     artifacts:
       - path: "backend/test/detector_rebalance_test.go"
-        issue: "Line 94 retained-owner precondition failed in the latest full integration repeat; diagnosis/repair is owned by the assigned specialist."
+        issue: "Line 94 retained-owner precondition failed in the latest full integration repeat. Its causal readiness collector is repaired and independently reviewed at e342337; full replacement acceptance remains pending."
     missing:
-      - "Completed diagnosis and independently reviewed repair/evidence for the failing causal fixture assertion."
       - "Required replacement acceptance gates and actual new hosted CI success, followed by root release for re-verification."
 ---
 
@@ -44,7 +45,7 @@ gaps:
 
 **Status:** gaps_found — re-verification pending. **BLOCKER: latest repeat CI acceptance failed; Phase 3 closure is held.** No override was requested or applied.
 
-> **Parent follow-up hold:** Root reported new counterevidence from [CI 39544892831](https://github.com/6sLOGAN78/Sentinel/actions/runs/39544892831) at `eee632f`. Eight jobs succeeded, including all 46 Phase 3 families and Compose; the required full integration job failed (package 1684.173s, make exit 2). `TestDetectorCooperativeAcquisition` failed after 2.85s at `backend/test/detector_rebalance_test.go:94`: the retained map was empty, failing “survivor must retain incorporated state while acquiring additions.” This was an assertion failure, not a timeout. Root retained the failed log at `.local/phase3-acceptance/ci-repeat-39544892831-failed.log` and assigned diagnosis/possible test-only repair to a separate specialist. This verifier has not inspected or debugged that task. Do not restore `passed` until the repair/evidence is independently reviewed, required replacement gates and new hosted CI actually pass, and root explicitly releases re-verification.
+> **Parent follow-up hold:** Root reported new counterevidence from [CI 39544892831](https://github.com/6sLOGAN78/Sentinel/actions/runs/39544892831) at `eee632f`. Eight jobs succeeded, including all 46 Phase 3 families and Compose; the required full integration job failed (package 1684.173s, make exit 2). `TestDetectorCooperativeAcquisition` failed after 2.85s at `backend/test/detector_rebalance_test.go:94`: the retained map was empty, failing “survivor must retain incorporated state while acquiring additions.” This was an assertion failure, not a timeout. Root retained the failed log at `.local/phase3-acceptance/ci-repeat-39544892831-failed.log`. The assigned specialist's two-file test repair is now independently reviewed, including the scoped verifier assessment below; required replacement full/hosted gates remain pending. Do not restore `passed` until those gates actually pass and root explicitly releases re-verification.
 
 The prior 59/59 implementation/source findings and successful nine-job run at `80d2d87` remain historical validated evidence below; they are not erased or presented as the latest repeat result. Current accounting holds **03-14.T2** failed at its acceptance gate (**58/59**, **53/54** plan truths). No new runtime implementation failure is inferred from the empty fixture snapshot. The original passed report is preserved in commit `800b084`. All remaining VERIFIED rows and execution tables below describe that earlier verified baseline unless explicitly updated by the hold.
 
@@ -70,6 +71,27 @@ Direct source tracing covered reducer predicates/admission/evidence/checkpoints;
 Per the serialized closeout assignment, this verifier ran no tests, builds, compilation, live services, scanner, staging or commits. Execution belongs to root/executors/hosted CI. The verifier independently inspected persistent raw local logs and root-captured GitHub API metadata plus the completed watch log. A fresh verifier `gh` lookup encountered transient API connectivity failure; it is not represented as a successful query. Root's saved API response proves the exact SHA, completed/success status and nine successful jobs, independently corroborated by `WATCH_RETURNED_EXIT=0` and completed job/step output. This is stronger evidence than SUMMARY narration.
 
 At initial verification, tested source was `80d2d873762e4832abf4c87e2d36c22d359d8337`. Subsequent commits then inspected through `ff7fbc3` changed only STATE/VALIDATION/CI-closeout documentation; no implementation delta separated that reviewed baseline from the candidate. The new follow-up diagnosis/repair is outside this historical source statement and awaits re-verification. Existing user changes in `.planning/config.json` and `.serena/` were preserved. Only this report is written by the verifier.
+
+### Scoped repair assessment — acceptance held
+
+The verifier read the actual complete new `backend/test/detector_owner_snapshot_test.go`, the full `eee632f..e342337` change to `backend/test/detector_rebalance_test.go`, affected callers/assertions, `groupOwns`/`observationAtNine`, the private observation reader and real Kafka successful-commit observation contract. It also read the independent deep two-file review `03-REVIEW-COOPERATIVE-REPEAT.md` at `64fd7c8`, the repair evidence and persistent RED/GREEN/native/static/script/scanner logs. This is source/evidence verification, with no verifier test/build/live execution or duplicate implementation work.
+
+**Assessment: the scoped test-readiness defect is addressed; no new runtime defect or weakened acceptance assertion was established.** The implementation diff from the original production baseline contains only the two named test files. Changes after the reviewed GREEN are tracking/evidence documentation. The prior 59 implementation/source truths, 72 artifact declarations, 68 paths, 46 links and 14 requirement mappings therefore remain substantive and connected. Only 03-14.T2's replacement whole-acceptance gate remains open; current status/score stay `gaps_found`, 58/59.
+
+The old collector could accumulate all twelve owners across different Eventually polls or accept a transition with only one process incorporated. The repaired collector clears the output map each poll, requires a Stable two-member group and two process observation streams, accepts only configured-topic partitions 0–11 with committed `processed_next=9` and actual current broker ownership, and requires nonempty contribution from both streams, twelve unique partitions and two current member IDs. Kafka commit success precedes private observation writing; the reader deliberately skips incomplete JSON. Broker offsets or member count alone cannot replace this readiness evidence.
+
+The downstream retained-map assertion is still present. Actual acquired restore, different old/new member, checkpoint equality, readiness, retained token/generation and PG fence, canonical Kafka/CH/decision bytes and the two distinct retained/acquired identities remain asserted. The 20-second/25ms readiness polling budget is unchanged. The new fixture obtains public decoded assignments from a real two-member group; its controlled observation schedules are a model of the readiness gap, not a reconstruction of the failed coordinator schedule. It preserves positive complete coverage plus incomplete/wrong-owner controls. Sequential decoded-assignment mutation is restored, and polling cleanup cancels/closes/joins.
+
+| Scoped evidence | Actual inspected result | Meaning and limit |
+| --- | --- | --- |
+| Tests-first `c8b4310`, exact snapshot test | `cooperative-snapshot-red.log`: three intended assertion failures, package 24.804s, EXIT=1 | One incorporated owner, stale prior-poll coverage and in-progress rebalance expose the old collector. The missing START marker is not invented. |
+| GREEN `e342337`, same snapshot test | `cooperative-snapshot-green.log`: all six cases pass, package 25.098s, EXIT=0 | Direct collector regression is repaired; no compilation/setup failure is used as RED. |
+| Original native acquisition and third-replica tests, each `-count=3` | `cooperative-native-repeat.log`: six actual top-level PASS results, package 70.937s, EXIT=0 | Fresh fixture/topic/process per call; shared invocation dependencies. This does not establish whole-suite/hosted success. |
+| Independent deep review | `03-REVIEW-COOPERATIVE-REPEAT.md`: two source files, zero findings | Production, hooks, goldens, payload assertions and budgets unchanged. |
+| Root post-repair static/scripts/scanner | `cooperative-final-static.log`: STATIC_RETURNED_EXIT=0; scripts: 44 tests, 75.114s, returned 0; scanner: 436 commits, no leaks, returned 0 | Actual bounded local checks; no new scanner exclusion. Cached unit package results are not described as uncached native repetitions. |
+| Replacement full aggregate / new hosted run | Pending at this scoped assessment | Root reports the full process still active with a retained log despite an unexplained wall-clock gap. No returned full exit, elapsed compliance, timeout, interruption or success is inferred from timestamps or child progress. New hosted success and root release are still required. |
+
+The failed hosted log lacks an atomic group description at the assertion; the exact historical coordinator timing is not claimed as reconstructed. Historical observation files checked against one broker description are also not an atomic cross-system generation snapshot; unchanged downstream token/generation/fence assertions remain necessary. These proof limits are retained without inventing a production failure or waiving the acceptance gate.
 
 ## Goal Achievement
 
@@ -126,7 +148,7 @@ The identifiers preserve each plan's frontmatter order. Wording is compacted her
 | 03-13.T2 | seed-scenarios checks exact acknowledged current run across Kafka/CH/PG and benign zero | VERIFIED | Offset capture before send; strict expected-set/native workflow reconciliation, original receipt-time lower bound and proof booleans. |
 | 03-13.T3 | Legacy 1000-event seed/private artifacts/preserved volumes remain usable | VERIFIED | Actual legacy and repeated Make flow, full prior event/CH/workflow snapshots and disjoint current IDs; hosted Compose passes. |
 | 03-14.T1 | CI rejects empty/failed exact families and retains all Phase 2 groups | VERIFIED | Separate exact 46-family calls, real nonempty runner with pipe failure propagation, independent guard registry and seven retained selectors; hosted steps succeed. |
-| 03-14.T2 | Full/static/integration/operator gates have actual recorded results | FAILED — BLOCKER; re-verification pending | Previously VERIFIED at 80d2d87. Latest repeat 39544892831 at eee632f failed full integration at the empty retained-owner snapshot assertion; reviewed diagnosis/repair and replacement actual green gates are required. No runtime defect is inferred. |
+| 03-14.T2 | Full/static/integration/operator gates have actual recorded results | FAILED — BLOCKER; re-verification pending | Previously VERIFIED at 80d2d87. Repeat 39544892831 failed at the empty retained-owner snapshot assertion. Test-only repair e342337 and independent review are complete; actual replacement full/hosted green gates and root release remain required. No runtime defect is inferred. |
 | 03-14.T3 | Docs state cooldown/replay/retention/config and later seq-order limitation | VERIFIED | `docs/rules.md`, operations/demo and architecture explicitly document those constraints; temporal pending statements predate the separate CI closeout. |
 | 03-15.T1 | Strict extracted AUTH loader preserves threshold evidence | VERIFIED | Single LoadRules implementation in config.go, parser and AUTH threshold/canonical assertion families. |
 | 03-15.T2 | No duplicate loader definitions; actual AUTH acceptance retained | VERIFIED | Definitions removed from reducer; main loads extracted package; default real AUTH executed. |
@@ -327,7 +349,7 @@ No new subjective human test is identified by this follow-up. The previous basel
 
 ## Gaps Summary
 
-**One acceptance gap is open:** the latest required repeat full integration failed. Root has reopened Phase 3 closeout pending the assigned specialist's diagnosis/repair, independent review and actual replacement acceptance/hosted results. The failure is the retained-owner fixture precondition described in the parent follow-up banner, not an established runtime implementation failure. No later-phase deferral or override removes this gate.
+**One acceptance gap is open:** the latest completed required repeat full integration failed. The assigned specialist's test-only causal readiness repair, independent deep review and focused/native/static/script/scanner checks are now complete. Root's replacement full aggregate has not returned at this scoped assessment; actual replacement full/hosted success and explicit release are still required. The failure is the retained-owner fixture precondition described in the parent follow-up banner, not an established runtime implementation failure. No later-phase deferral or override removes this gate.
 
 The original five roadmap criteria, 54 plan truths, 72 artifact declarations, 46 links and 14 requirement mappings remain the preserved baseline verification. The original 80d2d87 run remains successful; the later eee632f repeat remains failed. Current status is **gaps_found / re-verification pending**, not approval to proceed to Phase 4.
 
