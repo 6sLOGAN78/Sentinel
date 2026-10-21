@@ -1,10 +1,11 @@
 ---
 phase: 03-detection-alert-pipeline
 verified: 2026-10-21T04:24:57Z
-status: passed
-score: 59/59 must-haves verified
+status: gaps_found
+score: 58/59 must-haves verified; latest repeat acceptance gate failed
+historical_score: 59/59 at 80d2d873762e4832abf4c87e2d36c22d359d8337
 roadmap_score: 5/5
-plan_truth_score: 54/54
+plan_truth_score: 53/54 current; 54/54 historical
 artifact_declarations: 72/72
 unique_artifact_paths: 68
 key_links: 46/46
@@ -13,13 +14,39 @@ overrides_applied: 0
 tested_commit: 80d2d873762e4832abf4c87e2d36c22d359d8337
 hosted_ci_run: 39515550386
 hosted_ci_conclusion: success
+re_verification_pending: true
+latest_hosted_ci_run: 39544892831
+latest_hosted_ci_head: eee632f
+latest_hosted_ci_conclusion: failure
+re_verification:
+  previous_status: passed
+  previous_score: 59/59
+  gaps_closed: []
+  gaps_remaining:
+    - "Latest repeat CI integration acceptance must pass after diagnosed repair and independent review."
+  regressions:
+    - "Required full integration repeat failed at TestDetectorCooperativeAcquisition retained-owner fixture assertion."
+gaps:
+  - truth: "Full unit/static/integration gates and preserved-volume current-run scenarios have recorded results with no invented pass/performance claims."
+    status: failed
+    reason: "Latest repeat CI 39544892831 at eee632f failed its required integration job: TestDetectorCooperativeAcquisition had an empty retained map. Earlier successful execution remains valid historical evidence; this does not establish a new runtime defect."
+    artifacts:
+      - path: "backend/test/detector_rebalance_test.go"
+        issue: "Line 94 retained-owner precondition failed in the latest full integration repeat; diagnosis/repair is owned by the assigned specialist."
+    missing:
+      - "Completed diagnosis and independently reviewed repair/evidence for the failing causal fixture assertion."
+      - "Required replacement acceptance gates and actual new hosted CI success, followed by root release for re-verification."
 ---
 
 # Phase 3: Detection & Alert Pipeline Verification Report
 
 **Phase Goal:** As a system operator, I want to receive deterministic, evidence-backed alerts from malicious traffic, so that crashes, restarts and replay cannot lose or duplicate detections.
 
-**Status:** passed. **Re-verification:** No — initial verification. No previous Phase 3 VERIFICATION.md existed. No verification override was requested or applied.
+**Status:** gaps_found — re-verification pending. **BLOCKER: latest repeat CI acceptance failed; Phase 3 closure is held.** No override was requested or applied.
+
+> **Parent follow-up hold:** Root reported new counterevidence from [CI 39544892831](https://github.com/6sLOGAN78/Sentinel/actions/runs/39544892831) at `eee632f`. Eight jobs succeeded, including all 46 Phase 3 families and Compose; the required full integration job failed (package 1684.173s, make exit 2). `TestDetectorCooperativeAcquisition` failed after 2.85s at `backend/test/detector_rebalance_test.go:94`: the retained map was empty, failing “survivor must retain incorporated state while acquiring additions.” This was an assertion failure, not a timeout. Root retained the failed log at `.local/phase3-acceptance/ci-repeat-39544892831-failed.log` and assigned diagnosis/possible test-only repair to a separate specialist. This verifier has not inspected or debugged that task. Do not restore `passed` until the repair/evidence is independently reviewed, required replacement gates and new hosted CI actually pass, and root explicitly releases re-verification.
+
+The prior 59/59 implementation/source findings and successful nine-job run at `80d2d87` remain historical validated evidence below; they are not erased or presented as the latest repeat result. Current accounting holds **03-14.T2** failed at its acceptance gate (**58/59**, **53/54** plan truths). No new runtime implementation failure is inferred from the empty fixture snapshot. The original passed report is preserved in commit `800b084`. All remaining VERIFIED rows and execution tables below describe that earlier verified baseline unless explicitly updated by the hold.
 
 ## User Flow Coverage
 
@@ -42,7 +69,7 @@ Direct source tracing covered reducer predicates/admission/evidence/checkpoints;
 
 Per the serialized closeout assignment, this verifier ran no tests, builds, compilation, live services, scanner, staging or commits. Execution belongs to root/executors/hosted CI. The verifier independently inspected persistent raw local logs and root-captured GitHub API metadata plus the completed watch log. A fresh verifier `gh` lookup encountered transient API connectivity failure; it is not represented as a successful query. Root's saved API response proves the exact SHA, completed/success status and nine successful jobs, independently corroborated by `WATCH_RETURNED_EXIT=0` and completed job/step output. This is stronger evidence than SUMMARY narration.
 
-Tested source is `80d2d873762e4832abf4c87e2d36c22d359d8337`. Subsequent commits inspected through `ff7fbc3` change only STATE/VALIDATION/CI-closeout documentation; no implementation delta separates current source from that candidate. Existing user changes in `.planning/config.json` and `.serena/` were preserved. Only this report is written by the verifier.
+At initial verification, tested source was `80d2d873762e4832abf4c87e2d36c22d359d8337`. Subsequent commits then inspected through `ff7fbc3` changed only STATE/VALIDATION/CI-closeout documentation; no implementation delta separated that reviewed baseline from the candidate. The new follow-up diagnosis/repair is outside this historical source statement and awaits re-verification. Existing user changes in `.planning/config.json` and `.serena/` were preserved. Only this report is written by the verifier.
 
 ## Goal Achievement
 
@@ -56,7 +83,7 @@ Tested source is `80d2d873762e4832abf4c87e2d36c22d359d8337`. Subsequent commits 
 | SC4 | Failpoint tests at each crash boundary (before publish, between publish and offset commit, after commit) show exactly one visible alert per dedupe key. A replayed detection never reopens or duplicates a resolved alert | VERIFIED | Worker hooks surround actual PublishCanonical/all-ISR acknowledgement/successful checkpoint, with PG-before/after-commit cuts also exercised. Native immediate unique count/detail, complete canonical bytes and entire resolved workflow row are asserted. Insert-only workflow and committed immutable reservations preserve authority through uncertain CH effects. |
 | SC5 | Alerts reach security.alerts.v1, immutable detections land in ClickHouse, and a workflow row with unique alert_id, seq and denormalized list fields exists in PostgreSQL. Rule thresholds load from config/rules.yaml at startup | VERIFIED | Main constructors connect real clients/stores. Publisher uses tenant\|alert_id and all-ISR ProduceSync; writer loads committed saved bytes, acknowledges native CH, ensures PG then commits contiguous source prefix. Migrations 003/004/005/006 and ClickHouse 003 are embedded/applied. Strict startup `LoadRules` and read-only Compose mount use the four checked-in defaults. |
 
-**Roadmap score: 5/5.** Plan-specific truths below add recovery/configuration/operational detail; none reduces the roadmap contract. Combined accounting retains all 54 plan truths alongside the five roadmap criteria: **59/59**, with no failed or uncertain truth.
+**Historical roadmap score: 5/5.** Plan-specific truths below add recovery/configuration/operational detail; none reduces the roadmap contract. The original combined accounting was **59/59**. The latest repeat acceptance failure now holds 03-14.T2 failed, giving **58/59 current**, without asserting that the earlier implementation findings were disproved.
 
 ### Plan-specific observable truths
 
@@ -99,7 +126,7 @@ The identifiers preserve each plan's frontmatter order. Wording is compacted her
 | 03-13.T2 | seed-scenarios checks exact acknowledged current run across Kafka/CH/PG and benign zero | VERIFIED | Offset capture before send; strict expected-set/native workflow reconciliation, original receipt-time lower bound and proof booleans. |
 | 03-13.T3 | Legacy 1000-event seed/private artifacts/preserved volumes remain usable | VERIFIED | Actual legacy and repeated Make flow, full prior event/CH/workflow snapshots and disjoint current IDs; hosted Compose passes. |
 | 03-14.T1 | CI rejects empty/failed exact families and retains all Phase 2 groups | VERIFIED | Separate exact 46-family calls, real nonempty runner with pipe failure propagation, independent guard registry and seven retained selectors; hosted steps succeed. |
-| 03-14.T2 | Full/static/integration/operator gates have actual recorded results | VERIFIED | Persistent actual exits, final static bundle, raw retained selectors and completed nine-job hosted run; no pending gate is silently waived. |
+| 03-14.T2 | Full/static/integration/operator gates have actual recorded results | FAILED — BLOCKER; re-verification pending | Previously VERIFIED at 80d2d87. Latest repeat 39544892831 at eee632f failed full integration at the empty retained-owner snapshot assertion; reviewed diagnosis/repair and replacement actual green gates are required. No runtime defect is inferred. |
 | 03-14.T3 | Docs state cooldown/replay/retention/config and later seq-order limitation | VERIFIED | `docs/rules.md`, operations/demo and architecture explicitly document those constraints; temporal pending statements predate the separate CI closeout. |
 | 03-15.T1 | Strict extracted AUTH loader preserves threshold evidence | VERIFIED | Single LoadRules implementation in config.go, parser and AUTH threshold/canonical assertion families. |
 | 03-15.T2 | No duplicate loader definitions; actual AUTH acceptance retained | VERIFIED | Definitions removed from reducer; main loads extracted package; default real AUTH executed. |
@@ -296,11 +323,13 @@ Disconfirmation/evidence limits retained:
 
 ## Human Verification Required
 
-None remaining. This backend operator flow's external integration, actual process recovery, ownership transfer and preserved-state commands have been exercised on real dependencies locally and on the final hosted candidate. There is no subjective visual or performance-feel criterion. No deferred `<human-check>` block was found in any numbered plan. User-authorized automatic closeout and root's observed hosted result resolve the prior external acceptance hold; no uncertain must-have is silently marked passed.
+No new subjective human test is identified by this follow-up. The previous baseline's real integration and operator evidence remains historical. The latest repeat introduces a failed automated acceptance gate, owned by the assigned diagnosis/repair specialist and root; it cannot be replaced by human approval or the earlier green run. No deferred `<human-check>` block was found in the original numbered-plan review.
 
 ## Gaps Summary
 
-No actionable implementation or acceptance gap remains. No later-phase deferral was used to remove a failed Phase 3 truth. All five roadmap criteria, 54 plan-specific truths, 72 artifact declarations, 46 connections and 14 requirements are accounted for with implementation/wiring and actual execution evidence. Required source/security review, local gates and all nine hosted jobs have completed successfully. Phase 3 goal is achieved for the documented at-least-once, bounded, fail-closed recovery contract.
+**One acceptance gap is open:** the latest required repeat full integration failed. Root has reopened Phase 3 closeout pending the assigned specialist's diagnosis/repair, independent review and actual replacement acceptance/hosted results. The failure is the retained-owner fixture precondition described in the parent follow-up banner, not an established runtime implementation failure. No later-phase deferral or override removes this gate.
+
+The original five roadmap criteria, 54 plan truths, 72 artifact declarations, 46 links and 14 requirement mappings remain the preserved baseline verification. The original 80d2d87 run remains successful; the later eee632f repeat remains failed. Current status is **gaps_found / re-verification pending**, not approval to proceed to Phase 4.
 
 Root owns requirement checkboxes, `phase.complete`, final tracking and any report commit. This verifier neither commits nor begins Phase 4.
 
