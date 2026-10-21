@@ -157,18 +157,33 @@ class Phase3GuardTests(unittest.TestCase):
         self.assert_phase3_workflow(workflow)
 
     def assert_phase3_workflow(self, workflow):
+        self.assertEqual(workflow.count("\n  phase3:\n"), 1)
         phase3 = workflow.split("\n  phase3:\n", 1)[1].split("\n  #", 1)[0]
-        self.assertIn("    strategy:\n", phase3)
-        strategy = phase3.split("    strategy:\n", 1)[1].split("    steps:\n", 1)[0]
-        self.assertEqual(strategy, "      fail-fast: false\n      matrix:\n        group: [core, scenarios]\n")
-        self.assertIn("run: bash scripts/check-phase3-tests.sh '${{ matrix.group }}'", phase3)
-        self.assertEqual(phase3.count("timeout-minutes:"), 1)
-        self.assertIn("timeout-minutes: 45\n", phase3)
-        self.assertNotIn("continue-on-error", phase3)
-        self.assertIn("needs: [go]", phase3)
-        self.assertIn("run: make dev-up", phase3)
-        self.assertIn("run: scripts/check-stack.sh", phase3)
-        self.assertIn("if: always()\n        run: make dev-down", phase3)
+        # This small job is a closed policy: compare complete fields/commands,
+        # not substrings that accept conditional skips or `|| true`. Deliberate
+        # job changes must update this approval and its negative fixtures.
+        self.assertEqual(phase3, """    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs: [go]
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, scenarios]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - run: make dev-up
+      - run: scripts/check-stack.sh
+      - name: independently nonempty Phase 3 families
+        run: bash scripts/check-phase3-tests.sh '${{ matrix.group }}'
+      - name: tear down
+        if: always()
+        run: make dev-down
+""")
 
     def test_ci_guard_rejects_skips_masks_and_incomplete_matrices(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
