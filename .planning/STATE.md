@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Candidate80d2d87 pushed; monitoring hosted CI before final goal verification
-last_updated: "2026-10-20T23:31:21Z"
+stopped_at: HostedCI39515550386 all9jobs passed; final goal verifier released
+last_updated: "2026-10-21T04:23:46Z"
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -55,13 +55,14 @@ This is plan completion, not100%of the six-phase product or Phase3 acceptance.
 
 1. Root pushed80d2d873762e4832abf4c87e2d36c22d359d8337 successfully after scanner0
    and fast-forward check0; originmain advanced19db519→80d2d87. No userdirtincluded.
-   HostedCI39515550386 is in_progress for this exactSHA (observed23:32Z).
+   HostedCI39515550386 SUCCESS/all9jobs for this exactSHA, completed00:20:46ZOct21,
+   independently observed04:23:46Z. See03-CI-CLOSEOUT.md and persistent watch exit0.
    Monitor https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386.
    Do not push additionaldocswhileCIactive/cancelit.
-2. Monitor NEW hostedCI on repaired candidate; oldrun39457945227/head19db519 failed.
-   Do not reuse earlier remote success or infer newCIgreen from localpasses.
-3. On actualCIgreen, give /root/phase3_final_verification explicit final release with
-   run/head/evidence and committed03-14SUMMARY. Its static preparation is complete:
+2. Oldrun39457945227/head19db519 remains failed; repaired39515550386 is a distinct
+   actual green run, not inferred from local passes.
+3. /root/phase3_final_verification explicitly released after all9hostedjobs passed;
+   it writes final03-VERIFICATION.md against actual summary/code/run. Prep complete:
    54truths+5roadmapSC,72artifact declarations/68paths,46links,all14IDs accounted for.
 4. Only after required verified verdict passes: reconcile requirements/roadmap/project,
    run phase.complete with actual21numbered plans, avoid known SDK counting defects.
