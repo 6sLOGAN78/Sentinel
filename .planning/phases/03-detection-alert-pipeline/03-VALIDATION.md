@@ -9,7 +9,13 @@ created: 2026-10-17
 
 # Phase3 — Validation Strategy
 
-Current acceptance gate: hosted39598061416 has eight successes and Phase3
+Latest execution supersedes pendingholds below: hosted39613182464 at7a72028
+completedSUCCESS/all10jobs,14:43:29ZOct21. Actual46families across44+2shards,
+fullintegration/all7retainedgroups andCompose passed. LocalfullPASS1650.77s,
+51scriptcasesPASS150.750s, independentR2clean and finalscannerzero remainvalid.
+Root has releasedfinalindependentverification; closure remainspending itsreport.
+
+Prior acceptance gate: hosted39598061416 has eight successes and Phase3
 cancelled at the explicit45mjobcap. CI-only84352ad splits unchanged46families
 into44core/2scenarios on isolated runners, each45m, fail-fastfalse. Othereight
 jobs, nativebudgets and defaultall46 remain unchanged. Independent R2review at

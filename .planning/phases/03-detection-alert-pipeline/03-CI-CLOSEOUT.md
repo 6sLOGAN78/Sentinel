@@ -1,6 +1,49 @@
 # Phase 3 hosted CI closeout
 
-## Reviewed two-job candidate — replacement running
+## Actual replacement acceptance — all ten jobs passed
+
+[Run39613182464](https://github.com/6sLOGAN78/Sentinel/actions/runs/39613182464)
+completed SUCCESS at7a72028cd7af506cc27097317d61fec0ea918d89. Created14:01:44Z,
+updated14:43:29Z on2026-10-21; actualwatchretry returned0 at14:43:34Z.
+Root saved full exactSHA/job/step API metadata in private
+`hosted-ci-39613182464-result.json`. All ten expanded job instances succeeded:
+
+| Job | Actual result | Finished UTC |
+| --- | --- | --- |
+| python | success | 14:03:40Z |
+| web | success | 14:02:03Z |
+| secrets | success | 14:01:56Z |
+| hygiene | success | 14:01:53Z |
+| go | success | 14:06:44Z |
+| schema | success | 14:02:17Z |
+| compose-smoke | success | 14:15:46Z |
+| integration | success | 14:43:28Z |
+| phase3 (core) | success | 14:36:30Z |
+| phase3 (scenarios) | success | 14:25:45Z |
+
+Integration's actualfullstep passed14:09:59Z–14:37:51Z; all seven retained
+APIkey/ingest/dedupe/writer/recovery/ratelimit/readiness groups and cleanup passed
+afterward. Wholejob36m41s, within unchanged45m. Corejob29m43s; scenariojob18m57s.
+These are observed job durations, not general performance guarantees.
+
+Privateretainedcore log has44top-levelPASSrecords. Scenariolog has actual
+TestDetectionScenariosPASS231.72s and PreservedRepeatPASS578.73s. Compose's separate
+PreservedRepeatPASS238.83s is retained independently. This proves all46families
+at the same testedSHA without counting an interrupted family as passed.
+Full logs and metadata live under ignored `.local/phase3-acceptance/` (0700/0600).
+
+Original localwatch ended1 at14:15:03Z due TLS handshake timeout, not CI failure.
+The distinct `hosted-ci-39613182464-watch-retry1.log` has actual finalexit0.
+Some API job statuses finalized late despite earlier successful steps; root
+waited for all ten real job conclusions, not inferred success. Log-download
+network retries likewise changed no hosted execution. No workflow was rerun,
+no sourcechangedafterpush, no cap/selector/fixture weakening or datareset occurred.
+
+Root releases final independent re-verification based on this actual hosted
+success plus the reviewed repaired-source localfullPASS and static/script/scanner
+proofs. Phaseclosure waits for that report; Phase4 remainsnotstarted.
+
+## Pre-run checkpoint — historical
 
 Finalscanner at7a72028 passed0/467commits/no leaks14:01:29Z. Root's authorized
 normalpush advanceda69d158→7a72028cd7af506cc27097317d61fec0ea918d89.
@@ -18,7 +61,7 @@ PASS0. Runtime/scenario/deployment source remains identical to local fullPASS
 10ddd71/1650.77s. Scanner/push now passed; new actualall10job successes remain
 required. This candidate is not a hostedPASS or Phase3closure yet.
 
-## Latest repaired candidate: matrix job timed out
+## Previous repaired candidate: matrix job timed out
 
 [Run39598061416](https://github.com/6sLOGAN78/Sentinel/actions/runs/39598061416)
 at a69d1583c27843612d5ca9f45df19d41b348f1dd completed/cancelled. Eight jobs
@@ -36,7 +79,7 @@ individual selectors remain required and independently nonempty; no mask/skip
 or production change is authorized. Review/localguardproof/newhosted acceptance
 are required before Phase3 closure. Phase4 remainsnotstarted.
 
-## Latest repeat gate: reopened
+## Earlier repeat gate: reopened
 
 Documentation-only closure commit `eee632febdf601286d2ba8ec3de1e3f75febe2cd`
 triggered [repeat run39544892831](https://github.com/6sLOGAN78/Sentinel/actions/runs/39544892831).

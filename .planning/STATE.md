@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Pushed reviewed shard candidate7a72028; hosted39613182464 running; no closure until actual all10 successes
-last_updated: 2026-10-21T14:03:10Z
+stopped_at: Hosted39613182464 SUCCESS all10jobs at7a72028; root released final independent verification
+last_updated: 2026-10-21T14:44:20Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -26,7 +26,7 @@ Current focus: Phase3 final acceptance reopened after repeat CI; Phase4 not star
 
 Phase: 3 of6 — repeat verification pending; Phase4 not started.
 Plan: 21 of21Phase3 implemented and summarized; final CI reliability follow-up open.
-Status: Latest hosted run has eight successes and a Phase3 job-cap cancellation; bounded shard repair awaits review/hosted proof.
+Status: Latest hosted39613182464 SUCCESS/all10jobs; final independent verification and closure pending.
 Progress: 56/56 currently planned tasks/plans complete (13Phase1+22Phase2+21Phase3).
 Overallphaseprogress2/6=33%; currentlyplanned56/56=100%. Phase3acceptance reopened.
 
@@ -157,10 +157,10 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-21T14:03:10Z.
-Resume: Monitor hosted39613182464 at7a72028, then release finalverification only afterall10success.
+Last session:2026-10-21T14:44:20Z.
+Resume: Final verification released afteractualall10green39613182464; reconcile/close Phase3, stopbefore4.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
-Current producer: gh run watch39613182464, session70625; persistentprivatewatchlog.
+Current producer: no live/native/CI producer; finalverifier is next.
 Do not rerun the expensive aggregate before repair and independent review are clean.
 No runtime/config/test/CI-code change existed between green80d2d87 and repeat-failed
 eee632f. Preserve this distinction; do not relabel the latest failure green.
@@ -279,3 +279,14 @@ required. There are10expandedinstances now. Do not pushtrackingwhilewatching
 (wouldcancelcurrentrun); no sourcechangesplanned. Onactualall10green retain
 fullAPIresult, releaseindependentfinalverification, reconciletracking/close3.
 If interrupted, queryactualrunstatus beforestartingduplicatework. Phase4idle.
+
+ACTUALfinalhosted39613182464 at7a72028 SUCCESS/all10jobs, updated14:43:29Z.
+Fullintegrationstep passed14:09:59–14:37:51, all7retainedgroups andcleanup passed;
+integrationjob36m41s within45m. Exactcore44passed (44actualtop-levelPASSrecords),
+twoactualscenariofamiliesPASS231.72/578.73s; separateComposePreservedRepeat238.83s.
+Corejob29m43s,scenariojob18m57s, bothwithinunchanged45m. FullAPIresult +core/
+scenario/Composelogsretainedprivately. Originalwatch70625ended1/TLSnetworkerror,
+notCIfailure; distinctretrywatch29051actuallyreturned0 at14:43:34Z.
+Rootnowreleasesindependentfinalverification. Afterpassed59/59reconcileSDK/
+roadmap/requirements/state/PROJECT and registeredsecurity/validation closure.
+Historicalfailed/cancelled/UNKNOWN remainunchanged. Do not startPhase4.
