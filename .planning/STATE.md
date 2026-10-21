@@ -67,6 +67,10 @@ each (sixpasses/package70.937s). Full test suite session96944 began05:33:20Z wit
 unchanged32mcap; logcooperative-full-integ.log (persistent/ignored/private).
 Fresh staticmake test/lint/build/default+integrationvet/integrationlint PASS0,
 all44scriptcases PASS0/75.21s and pinnedfullhistoryscanner PASS0.
+At06:55Z wallclock had advanced substantially beyond the05:33Z start while Go's
+unchanged32m test process remained active with fresh child services progressing.
+The clock gap's cause is unestablished; do not infer elapsed duration, timeout
+compliance, interruption or PASS before actual producerexit/ELAPSED evidence.
 Root must awaitactualfullsuiteexit, then authorizedpush/green hostedCI and reconcile
 verification/closure again. No productionfilechanged.
 Private failed log: .local/phase3-acceptance/ci-repeat-39544892831-failed.log.
