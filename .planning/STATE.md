@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase3 repaired full integration PASS0/1650.77s; final scan and authorized push/hosted CI next
-last_updated: 2026-10-21T12:13:06Z
+stopped_at: Phase3 all local gates passed; repaired candidate a69d158 pushed; hosted CI39598061416 pending
+last_updated: 2026-10-21T12:15:00Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -220,3 +220,11 @@ UnitSubStateexited/ExecMainStatus0 recorded, completedtemporaryunitstopped.
 No sourcechangesaftertestedcandidate; all9GB+free remainedduringrun. Alllocal
 gates nowactualpasses; finalhistoryscan then authorizednormalpush and newhosted
 CI stillrequired. See03-POST-REPAIR-ACCEPTANCE.md; no prematurephasecomplete.
+
+Finalpinnedfullhistoryscanner PASS0 ata69d158,12:14:30Z–12:14:32Z.
+Authorizednormalpush succeeded eee632f→a69d1583c27843612d5ca9f45df19d41b348f1dd.
+HostedCI39598061416 created12:14:45Z atthat exactSHA, queued/pending at capture.
+https://github.com/6sLOGAN78/Sentinel/actions/runs/39598061416
+Rootmustmonitoractualall9jobs includingfullintegration/7retainedgroups,46families
+andCompose smoke; no closureuntilactualsuccess+releasedscopedre-verification.
+Postpushtrackingedits containnosourcechange; preserveoriginaluserdirtunstaged.
