@@ -5,6 +5,7 @@ import os
 import tempfile
 import subprocess
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
@@ -12,6 +13,40 @@ from scripts import seed_scenarios as scenarios
 
 
 class ScenarioTests(unittest.TestCase):
+    def test_bootstrap_reaches_locked_runtime_without_datetime_utc(self):
+        # Model Python 3.10's stdlib on newer CI interpreters. Intercept only
+        # the real reexec boundary so this check cannot send scenario traffic.
+        bootstrap = """
+import datetime
+import json
+import os
+import runpy
+import sys
+if hasattr(datetime, "UTC"):
+    del datetime.UTC
+def reexec(program, arguments, environment):
+    print(json.dumps([program, arguments]))
+    raise SystemExit(0)
+os.execvpe = reexec
+sys.prefix = "/synthetic-system-python"
+sys.argv = [sys.argv[1], "--help", "--edges"]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", bootstrap, str(scenarios.ROOT / "scripts/seed_scenarios.py")],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout),
+            ["uv", ["uv", "run", "--locked", "--project", str(scenarios.ROOT / "generator"),
+                    "python", "-B", str(scenarios.ROOT / "scripts/seed_scenarios.py"),
+                    "--help", "--edges"]],
+        )
+
     def test_late_counter_refuses_restart_reset_and_unexpected_delta(self):
         identity = {"container_id": "stable", "started_at": "same", "pid": 42}
         scenarios.verify_late_observation(10, 10, 0, identity, identity)
