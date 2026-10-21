@@ -1,7 +1,7 @@
 # Detection and alert operations
 
-Local Phase 3 acceptance gates passed; phase-wide goal verification and hosted CI
-remain pending. The scoped
+Phase 3 local/hosted acceptance and final 59/59 goal verification passed.
+Phase 4 is not started. The scoped
 [reservation R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
 is clean; it does not establish deployment or current-stack acceptance. Use this
 as the selected operator protocol; the final acceptance record must accompany a
@@ -198,8 +198,9 @@ nonempty runner invocation: ordinary 6m, cooldown 8m, pure families 60s,
 scheduled scenario 16m, preserved repeat 32m. The relevant CI jobs use 45m.
 The local acceptance record reports actual passing exits, including the repaired
 full integration run and seven independently nonempty retained Phase 2 groups.
-Hosted acceptance of the repaired source remains pending; test existence or a
-broad regex alone cannot establish a pass. Production builds exclude integration hook
+Hosted[CI39515550386](https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386)
+passed all nine jobs on the repaired source; test existence or a broad regex
+alone cannot establish a pass. Production builds exclude integration hook
 files and read no fault-control environment settings. Fault tests alone build
 integration binaries; there is no public failure-control endpoint.
 

@@ -1,7 +1,7 @@
 # Preserved-state detection demo
 
-Local Phase 3 acceptance gates passed; phase-wide goal verification and hosted CI
-remain pending. Scoped reservation R2 review is clean; existing installations must complete the
+Phase 3 local and hosted acceptance and final goal verification passed.
+Scoped reservation R2 review is clean; existing installations must complete the
 [stopped-writer rollout](operations.md#reservation-protocol-rollout) before these
 commands. Earlier
 actual preserved-stack, exact static/live and repeat results are recorded in

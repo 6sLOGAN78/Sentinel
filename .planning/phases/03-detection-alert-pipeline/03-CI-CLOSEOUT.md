@@ -58,5 +58,8 @@ proof limits are not erased by a green run.
 This run certifies the tested candidate's checks, not unmeasured performance,
 RSS, exactly-once physical effects or future Phase4API/UI/SSE behavior. Subsequent
 STATE/VALIDATION tracking edits do not change the implementation tested above.
-Root final goal verification and phase-completion tracking are separate recorded
-steps. Stop before Phase4.
+Final03-VERIFICATION.md passed59/59, all14requirements were marked complete,
+and registeredphase.complete3 succeeded without warnings. Root reconciled its
+supplemental-plan miscount to21/21numbered plans. Closure changes after the tested
+candidate are documentation/tracking only; no implementation changed. Phase3 is
+complete. Stop before Phase4.

@@ -30,18 +30,21 @@ Validated in Phase 2: Ingestion & Durable Event Storage (2026-10-17):
 - ✓ FR-12: Redis token-bucket ingestion quotas, Retry-After and explicit tested outage policy
 - ✓ FR-13: `make seed` starts the pinned Compose pipeline and verifies 1,000 exact current-run events end to end
 
+Validated in Phase3: Detection & Alert Pipeline (2026-10-21):
+
+- ✓ FR-04: Evaluate four built-in event-time streaming rules (AUTH_BRUTE_FORCE, PORT_SCAN, REQUEST_FLOOD, DENY_SPIKE)
+- ✓ FR-05: Persist alerts with evidence, rule IDs and deterministic SHA-256 alert IDs
+- ✓ FR-09: Deterministic, seeded synthetic event generator with scenario injection
+- ✓ FR-11: Replay-safe recovery from worker crashes
+
 ### Active
 
 <!-- Source: spec.md §5 (FR-01..FR-18). All hypotheses until shipped and verified. -->
 
-- [ ] FR-04: Evaluate four built-in event-time streaming rules (AUTH_BRUTE_FORCE, PORT_SCAN, REQUEST_FLOOD, DENY_SPIKE)
-- [ ] FR-05: Persist alerts with evidence, rule IDs and deterministic SHA-256 alert IDs
 - [ ] FR-06: List, filter and cursor-paginate events and alerts via the tenant-scoped API
 - [ ] FR-07: Show live alerts in the React UI over SSE, with reconnect and backfill
 - [ ] FR-08: Acknowledge and resolve alerts with actor, time, optimistic versioning and audit history
-- [ ] FR-09: Deterministic, seeded synthetic event generator with scenario injection
 - [ ] FR-10: Prometheus metrics plus health/readiness endpoints
-- [ ] FR-11: Replay-safe recovery from worker crashes
 - [ ] FR-14: Kubernetes manifests or Helm chart with probes and resource limits (P1)
 - [ ] FR-15: Dashboard time series, rule breakdown and health/lag charts (P1)
 - [ ] FR-16: Multi-replica load test and reproducible benchmark report covering ≥1M events (P1)
@@ -59,8 +62,7 @@ Validated in Phase 2: Ingestion & Durable Event Storage (2026-10-17):
 
 ## Context
 
-- **Latest execution checkpoint (supersedes older in-progress reservation wording below):** All three reservation implementation tasks and whole-fix R2 review are complete; CR-02-R1 is addressed with zero review findings. Real native ACK loss, process recovery and the separately labeled delayed-visibility model have recorded proof; an exact native pre-visibility pause remains unproved and is not claimed. Root reconciled every retained alert/workflow outcome, applied additive migration 006 and verified complete workflow/physical snapshots unchanged before releasing new-image startup. The rebuilt five-service stack and stack checker passed. The 46-family fake guard is green; actual final full/script/operator gates and final phase review/security/goal verification remain in progress under 03-14. Phase3 remains20/21. Hosted CI is unclaimed; stop before Phase4.
-- **Current state (Phase 3 executing, 2026-10-20):** 20 of 21 plans have committed verified summaries; Waves 1–13 passed fresh cross-plan build/unit gates (Go race suite, web 6 tests, generator 121 tests). All four rules, frozen evidence, native CH/PG alert stores, fenced durable cooldown, exact checkpoint reconstruction, stopped-owner config handover, bounded state/poison processing, authoritative restored-assignment readiness and causal crash/actual target transfer proofs are implemented. Plan 03-13 records passing preserved-stack seed/scenario/repeat evidence with prior full rows/workflows retained; the later 03-14 full integration attempt failed two scenario checks, so final aggregate acceptance is not established. Its isolated-static-all rerun passed without explaining the earlier failure. Integration lint is repaired, and 39-family fake-Go guard characterization passes; the actual full guarded matrix and final CI/docs gates remain incomplete. Production repair review closes cooperative assignment validation and writer resource admission and the reproduced five-second lock expiry, but CR-02-R1 still blocks closeout: ambiguous CH completion can outlive PG rollback without a durable immutable winner claim. The user approved the PG reservation scope and written 03-ALERT-RESERVATION-DESIGN.md. Its four-task implementation plan is approved and executing with specialists. The immutable reservation migration and two-phase writer protocol are implemented and independently task-reviewed (a5a564e; schema lint follow-up cf9b879). Native committed-authority/replay/conflict/lock tests, full unit tests and integration lint pass; Task 3 process/native-fault proof is next. CR-02-R1 remains open until scoped final review judges the recovery evidence; no fault acceptance or phase completion is claimed yet. Phase-wide final review/security/verification remain pending. Intermediate implementation, focused tests and design approval do not certify Phase 3. See STATE.md, 03-VALIDATION.md, 03-REVIEW-PRODUCTION-R1.md and per-plan summaries.
+- **Verified Phase3 complete (2026-10-21):** All21numbered plans are committed and summarized. Final03-VERIFICATION.md passes59/59truths,72artifact declarations,46links andall14requirements. Source-review aggregate is clean over130unique changed artifacts; registeredsecurityaudit has78closed/0open threats. Hosted[run39515550386](https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386) passed all9jobs at80d2d87, includingfullintegration, all46independentPhase3families andpreservedCompose/seed/twoscenario acceptance. Localcompletefullsuite passed1849.21s; all7retainedPhase2groups321.83s, finalrace/static/script/scanner gates passed. Fourrules, canonicalevidence, durablecooldown, state-pin recovery/current-owner fences, permanentpre-CHreservations andinsert-onlyworkflow replay areimplemented andwired. Historicalfailures/unknowninterruptions, native-versus-model prooflimits and missingseparateTask3REDcommit remainexplicit in the summaries/reviews. At-least-once delivery and bounded fail-closed recovery are not exactly-once effects, performance/RSS promises, or security certification. Phase4auth/query/triage/UI/SSE/backfill is notstarted. See03-VERIFICATION.md,03-CI-CLOSEOUT.md and03-14-SUMMARY.md.
 - **Verified Phase 2 baseline (2026-10-17):** all 22 plans deliver the scoped producer → ingest → Kafka → event-writer → ClickHouse → tenant lookup slice. Readiness repair eb7f6e4 passed deterministic regressions, repeated real lifecycle/outage tests and hosted run 38974983287 at 5e6a826; all eight jobs and seven guarded groups passed.
   - One Go 1.26 module builds five binaries; ingest, event-writer and minimal query lookup are live application paths. Detection and alert business logic remain Phase 3 work.
   - The seeded Python sender has bounded identical-byte retries and private manifests. Four real 1,000-ID seed runs verified exact visible identities and tenant isolation; this is not a throughput benchmark.
@@ -98,12 +100,12 @@ Validated in Phase 2: Ingestion & Durable Event Storage (2026-10-17):
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Alert storage: immutable detections in ClickHouse, mutable workflow state and audit in PostgreSQL (unique `alert_id`) | Required v1 choice in spec §7.3; uses analytic search plus transactional triage | ✓ Good: recorded as ADR 0006 in Phase 1; details finalized in Phase 3 |
-| At-least-once delivery with deterministic IDs (event_id, SHA-256 alert_id) and idempotent writes | Kafka+ClickHouse can't give end-to-end exactly-once (spec §3, §7.2) | — Pending |
+| At-least-once delivery with deterministic IDs (event_id, SHA-256 alert_id) and idempotent writes | Kafka+ClickHouse can't give end-to-end exactly-once (spec §3, §7.2) | ✓ Good: verified native replay, durable reservation and visible dedupe; no exactly-once claim |
 | Atomic all-or-nothing batch ingestion | Spec §8 recommends it for v1, so there is no ambiguous partial acceptance | ✓ Recorded as ADR 0003: atomic at the response level; mid-batch Kafka failure gives 503 plus identical-batch retry with client-supplied event_id |
 | Single Go module, multiple binaries (ingest, detector, event-writer, alert-writer, query-api) | Spec §2: avoid premature microservices | ✓ Good: five binaries under `backend/cmd/*` in Phase 1 |
 | Reuse the existing `backend/` Go module and boilerplate infra (Echo, koanf, pgx, zerolog) where it fits; place binaries under `backend/cmd/*` instead of the spec's root-level `cmd/` | Simplest consistent path from the current repo (spec §19.4); record in `docs/decisions/` during Phase 1 | ✓ Good: ADR 0001; old HTTP layer deleted (D-28), retained infra refactored |
 | Replace or remove non-spec boilerplate (Clerk, Resend email, asynq jobs, New Relic) in favor of spec-mandated API-key/JWT auth and Prometheus/OTEL | Spec §19.8: no unrelated services without a documented reason | ✓ Good: all removed in Phase 1; `go list -deps` banned-module check passes |
-| Rules are versioned YAML loaded at startup; changes need a restart in v1 | Spec §5.1 explicitly allows it; keeps the rule engine simple | — Pending |
+| Rules are versioned YAML loaded at startup; changes need a restart in v1 | Spec §5.1 explicitly allows it; keeps the rule engine simple | ✓ Good: strict startup parser and verified stopped-owner/drained handover |
 | Vertical MVP phases following spec §14 order | Spec §14: each phase leaves the repo runnable; vertical slices before broad abstractions | — Pending |
 
 ## Evolution
@@ -124,4 +126,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-20 — reservation whole-fix R2 clean; preserved-stack rollout reconciled; final Phase 3 gates in progress*
+*Last updated: 2026-10-21 — Phase3 verifiedcomplete21/21; Phase4 notstarted*

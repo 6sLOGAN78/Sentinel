@@ -36,22 +36,22 @@
 
 ### Detection (DET)
 
-- [ ] **DET-01**: The detector evaluates AUTH_BRUTE_FORCE (≥10 failures / 5 min, by tenant+source_ip+principal) on event time [FR-04]
-- [ ] **DET-02**: The detector evaluates PORT_SCAN (≥20 distinct ports / 60 s, by tenant+source_ip+destination_ip) on event time [FR-04]
-- [ ] **DET-03**: The detector evaluates REQUEST_FLOOD (≥300 requests / 60 s, by tenant+source_ip) on event time [FR-04]
-- [ ] **DET-04**: The detector evaluates DENY_SPIKE (≥30 denies / 2 min, by tenant+source_ip) on event time [FR-04]
-- [ ] **DET-05**: Rule thresholds, windows, severities and cooldowns load from versioned `config/rules.yaml` at startup, and changing them requires a restart (documented) [§5.1]
-- [ ] **DET-06**: The window model is documented in an ADR and tested: event-time windows with half-open boundaries, a per-partition watermark, a ~30 s lateness tolerance, deterministic late-event handling with a metric, and bounded per-key state [§5.1]
-- [ ] **DET-07**: Each rule hit produces one alert per dedupe key and window, carrying severity, summary, event_count, window start/end, at most 20 sample event IDs, rule_id/rule_version and a deterministic SHA-256 alert_id. created_at is derived from event time [FR-05, §6.2]
-- [ ] **DET-08**: Per-rule cooldown suppresses repeat alerts for the same entity, while separate windows remain investigable [§5.1]
-- [ ] **DET-09**: Seeded malicious fixtures trigger each rule exactly as expected, benign fixtures produce no alerts, and boundary/lateness fixtures behave as specified [§14 Phase 3]
+- [x] **DET-01**: The detector evaluates AUTH_BRUTE_FORCE (≥10 failures / 5 min, by tenant+source_ip+principal) on event time [FR-04]
+- [x] **DET-02**: The detector evaluates PORT_SCAN (≥20 distinct ports / 60 s, by tenant+source_ip+destination_ip) on event time [FR-04]
+- [x] **DET-03**: The detector evaluates REQUEST_FLOOD (≥300 requests / 60 s, by tenant+source_ip) on event time [FR-04]
+- [x] **DET-04**: The detector evaluates DENY_SPIKE (≥30 denies / 2 min, by tenant+source_ip) on event time [FR-04]
+- [x] **DET-05**: Rule thresholds, windows, severities and cooldowns load from versioned `config/rules.yaml` at startup, and changing them requires a restart (documented) [§5.1]
+- [x] **DET-06**: The window model is documented in an ADR and tested: event-time windows with half-open boundaries, a per-partition watermark, a ~30 s lateness tolerance, deterministic late-event handling with a metric, and bounded per-key state [§5.1]
+- [x] **DET-07**: Each rule hit produces one alert per dedupe key and window, carrying severity, summary, event_count, window start/end, at most 20 sample event IDs, rule_id/rule_version and a deterministic SHA-256 alert_id. created_at is derived from event time [FR-05, §6.2]
+- [x] **DET-08**: Per-rule cooldown suppresses repeat alerts for the same entity, while separate windows remain investigable [§5.1]
+- [x] **DET-09**: Seeded malicious fixtures trigger each rule exactly as expected, benign fixtures produce no alerts, and boundary/lateness fixtures behave as specified [§14 Phase 3]
 
 ### Alert Pipeline (ALRT)
 
-- [ ] **ALRT-01**: Alerts are published to `security.alerts.v1` (key `tenant_id|alert_id`) and the alert-writer persists immutable detections to ClickHouse [FR-05]
-- [ ] **ALRT-02**: The alert-writer creates the mutable workflow row (status, assignee, version, seq, denormalized list fields) in PostgreSQL with a unique alert_id. A replayed detection never reopens or duplicates an existing alert [FR-05, §7.3]
-- [ ] **ALRT-03**: The detector rebuilds window state after restart or rebalance by replaying from a committed state-pin offset. Killing the detector mid-window (e.g. after 9 of 10 failures) still produces the alert once the 10th event arrives [FR-11, §5.1]
-- [ ] **ALRT-04**: A crash at each boundary (before alert publish, between publish and offset commit, after commit) is tested with failpoints and yields exactly one visible alert per dedupe key [FR-11, §14 Phase 3]
+- [x] **ALRT-01**: Alerts are published to `security.alerts.v1` (key `tenant_id|alert_id`) and the alert-writer persists immutable detections to ClickHouse [FR-05]
+- [x] **ALRT-02**: The alert-writer creates the mutable workflow row (status, assignee, version, seq, denormalized list fields) in PostgreSQL with a unique alert_id. A replayed detection never reopens or duplicates an existing alert [FR-05, §7.3]
+- [x] **ALRT-03**: The detector rebuilds window state after restart or rebalance by replaying from a committed state-pin offset. Killing the detector mid-window (e.g. after 9 of 10 failures) still produces the alert once the 10th event arrives [FR-11, §5.1]
+- [x] **ALRT-04**: A crash at each boundary (before alert publish, between publish and offset commit, after commit) is tested with failpoints and yields exactly one visible alert per dedupe key [FR-11, §14 Phase 3]
 
 ### Authentication and Access (AUTH)
 
@@ -89,7 +89,7 @@
 ### Generator (GEN)
 
 - [x] **GEN-01**: A tester can run a seeded Python generator that produces reproducible benign traffic using only reserved documentation IP ranges and pseudonymous principals [FR-09, §10]
-- [ ] **GEN-02**: A tester can inject scenarios (auth brute force, port scan, request flood, deny spike) via generator flags, with expected rule hits recorded [FR-09, §17]
+- [x] **GEN-02**: A tester can inject scenarios (auth brute force, port scan, request flood, deny spike) via generator flags, with expected rule hits recorded [FR-09, §17]
 - [x] **GEN-03**: `make seed` publishes deterministic benign plus threat demo fixtures through the ingest API [§16]
 
 ### Observability (OBS)
@@ -180,20 +180,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GEN-01 | Phase 2 | Complete |
 | GEN-03 | Phase 2 | Complete |
 | OBS-01 | Phase 2 | Complete |
-| DET-01 | Phase 3 | Pending |
-| DET-02 | Phase 3 | Pending |
-| DET-03 | Phase 3 | Pending |
-| DET-04 | Phase 3 | Pending |
-| DET-05 | Phase 3 | Pending |
-| DET-06 | Phase 3 | Pending |
-| DET-07 | Phase 3 | Pending |
-| DET-08 | Phase 3 | Pending |
-| DET-09 | Phase 3 | Pending |
-| ALRT-01 | Phase 3 | Pending |
-| ALRT-02 | Phase 3 | Pending |
-| ALRT-03 | Phase 3 | Pending |
-| ALRT-04 | Phase 3 | Pending |
-| GEN-02 | Phase 3 | Pending |
+| DET-01 | Phase 3 | Complete |
+| DET-02 | Phase 3 | Complete |
+| DET-03 | Phase 3 | Complete |
+| DET-04 | Phase 3 | Complete |
+| DET-05 | Phase 3 | Complete |
+| DET-06 | Phase 3 | Complete |
+| DET-07 | Phase 3 | Complete |
+| DET-08 | Phase 3 | Complete |
+| DET-09 | Phase 3 | Complete |
+| ALRT-01 | Phase 3 | Complete |
+| ALRT-02 | Phase 3 | Complete |
+| ALRT-03 | Phase 3 | Complete |
+| ALRT-04 | Phase 3 | Complete |
+| GEN-02 | Phase 3 | Complete |
 | AUTH-01 | Phase 4 | Pending |
 | AUTH-02 | Phase 4 | Pending |
 | AUTH-03 | Phase 4 | Pending |

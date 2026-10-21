@@ -2,8 +2,8 @@
 
 This is the scoped Phase 3 trust model, not a security certification. Local
 acceptance gates passed. The registered-threat audit found all 78 declared
-threats closed; final summary reconciliation, phase-wide goal verification and
-hosted acceptance remain pending. Scoped reservation
+threats closed. Final summary reconciliation,59/59goal verification and all nine
+hosted jobs passed; this is not a security certification. Scoped reservation
 [R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
 is clean (zero findings), closing CR-02-R1 for conforming protocol writers without
 certifying deployment or this complete threat model. The [architecture](architecture.md) describes the selected protocol;

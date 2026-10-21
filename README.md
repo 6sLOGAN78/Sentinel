@@ -5,8 +5,8 @@ durable Kafka delivery, ClickHouse storage, investigation, and alerting. The
 current stack accepts scoped event batches, evaluates four deterministic
 event-time rules, persists detections and workflow rows, and serves tenant-scoped
 event lookups. Delivery is at-least-once with immediate visible deduplication.
-Phase 3 local acceptance gates passed; phase-wide goal verification and hosted CI
-remain pending. Dashboard login, alert query/triage APIs and SSE remain Phase 4 work.
+Phase 3 is verified complete: 21/21 plans and all nine hosted CI jobs passed.
+Dashboard login, alert query/triage APIs and SSE remain Phase 4 work, not started.
 
 ## Prerequisites
 
@@ -196,7 +196,10 @@ the scoped reservation R2 review is clean. The
 records retained-data reconciliation and additive migration. See the
 [local acceptance record](.planning/phases/03-detection-alert-pipeline/03-ALERT-RESERVATION-EVIDENCE.md)
 for actual exits and historical failures. The older hosted checkpoint failed;
-hosted acceptance of the repaired source and phase-wide goal verification remain pending.
+the repaired source passed all nine jobs in
+[CI39515550386](https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386).
+[Final goal verification](.planning/phases/03-detection-alert-pipeline/03-VERIFICATION.md)
+passes 59/59 with all 14 requirements satisfied. Phase 4 is not started.
 
 ## Documentation
 

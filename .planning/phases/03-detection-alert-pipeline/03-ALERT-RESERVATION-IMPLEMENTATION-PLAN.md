@@ -10,7 +10,7 @@
 
 **Spec:** [03-ALERT-RESERVATION-DESIGN.md](03-ALERT-RESERVATION-DESIGN.md), approved by user “approve” on 2026-10-20 after explanation of the selected approach.
 
-**Status:** User approved with “okk” on 2026-10-20; Tasks 1–3 implemented and independently reviewed, whole-fix R2 clean/CR-02-R1 addressed. Task4 registration/docs subset is committed and final acceptance is running under03-14. This is a supplemental repair plan, not an additional SDK-counted phase plan. Phase3 remains20/21 until03-14 actual gates finish.
+**Status:** All four repair tasks complete. Whole-fix R2 closesCR-02-R1; registration/docs and03-14 local/hosted acceptance passed. Finalgoalverification59/59 and registeredphase.complete3 passed2026-10-21. This is a supplemental repair, not an additional SDK-counted phase plan: Phase3complete21/21, Phase4notstarted. Historical task steps/approval below remain provenance, not current pending work.
 
 ## Global Constraints
 

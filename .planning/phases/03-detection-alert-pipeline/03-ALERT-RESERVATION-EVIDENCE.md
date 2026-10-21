@@ -5,8 +5,9 @@ Checkpoint: implementation Tasks 1–3 are committed and task-reviewed. Independ
 CR-02-R1 for conforming reservation-protocol writers at frozen backend `3a26feb`.
 R2 is read-only source review, not a fresh test execution. Local Phase 3 gates
 and preserved-stack reconciliation subsequently passed, as recorded below;
-phase-wide goal verification and hosted acceptance remain pending. This is evidence
-provenance, not Phase 3 completion or security certification.
+final goal verification passed59/59 and hostedCI39515550386 passed all9jobs.
+Phase3 is complete; Phase4notstarted. Earlier checkpoint statements below retain
+their original temporal meaning. This is evidence provenance, not security certification.
 The [approved design](03-ALERT-RESERVATION-DESIGN.md) defines the invariant and rollout.
 
 ## Durable invariant

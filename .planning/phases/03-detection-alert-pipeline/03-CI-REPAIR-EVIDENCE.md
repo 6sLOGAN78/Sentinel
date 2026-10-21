@@ -1,5 +1,10 @@
 # Phase 3 hosted CI repair evidence
 
+Final parent status: repaired candidate80d2d87 passed all9jobs in hosted
+[CI39515550386](https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386).
+Finalgoalverification59/59 passed; Phase3complete. The local repair chronology
+below retains its original evidence boundary. See03-CI-CLOSEOUT.md.
+
 The earlier hosted run `39457945227` failed at an older remote checkpoint,
 `19db519`; this document records local repair evidence, not a new hosted result.
 The Python failure and historical secret-scan finding are repaired below. The

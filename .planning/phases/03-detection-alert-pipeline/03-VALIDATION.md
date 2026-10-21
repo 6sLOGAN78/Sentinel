@@ -1,7 +1,7 @@
 ---
 phase: 03
 slug: detection-alert-pipeline
-status: approved
+status: passed
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-10-17
@@ -9,7 +9,7 @@ created: 2026-10-17
 
 # Phase3 — Validation Strategy
 
-Revision2 bindings:21plans,52tasks,14waves. Independent planning approval is recorded in03-PLAN-CHECK-R2.md. All21numbered plans now have committed summaries and passing local execution evidence; all required scaffolds exist. The52task map is locally executed, source review is clean and registered security has78closed/0open threats. HostedCI39515550386 on80d2d87 and final goal verification remain pending; neither is inferred from planning coverage or local passes.
+Revision2 bindings:21plans,52tasks,14waves. All21numbered plans have committed summaries, passing local/hosted execution and required scaffolds. Source review is clean; registeredsecurity has78closed/0open threats. HostedCI39515550386 passed all9jobs at80d2d87; final03-VERIFICATION passes59/59truths,72artifact declarations,46links and14requirements. Phase3 is complete; Phase4notstarted. These are actualexecution/review results, not planning-derived claims.
 
 Existing Go/testify, integration-tag real Kafka/ClickHouse/PostgreSQL/Redis TestMain and locked Python pytest are reused. Each named Go family has a separate nonempty runner command; the current runner only requires onePASS across a regex. RED requires a named behavioral assertion after compilation/setup, never missingpackage/import/type. First test tasks own new scaffolds; loadable declarations allow RED before production behavior. Run independent RED checks individually and retain each exit; &&joins are final combined gates.
 
@@ -110,7 +110,7 @@ Every plan has trust boundaries and actionable STRIDE dispositions with scoped A
 - [x] Unit/static/race/default+integrationlint/vet/fullintegration and all7retainedPhase2groups pass locally.
 - [x] All15m scheduling/32mrepeat budgets are carried into Make/Compose/script/CI and actual local exits recorded.
 - [x] No open high registered threat or source finding; no unmeasured performance claim.
-- [ ] HostedCI39515550386 and final goal verification pass; phase acceptance still pending.
+- [x] HostedCI39515550386/all9jobs and final goal verification59/59 pass; Phase3 complete.
 
 Planning approved2026-10-17 in03-PLAN-CHECK-R2.md; all21local plan executions completed in their summaries. Initial/failing reviews and unknown interruptions remain unchanged historical evidence. HostedCI and goal acceptance remain separate gates, not planning-derived claims.
 

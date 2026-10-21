@@ -1,7 +1,7 @@
 # Architecture
 
-Phase 3 local acceptance gates passed; phase-wide goal verification and hosted CI
-remain pending. The scoped
+Phase 3 local and hosted acceptance passed; final goal verification is 59/59.
+Phase 4 is not started. The scoped
 [reservation R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
 is clean and closes CR-02-R1 for conforming reservation-protocol writers. This
 document describes the implemented detection/recovery contract. Local gate
