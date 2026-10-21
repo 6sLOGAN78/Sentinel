@@ -42,10 +42,12 @@ EXPECTED = (
     + [("./test/...", "TestDetectionScenarios", "16m", True),
        ("./test/...", "TestDetectionScenariosPreservedRepeat", "32m", True)]
 )
+GROUPS = {"core": EXPECTED[:-2], "scenarios": EXPECTED[-2:]}
 
 
 class Phase3GuardTests(unittest.TestCase):
-    def run_guard(self, *, empty: str = "", failed: str = "", package: str = "", direct: bool = False):
+    def run_guard(self, *, empty: str = "", failed: str = "", package: str = "", direct: bool = False,
+                  arguments: tuple[str, ...] = ()):
         """Run the real shell entry point/nonempty runner against a fake Go process."""
         with tempfile.TemporaryDirectory(prefix="sentinel-phase3-guard-") as directory:
             root = Path(directory)
@@ -76,7 +78,7 @@ class Phase3GuardTests(unittest.TestCase):
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ.get("PATH", ""),
                        PHASE3_CALLS=str(log), PHASE3_EMPTY=empty, PHASE3_FAILED=failed,
                        PHASE3_PACKAGE=package)
-            command = ["bash", str(root / "scripts" / "check-phase3-tests.sh")]
+            command = ["bash", str(root / "scripts" / "check-phase3-tests.sh"), *arguments]
             if direct:
                 command = ["bash", str(root / "scripts" / "go-test-nonempty.sh"),
                            "./test/...", "^TestExample$", "-tags=integration", "-timeout", "6m", "-p", "1"]
@@ -90,6 +92,9 @@ class Phase3GuardTests(unittest.TestCase):
     def test_every_exact_family_runs_independently_with_its_budget_and_build_tag(self):
         result, calls = self.run_guard()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_exact_calls(calls, EXPECTED)
+
+    def assert_exact_calls(self, calls, expected):
         actual = []
         for args in calls:
             self.assertEqual(args[0], "test")
@@ -104,10 +109,63 @@ class Phase3GuardTests(unittest.TestCase):
             self.assertEqual("-tags=integration" in args, integration)
             if integration:
                 self.assertEqual(args[args.index("-p") + 1], "1")
-            if package == "./internal/alertwriter/...":
+            if package in ("./internal/alertwriter/...", "./internal/config/..."):
                 self.assertIn("-race", args)
             actual.append((package, selector[1:-1], args[args.index("-timeout") + 1], integration))
-        self.assertCountEqual(actual, EXPECTED)
+        self.assertCountEqual(actual, expected)
+
+    def test_groups_are_disjoint_and_cover_the_unchanged_default(self):
+        default, default_calls = self.run_guard()
+        explicit, explicit_calls = self.run_guard(arguments=("all",))
+        self.assertEqual(default.returncode, 0, default.stderr)
+        self.assertEqual(explicit.returncode, 0, explicit.stderr)
+        self.assertEqual(explicit_calls, default_calls)
+        grouped = []
+        for group, expected in GROUPS.items():
+            with self.subTest(group=group):
+                result, calls = self.run_guard(arguments=(group,))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assert_exact_calls(calls, expected)
+                grouped.extend(calls)
+        self.assertEqual(grouped, default_calls)
+        self.assertTrue(set(GROUPS["core"]).isdisjoint(GROUPS["scenarios"]))
+        self.assertEqual(len(GROUPS["core"]), 44)
+        self.assertEqual(len(GROUPS["scenarios"]), 2)
+
+    def test_unknown_or_extra_group_arguments_are_rejected_before_go(self):
+        for arguments in (("unknown",), ("",), ("--group",), ("core", "scenarios"), ("all", "extra")):
+            with self.subTest(arguments=arguments):
+                result, calls = self.run_guard(arguments=arguments)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("usage:", result.stderr)
+                self.assertEqual(calls, [], "invalid group must not run any Go command")
+
+    def test_each_group_rejects_empty_and_failed_families_despite_prior_passes(self):
+        for group, expected in GROUPS.items():
+            for package, name, _, _ in expected:
+                for condition in ("empty", "failed"):
+                    with self.subTest(group=group, package=package, family=name, condition=condition):
+                        result, calls = self.run_guard(arguments=(group,), package=package,
+                                                       **{condition: "^" + name + "$"})
+                        self.assertNotEqual(result.returncode, 0, "family was accepted: " + name)
+                        diagnostic = "no passing tests matched" if condition == "empty" else "go test failed"
+                        self.assertIn(diagnostic, result.stderr)
+                        self.assertTrue(any(package in args and "^" + name + "$" in args for args in calls))
+
+    def test_ci_runs_exactly_both_groups_without_relaxing_budgets_or_failures(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        phase3 = workflow.split("\n  phase3:\n", 1)[1].split("\n  #", 1)[0]
+        self.assertIn("    strategy:\n", phase3)
+        strategy = phase3.split("    strategy:\n", 1)[1].split("    steps:\n", 1)[0]
+        self.assertEqual(strategy, "      fail-fast: false\n      matrix:\n        group: [core, scenarios]\n")
+        self.assertIn("run: bash scripts/check-phase3-tests.sh '${{ matrix.group }}'", phase3)
+        self.assertEqual(phase3.count("timeout-minutes:"), 1)
+        self.assertIn("timeout-minutes: 45\n", phase3)
+        self.assertNotIn("continue-on-error", phase3)
+        self.assertIn("needs: [go]", phase3)
+        self.assertIn("run: make dev-up", phase3)
+        self.assertIn("run: scripts/check-stack.sh", phase3)
+        self.assertIn("if: always()\n        run: make dev-down", phase3)
 
     def test_each_empty_family_fails_even_if_other_families_pass(self):
         for package, name, _, _ in EXPECTED:
