@@ -212,6 +212,18 @@ class Phase3GuardTests(unittest.TestCase):
                 with self.assertRaises(AssertionError, msg="CI bypass accepted: " + name):
                     self.assert_phase3_workflow(mutant)
 
+    def test_ci_guard_checks_job_fields_after_separator_comments(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        separator = "  # Preserved-volume legacy seed followed by two exact scheduled scenario runs.\n"
+        self.assertEqual(workflow.count(separator), 1)
+        for field in ("    if: false\n", "    continue-on-error: true\n"):
+            with self.subTest(field=field):
+                # YAML comments do not end mappings: these fields still belong
+                # to phase3, until the actual next job key at indentation two.
+                mutant = workflow.replace(separator, separator + field, 1)
+                with self.assertRaises(AssertionError, msg="post-comment job field accepted: " + field):
+                    self.assert_phase3_workflow(mutant)
+
     def test_each_empty_family_fails_even_if_other_families_pass(self):
         for package, name, _, _ in EXPECTED:
             with self.subTest(package=package, family=name):
