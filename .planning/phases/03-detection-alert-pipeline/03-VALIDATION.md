@@ -1,13 +1,20 @@
 ---
 phase: 03
 slug: detection-alert-pipeline
-status: passed
+status: repeat_verification_pending
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-10-17
 ---
 
 # Phase3 — Validation Strategy
+
+Latest gate: repeat CI39544892831 at documentation-only eee632f failed integration's
+cooperative retained-owner fixture assertion; eight other jobs passed. Prior
+results below are historical. REDc8b4310/GREENe342337 test-only repair is independently
+reviewed clean; both original transfer families passed3native repetitions each.
+Fresh complete aggregate and hosted CI are pending; Phase3closure is reopened.
+Nyquist/scaffold coverage and completed task implementation remain unchanged.
 
 Revision2 bindings:21plans,52tasks,14waves. All21numbered plans have committed summaries, passing local/hosted execution and required scaffolds. Source review is clean; registeredsecurity has78closed/0open threats. HostedCI39515550386 passed all9jobs at80d2d87; final03-VERIFICATION passes59/59truths,72artifact declarations,46links and14requirements. Phase3 is complete; Phase4notstarted. These are actualexecution/review results, not planning-derived claims.
 

@@ -17,11 +17,17 @@ block_on: open_high_or_unverified_declared_mitigation
 implementation_head: 62099b20c2a98a1966a0d6f90e5b1d653fc1e855
 created: 2026-10-20
 verification_scope: registered_mitigation_presence
-phase_acceptance: passed
+phase_acceptance: repeat_verification_pending
 summary_reconciliation_pending: false
 ---
 
 # Phase 03 — Security
+
+Latest acceptance follow-up: repeat CI39544892831 failed a cooperative ownership
+test precondition. Independently reviewed test-only repaire342337 changes no
+production control, hook, payload assertion or registered mitigation. The78-threat
+static dispositions below remain valid; this does not waive the reopened full
+integration/hosted gate. See03-REVIEW-COOPERATIVE-REPEAT.md and03-VERIFICATION.md.
 
 All 78 unique plan-time threats have a verified disposition: 57 declared mitigations are present in the frozen implementation and 21 explicitly accepted dependency risks are recorded below. No transfer dispositions exist. No missing declared mitigation or unmapped attack-surface flag was established. This is a static, registered-threat audit, not completion of Phase 3, a fresh security-test execution, an ASVS certification, or a claim that final local/hosted gates passed.
 
