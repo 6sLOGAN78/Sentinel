@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase3 acceptance held after disk exhaustion; confirm unused Docker build-cache cleanup before rerunning
-last_updated: 2026-10-21T11:35:00Z
+stopped_at: Phase3 approved build-cache cleanup complete; preserved full-stack recovery active before full acceptance retry
+last_updated: 2026-10-21T11:43:00Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -189,3 +189,15 @@ Afterconfirmation, inspectexactbuilder/context/scope, performauthorizedcleanup,
 normalpreservedstack recovery (Kafka currentlyexited), freshfullnativegate,
 finalscanner, authorizedpush/newgreenCI, reverifyandclosePhase3. NoPhase4work.
 No activeheavyproducer and no newremote push untilthelocalgateactuallypasses.
+
+## Approved Disk Recovery — supersedes cleanup choice above
+
+User explicitlyapproved unusedDockerbuildcache cleanup ONLY. Defaultcontext /
+defaultdockerbuilder inspected; `docker builder prune --builder default --force`
+without --all returned0,11:41:11Z–11:41:15Z, reclaimed9.189GB. Disknow11GBfree.
+Sortedcomplete imageIDs/containerIDs/volumenames before/after allcmp0 unchanged.
+No projectfiles/Go cache/images/containers/volumes deleted. Evidence03-CACHE-CLEANUP-EVIDENCE.md.
+Kafka normalpreservedup PASS0,11:42:00Z–11:42:18Z. Otherinfraobservedstopped;
+normalall9service upusingexistingimages/volumes is active, no rebuild/reset.
+Then actualfreshfullintegration, finalscanner, authorizedpush/newgreenCI and
+verificationclosure required. Priorinterrupted95255 remainsUNKNOWN, notPASS.
