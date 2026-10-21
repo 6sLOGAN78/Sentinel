@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase3 reviewed owner and bootstrap repairs; healthy preserved stack; fresh full integration session95255 active
-last_updated: 2026-10-21T11:22:00Z
+stopped_at: Phase3 acceptance held after disk exhaustion; confirm unused Docker build-cache cleanup before rerunning
+last_updated: 2026-10-21T11:35:00Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -165,3 +165,27 @@ Do not rerun the expensive aggregate before repair and independent review are cl
 No runtime/config/test/CI-code change existed between green80d2d87 and repeat-failed
 eee632f. Preserve this distinction; do not relabel the latest failure green.
 No Phase4 work while closing the repeat-CI acceptance gap.
+
+## Latest Disk-Space Acceptance Hold
+
+Session95255 disappeared around11:31Z; toolreturned1, but privatepersistent
+phase3-final-full-integ.log stops mid-line at4096bytes without a package result,
+ELAPSED/RETURNED_EXIT/END. No producer remains: UNKNOWN interrupted run, not PASS
+or a reported test assertion failure. Rootfilesystem reached100% with92MBfree;
+Kafkaexited1 and diskfull-kafka-tail.log confirms KafkaStorageException and
+No space left on device. No unobserved wrapper-kill/OOM cause is invented.
+Read-onlyinventory: Dockerbuildcache11.62GBtotal/9.232GBreclaimable; sharedGo
+buildcache12GB. No agentcacheprune/data/volume/image/containerdeletion performed.
+After transient test resources disappeared, df recovered2.3GB (99%used), still
+insufficient safety margin for another full Docker/build acceptance cycle.
+The disk-full write failed and truncated STATE; root restored its exact known
+committed content via apply_patch, then appended this hold. Userconfig and
+.serena remainuntouched; no uncommitteduserSTATEcontent was discarded.
+Dockerdestructiveguardrails require confirmation before sharedcache pruning.
+Next: askuserapproval to remove unused Dockerbuildcache ONLY (~9.2GBpotential),
+leaving projectfiles, images, containers, allvolumes and Go cache alone; future
+builds may be slower. Keepawakeapproval is NOTcachedeletionapproval.
+Afterconfirmation, inspectexactbuilder/context/scope, performauthorizedcleanup,
+normalpreservedstack recovery (Kafka currentlyexited), freshfullnativegate,
+finalscanner, authorizedpush/newgreenCI, reverifyandclosePhase3. NoPhase4work.
+No activeheavyproducer and no newremote push untilthelocalgateactuallypasses.
