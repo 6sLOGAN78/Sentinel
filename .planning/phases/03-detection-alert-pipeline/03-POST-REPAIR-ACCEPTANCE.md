@@ -5,7 +5,8 @@ Replacement hosted39613182464 nowactuallypassedall10jobs at7a72028,
 families and preservedCompose acceptance passed with unchangedcaps. Actual
 watchretryexit0 and completeAPIjob/step metadata are savedprivately. This is
 fresh replacement proof, not a relabeling of earliercancelled/failedruns.
-See03-CI-CLOSEOUT.md; releasedfinalverification remainsseparate.
+See03-CI-CLOSEOUT.md; releasedfinalverification subsequentlyPASSED59/59 and
+rootregisteredphase.complete3 succeeded. Phase3closed; Phase4notstarted.
 
 Fresh exact `make test-integ` at10ddd717f1bced50112b818aefcc25b4418d2b2c
 returned0, elapsed1650.77s,2026-10-21T11:45:21Z–12:12:52Z. The private log contains

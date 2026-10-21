@@ -10,7 +10,7 @@ findings:
   info: 0
   total: 0
 status: clean
-phase_acceptance: repeat_verification_pending
+phase_acceptance: complete
 ---
 
 # Phase 3 aggregate source-review disposition
@@ -66,7 +66,8 @@ budgets. Independent R2 reviewed the complete changed file and direct contracts.
 This does not retroactively establish causes of older discarded-diagnostic failures.
 Existing process cleanup requests kill without an explicit join; PG18's bounded
 session wait mitigates ordinary disconnect. R2 did not establish a concrete bug
-or claim completed join evidence. Full aggregate acceptance must still be rerun.
+or claim completed join evidence. At that checkpoint full aggregate acceptance
+still required rerun; the distinct replacement results below now close it.
 
 Reviewers ran no project tests, builds, live operations, staging or commits.
 Root/executor execution evidence is separately attributed in repair/evidence
@@ -93,9 +94,12 @@ repair now has clean independent review and six native transfer passes, but fres
 full-suite replacement now passed0/1650.77s at10ddd71. Latest hosted39598061416
 passed eight jobs includingfullintegration/7groups/Compose, but cancelled the
 serial Phase3 job at its actual45mcap. The reviewed two-job partition retains
-all46selectors and caps; new ten-instance hosted acceptance is pending.
+all46selectors and caps. Replacement39613182464 at7a72028 nowactuallypassed
+all10jobs, includingfullintegration/7groups,44+2families andCompose. Final
+independentgoalverificationPASSED59/59; rootregisteredphase.complete3 succeeded.
 Controlled readiness regression is a
 MODEL, not a native recreation of the failed coordinator schedule.
 Historical unexplained failures are not erased or
-assigned invented causes. This clean review does not mark03-14 or Phase3 complete,
-certify performance/RSS, or authorize Phase4 or remote writes.
+assigned invented causes. This review alone does not establish execution or
+certify performance/RSS; separateactualgates and releasedverification close
+Phase3. No Phase4 work or additionalremoteauthority is implied.

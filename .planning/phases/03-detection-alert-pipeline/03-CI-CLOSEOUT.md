@@ -39,9 +39,12 @@ waited for all ten real job conclusions, not inferred success. Log-download
 network retries likewise changed no hosted execution. No workflow was rerun,
 no sourcechangedafterpush, no cap/selector/fixture weakening or datareset occurred.
 
-Root releases final independent re-verification based on this actual hosted
+Root released final independent re-verification based on this actual hosted
 success plus the reviewed repaired-source localfullPASS and static/script/scanner
-proofs. Phaseclosure waits for that report; Phase4 remainsnotstarted.
+proofs. The resulting03-VERIFICATION PASSED59/59 at14:51:50Z. Registeredphase.complete3
+succeeded; rootcorrected its supplemental-planmiscount and historical-status
+regexwarning againstactual21numberedplans andparsedcurrentpassedreport.
+No realgate waswaived. Phase3closed; Phase4 remainsnotstarted.
 
 ## Pre-run checkpoint — historical
 

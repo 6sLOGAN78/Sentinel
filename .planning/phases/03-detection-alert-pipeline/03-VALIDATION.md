@@ -1,7 +1,7 @@
 ---
 phase: 03
 slug: detection-alert-pipeline
-status: repeat_verification_pending
+status: complete
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-10-17
@@ -13,7 +13,8 @@ Latest execution supersedes pendingholds below: hosted39613182464 at7a72028
 completedSUCCESS/all10jobs,14:43:29ZOct21. Actual46families across44+2shards,
 fullintegration/all7retainedgroups andCompose passed. LocalfullPASS1650.77s,
 51scriptcasesPASS150.750s, independentR2clean and finalscannerzero remainvalid.
-Root has releasedfinalindependentverification; closure remainspending itsreport.
+ReleasedfinalindependentverificationPASSED59/59; rootregisteredphase.complete3
+succeeded. Actual21/21numberedplans and14requirementscomplete; Phase4notstarted.
 
 Prior acceptance gate: hosted39598061416 has eight successes and Phase3
 cancelled at the explicit45mjobcap. CI-only84352ad splits unchanged46families
@@ -21,19 +22,20 @@ into44core/2scenarios on isolated runners, each45m, fail-fastfalse. Othereight
 jobs, nativebudgets and defaultall46 remain unchanged. Independent R2review at
 a31af33 is clean after causal guard repairs. Actual51script tests PASS0/150.750s,
 shell/YAML/semanticdelta checks PASS0. Source runtime/scenario/deployment diff
-from fullPASS10ddd71 is empty. New all10hosted successes and finalverification
-remain required; historical closed claims below do not override this hold.
+from fullPASS10ddd71 is empty. At that checkpoint newhosted/finalverification
+remained required; both nowactuallypassed as recordedabove.
 
 Post-repair local gate: exactfullmake test-integ at10ddd71 passed0/1650.77s,
 package1648.087s,11:45:21Z–12:12:52Z, after both reviewed repairs and authorized
 unused-buildcache cleanup/preserved recovery. Earlier failed and UNKNOWN runs
-remain historical. Alllocalgates actualpasses; newhostedCI/finalverification pending.
+remain historical. Alllocalgates actualpasses; replacementhosted/finalverification
+subsequentlypassed as recordedabove.
 
-Latest gate: repeat CI39544892831 at documentation-only eee632f failed integration's
+Earlier gate: repeat CI39544892831 at documentation-only eee632f failed integration's
 cooperative retained-owner fixture assertion; eight other jobs passed. Prior
 results below are historical. REDc8b4310/GREENe342337 test-only repair is independently
 reviewed clean; both original transfer families passed3native repetitions each.
-Fresh complete aggregate and hosted CI are pending; Phase3closure is reopened.
+It reopenedPhase3closure until freshcompleteaggregate/hostedCIpassed above.
 Nyquist/scaffold coverage and completed task implementation remain unchanged.
 
 Revision2 bindings:21plans,52tasks,14waves. All21numbered plans have committed summaries, passing local/hosted execution and required scaffolds. Source review is clean; registeredsecurity has78closed/0open threats. HostedCI39515550386 passed all9jobs at80d2d87; final03-VERIFICATION passes59/59truths,72artifact declarations,46links and14requirements. Phase3 is complete; Phase4notstarted. These are actualexecution/review results, not planning-derived claims.
@@ -44,7 +46,7 @@ Finite budgets: pureGo60s; ordinary real selections6m; cooldown8m; single schedu
 
 ## Per-task verification map
 
-Commands below are exact PLAN automated values (Markdown escapes only pipe characters). Copy with normal Markdown code rendering. Only executed task statuses below are updated; remaining tasks are pending. Automated test command parity alone is a planning check, not a passed behavior.
+Commands below are exact PLAN automated values (Markdown escapes only pipe characters). Copy with normal Markdown code rendering. Task statuses preserve per-plan execution checkpoints; any then-pending later-phase gates are superseded by the actual final acceptance above. In particular03-14-T01/T02/T03 nowhave localandhostedPASS plus59/59goalverification;03-21's eventualpreservedrepeat passed in03-13andhosted39613182464. Automated test command parity alone is a planning check, not a passed behavior.
 
 |Task ID|Plan|Wave|Requirements|Threat refs|Automated command|Creation prerequisite / state|Status|
 |-------|----|----|------------|-----------|-----------------|-----------------------------|------|
@@ -137,7 +139,7 @@ Every plan has trust boundaries and actionable STRIDE dispositions with scoped A
 - [x] Unit/static/race/default+integrationlint/vet/fullintegration and all7retainedPhase2groups pass locally.
 - [x] All15m scheduling/32mrepeat budgets are carried into Make/Compose/script/CI and actual local exits recorded.
 - [x] No open high registered threat or source finding; no unmeasured performance claim.
-- [x] HostedCI39515550386/all9jobs and final goal verification59/59 pass; Phase3 complete.
+- [x] Replacementhosted39613182464/all10jobs and releasedfinal goal verification59/59 pass; Phase3 complete.
 
 Planning approved2026-10-17 in03-PLAN-CHECK-R2.md; all21local plan executions completed in their summaries. Initial/failing reviews and unknown interruptions remain unchanged historical evidence. HostedCI and goal acceptance remain separate gates, not planning-derived claims.
 

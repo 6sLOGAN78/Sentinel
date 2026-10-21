@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
-status: verifying
-stopped_at: Hosted39613182464 SUCCESS all10jobs at7a72028; root released final independent verification
-last_updated: 2026-10-21T14:44:20Z
+status: complete
+stopped_at: Phase3 complete21/21; all10hosted jobs and59/59verification passed; stopped beforePhase4
+last_updated: 2026-10-21T14:54:30Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 56
   completed_plans: 56
-  percent: 33
+  percent: 50
 ---
 
 # Project State
@@ -20,17 +20,28 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase3 final acceptance reopened after repeat CI; Phase4 not started.
+Current focus: Phase3 complete after repaired-source acceptance; Phase4 not started.
 
 ## Current Position
 
-Phase: 3 of6 — repeat verification pending; Phase4 not started.
-Plan: 21 of21Phase3 implemented and summarized; final CI reliability follow-up open.
-Status: Latest hosted39613182464 SUCCESS/all10jobs; final independent verification and closure pending.
+Phase: 3 of6 — complete; nextPhase4 not started.
+Plan: 21 of21 numberedPhase3 plans complete and summarized.
+Status: Hosted39613182464 all10jobsSUCCESS; finalindependentverification59/59PASSED.
 Progress: 56/56 currently planned tasks/plans complete (13Phase1+22Phase2+21Phase3).
-Overallphaseprogress2/6=33%; currentlyplanned56/56=100%. Phase3acceptance reopened.
+Overallphaseprogress3/6=50%; currentlyplanned56/56=100%. No Phase4 work performed.
 
 ## Latest Verified Evidence
+
+- Currenttested7a72028: actualhosted39613182464 all10jobsSUCCESS,14:43:29ZOct21;
+  fullintegrationpackage1641.187s/all7retainedgroups,44core+2scenariofamilies,
+  Compose preservedacceptance; privatefullAPI/rawlogs/watchretryexit0 retained.
+- Finalindependent03-VERIFICATION PASSED59/59,72declarations/68paths,46links,
+  all14requirements, no gaps/humanitems/override. Source-reviewunion131clean;
+  registered78threatdispositionsclosed,0open. Script51casesPASS150.750s;
+  pinnedfullhistoryscannerzero. ActualrepairedlocalfullPASS1650.77s retained.
+- Registeredphase.complete3 succeeded; rootcorrected supplemental-planmiscount
+  and verified its historical-status warning is a regexfalsepositive (see final
+  trackingnote below). Earlier execution checkpoints follow as history.
 
 - 03-14SUMMARY54b09e4 committed before SDK tracking; full read/self-check verified.
 - Exact46family matrix PASS0/2545.66s before fixture-only isolation; affected complete
@@ -53,7 +64,13 @@ Overallphaseprogress2/6=33%; currentlyplanned56/56=100%. Phase3acceptance reopen
 
 ## Current Work / Next Action
 
-Latest gate supersedes the historical completion below: documentation-only HEAD
+Phase3 is complete; stop here. Phase4 requires a new explicit user request.
+Finalclosuretracking is documentation-only relative to tested7a72028.
+Preserve userdirty.planning/config.json/.serena unstaged. No liveproducer remains.
+
+### Historical execution checkpoints — superseded by final closure above
+
+Earlier gate superseded the then-historical completion: documentation-only HEAD
 eee632febdf601286d2ba8ec3de1e3f75febe2cd triggered repeat CI39544892831.
 Eight jobs passed (including all46Phase3families); integration failed at
 TestDetectorCooperativeAcquisition, detector_rebalance_test.go:94: empty retained
@@ -157,10 +174,10 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-21T14:44:20Z.
-Resume: Final verification released afteractualall10green39613182464; reconcile/close Phase3, stopbefore4.
+Last session:2026-10-21T14:54:30Z.
+Resume: Phase3 closed21/21,59/59,all10CIgreen. Do not startPhase4 withoutnewrequest.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
-Current producer: no live/native/CI producer; finalverifier is next.
+Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.
 No runtime/config/test/CI-code change existed between green80d2d87 and repeat-failed
 eee632f. Preserve this distinction; do not relabel the latest failure green.
@@ -290,3 +307,19 @@ notCIfailure; distinctretrywatch29051actuallyreturned0 at14:43:34Z.
 Rootnowreleasesindependentfinalverification. Afterpassed59/59reconcileSDK/
 roadmap/requirements/state/PROJECT and registeredsecurity/validation closure.
 Historicalfailed/cancelled/UNKNOWN remainunchanged. Do not startPhase4.
+
+## Final replacement closure
+
+Independentverifier returnedPASSED59/59 at14:51:50Z, all5roadmapcriteria,
+54plantruths,72declarations/68existingpaths,46links,14requirements; gaps/human
+items/overrides empty. Its sole editedreport reconciles tested7a72028 and actual
+all10CI39613182464 plus rawlocal/native/modelproof and historicalprovenance.
+Rootregisteredphase.complete3 returnedsuccess/next4 and updatedtracking.
+SDKreports21/22 becauseitcounts approvedsupplementalreservationrepair as a
+numberedplan; actualnumbered21plans/21summaries reconfirmed byverifier.
+Its warning03-VERIFICATION hasunresolvedgaps is a demonstratedfalsepositive:
+bin/lib/phase.cjs:1113 searches wholefile with /status: gaps_found/, matching
+historical previous_status:gaps_found. Actualparsedtop-levelstatus passed,
+re_verification_pending false and gaps_remaining/regressions empty. Historyis
+preserved, not rewritten to silence the warning. Rootreconcilescurrent21/21,
+56/56planned and3/6phases50%; no realgate is waived. StopbeforePhase4.

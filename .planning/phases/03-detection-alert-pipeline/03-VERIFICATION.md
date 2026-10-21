@@ -1,89 +1,56 @@
 ---
 phase: 03-detection-alert-pipeline
-verified: 2026-10-21T11:41:42Z
-status: gaps_found
-score: 58/59 must-haves verified; replacement acceptance remains incomplete
+verified: 2026-10-21T14:51:50Z
+status: passed
+score: 59/59 must-haves verified
 historical_score: 59/59 at 80d2d873762e4832abf4c87e2d36c22d359d8337
 roadmap_score: 5/5
-plan_truth_score: 53/54 current; 54/54 historical
+plan_truth_score: 54/54
 artifact_declarations: 72/72
 unique_artifact_paths: 68
 key_links: 46/46
 requirements_satisfied: 14/14
 overrides_applied: 0
-tested_commit: 80d2d873762e4832abf4c87e2d36c22d359d8337
-hosted_ci_run: 39515550386
+tested_commit: 7a72028cd7af506cc27097317d61fec0ea918d89
+historical_tested_commit: 80d2d873762e4832abf4c87e2d36c22d359d8337
+hosted_ci_run: 39613182464
 hosted_ci_conclusion: success
-re_verification_pending: true
+re_verification_pending: false
 latest_hosted_ci_run: 39613182464
 latest_hosted_ci_head: 7a72028cd7af506cc27097317d61fec0ea918d89
-latest_hosted_ci_conclusion: pending
-latest_completed_hosted_ci_run: 39598061416
-latest_completed_hosted_ci_conclusion: cancelled; eight successes and explicit Phase3 45m job cap
+latest_hosted_ci_conclusion: success
+latest_completed_hosted_ci_run: 39613182464
+latest_completed_hosted_ci_conclusion: success; all ten jobs and every recorded step
 scoped_repair_head: e3423373a80d1bbcb8737be99fcb08d5cfd22a11
-scoped_repair_review: clean; two test files only; acceptance still pending
+scoped_repair_review: clean; two test files; replacement acceptance verified
 scoped_bootstrap_repair_head: 2d446775ebb4d2ff2e8a0145dd66e28a06c769b9
 scoped_bootstrap_repair_review: clean; two script files; independent review da2733b
+scoped_ci_repair_head: a31af33da6e9ab5839a69682ae6747cbc75b9452
+scoped_ci_repair_review: clean; all 46 selectors and original caps retained
 latest_completed_local_full_result: success; post-cache unit; make exit 0; elapsed 1650.77s
 latest_attempted_local_full_result: success; ended 2026-10-21T12:12:52Z at source 10ddd71
 re_verification:
-  previous_status: passed
-  previous_score: 59/59
-  gaps_closed: []
-  gaps_remaining:
-    - "Replacement complete local acceptance and actual new hosted CI success remain required after the reviewed repairs."
-  regressions:
-    - "Required full integration repeat failed at TestDetectorCooperativeAcquisition retained-owner fixture assertion."
-    - "Subsequent completed local full gate failed two scenario checks; latest replacement was interrupted without a test result."
-gaps:
-  - truth: "Full unit/static/integration gates and preserved-volume current-run scenarios have recorded results with no invented pass/performance claims."
-    status: failed
-    reason: "Repeat CI 39544892831 failed the retained-owner precondition. The subsequent completed local full gate failed two scenario checks; both scoped source repairs are reviewed, but replacement session 95255 was interrupted without a returned test result. Actual fresh complete local and hosted green gates remain absent. Earlier successful evidence is preserved; no new detector/writer runtime defect is inferred."
-    artifacts:
-      - path: "backend/test/detector_rebalance_test.go"
-        issue: "The historical retained-owner precondition failure is repaired and independently reviewed at e342337; full replacement acceptance remains pending."
-      - path: "scripts/seed_scenarios.py"
-        issue: "System-Python bootstrap import defect is repaired at 2d44677 and independently reviewed; safe native CLI and model regression passes do not replace complete scenario acceptance."
-      - path: ".local/phase3-acceptance/phase3-final-full-integ.log"
-        issue: "Latest replacement log is truncated at 4096 bytes with no full result, returned exit or END marker; interruption is UNKNOWN, not a test failure or PASS."
-    missing:
-      - "Required replacement acceptance gates and actual new hosted CI success, followed by root release for re-verification."
+  previous_status: gaps_found
+  previous_score: 58/59
+  gaps_closed:
+    - "03-14.T2: reviewed owner/bootstrap/CI repairs now have actual complete local and ten-job hosted replacement acceptance."
+  gaps_remaining: []
+  regressions: []
 ---
 
 # Phase 3: Detection & Alert Pipeline Verification Report
 
 **Phase Goal:** As a system operator, I want to receive deterministic, evidence-backed alerts from malicious traffic, so that crashes, restarts and replay cannot lose or duplicate detections.
 
-**Status:** gaps_found — re-verification pending. **BLOCKER: required replacement full and hosted acceptance are incomplete; Phase 3 closure is held.** No override was requested or applied.
+**Status:** passed — re-verification after gap closure. **59/59 truths, 72/72 artifact declarations, 46/46 links and 14/14 requirements verified.** No override was requested or applied; no human-verification item remains.
 
-> **Root latest execution update,14:03Z:** LocalfullPASS10ddd71 remains valid.
-> Latest completedhosted39598061416 has8success/Phase3explicit45mcapcancellation,
-> not an assertion failure or46-familyPASS. ReviewedCI-only84352ad partitions
-> unchanged44core+2scenario families; finalguarda31af33 has independentR2clean
-> review and51scriptcasesPASS0/150.750s. Runtime/scenario/deploymentdiff from
-> localfullPASS is empty. Finalscanner7a72028 zero; authorizedpush succeeded.
-> Replacement39613182464 is running at7a72028, teninstances. Freshactualall10
-> successes and releasedfinalverification remain required. Earlierfailure/disk
-> holds below are historical, not a claim that localfullacceptance is stillabsent.
+Replacement [CI 39613182464](https://github.com/6sLOGAN78/Sentinel/actions/runs/39613182464) completed successfully at exact SHA `7a72028cd7af506cc27097317d61fec0ea918d89`, updated 2026-10-21T14:43:29Z. Independently inspected root-captured API metadata has all ten jobs and all recorded steps completed/success. Separate raw logs prove full integration, seven retained groups, 44 core plus two scenario families and preserved Compose acceptance. The completed local full at `10ddd71` passed with package 1648.087s / elapsed 1650.77s; its runtime/scenario/deployment source is unchanged in the hosted candidate. Root explicitly released this final re-verification.
 
-> **Root execution update,12:13Z:** The user approved unused-build-cache cleanup;
-> Docker reclaimed9.189GB with image/container/volume inventories unchanged.
-> Normal preserved-stack recovery passed. Fresh exact full integration at10ddd71
-> now actually passed: package1648.087s,elapsed1650.77s,makeexit0/RETURNED_EXIT0,
-> 11:45:21Z–12:12:52Z. Root saved the completed unit status and persistent log.
-> This supersedes the local disk/full hold below; historical failures/UNKNOWN
-> remain unchanged. Only new hosted CI and released final re-verification remain
-> pending. See03-POST-REPAIR-ACCEPTANCE.md and03-CACHE-CLEANUP-EVIDENCE.md.
-
-> **Parent follow-up hold:** Root reported new counterevidence from [CI 39544892831](https://github.com/6sLOGAN78/Sentinel/actions/runs/39544892831) at `eee632f`. Eight jobs succeeded, including all 46 Phase 3 families and Compose; the required full integration job failed (package 1684.173s, make exit 2). `TestDetectorCooperativeAcquisition` failed after 2.85s at `backend/test/detector_rebalance_test.go:94`: the retained map was empty, failing “survivor must retain incorporated state while acquiring additions.” This was an assertion failure, not a timeout. Root retained the failed log at `.local/phase3-acceptance/ci-repeat-39544892831-failed.log`. The assigned specialist's two-file test repair is now independently reviewed, including the scoped verifier assessment below; required replacement full/hosted gates remain pending. Do not restore `passed` until those gates actually pass and root explicitly releases re-verification.
-
-> **Latest acceptance state:** The next completed local full gate (session 96944) returned make exit 2, package 1581.355s / external elapsed 19688.54s, ending 11:01:29Z, with two scenario failures and no reported owner-assertion failure. The additional bootstrap repair is now reviewed. Replacement session 95255, started 11:21:36Z at `da2733b`, disappeared at about 11:31Z without a full result; its 4096-byte log ends mid-container termination. This is an **UNKNOWN interruption**, not PASS or a named test failure. Root observed filesystem exhaustion and retained Kafka `KafkaStorageException` / “No space left on device” output; those facts do not establish the exact cause of process disappearance. Root's durable disk hold is recorded at `a87cb5b`; no cleanup, new full producer or closure is authorized by this verification report.
-
-The prior 59/59 implementation/source findings and successful nine-job run at `80d2d87` remain historical validated evidence below; they are not erased or presented as the latest repeat result. Current accounting holds **03-14.T2** failed at its acceptance gate (**58/59**, **53/54** plan truths). No new runtime implementation failure is inferred from the empty fixture snapshot. The original passed report is preserved in commit `800b084`. All remaining VERIFIED rows and execution tables below describe that earlier verified baseline unless explicitly updated by the hold.
+The prior `80d2d87` success, repeat CI failure `39544892831`, completed local failure 96944, UNKNOWN interrupted 95255 and cancelled serial CI `39598061416` retain their actual conclusions. The scoped repairs and fresh evidence below close 03-14.T2; no earlier failure is relabeled green or assigned an invented cause. The original report remains preserved in `800b084`. This verdict verifies Phase 3's goal; root owns final tracking and `phase.complete`. Stop before Phase 4.
 
 ## User Flow Coverage
 
-The roadmap sets `mode: mvp`; the registered `user-story.validate` query returned `true`. The outcome is an operator-observable backend flow, without a Phase 4 dashboard dependency.
+The roadmap sets `mode: mvp`; the registered `user-story.validate` query returned `true`. The outcome is an operator-observable backend flow, without a Phase 4 dashboard dependency. Current hosted evidence below refers to replacement run `39613182464`, not merely the historical green run.
 
 | Step | Expected | Evidence in the codebase and executed flow | Status |
 | --- | --- | --- | --- |
@@ -100,15 +67,27 @@ This verifier independently read all 21 numbered PLANs and their 54 frontmatter 
 
 Direct source tracing covered reducer predicates/admission/evidence/checkpoints; Kafka acknowledgement, metadata and ownership callbacks; PG decisions/cursors/fences/handover; writer reservation/native stores/workflow/source commits; private snapshot/scheduling/sending/reconciliation; concrete command/Compose wiring and relevant positive/negative test assertions. Fresh registered queries checked every numbered plan's artifacts and links. Test artifacts were inspected for actual value/error/offset/state assertions and traced to runnable packages/required selectors, not accepted solely because files exist.
 
-Per the serialized closeout assignment, this verifier ran no tests, builds, compilation, live services, scanner, staging or commits. Execution belongs to root/executors/hosted CI. The verifier independently inspected persistent raw local logs and root-captured GitHub API metadata plus the completed watch log. A fresh verifier `gh` lookup encountered transient API connectivity failure; it is not represented as a successful query. Root's saved API response proves the exact SHA, completed/success status and nine successful jobs, independently corroborated by `WATCH_RETURNED_EXIT=0` and completed job/step output. This is stronger evidence than SUMMARY narration.
+Per the serialized closeout assignment, this verifier ran no tests, builds, compilation, live services, scanner, remote operations, staging or commits during final re-verification. Execution belongs to root/executors/hosted CI. The verifier freshly inspected persistent raw local logs, root-captured GitHub API metadata and completed watch/job output. The original verification's attempted `gh` lookup encountered transient connectivity failure; no successful verifier API query is claimed. Current root-captured metadata proves the exact replacement SHA, completed/success status, ten successful jobs and no non-success recorded step; the actual retry watch independently ends `WATCH_RETURNED_EXIT=0`.
 
 At initial verification, tested source was `80d2d873762e4832abf4c87e2d36c22d359d8337`. Subsequent commits then inspected through `ff7fbc3` changed only STATE/VALIDATION/CI-closeout documentation; no implementation delta separated that reviewed baseline from the candidate. Later scoped repairs are assessed below, not included retroactively in the original tested-source claim. Existing user changes in `.planning/config.json` and `.serena/` were preserved. Only this report is written by the verifier.
 
-### Scoped repair assessment — acceptance held
+### Final scoped re-verification — replacement gates closed
+
+The verifier completely read the updated CI closeout, post-repair acceptance, aggregate review, CI-shard repair, guard R1/R2 evidence and independent clean R2 review. It independently read all three changed CI orchestration files and the unchanged nonempty runner, inspected the workflow/runner diff from `e9f40dd`, and traced their real workflow consumers and failure exits. From the original tested baseline to current source, the only seven implementation-path deltas are the two previously reviewed owner tests, the launcher and its test, and these three CI files. Production detector/writer, generator, deployments and scenarios have an empty diff from the completed local full at `10ddd71`. `7a72028..e9c995a` changes only planning/evidence documents; none changes the tested implementation.
+
+Fresh read-only plan parsing confirms **21 numbered PLANs and 21 numbered SUMMARYs, 54 plan truths, 72 artifact declarations / 68 unique existing paths, 46 key links and all 14 requirement IDs**. All five roadmap criteria and requirement descriptions were rechecked against the existing coverage; the supplemental reservation plan is still not a 22nd numbered plan. Unchanged artifacts/links retain their direct substantive/wiring verification; changed paths have the scoped inspections here and above. A fresh marker scan of all seven changed source files found no unresolved debt marker or placeholder. No current source regression, missing artifact, hollow data flow or dropped requirement was established.
+
+**CI partition is substantive and wired:** zero arguments and `all` preserve the complete original ordered 46-family sequence. `core` selects its first 44 calls and `scenarios` exactly the remaining two; group membership is disjoint by package/name, including the intentional same-name handover tests in two packages. Bad/empty/extra arguments fail with exit 2 before Go. `set -euo pipefail`, exact selectors, `-count=1`, integration tags, serial package flags, race flags, per-family 6m/8m/60s/16m/32m limits and both 45m job caps remain unchanged. The workflow expands only Phase 3 into two isolated runner instances, `fail-fast: false`, no exclusions, job/selector skip or error mask; the other eight jobs are unchanged. Real startup/checks and always-run non-volume-reset teardown remain required. The unchanged nonempty helper rejects Go failure despite a misleading PASS and rejects no named PASS.
+
+**Guard warnings are closed, not waived:** partition RED `570b868` reached nine intended assertions before GREEN `84352ad`. R1 RED `782c891` exposed seven falsely accepted skip/mask mutations; GREEN `f6618e3` compares the full approved job, with a real-workflow positive control and all thirteen negative mutations. Boundary RED `8b26d8d` exposed two post-comment fields still belonging to the Phase 3 YAML mapping. Final `a31af33` retains text through the actual next `compose-smoke` key, requires exactly one boundary each and matches the complete approved literal including the comment. Both post-comment mutations now fail closed; actual-file validation and all earlier controls remain. The initial newline-mismatch attempt failed its positive control, and its superseded full suite was deliberately terminated with 143; neither is called GREEN/PASS. The corrected focused run passes three methods, and corrected full discovery passes **51 tests / 150.750s / returned 0**. Installed-parser semantic evidence confirms both mutations are valid Phase 3 fields and only the intended two workflow changes occurred. These are orchestration **MODEL** results; actual native acceptance is separately established below. Strict literal maintenance is intentional, not a general YAML parser claim.
+
+Independent `03-REVIEW-CI-SHARDS-R2.md` is clean at `a31af33`; original warnings remain in historical reports. Fresh static semantic/shell/whitespace checks return 0. The final pinned full-history scanner at tested `7a72028` reports 467 commits, no leaks, returned 0; hosted secrets also succeeds with full history and unchanged policy. No deadline, native assertion, golden, dependency or security disposition was weakened to obtain the replacement result.
+
+### Historical scoped owner repair — acceptance subsequently closed
 
 The verifier read the actual complete new `backend/test/detector_owner_snapshot_test.go`, the full `eee632f..e342337` change to `backend/test/detector_rebalance_test.go`, affected callers/assertions, `groupOwns`/`observationAtNine`, the private observation reader and real Kafka successful-commit observation contract. It also read the independent deep two-file review `03-REVIEW-COOPERATIVE-REPEAT.md` at `64fd7c8`, the repair evidence and persistent RED/GREEN/native/static/script/scanner logs. This is source/evidence verification, with no verifier test/build/live execution or duplicate implementation work.
 
-**Assessment: the scoped test-readiness defect is addressed; no new runtime defect or weakened acceptance assertion was established.** At that repair checkpoint the implementation diff from the original production baseline contained only the two named test files. The later script delta is assessed separately below. The prior 59 implementation/source truths, 72 artifact declarations, 68 paths, 46 links and 14 requirement mappings remain substantive and connected. Only 03-14.T2's replacement whole-acceptance gate remains open; current status/score stay `gaps_found`, 58/59.
+**Assessment: the scoped test-readiness defect is addressed; no new runtime defect or weakened acceptance assertion was established.** At that repair checkpoint the implementation diff from the original production baseline contained only the two named test files. The later script/CI deltas are assessed separately. Its then-open whole-acceptance gate is now closed by the actual replacement local/hosted results, not by these focused checks alone.
 
 The old collector could accumulate all twelve owners across different Eventually polls or accept a transition with only one process incorporated. The repaired collector clears the output map each poll, requires a Stable two-member group and two process observation streams, accepts only configured-topic partitions 0–11 with committed `processed_next=9` and actual current broker ownership, and requires nonempty contribution from both streams, twelve unique partitions and two current member IDs. Kafka commit success precedes private observation writing; the reader deliberately skips incomplete JSON. Broker offsets or member count alone cannot replace this readiness evidence.
 
@@ -121,13 +100,13 @@ The downstream retained-map assertion is still present. Actual acquired restore,
 | Original native acquisition and third-replica tests, each `-count=3` | `cooperative-native-repeat.log`: six actual top-level PASS results, package 70.937s, EXIT=0 | Fresh fixture/topic/process per call; shared invocation dependencies. This does not establish whole-suite/hosted success. |
 | Independent deep review | `03-REVIEW-COOPERATIVE-REPEAT.md`: two source files, zero findings | Production, hooks, goldens, payload assertions and budgets unchanged. |
 | Root post-repair static/scripts/scanner | `cooperative-final-static.log`: STATIC_RETURNED_EXIT=0; scripts: 44 tests, 75.114s, returned 0; scanner: 436 commits, no leaks, returned 0 | Actual bounded local checks; no new scanner exclusion. Cached unit package results are not described as uncached native repetitions. |
-| Replacement full aggregate / new hosted run | Completed local full FAILED; subsequent attempt UNKNOWN | Session 96944 returned make 2 with two scenario failures; session 95255 was later interrupted without a returned test result. Details below. Neither focused repair evidence nor child progress establishes complete local/hosted success. |
+| Earlier replacement attempts | Completed local full FAILED; subsequent attempt UNKNOWN | Session 96944 returned make 2 with two scenario failures; session 95255 was interrupted without a returned test result. These historical outcomes remain unchanged by the later actual local and ten-job hosted passes. |
 
 The failed hosted log lacks an atomic group description at the assertion; the exact historical coordinator timing is not claimed as reconstructed. Historical observation files checked against one broker description are also not an atomic cross-system generation snapshot; unchanged downstream token/generation/fence assertions remain necessary. These proof limits are retained without inventing a production failure or waiving the acceptance gate.
 
-### Scoped bootstrap repair and latest acceptance — closure still held
+### Historical scoped bootstrap repair and interrupted acceptance
 
-The verifier inspected the actual RED `d9a8c76` test addition and GREEN `2d44677` source patch, the launcher imports and complete `__main__` handoff, direct `scripts.seed` loading, generator Python requirement, Make entrypoint and CI script-test invocation. It read `03-SCENARIO-BOOTSTRAP-REPAIR.md`, the independent clean two-file deep review `03-REVIEW-SCENARIO-BOOTSTRAP.md` (`da2733b`) and the raw causal/native/script logs. A read-only diff from `e342337` to current HEAD shows only `scripts/seed_scenarios.py` and `scripts/test_seed_scenarios.py` in the implementation/configuration paths checked. No detector/writer production, generator requirement, dependency pin, lifecycle golden, deadline or verifier expectation changed.
+The verifier inspected the actual RED `d9a8c76` test addition and GREEN `2d44677` source patch, the launcher imports and complete `__main__` handoff, direct `scripts.seed` loading, generator Python requirement, Make entrypoint and CI script-test invocation. It read `03-SCENARIO-BOOTSTRAP-REPAIR.md`, the independent clean two-file deep review `03-REVIEW-SCENARIO-BOOTSTRAP.md` (`da2733b`) and the raw causal/native/script logs. At that checkpoint the implementation/configuration diff from `e342337` contained only `scripts/seed_scenarios.py` and `scripts/test_seed_scenarios.py`; the later three-file CI delta is verified separately above. No detector/writer production, generator requirement, dependency pin, lifecycle golden, deadline or verifier expectation changed.
 
 **Assessment: the launcher compatibility defect is addressed without weakening locked-runtime execution.** Replacing the top-level modern `datetime.UTC` import with `timezone` and `UTC = timezone.utc` allows system Python 3.10 to load the launcher. The unchanged prefix check still invokes the exact `uv run --locked --project ... python -B` argument array with the real script path and original flags before `main`. Generator/httpx imports remain deferred, and generator Python stays `>=3.13,<3.14`. The direct seed import performs no top-level credential or stack operation.
 
@@ -142,11 +121,11 @@ The permanent regression runs the actual entrypoint in an isolated child, remove
 | Completed full after owner repair | `cooperative-full-integ.log`: package 1581.355s, ELAPSED=19688.54, EXIT=2, RETURNED_EXIT=2, END 11:01:29Z | `preserved-live-edges` failed at 0.08s with unclassified 261-byte child diagnostic; preserved repeat failed at 660.48s / compose_startup. No owner assertion was reported failing. |
 | Preserved-stack normal startup recovery | `cooperative-dev-up-recovery.log`: ELAPSED=515.96, EXIT=0, RETURNED_EXIT=0, END 11:15:50Z | Nine services healthy, migration exits successfully; no reset or dependency-version change. This does not prove the later full suite. |
 | Fresh static/scanner after bootstrap repair | `phase3-final-static.log`: test 22.89s / lint 23.39s / build+both vets+integration lint 14.83s, all 0, STATIC_RETURNED_EXIT=0 / END 11:22:38Z; scanner: 446 commits, no leaks, returned 0 at `68a91d0`, END 11:28:00Z | Actual bounded local checks with existing scanner policy, not replacement full/hosted acceptance. |
-| Latest full attempt at `da2733b` | `phase3-final-full-integ.log`: 4096 bytes, truncated mid-termination, no make/time/RETURNED_EXIT/END or named result | Root reports session 95255 disappeared; UNKNOWN interruption. The unchanged 32m command was started, but neither success nor a test failure nor elapsed-budget compliance is established. |
+| Interrupted attempt at `da2733b` | `phase3-final-full-integ.log`: 4096 bytes, truncated mid-termination, no make/time/RETURNED_EXIT/END or named result | Root reports session 95255 disappeared; UNKNOWN interruption. The unchanged 32m command was started, but neither success nor a test failure nor elapsed-budget compliance is established for that attempt. |
 
 The first failed aggregate's sanitized child diagnostic did not retain a raw traceback. The independently reproduced import failure is not represented as that missing traceback. Its separate Compose failure has retained migration output showing a pinned `golang.org/x/text v0.41.0` download connection reset; the UTC alias does not repair or explain that network failure. Root reports BOOTTIME-minus-MONOTONIC increased 13903.826s during the earlier wall-clock gap, consistent with suspension; the exact cause remains unestablished and external/package durations are retained without laundering them into a timing pass.
 
-For the later interruption, the verifier inspected the truncated log and retained `diskfull-kafka-tail.log`: Kafka checkpoint writing reports `KafkaStorageException`, caused by `java.io.IOException: No space left on device`, followed by failed-log-directory shutdown at 11:31:28Z. Root observed 100% filesystem use / 92MB free, later 99% / about 2.3GB after transient resources disappeared. These observations establish a real storage outage, not the exact process-disappearance mechanism; no OOM, kill or test verdict is inferred. Root holds new native production pending a user-approved disk-recovery scope. No cleanup was performed by this verifier. Both reviewed repairs remain source-valid, but 03-14.T2 remains the single acceptance blocker until complete fresh local and hosted green results plus root release.
+For the interruption, the verifier inspected the truncated log and retained `diskfull-kafka-tail.log`: Kafka checkpoint writing reports `KafkaStorageException`, caused by `java.io.IOException: No space left on device`, followed by failed-log-directory shutdown at 11:31:28Z. Root observed 100% filesystem use / 92MB free, later 99% / about 2.3GB after transient resources disappeared. These observations establish a real storage outage, not the exact process-disappearance mechanism; no OOM, kill or test verdict is inferred. Root subsequently recorded user-approved unused-build-cache-only cleanup (9.189GB, image/container/volume inventories unchanged), normal preserved recovery and the distinct successful full run below. No cleanup was performed by this verifier. The old UNKNOWN result remains UNKNOWN; the later actual result closes acceptance independently.
 
 ## Goal Achievement
 
@@ -160,7 +139,7 @@ For the later interruption, the verifier inspected the truncated log and retaine
 | SC4 | Failpoint tests at each crash boundary (before publish, between publish and offset commit, after commit) show exactly one visible alert per dedupe key. A replayed detection never reopens or duplicates a resolved alert | VERIFIED | Worker hooks surround actual PublishCanonical/all-ISR acknowledgement/successful checkpoint, with PG-before/after-commit cuts also exercised. Native immediate unique count/detail, complete canonical bytes and entire resolved workflow row are asserted. Insert-only workflow and committed immutable reservations preserve authority through uncertain CH effects. |
 | SC5 | Alerts reach security.alerts.v1, immutable detections land in ClickHouse, and a workflow row with unique alert_id, seq and denormalized list fields exists in PostgreSQL. Rule thresholds load from config/rules.yaml at startup | VERIFIED | Main constructors connect real clients/stores. Publisher uses tenant\|alert_id and all-ISR ProduceSync; writer loads committed saved bytes, acknowledges native CH, ensures PG then commits contiguous source prefix. Migrations 003/004/005/006 and ClickHouse 003 are embedded/applied. Strict startup `LoadRules` and read-only Compose mount use the four checked-in defaults. |
 
-**Historical roadmap score: 5/5.** Plan-specific truths below add recovery/configuration/operational detail; none reduces the roadmap contract. The original combined accounting was **59/59**. The latest repeat acceptance failure now holds 03-14.T2 failed, giving **58/59 current**, without asserting that the earlier implementation findings were disproved.
+**Roadmap score: 5/5. Plan-truth score: 54/54. Combined score: 59/59.** Plan-specific truths below add recovery/configuration/operational detail; none reduces the roadmap contract. The formerly held 03-14.T2 is now VERIFIED by actual replacement evidence without erasing prior failures.
 
 ### Plan-specific observable truths
 
@@ -202,8 +181,8 @@ The identifiers preserve each plan's frontmatter order. Wording is compacted her
 | 03-13.T1 | Healthy workers start after topics/migrations with read-only rules/distinct groups | VERIFIED | Compose services/dependencies/mount and Make dev-up order; actual local and hosted stack checks. |
 | 03-13.T2 | seed-scenarios checks exact acknowledged current run across Kafka/CH/PG and benign zero | VERIFIED | Offset capture before send; strict expected-set/native workflow reconciliation, original receipt-time lower bound and proof booleans. |
 | 03-13.T3 | Legacy 1000-event seed/private artifacts/preserved volumes remain usable | VERIFIED | Actual legacy and repeated Make flow, full prior event/CH/workflow snapshots and disjoint current IDs; hosted Compose passes. |
-| 03-14.T1 | CI rejects empty/failed exact families and retains all Phase 2 groups | VERIFIED | Separate exact 46-family calls, real nonempty runner with pipe failure propagation, independent guard registry and seven retained selectors; hosted steps succeed. |
-| 03-14.T2 | Full/static/integration/operator gates have actual recorded results | FAILED — BLOCKER; re-verification pending | Previously VERIFIED at 80d2d87. Repeat CI failed the owner precondition; next completed full failed two scenario checks. Owner and bootstrap repairs are reviewed, but latest full attempt is UNKNOWN after interruption/storage outage. Actual complete replacement full/hosted green gates and root release remain required. No new detector/writer runtime defect is inferred. |
+| 03-14.T1 | CI rejects empty/failed exact families and retains all Phase 2 groups | VERIFIED | Unchanged default 46 calls partition into mandatory isolated 44+2 jobs with original limits; actual nonempty/error propagation and fifteen closed-policy mutations retained. Hosted full, all seven groups and both shards succeed. |
+| 03-14.T2 | Full/static/integration/operator gates have actual recorded results | VERIFIED — gap closed | Local repaired full at 10ddd71: package 1648.087s, elapsed 1650.77s, returned 0. Replacement hosted 39613182464 at exact 7a72028: all ten jobs/every recorded step success, native full package 1641.187s, all seven groups, 44+2 families and preserved Compose repeat pass. Root released final re-verification; no earlier failed/cancelled/UNKNOWN run is relabeled. |
 | 03-14.T3 | Docs state cooldown/replay/retention/config and later seq-order limitation | VERIFIED | `docs/rules.md`, operations/demo and architecture explicitly document those constraints; temporal pending statements predate the separate CI closeout. |
 | 03-15.T1 | Strict extracted AUTH loader preserves threshold evidence | VERIFIED | Single LoadRules implementation in config.go, parser and AUTH threshold/canonical assertion families. |
 | 03-15.T2 | No duplicate loader definitions; actual AUTH acceptance retained | VERIFIED | Definitions removed from reducer; main loads extracted package; default real AUTH executed. |
@@ -242,7 +221,7 @@ Registered `verify.artifacts` returned **72/72 passing declarations**, **68 uniq
 | 11 (4) | `backend/internal/detector/poison.go`; `backend/internal/alertwriter/poison.go`; `backend/test/{detector_dlq_test.go,alertwriter_dlq_test.go}` | Real classifiers/shared retry bounds, acknowledged prefixes, trusted envelope/outage/400-record assertions. |
 | 12 (4) | `backend/internal/detector/{failpoint.go,failpoint_integration.go}`; `backend/test/{detector_recovery_test.go,detector_rebalance_test.go}` | Build-separated no-op/private hooks plus causal kills/actual target transfer and complete stores/metadata assertions. |
 | 13 (4) | `deployments/compose/docker-compose.yml`; `scripts/seed_scenarios.py`; `backend/tools/check-alerts/main.go`; `backend/test/scenarios_pipeline_test.go` | Actual startup/mount, authenticated finite operator flow, native exact current/prior reconciliation and default-binary fixture/private-PG proof. |
-| 14 (4) | `scripts/{check-phase3-tests.sh,test_phase3_guards.py}`; `.github/workflows/ci.yml`; `docs/demo.md` | 46 exact required selectors, independent empty/failure/config guards, actual nine-job workflow and executable documented operator commands. |
+| 14 (4) | `scripts/{check-phase3-tests.sh,test_phase3_guards.py}`; `.github/workflows/ci.yml`; `docs/demo.md` | 46 exact required selectors, independent empty/failure/skip/mask/config guards, nine job definitions expanded to ten mandatory instances and executable documented operator commands. |
 | 15 (2) | `backend/internal/detection/{config.go,auth_test.go}` | Single strict loader used at startup; substantive 9/10/duplicates/null and canonical evidence assertions. |
 | 16 (2) | `backend/internal/kafkax/{alerts.go,detector_consumer.go}` | Bounded all-ISR canonical publisher and strict metadata/membership consumer; compatibility wrappers connect worker/main. |
 | 17 (2) | `backend/internal/storage/{clickhouse/alerts.go,postgres/alerts.go}` | Fresh native CH blocks/aggregate reads, bounded PG locks/insert-only workflow; concrete writer injection. |
@@ -251,7 +230,7 @@ Registered `verify.artifacts` returned **72/72 passing declarations**, **68 uniq
 | 20 (3) | `backend/test/detector_cooldown_test.go`; `backend/internal/storage/postgres/detection_decisions.go`; `backend/internal/detector/failpoint_integration.go` | Four causal cuts, real outage/owner/restore counterexamples, exact frontier enforcement and bounded private observations. |
 | 21 (3) | `backend/tools/detection-state/main.go`; `generator/src/sentinel_generator/live_schedule.py`; `backend/test/scenarios_preserved_test.go` | Read-only Kafka observer, legal clock/deadline scheduler and actual legacy/two-Make same-state proof. |
 
-Additional approved repair artifacts were also traced: `alertwriter/reservation.go`, `storage/postgres/alert_reservations.go`, migration `006_alert_reservations.sql`, build-separated writer hook and reservation/native/proxy/schema tests. They implement the permanent authority invariant, not a stub reservation facade. The CI repair's `.gitleaksignore` is a single exact historical prose fingerprint; the reviewed artifact union is 130, not 129 after that addition.
+Additional approved repair artifacts were also traced: `alertwriter/reservation.go`, `storage/postgres/alert_reservations.go`, migration `006_alert_reservations.sql`, build-separated writer hook and reservation/native/proxy/schema tests. They implement the permanent authority invariant, not a stub reservation facade. The CI repair's `.gitleaksignore` is a single exact historical prose fingerprint. Its addition brought the review union from 129 to 130; the new owner-snapshot test brings the current union to 131. Re-reviewing existing launcher/CI paths adds no duplicate artifacts.
 
 ### Key Link Verification
 
@@ -292,7 +271,7 @@ Registered text matching verified **41/46**; the five false negatives below were
 | 13.K2 | Compose actual `../../config/rules.yaml:/etc/sentinel/rules.yaml:ro`→matching configured absolute path. SDK escaped-pattern false negative. | WIRED |
 | 13.K3 | Operator captures/private writes acknowledged manifest→check-alerts capture/verify subprocess. | WIRED |
 | 13.K4 | check-alerts→actual current Kafka offsets/range, parameterized CH and PG rows→complete expected-set reconciliation. | WIRED |
-| 14.K1 | Required hosted Phase 3 job→exact-family shell; integration retains all seven Phase 2 groups/full suite. | WIRED |
+| 14.K1 | Required hosted Phase 3 core/scenarios instances→same exact-family shell, disjoint complete 44+2 union; integration retains all seven Phase 2 groups/full suite. | WIRED |
 | 14.K2 | Each exact package/name→nonempty runner; set -e/pipefail retains errors even with misleading PASS output. | WIRED |
 | 14.K3 | Operations→rules restart/drain/retention procedure and architecture seq caveat. | WIRED |
 | 15.K1 | Extracted LoadRules→AUTH tests and real startup path; no duplicate declaration remains. | WIRED |
@@ -321,6 +300,23 @@ No empty/static fallback supplies runtime detections or success. Empty maps/fron
 
 No fresh short runtime spot-check was run by this read-only verifier; the serialized executor owned all runnable gates. Directly inspected commands/results and hosted execution supply behavioral evidence, not mere test presence.
 
+### Current replacement acceptance
+
+| Behavior/gate | Actual inspected proof | Result |
+| --- | --- | --- |
+| Complete repaired local integration | `post-cache-full-integ.log`: exact `make test-integ`, source 10ddd71, package 1648.087s; elapsed 1650.77s, EXIT=0/RETURNED_EXIT=0, 11:45:21Z–12:12:52Z | PASS; terminal unit `SubState=exited`, `ExecMainStatus=0`; not an inferred running-state pass |
+| Final same-source unit/static | `phase3-final-static.log`: make test 22.89s, lint 23.39s, build/default+integration vet/integration lint 14.83s; STATIC_RETURNED_EXIT=0 | PASS; hosted go/web/python/schema/hygiene subsequently also pass at final SHA |
+| Final CI/guard regressions | `ci-shard-guard-r2-scripts-final.log`: 51 tests / 150.750s / RETURNED_EXIT=0; static semantic bundle returns 0 | PASS; controlled orchestration MODEL, separate from native acceptance |
+| Final full-history scan | `ci-shard-pre-push-gitleaks.log`: 467 commits, no leaks, returned 0 at tested 7a72028 | PASS; unchanged exact historical prose exception and full-history/default rules |
+| Hosted complete integration | `hosted-ci-39613182464-integration.log`: full package 1641.187s; API full step 14:09:59Z–14:37:51Z | PASS; original Go 32m and job 45m caps unchanged |
+| All seven retained groups | Same hosted log: seven additional package successes, 23.260/39.562/30.210/57.749/77.526/20.909/70.066s; all named API steps success | PASS; API key, ingest, dedupe, writer/DLQ, recovery, rate limit, readiness |
+| Exact Phase 3 core | `hosted-ci-39613182464-core.log`: exactly 44 top-level named PASS records; all package results successful | PASS; independent nonempty exact-family invocations, no subtest-count inflation |
+| Exact Phase 3 scenarios | Scenario log: `TestDetectionScenarios` PASS 231.72s (all four static/live subcases); `TestDetectionScenariosPreservedRepeat` PASS 578.73s | PASS; two actual families at same SHA, not the earlier interrupted last family |
+| Independent preserved operator acceptance | Compose log: `TestDetectionScenariosPreservedRepeat` PASS 238.83s / package 268.244s, plus actual startup/check/migrate steps | PASS; complete legacy seed plus both exact preserved scenario commands |
+| Hosted candidate as a whole | Root-captured full API JSON: exact 7a72028, completed/success, ten successful jobs and all recorded steps success; retry watch returned 0 at 14:43:34Z | PASS; no waiver, source update or hosted rerun inferred from network log retries |
+
+### Original baseline acceptance — historical, not substituted for replacement
+
 | Behavior/gate | Command or executed boundary | Actual result |
 | --- | --- | --- |
 | Whole local exact-family matrix | `make test-phase3` | 46 independent top-level named PASS results; exit 0, 2545.66s. Predates fixture-only isolation; not presented as a second final local matrix. |
@@ -330,25 +326,39 @@ No fresh short runtime spot-check was run by this read-only verifier; the serial
 | Legacy/operator flow | `make seed`, actual two `timeout 16m make seed-scenarios` within preserved-repeat | Legacy 1000 sent/accepted/visible, zero retries; repeat proves prior full rows/seq, fresh IDs, drained state and zero normal new late drops. Hosted independently executes this flow. |
 | Final unit/static | Persistent final-static bundle at 855cb60 | Returned 0/20.59s: Go race, web 6, Python 121, lint, build, default/integration vet/lint, default hook exclusion for three workers, web format/build and whitespace. |
 | Script/CI/scanner repairs | All-script regression and pinned full-history scanner | Raw script log: 44 tests/77.382s, OK. gitleaks 8.30.1 raw final scan: 421 commits, no findings; historical prose exception is exact and independently reviewed. |
-| Fresh hosted final candidate | [CI 39515550386](https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386) | completed/success at exact 80d2d87; all nine jobs success. Full integration, seven groups, 46 families and preserved Compose acceptance all required and executed. |
+| Original hosted candidate | [CI 39515550386](https://github.com/6sLOGAN78/Sentinel/actions/runs/39515550386) | Historical completed/success at exact 80d2d87; all nine jobs success. Full integration, seven groups, 46 families and preserved Compose acceptance were required and executed. |
 
 ### Hosted CI provenance
 
-Root-captured raw metadata is retained privately at `.local/phase3-acceptance/hosted-ci-39515550386-result.json`; independently read watch output is `hosted-ci-39515550386-watch.log` with `WATCH_RETURNED_EXIT=0`. Run creation is `2026-10-20T23:31:15Z`, completion `2026-10-21T00:20:46Z`.
+Current root-captured raw metadata is retained privately at `.local/phase3-acceptance/hosted-ci-39613182464-result.json`, freshly parsed by this verifier. Its exact SHA is `7a72028cd7af506cc27097317d61fec0ea918d89`, status completed, conclusion success, created `2026-10-21T14:01:44Z`, updated `2026-10-21T14:43:29Z`. All ten jobs and every recorded step are completed/success:
 
 | Job | Conclusion | Completed UTC |
 | --- | --- | --- |
-| hygiene | success | 2026-10-20T23:31:25Z |
-| secrets | success | 2026-10-20T23:31:24Z |
-| web | success | 2026-10-20T23:31:37Z |
-| python | success | 2026-10-20T23:32:41Z |
-| schema | success | 2026-10-20T23:31:43Z |
-| go | success | 2026-10-20T23:36:09Z |
-| integration | success | 2026-10-21T00:13:57Z |
-| phase3 | success | 2026-10-21T00:20:45Z |
-| compose-smoke | success | 2026-10-20T23:45:44Z |
+| hygiene | success | 2026-10-21T14:01:53Z |
+| secrets | success | 2026-10-21T14:01:56Z |
+| web | success | 2026-10-21T14:02:03Z |
+| python | success | 2026-10-21T14:03:40Z |
+| schema | success | 2026-10-21T14:02:17Z |
+| go | success | 2026-10-21T14:06:44Z |
+| integration | success | 2026-10-21T14:43:28Z |
+| phase3 (core) | success | 2026-10-21T14:36:30Z |
+| phase3 (scenarios) | success | 2026-10-21T14:25:45Z |
+| compose-smoke | success | 2026-10-21T14:15:46Z |
 
-The Phase 3 job took 44m34s within its unchanged 45m ceiling. Earlier failed run `39457945227` at `19db519` remains failed. Its interpreter/scanner/fixture repairs are supported by source diffs, regression evidence and clean scoped review, not a retrospective reassignment of its conclusion. The final hosted run supplies a complete exact-family execution on the repaired candidate.
+Integration's whole job was 36m41s; core 29m43s; scenarios 18m57s, all within the unchanged 45m job caps. These are observed run durations, not general performance guarantees. `hosted-ci-39613182464-watch-retry1.log` independently ends WATCH_RETURNED_EXIT=0 at 14:43:34Z. The original watch ends 1 at 14:15:03Z with an explicit TLS handshake timeout; that local network failure is not CI failure. Job-log download retries are retrieval retries, not hosted reruns. No new verifier remote query or hosted execution is claimed.
+
+Historical outcomes remain separate:
+
+| Execution | Recorded outcome and limit |
+| --- | --- |
+| 39457945227 at 19db519 | Failed interpreter/scanner/fixture checks; source fixes, causal guards and clean scoped review do not change its old conclusion. |
+| 39515550386 at 80d2d87 | All nine jobs passed, created Oct 20 23:31:15Z / completed Oct 21 00:20:46Z; metadata and watch exit 0 retained separately. Original serial Phase 3 took 44m34s. |
+| 39544892831 at eee632f | Eight jobs passed, integration failed: `TestDetectorCooperativeAcquisition` retained map empty at line 94, 2.85s; full package 1684.173s / make 2, not a timeout. Seven later retained groups were skipped. Private failed log retained; no exact historical atomic ownership snapshot was captured. |
+| Local 96944 | Actual completed make 2, package 1581.355s / external 19688.54s, END 11:01:29Z; two scenario failures detailed above, not a reported owner assertion. |
+| Local 95255 | UNKNOWN interruption, truncated log/no returned result. Real contemporaneous Kafka storage exhaustion is retained without assigning an exact process-disappearance cause. Later approved cache-only recovery and distinct full pass do not recover this lost exit. |
+| 39598061416 at a69d158 | API conclusion cancelled: eight jobs success including full/seven groups/Compose; Phase 3 cancelled. Root retained explicit check 119216776646 maximum-execution-time 45m0s annotation, job 12:18:15Z–13:03:35Z; matrix step 12:21:40Z–13:03:29Z. Forty-five families passed, last repeat had no terminal PASS; not 46/46 or an assertion failure. |
+
+The new complete replacement, not a retrospective relabeling of these outcomes, supplies final exact-family acceptance on the repaired source. Historical repair documents' dated pending checkpoints and root-owned tracking holds are not used as evidence that current gates are missing; their reconciliation follows this released report.
 
 ### Probe execution
 
@@ -377,7 +387,7 @@ All 14 plan IDs match REQUIREMENTS.md's Phase 3 mapping. No orphaned ID exists. 
 
 ## Anti-patterns, source/security dispositions and limits
 
-The initial changed-source scan covered 129 non-planning artifacts; the final reviewed CI exception adds `.gitleaksignore`, giving 130. No unreferenced TBD/FIXME/XXX debt marker, unfinished handler, placeholder output, orphan runtime adapter or disconnected source was established. The `.env.example` “Placeholders only” comment describes safe template values. Intentional no-op production fault hooks are required isolation, not absent functionality. Empty outcomes for nonmatches/suppression and initial clocks/maps are populated or deliberately empty according to the traced protocol.
+The initial changed-source scan covered 129 non-planning artifacts; the reviewed CI exception adds `.gitleaksignore`, giving 130, and the new owner-snapshot regression brings the unique reviewed union to 131. Bootstrap/CI repairs touch already-counted paths. The final seven-source delta scan found no debt marker or placeholder match. No unreferenced TBD/FIXME/XXX debt marker, unfinished handler, placeholder output, orphan runtime adapter or disconnected source was established. The `.env.example` “Placeholders only” comment describes safe template values. Intentional no-op production fault hooks are required isolation, not absent functionality. Empty outcomes for nonmatches/suppression and initial clocks/maps are populated or deliberately empty according to the traced protocol.
 
 | Item | Classification | Assessment |
 | --- | --- | --- |
@@ -386,8 +396,11 @@ The initial changed-source scan covered 129 non-planning artifacts; the final re
 | Generator negative-test false pass | Closed finding | Both refusal families now fail immediately if credential loading is reached and assert validation-specific diagnostics; mutation counterexamples and independent R1 recorded. |
 | Strict static scenario shared-PG contamination | Closed finding | Private migrated UUID PG fixture preserves unrelated full workflow; runtime, goldens and strict verifier remain unchanged. Causal regression precedes repair and subsequent aggregate/hosted pass. |
 | CI interpreter/historical scanner prose | Closed findings | Existing locked generator interpreter selected; one exact commit/path/rule/line prose fingerprint, full default rules/history retained. Independent repair review and actual hosted python/secrets success. |
+| Cooperative fixture stale/one-process incorporation | Closed finding | Per-poll complete current two-owner collector, causal negative controls, original downstream fences/canonical assertions retained; actual native/full/hosted passes. |
+| System-Python launcher import | Closed finding | UTC singleton alias permits bootstrap without changing locked runtime; separate actual 3.10 and modeled handoff RED/GREEN plus full/operator acceptance. |
+| Serial CI cap and guard skip/mask/comment-boundary warnings | Closed findings | Isolated complete disjoint 44+2 partition, unchanged caps/default, actual causal controls and clean R2; both real hosted shards success. |
 
-`03-REVIEW.md` aggregates clean scoped source reviews over the 130-artifact union; it does not pretend uniform deep review. `03-SECURITY.md` records 78/78 registered dispositions closed: 57 present mitigations and 21 original accepted dependency risks, zero open/unregistered flags. Its `summary_reconciliation_pending: false` records completed reconciliation with 03-14; no new risk acceptance or security certification is inferred. The approved reservation addition is mapped to existing integrity/failure boundaries. No override is used to close any requirement.
+`03-REVIEW.md` aggregates clean scoped source reviews over the 131-artifact union; it does not pretend uniform deep review. The final R2 closes both CI guard warnings; original reports preserve their findings. `03-SECURITY.md` records 78/78 registered dispositions closed: 57 present mitigations and 21 original accepted dependency risks, zero open/unregistered flags. Its `summary_reconciliation_pending: false` records completed reconciliation with 03-14, and scoped repair updates preserve those controls; no new risk acceptance or security certification is inferred. The approved reservation addition is mapped to existing integrity/failure boundaries. No override is used to close any requirement.
 
 Disconfirmation/evidence limits retained:
 
@@ -400,17 +413,17 @@ Disconfirmation/evidence limits retained:
 
 ## Human Verification Required
 
-No new subjective human test is identified by this follow-up. The previous baseline's real integration and operator evidence remains historical. The latest repeat introduces a failed automated acceptance gate, owned by the assigned diagnosis/repair specialist and root; it cannot be replaced by human approval or the earlier green run. No deferred `<human-check>` block was found in the original numbered-plan review.
+None. The Phase 3 backend user flow is covered by actual native/external integration and preserved operator acceptance; there is no Phase 3 visual/UI or unresolved subjective item. No deferred `<human-check>` block was found in the numbered plans. Previously held automated gates were closed by actual replacement results, not by human waiver or earlier green evidence.
 
 ## Gaps Summary
 
-**One acceptance gap is open:** replacement complete local and hosted acceptance is still absent. The test-only causal readiness repair and minimal script bootstrap repair both have independent clean reviews and scoped RED/GREEN evidence. The completed local full gate after the first repair failed two scenario checks; after the second repair, the latest full attempt was interrupted with no returned test result. Retained Kafka output proves a contemporaneous storage outage, not an exact disappearance cause or a new detector/writer runtime defect. Root's disk-recovery scope, actual complete replacement local/hosted success and explicit verification release remain required. No later-phase deferral or override removes this gate.
+**No gaps remain.** The previously held 03-14.T2 has actual repaired-source complete local PASS and replacement all-ten-job hosted success, with full integration, all seven retained groups, the complete 44+2 exact-family union and preserved operator acceptance. Source inspection, independent clean scoped reviews and actual raw causal/static/script/scanner evidence support the repairs. Root explicitly released re-verification. No requirement, selector, assertion, cap, registered mitigation or provenance limit was waived.
 
-The original five roadmap criteria, 54 plan truths, 72 artifact declarations, 46 links and 14 requirement mappings remain the preserved baseline verification. The original 80d2d87 run remains successful; the later eee632f repeat remains failed. Current status is **gaps_found / re-verification pending**, not approval to proceed to Phase 4.
+All five roadmap criteria, 54 plan truths, 72 artifact declarations / 68 paths, 46 links and 14 requirement mappings are accounted for and verified at the final scoped source. Current status is **passed, 59/59**. Historical failed, cancelled and UNKNOWN runs retain their original conclusions and proof limits. Phase 4 API/UI/SSE and Phase 5 benchmark scope were not silently required, implemented or certified here.
 
 Root owns requirement checkboxes, `phase.complete`, final tracking and any report commit. This verifier neither commits nor begins Phase 4.
 
 ---
 
-_Verified: 2026-10-21T11:41:42Z_
+_Verified: 2026-10-21T14:51:50Z_
 _Verifier: independent goal-backward verification agent (gsd-verifier)_
