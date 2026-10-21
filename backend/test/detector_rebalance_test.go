@@ -305,14 +305,29 @@ func incorporatedOwners(t *testing.T, f *cooldownFixture, dirs []string) map[int
 
 func collectIncorporatedOwners(owners map[int32]string, group kadm.DescribedGroup, topic string,
 	observations [][]detectorObservation) bool {
+	// A prior poll's owner can have lost its partition while the new owner's
+	// commit observation is still being written. Require one complete current
+	// snapshot, with incorporated state in both processes, before causing a move.
+	clear(owners)
+	if group.Err != nil || group.State != "Stable" || len(group.Members) != 2 || len(observations) != 2 {
+		return false
+	}
+	members := make(map[string]bool)
 	for _, process := range observations {
+		incorporated := false
 		for _, o := range process {
-			if o.Boundary == "committed" && observationAtNine(o) && groupOwns(group, o.Member, o.Topic, o.Partition) {
+			if o.Boundary == "committed" && o.Topic == topic && o.Partition >= 0 && o.Partition < 12 &&
+				observationAtNine(o) && groupOwns(group, o.Member, topic, o.Partition) {
 				owners[o.Partition] = o.Member
+				members[o.Member] = true
+				incorporated = true
 			}
 		}
+		if !incorporated {
+			return false
+		}
 	}
-	return len(owners) == 12
+	return len(owners) == 12 && len(members) == 2
 }
 
 func seedTransferPartitions(t *testing.T, f *cooldownFixture,
