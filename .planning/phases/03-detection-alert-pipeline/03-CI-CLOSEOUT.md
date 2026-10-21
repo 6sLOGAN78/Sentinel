@@ -1,5 +1,23 @@
 # Phase 3 hosted CI closeout
 
+## Latest repaired candidate: matrix job timed out
+
+[Run39598061416](https://github.com/6sLOGAN78/Sentinel/actions/runs/39598061416)
+at a69d1583c27843612d5ca9f45df19d41b348f1dd completed/cancelled. Eight jobs
+succeeded, including fullintegration/allsevenretainedgroups andCompose acceptance.
+Onlyphase3 wascancelled. Its check119216776646 explicitly reports the45m maximum
+execution time was exceeded. Job12:18:15Z–13:03:35Z; make dev-up used3m and
+checkstack17s; matrixstep12:21:40Z–13:03:29Z wascancelled. This is an aggregate
+job-cap failure, not a reported assertion failure or a completed46-family pass.
+Private full APIresult and cancelledphase3log are retained in
+`.local/phase3-acceptance/hosted-ci-39598061416-*`.
+
+Root is preparing two isolated phase3 matrix groups:44core and2scheduledscenario
+selectors, with unchanged defaultall46 and unchanged per-test/45mjob caps. All
+individual selectors remain required and independently nonempty; no mask/skip
+or production change is authorized. Review/localguardproof/newhosted acceptance
+are required before Phase3 closure. Phase4 remainsnotstarted.
+
 ## Latest repeat gate: reopened
 
 Documentation-only closure commit `eee632febdf601286d2ba8ec3de1e3f75febe2cd`

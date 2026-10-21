@@ -37,5 +37,8 @@ results; this pass does not rewrite their status or invent causes.
 
 Normal authorized push advanced main fromeee632f toa69d1583c27843612d5ca9f45df19d41b348f1dd.
 Hosted[run39598061416](https://github.com/6sLOGAN78/Sentinel/actions/runs/39598061416)
-was created12:14:45Z atthat exactSHA; its result and final re-verification remain
-pending. Phase3 is not closed by this local pass alone. Phase4 is not started.
+was created12:14:45Z atthat exactSHA. It concludedcancelled:8jobs passed, but the
+phase3matrix exceededits45m jobcap. Fullintegration, all7retainedgroups andCompose
+passed; localproofabove remainsreal. CIshardingpreservingall46selectors and all
+existing deadlines, independentreview and actualreplacementCIremain required.
+Phase3 is not closed by this local pass alone. Phase4 is not started.

@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase3 all local gates passed; repaired candidate a69d158 pushed; hosted CI39598061416 pending
-last_updated: 2026-10-21T12:15:00Z
+stopped_at: Phase3 CI39598061416 has8success/phase3timeout; shard repair in progress without budget increases
+last_updated: 2026-10-21T13:06:01Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -228,3 +228,20 @@ https://github.com/6sLOGAN78/Sentinel/actions/runs/39598061416
 Rootmustmonitoractualall9jobs includingfullintegration/7retainedgroups,46families
 andCompose smoke; no closureuntilactualsuccess+releasedscopedre-verification.
 Postpushtrackingedits containnosourcechange; preserveoriginaluserdirtunstaged.
+
+LATESTCIresult39598061416: completed/cancelled; eightjobsSUCCESS including
+fullintegration/all7retainedgroups andCompose. Phase3job119216776646cancelled
+after45m20s(12:18:15Z–13:03:35Z). GitHubcheckannotation explicitly:
+job exceeded maximum execution time45m0s. Matrixstep12:21:40Z–13:03:29Z cancelled;
+startupmake dev-up3min/checkstack17s consumedpartofjob. No assertionfailure is
+inferredfromcancellation; rootretainedfullAPIresult and cancelledjoblog privately.
+Workercooperative_snapshot_fix nowownsONLY3CIorchestrationfiles and newevidence:
+check-phase3-tests.sh/test_phase3_guards.py/.github/workflows/ci.yml.
+Proposeddefaultall46 unchanged; core44/scenarios2 disjointgroups, twoisolated
+phase3matrixrunners withfail-fastfalse andsame45mcapEACH. Everyexisting6m/8m/
+60s/16m/32m selector/tag/race/nonempty obligation retained; fullintegration7groups
+andCompose untouched. Newtotal10jobinstances, not old9. BehavioralRED-beforeGREEN,
+permanentunion/disjoint/failureguards, independentreview, finalstatic/scan then
+authorizedpush/newCI needed. Do not raisecaps or countcancelledmatrixasPASS.
+Go/production/scenario source unchanged; localfullPASS0/1650.77s remainsactualproof.
+No newnative/fullproducer is authorized beforeCIrepairindependentreview.
