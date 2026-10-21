@@ -119,7 +119,13 @@ with causal regression is required. Retained migrationcontainer logs identify
 the second concrete failure: pinnedgolang.org/x/textv0.41.0 zip download from
 proxy.golang.org reset the connection, postgres-migrate exited1, and detector /
 alert-writer stayedCreated behind that failed dependency. Normal preserved-volume
-startup recovery is pending; no migration/dependency version or storeddata changed.
+startup recovery passed0/515.96s,11:07:14Z–11:15:50Z; all9serviceshealthy and
+postgres-migrateexit0. No migration/dependency version or storeddata was deleted.
+Separate bootstraprepair2d44677 passed causalregression+actual3.10CLI and all45
+scriptcases; independentdeepreviewda2733b clean. Freshcompletefullsuite atda2733b
+started11:21:36Z; privatephase3-final-full-integ.log, resultpending.
+Freshstaticmake test22.89s/lint23.39s/build+bothvet+integrationlint14.83s all0,
+end11:22:38Z. Pinnedscannerfullhistory0 at68a91d0, end11:28:00Z.
 Private logs: cooperative-full-integ.log andcooperative-postgres-migrate-failed.log.
 Complete replacement acceptance/hosted results remain pending. No passing full-suite,
 new46-family matrix or fresh hosted success is implied by the focused checks.
