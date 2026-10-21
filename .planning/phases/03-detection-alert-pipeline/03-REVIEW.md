@@ -17,7 +17,8 @@ phase_acceptance: repeat_verification_pending
 
 No open source-review finding remains at runtime/wiring62099b2 plus test-only
 repair26f3f8a, fixture-only isolationdf0bfbb, CI-only repair855cb60 and cooperative
-snapshot test-only repaire342337. This canonical artifact aggregates independent scoped reports;
+snapshot test-only repaire342337 plus portable bootstraprepair2d44677.
+This canonical artifact aggregates independent scoped reports;
 it is not a newly executed all-source review or an acceptance/CI result.
 Historical reports and their original issue counts remain unchanged.
 
@@ -33,11 +34,14 @@ Historical reports and their original issue counts remain unchanged.
 | `03-REVIEW-FINAL-FIXTURE-R2.md` | Full one-file static scenario PG isolation/regression atdf0bfbb | No findings; strict verifier unchanged, unrelated complete workflow preserved; cleanup-proof limitation explicit |
 | `03-REVIEW-CI-REPAIR.md` | Full3-source CI/interpreter/guard/exact historical scanner exception at855cb60 | Clean; locked existing interpreter and one privately verified prose fingerprint, no broad scan bypass |
 | `03-REVIEW-COOPERATIVE-REPEAT.md` | Deep2-file helper/regression repair ate342337, direct ownership/observation contracts and actual RED/GREEN/native logs | Clean; stale snapshot union and one-process-only incorporation rejected; original native transfer/fence/payload checks unchanged |
+| `03-REVIEW-SCENARIO-BOOTSTRAP.md` | Deep2-file portable UTC alias/regression at2d44677 and direct locked-runtime entry contract | Clean; actual3.10 and modernstdlib MODEL distinguished; lockedruntime/uv/args unchanged |
 
 The original production list, reservation R2 list and final remaining list cover
 129 unique changed non-planning artifacts before the CI repair; the additional
 `.gitleaksignore` delta brought the union to130; the new owner-snapshot regression
 file brings it to131. The already-reviewed rebalance file is not counted twice.
+Both bootstrap repair files were already in the production/final-delta scope;
+their re-review does not increase the unique union.
 Lists, frozen heads, precise
 coverage methods and direct-contract reads are retained in each report and the
 two explicit scope documents. This count does not pretend every artifact was

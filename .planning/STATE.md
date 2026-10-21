@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase3 repeat CI integration failure; cooperative snapshot fixture repair in progress; Phase4 notstarted
-last_updated: 2026-10-21T05:30:00Z
+stopped_at: Phase3 reviewed owner and bootstrap repairs; healthy preserved stack; fresh full integration session95255 active
+last_updated: 2026-10-21T11:22:00Z
 last_activity: 2026-10-21
 progress:
   total_phases: 6
@@ -80,11 +80,19 @@ bootstrapcompatibility repair/regression in scripts only; currentlockedPython3.1
 Second concrete diagnostic: postgres-migrate exited1 after pinnedgolang.org/x/text
 v0.41.0 zip connectionreset fromproxy.golang.org. Detector/alert-writer remained
 Created behind faileddependency. Rootnormalpreservedvolume make dev-up retry
-session83364 pending; no reset/deletion.
+session83364 PASS0/515.96s, END11:15:50Z; all9serviceshealthy and migrationexit0.
 Latest fullfailure is not a PASS despite earlierfocusedproof. No reported owner
 assertion failure in this run; do not infer exact clock-gapcause or durationbound.
-Root must finishbootstraprepair/review, recoverhealthy stack, then freshfullsuite,
-authorizedpush/green hostedCI and reconcileverification/closure. No productionfilechanged.
+BootstrapREDd9a8c76/GREEN2d44677 and evidencee577667 are committed. ActualPython3.10
+helpGREEN0/invalidarg2; permanentmodernstdlibmodelguardRED1/GREEN0; all45scriptcases
+PASS0/77.237s. Deepindependentreviewda2733b clean2files; lockedruntimeunchanged.
+Freshfullsession95255 started11:21:36Z atda2733b; persistentlogphase3-final-full-integ.log,
+unchangedGo32mcap. Freshstaticproducer66407 active. Userconfirmedkeepmachineawake
+andnetworkconnected, continuenotpause. LocalclockBOOTTIMEminusMONOTONIC increased
+23375.040s(07:02)to37278.866s(11:12), consistentwith13903.826sadditional suspension;
+not a causalexplanationfor every concretefailure or inventedpackage/wall equivalence.
+Root must awaitactualfullsuite, then authorizedpush/green hostedCI and reconcile
+verification/closure. No productionfilechanged; noPhase4work.
 Private failed log: .local/phase3-acceptance/ci-repeat-39544892831-failed.log.
 
 Historical closure before the repeat failure:
