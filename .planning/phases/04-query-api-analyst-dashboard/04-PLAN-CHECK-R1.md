@@ -1,0 +1,12 @@
+# Phase4 — Independent plan check R1
+
+Read-onlychecker `/root/phase4_plan_check`:16plans,3blockers+1warning. OriginalR0DTO/scope/exit/validationfindingsfixed;all20requirementsremaincovered.
+
+Remainingfindings:
+
+1. 04-07mustownexisting `backend/test/openapi_runtime_auth_test.go`; literalbearerfixture/APIkey-onlyhandlercannotprove signedbearercontract.
+2. 04-15PlaywrightspecwouldbecollectedbydefaultVitest; unit/e2ediscoverymustbeseparate.
+3. 04-16newPythonnegativeguardsnotexplicitlyexecutedbyautomatedtargets/CI.
+4. Five10-fileplansmeetwarningthreshold; strictlyboundedscope/derivativefiles/contextbudgetneedexplicitmitigation.
+
+Rootrevision2assignsruntimecontracttestto04-07(ninefiles),exactnonemptyTestOpenAPIGetEventRuntimeSecuritycommand;04-15unitcommand`vitest run src`plusindependentunit/e2everification;04-16bothautomatedtargetsandrequiredCIstepinvokeexactnewunittestdiscovery. Ten-fileverticalplansdocumentderivativefiles/singlebehavior/45%budget/no-expansionstoprule. Awaitindependentrecheck;noapproval/implementation/testPASSclaimed.

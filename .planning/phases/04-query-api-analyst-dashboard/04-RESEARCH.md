@@ -7,6 +7,8 @@ mode: mvp
 
 # Phase 4 — Implementation Research
 
+Planning refinement: independentcheckR0 found canonical Alert cannot be constructed fromPG-onlyworkflowfields. Final04-CONTRACT.md/16numberedplans supersede any earlier workflowDTO shorthand below: WorkflowAlert contains PGdenormalizedfields only; fullcanonicalDetection is CH-backed detailonly. Deliveryimplementation initiallyusesonefocused `backend/internal/alertstream/delivery.go`; exactscope/ownership is the finalnumberedplans. No absentdedupe_key/sample_event_ids may beinventedforPGlist/PATCH/backfill. BackfillandcommittedPATCHmustworkCHdown.
+
 ## Scope and provenance
 
 As an analyst, I want to investigate and triage my tenant's detections in a live dashboard, so that I can act on evidence without losing alerts during reconnects.

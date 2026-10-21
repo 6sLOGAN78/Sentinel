@@ -2,14 +2,14 @@
 phase: 4
 slug: query-api-analyst-dashboard
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-10-21
 ---
 
 # Phase 4 — Validation Strategy
 
-Contract only: no Phase4 tests have run. Planner must replace plan/task IDs below with final IDs and preserve the capability coverage. Existing Phase3 acceptance stays closed; this is not permission to relax its tests.
+Contract only: no Phase4 tests have run. Revised sixteen-plan ownership below addresses independent plan-check findings. Existing Phase3 acceptance stays closed; this is not permission to relax its tests.
 
 ## Test Infrastructure
 
@@ -25,29 +25,33 @@ Quick Go feedback once packages exist: `cd backend && go test -race -timeout 60s
 - Before acceptance: full legacy gates, all new independent selectors, real proxy/two-replica/browser acceptance, security review and final independent verification.
 - Quick loop budget60s Go/120s components; native ordinary family6m, delivery/stream10m, browser10m. These are hard planned caps, not measured performance claims. Do not increase old45minCI/32mfull caps to accommodate new work.
 
-## Capability / Threat Verification Map
+## Final Task / Threat Verification Map
 
-| Slice (final task IDs pending) | Requirements | Threat / secure behavior | Planned test command / existence |
+| Plan/tasks (1 RED,2 GREEN) | Requirements | Threat / secure behavior | Planned test command / existence |
 |---|---|---|---|
-| Sign-in / tenant list | AUTH01,02,03,04;API03;UI02,06 | forged/expiredJWT401,viewer403,verifiedtenantonly,redactedlogs | nonempty `^TestPhase4Auth$`; new files required |
-| Events | API01,02,08;AUTH03;UI03,06 | tuple ties,immediate dedupe,SQL injection rejected,boundedranges,cross-ID404 | `^TestPhase4Events$`; new |
-| Alert filtering/detail | API03,04,08;AUTH03;UI02 | status filter beforelimit,tenant evidence scope,expired evidence honest | `^TestPhase4Alerts$`; new |
-| Triage | API05;AUTH02,03,04;UI02 | concurrentversiononewinner,auditfailurefullrollback,foreignIDs404 | `^TestPhase4Triage$`; new |
-| Summary/rules | API06,07,08;UI01,04 | realdedupedcounts,tenant scope,noinventedzeros | `^TestPhase4SummaryRules$`; new |
-| Durable delivery | LIVE01,02,03 | delayed lowerworkflowseqstilldelivered,counterrollback,restart/preexistingrows | `^TestPhase4Delivery$`; new |
-| Stream browser | LIVE01,02,03;UI02,06 | two replicas eachdeliver;lostLISTEN/NOTIFY recover;boundedslowclient;auth expiry | `^TestPhase4Stream$`; new |
-| Full isolation | AUTH03;allAPI/LIVE | no foreign IDs/cursors/evidence/cache/stream content on all surfaces | `^TestPhase4TenantMatrix$`; new |
-| Browser/proxy | UI01,02,03,04,06;LIVE01,02,03 | keyboard,escapedJSON,reconnect fromsamecursor,noURLtoken,logoutcacheclear | `cd web && npm run test:e2e`; new script/spec required |
+| 04-01-1/2,04-02-1/2,04-03-1/2 | AUTH01,02,03;API03;UI02,06 | T04-01..07 verifiedJWT/tenant,mintguard,cacheclear | `^TestPhase4Auth$`; new; componentApp/session |
+| 04-04-1/2,04-05-1/2 | API03,04,08;AUTH03;UI02,06 | T04-08..12 status-beforelimit,cursor/evidence/DOMsafety | `^TestPhase4Alerts$`; new |
+| 04-06-1/2,04-07-1/2 | API01,02,08;AUTH03;UI03,06 | T04-13..16 immediateCHdedupe,keycompatibility,JSONsafety | `^TestPhase4Events$`; new |
+| 04-08-1/2,04-09-1/2 | API05,04;AUTH02,03,04;UI02,06 | T04-17..20 atomicCASaudit,role403,redactedproducerlogs | `^TestPhase4Triage$` plus `^TestPhase4Auth$`; new |
+| 04-10-1/2,04-11-1/2 | API06,07,08;AUTH03;UI01,04,06 | T04-21..23 readonlyrules/realdedupedsummary/tenant | `^TestPhase4SummaryRules$`; new |
+| 04-12-1/2 | LIVE02,03;AUTH03;UI02,06 | T04-24..26 reversedcommit/counterrollback/PGonlybackfill | `^TestPhase4Delivery$`; new |
+| 04-13-1/2,04-14-1/2 | LIVE01,02,03;AUTH03;UI02,06 | T04-27..31 twoactualreplicas/slowreader/expiry/LISTENkill | `^TestPhase4Stream$`; new |
+| 04-15-1/2 | All20Phase4requirements | T04-32..34 fulltenantmatrix andrealproxybrowser | `^TestPhase4TenantMatrix$` and `bash scripts/check-phase4-browser.sh`; new |
+| 04-16-1/2; publication04-16-3 | All20Phase4requirements | T04-35..36 completefailclosedCIunion/scopedauthority | `bash scripts/check-phase4-tests.sh all`,browser+legacygates; new |
+
+Native command for each row: `bash scripts/go-test-nonempty.sh './testphase4/...' '^TestPhase4FAMILY$' -tags=phase4 -race -timeout=6m -p=1`; use10m for Delivery/Stream. Replace FAMILY with the literal family shown, not a broad union. Each task's automated command is the fail-closed GREEN target. RED runs are separate invocations with each actual exit and assertion retained, not semicolon-masked aggregates. Eight complete families run again in04-16.
 
 Runner: `scripts/check-phase4-tests.sh` must check each exactselector independently and fail empty/failure. Use `scripts/go-test-nonempty.sh` conventions. Before introducing tests verify their build-tag/package location doesn't silently overload existing `make test-integ`; explicitly isolate new acceptance if needed. Preserve all7Phase2groups and44core+2scenariofamilies with originalbudgets. CI source guards must prove exact selector union and negative empty/failing groups; a MODEL is not native success.
 
 ## Wave 0 Requirements
 
-- [ ] Add owned test packages/fixtures as part of their vertical slice; no empty stubs counted as coverage.
-- [ ] Resolve pinned Playwright plus Chromium through lockfile-owned tools; real browser test harness with private runtime JWT fixtures.
-- [ ] Apply additive migrations through actual existing migrator before native tests; verify preexisting rows preserved and migration repeat safe.
-- [ ] Native proxy image/config pinned, bufferingoff, forwarded headers trusted only from configuredproxy, no publicsecret exposure.
-- [ ] Tests-first references and finite runners mapped by finalplan task IDs before marking ready.
+- [ ] 04-01-1 owns phase4-tagged native fixture embeddedin auth_test.go; tests use actualbuiltquery-api process overHTTP sincecmd/main notimportable. No empty stubs counted as coverage. Laterfamilies own focusedtestfiles.
+- [ ] 04-03-1 owns browser session/componentfixtures; 04-15-1/2 own pinnedPlaywright+Chromium/privateJWTrealbrowserharness.
+- [ ] 04-08-2 applies007auditmigration;04-12-2 applies008deliverymigration withpreexisting/concurrentcutoverproof;noSQL-onlyverification.
+- [ ] 04-15-1/2 own pinnedproxyimage/config/composeoverlay andcausalbufferingnegativecontrol.
+- [ ] 04-16-1/2 ownclosed8familyrunner,negativeMODELguards andpreservedlegacyCIunion/caps.
+
+Wave0 is a dependency label, not a separate foundation-only plan: artifacts arrive with each real feature slice. References are all owned above, execution stillpending.
 
 No reset,truncate,drop,deletevolumes,OPTIMIZE,goldenregeneration or committedcredentials to simplify acceptance. Test data uniquelyscoped to reserved synthetic identities. Files modified by user (`.planning/config.json`,`.serena/`) remain outofscope.
 
@@ -57,11 +61,11 @@ Primary behaviors automated. Final visual review should inspect fourpages at375/
 
 ## Validation Sign-Off
 
-- [ ] All tasks have exact automated verify and known path/dependency.
-- [ ] No three consecutive tasks without automated feedback.
-- [ ] Missing tests/harness owned by initialslice, not waived.
+- [x] All32implementationtasks have fail-closed automated targets and concrete owner/dependency.
+- [x] No three consecutive tasks without automated feedback.
+- [x] Missing tests/harness owned by numbered slices, not waived.
 - [ ] Every selected test family nonempty and assertionfailures propagate.
 - [ ] Native / model / static / browser evidence distinguished.
 - [ ] Planning contract linked by finalplans; no execution pass claimed.
 
-Approval: pending plan checker. `nyquist_compliant` may reflect approved sampling design, not pretend testexecution; actual wave_0 completion remains false until artifacts exist and are verified.
+Approval: independent revision2 plancheckerPASSED,16plans/32implementationtasks,0blockers/0warnings. `nyquist_compliant:true` means approvedsamplingdesign ONLY; wave_0_complete remainsfalse until executioncreatesandverifiesthefixtures. NoactualapplicationtestPASSclaimed. See04-PLAN-CHECK-R2.md.
