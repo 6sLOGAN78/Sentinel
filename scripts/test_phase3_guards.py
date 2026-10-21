@@ -154,6 +154,9 @@ class Phase3GuardTests(unittest.TestCase):
 
     def test_ci_runs_exactly_both_groups_without_relaxing_budgets_or_failures(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assert_phase3_workflow(workflow)
+
+    def assert_phase3_workflow(self, workflow):
         phase3 = workflow.split("\n  phase3:\n", 1)[1].split("\n  #", 1)[0]
         self.assertIn("    strategy:\n", phase3)
         strategy = phase3.split("    strategy:\n", 1)[1].split("    steps:\n", 1)[0]
@@ -166,6 +169,33 @@ class Phase3GuardTests(unittest.TestCase):
         self.assertIn("run: make dev-up", phase3)
         self.assertIn("run: scripts/check-stack.sh", phase3)
         self.assertIn("if: always()\n        run: make dev-down", phase3)
+
+    def test_ci_guard_rejects_skips_masks_and_incomplete_matrices(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        prefix, rest = workflow.split("\n  phase3:\n", 1)
+        phase3, suffix = rest.split("\n  #", 1)
+        selector = "        run: bash scripts/check-phase3-tests.sh '${{ matrix.group }}'"
+        mutations = {
+            "job skipped": ("    strategy:\n", "    if: false\n    strategy:\n"),
+            "selector skipped": (selector, "        if: false\n" + selector),
+            "selector failure masked": (selector, selector + " || true"),
+            "startup skipped": ("      - run: make dev-up", "      - if: false\n        run: make dev-up"),
+            "startup failure masked": ("run: make dev-up", "run: make dev-up || true"),
+            "stack check skipped": ("      - run: scripts/check-stack.sh", "      - if: false\n        run: scripts/check-stack.sh"),
+            "stack check failure masked": ("run: scripts/check-stack.sh", "run: scripts/check-stack.sh || true"),
+            "job continues after error": ("    strategy:\n", "    continue-on-error: true\n    strategy:\n"),
+            "selector continues after error": (selector, "        continue-on-error: true\n" + selector),
+            "wrong group": ("group: [core, scenarios]", "group: [core, unknown]"),
+            "excluded group": ("group: [core, scenarios]\n", "group: [core, scenarios]\n        exclude:\n          - group: scenarios\n"),
+            "fail fast": ("fail-fast: false", "fail-fast: true"),
+            "larger budget": ("timeout-minutes: 45", "timeout-minutes: 60"),
+        }
+        for name, (before, after) in mutations.items():
+            with self.subTest(mutation=name):
+                self.assertEqual(phase3.count(before), 1, "mutation must target one actual field")
+                mutant = prefix + "\n  phase3:\n" + phase3.replace(before, after, 1) + "\n  #" + suffix
+                with self.assertRaises(AssertionError, msg="CI bypass accepted: " + name):
+                    self.assert_phase3_workflow(mutant)
 
     def test_each_empty_family_fails_even_if_other_families_pass(self):
         for package, name, _, _ in EXPECTED:
