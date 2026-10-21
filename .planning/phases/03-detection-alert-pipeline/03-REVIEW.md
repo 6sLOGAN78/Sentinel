@@ -17,7 +17,8 @@ phase_acceptance: repeat_verification_pending
 
 No open source-review finding remains at runtime/wiring62099b2 plus test-only
 repair26f3f8a, fixture-only isolationdf0bfbb, CI-only repair855cb60 and cooperative
-snapshot test-only repaire342337 plus portable bootstraprepair2d44677.
+snapshot test-only repaire342337, portable bootstraprepair2d44677, bounded
+CIpartition84352ad and finalguardboundaryrepaiera31af33.
 This canonical artifact aggregates independent scoped reports;
 it is not a newly executed all-source review or an acceptance/CI result.
 Historical reports and their original issue counts remain unchanged.
@@ -35,6 +36,9 @@ Historical reports and their original issue counts remain unchanged.
 | `03-REVIEW-CI-REPAIR.md` | Full3-source CI/interpreter/guard/exact historical scanner exception at855cb60 | Clean; locked existing interpreter and one privately verified prose fingerprint, no broad scan bypass |
 | `03-REVIEW-COOPERATIVE-REPEAT.md` | Deep2-file helper/regression repair ate342337, direct ownership/observation contracts and actual RED/GREEN/native logs | Clean; stale snapshot union and one-process-only incorporation rejected; original native transfer/fence/payload checks unchanged |
 | `03-REVIEW-SCENARIO-BOOTSTRAP.md` | Deep2-file portable UTC alias/regression at2d44677 and direct locked-runtime entry contract | Clean; actual3.10 and modernstdlib MODEL distinguished; lockedruntime/uv/args unchanged |
+| `03-REVIEW-CI-SHARDS.md` | Deep3-file44+2CI partition at84352ad | Original guard skip/mask WARNING retained historically |
+| `03-REVIEW-CI-SHARDS-R1.md` | Deep whole guard file atf6618e3 | Original13controls addressed; residual comment-boundary WARNING retained historically |
+| `03-REVIEW-CI-SHARDS-R2.md` | Deep whole guard file ata31af33 with actual workflow/runner and all causal logs | Clean; both warnings addressed, actual next-job boundary and all15negative controls retained |
 
 The original production list, reservation R2 list and final remaining list cover
 129 unique changed non-planning artifacts before the CI repair; the additional
@@ -42,6 +46,9 @@ The original production list, reservation R2 list and final remaining list cover
 file brings it to131. The already-reviewed rebalance file is not counted twice.
 Both bootstrap repair files were already in the production/final-delta scope;
 their re-review does not increase the unique union.
+The three CI partition files were already covered; their scoped reviews also
+leave the unique union at131. Latest actual script discovery is51tests PASS0/
+150.750s; orchestration MODEL results do not substitute for native/hosted gates.
 Lists, frozen heads, precise
 coverage methods and direct-contract reads are retained in each report and the
 two explicit scope documents. This count does not pretend every artifact was
@@ -83,7 +90,11 @@ passed in run39515550386 on80d2d87, and finalgoalverification59/59passed.
 Those are historical acceptance results: documentation-only repeat39544892831
 failed the full-suite cooperative fixture retained-owner assertion. The test-only
 repair now has clean independent review and six native transfer passes, but fresh
-full-suite/hosted acceptance is pending. Controlled readiness regression is a
+full-suite replacement now passed0/1650.77s at10ddd71. Latest hosted39598061416
+passed eight jobs includingfullintegration/7groups/Compose, but cancelled the
+serial Phase3 job at its actual45mcap. The reviewed two-job partition retains
+all46selectors and caps; new ten-instance hosted acceptance is pending.
+Controlled readiness regression is a
 MODEL, not a native recreation of the failed coordinator schedule.
 Historical unexplained failures are not erased or
 assigned invented causes. This clean review does not mark03-14 or Phase3 complete,

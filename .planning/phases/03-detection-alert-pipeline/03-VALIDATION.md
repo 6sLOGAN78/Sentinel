@@ -9,6 +9,15 @@ created: 2026-10-17
 
 # Phase3 — Validation Strategy
 
+Current acceptance gate: hosted39598061416 has eight successes and Phase3
+cancelled at the explicit45mjobcap. CI-only84352ad splits unchanged46families
+into44core/2scenarios on isolated runners, each45m, fail-fastfalse. Othereight
+jobs, nativebudgets and defaultall46 remain unchanged. Independent R2review at
+a31af33 is clean after causal guard repairs. Actual51script tests PASS0/150.750s,
+shell/YAML/semanticdelta checks PASS0. Source runtime/scenario/deployment diff
+from fullPASS10ddd71 is empty. New all10hosted successes and finalverification
+remain required; historical closed claims below do not override this hold.
+
 Post-repair local gate: exactfullmake test-integ at10ddd71 passed0/1650.77s,
 package1648.087s,11:45:21Z–12:12:52Z, after both reviewed repairs and authorized
 unused-buildcache cleanup/preserved recovery. Earlier failed and UNKNOWN runs

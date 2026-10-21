@@ -29,7 +29,12 @@ Disk free space stayed above9GB during scheduled acceptance, ending about9.7GB.
   dispositions remain closed; neither repair changes the declared runtime
   controls, locked generator requirement, payload checks, goldens or budgets.
 
-Changes after10ddd71 are tracking/evidence documentation only; root checks the
+Changes from10ddd71 througha69d158 were tracking/evidence documentation only.
+The later reviewed84352ad CI-onlypartition and a31af33guard delta change only
+workflow/runner/guard, retaining all46selectors and caps. Backend/generator/
+deployments/scenario source diff from10ddd71 is empty. Latest51script cases
+PASS0/150.750s; independent03-REVIEW-CI-SHARDS-R2.md clean. Fresh hosted10-job
+acceptance is still required; no new native full run is claimed. Root checks the
 exact source diff before pushing. User `.planning/config.json` and `.serena/`
 remain unstaged. Earlier failed full96944, UNKNOWN interrupted95255, failed hosted
 repeat39544892831 and successful hosted39515550386 remain separate historical

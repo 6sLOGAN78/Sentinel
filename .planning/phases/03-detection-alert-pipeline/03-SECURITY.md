@@ -23,6 +23,16 @@ summary_reconciliation_pending: false
 
 # Phase 03 — Security
 
+Root scoped CI follow-up:84352ad changes only selection orchestration and
+workflow partitioning; a31af33 hardens its guard. Independent deep original/R1/R2
+reports close both guard warnings. All46exact families, unchanged per-family
+budgets/tags/race/nonempty checks, fullintegration/sevenpriorgroups, pinnedactions,
+stackprerequisites and alwayscleanup remain required. Two isolated Phase3
+instances each retain45m; no skip/mask/exclusion/continuederror was added.
+No runtime/publicsurface/dependency/credential control or registered mitigation
+was removed. Existing78dispositions remain closed; this is a scoped delta check,
+not a new whole-system security audit. Fresh hosted10-instance acceptance pending.
+
 Additional scoped follow-up: the portableUTC bootstrapalias2d44677 and exact
 locked-handoff regression have clean independentdeepreviewda2733b. Generator
 requirements, environment/credential handling, schedules, canonical payloads,
