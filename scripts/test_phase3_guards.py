@@ -187,8 +187,7 @@ class Phase3GuardTests(unittest.TestCase):
         if: always()
         run: make dev-down
 
-  # Preserved-volume legacy seed followed by two exact scheduled scenario runs.
-""")
+  # Preserved-volume legacy seed followed by two exact scheduled scenario runs.""")
 
     def test_ci_guard_rejects_skips_masks_and_incomplete_matrices(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
