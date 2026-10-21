@@ -20,7 +20,7 @@ import tempfile
 import time
 import urllib.request
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +28,9 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "generator/src"))
 from scripts import seed
 from scripts.seed import SeedError
+
+# The system interpreter must reach the locked-runtime reexec on Python 3.10.
+UTC = timezone.utc
 
 
 def child_environment(kind, settings):
