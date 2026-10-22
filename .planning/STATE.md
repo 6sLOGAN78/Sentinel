@@ -23,8 +23,8 @@ Current focus: Phase4 plans01/17/02/03accepted; execute04-04 filtered alert page
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-04 implemented (wave5/17), independent source review pending; prior4plansaccepted.
-Status: source0abb49d/SUMMARYd47e124; allactualAlerts/Auth/cursor/web48/static/default/OpenAPI11/currentbinarybrowser/stackgatesPASS,fullhistory522commitszero. A1approved11paths(10tracked+ignoredschema). Historicalpostlimit2vs3/cursor-only/malformedtime/rawsearchREDpreserved. No04-05beforecleanindependentreview/rootpostwaveacceptance.
+Plan: 04-04 implemented (wave5/17), source-reviewCR01repair required; prior4plansaccepted.
+Status: Full10tracked+generatedreviewat31ab1cc/source0abb49d found1BLOCKER: native minute-only datetime edits appendZwithoutseconds,passclientvalidationbutAPIrejects400. Otherboundariesreviewedwithoutfinding; previousactualgatesremainrealbutdidnotedittimeinputs. RepairownedAlerts.tsx/testonly,causalRED/GREEN+R1before04-05;preserve04-REVIEW-04-R0.
 Progress: 60/73 accepted numberedplans; Phase4 4/17accepted,13remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
@@ -208,7 +208,7 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 ## Session Continuity
 
 Last session:2026-10-22T21:06:00Z, Phase4 plan03accepted (local2026-10-23).
-Resume: Independentlyreview04-04atd47e124/source0abb49d,thenrootpostwaveacceptance. Executorusagefailurewasresumedwithpreservedworkingcode;actualfinalgatesandSUMMARYcomplete,onlyusercfg/.serenadirtremain. A1bounded11-fileownershipapproved,allprevious4plansaccepted. Don'trestartfinished03. No04-05beforecleanreview/rootacceptance. Rootowns tracking. NoPhase4push/hostedCIbeforeexplicit04-16authority.
+Resume: Repair04-04CR01validdatetime-localminuteeditsunderexistingAlerts.tsx/testownership. Review31ab1cc/source0abb49dotherwiseclean;preserve04-REVIEW-04-R0andallgates/failureevidence. RequirecanonicalUTCmillisecondrequests/keys/URL,retainempty/malformedrecovery/strictserverparser,actualbrowserminuteeditproof,R1/rootacceptancebefore04-05. Keep4/17accepted;usercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.
