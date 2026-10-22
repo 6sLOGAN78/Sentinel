@@ -3,6 +3,7 @@
 package testphase4_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -21,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -81,6 +83,18 @@ func TestPhase4Auth(t *testing.T) {
 		}
 	}
 	token := signToken(t, claims(tenantA), secretText, "HS256")
+	t.Run("hs384_fixture_has_valid_independent_signature", func(t *testing.T) {
+		raw := signToken(t, claims(tenantA), secretText, "HS384")
+		parsed, parseErr := jwt.Parse(raw, func(*jwt.Token) (any, error) { return []byte(secretText), nil },
+			jwt.WithValidMethods([]string{"HS384"}))
+		require.NoError(t, parseErr, "HS384 fixture must verify independently before testing production rejection")
+		require.True(t, parsed.Valid)
+	})
+	t.Run("credential_leak_negative_control", func(t *testing.T) {
+		require.False(t, credentialsAbsent([]byte(token), token, key), "exact JWT disclosure must be detected")
+		require.False(t, credentialsAbsent([]byte(key), token, key), "API key disclosure must be detected separately")
+		require.True(t, credentialsAbsent([]byte(`{"message":"Unauthorized"}`), "", key))
+	})
 	t.Run("verified_session", func(t *testing.T) {
 		status, body := getJSON(t, base+"/api/v1/session", token, "")
 		require.Equal(t, 200, status, "signed identity must reach production session handler")
@@ -140,7 +154,7 @@ func TestPhase4Auth(t *testing.T) {
 			for _, path := range []string{"/api/v1/session", "/api/v1/alerts"} {
 				status, body := getJSON(t, base+path, raw, key)
 				require.Equal(t, 401, status, "invalid bearer/key must not authorize dashboard")
-				require.NotContains(t, string(body), raw+".")
+				require.True(t, credentialsAbsent(body, raw, key), "response disclosed a supplied credential")
 			}
 		})
 	}
@@ -159,6 +173,15 @@ func TestPhase4Auth(t *testing.T) {
 		status, _ := getJSON(t, ops+"/readyz", "", "")
 		require.Equal(t, 503, status, "readiness must report actual unreachable dependency")
 	})
+}
+
+func credentialsAbsent(body []byte, credentials ...string) bool {
+	for _, credential := range credentials {
+		if credential != "" && bytes.Contains(body, []byte(credential)) {
+			return false
+		}
+	}
+	return true
 }
 
 func freeAddress(t *testing.T) string {

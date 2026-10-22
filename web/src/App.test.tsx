@@ -1,9 +1,18 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 describe("App shell", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 
   it("shows the development sign-in form with a masked token", () => {
     render(<App />);
@@ -102,6 +111,156 @@ describe("App shell", () => {
       "This access token could not be verified. Check it or generate a new token.",
     );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["503", "network", "HTML", "invalid identity"])(
+    "retries %s sign-in availability failures with the same memory-only credential",
+    async (failure) => {
+      const fetchSpy = vi.fn();
+      if (failure === "network")
+        fetchSpy.mockRejectedValueOnce(new TypeError("offline"));
+      else
+        fetchSpy.mockResolvedValueOnce(
+          new Response(failure === "HTML" ? "<html>upstream</html>" : "{}", {
+            status: failure === "503" ? 503 : 200,
+          }),
+        );
+      fetchSpy
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              subject: "operator",
+              tenant_id: "retry-tenant",
+              role: "viewer",
+              expires_at: new Date(Date.now() + 600000).toISOString(),
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              items: [],
+              next_cursor: null,
+              has_more: false,
+            }),
+          ),
+        );
+      vi.stubGlobal("fetch", fetchSpy);
+      render(<App />);
+      const credential = "memory-only-retry-credential";
+      const input = screen.getByLabelText(
+        "Development access token",
+      ) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: credential } });
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+      expect(await screen.findByRole("alert")).toHaveProperty(
+        "textContent",
+        "Could not sign in. The service is unavailable. Try again.",
+      );
+      expect(input.value).toBe("");
+      expect(document.body.innerHTML).not.toContain(credential);
+      expect(localStorage.length + sessionStorage.length).toBe(0);
+      fireEvent.click(screen.getByRole("button", { name: "Retry sign in" }));
+      expect(
+        await screen.findByText("No alerts match these filters"),
+      ).toBeTruthy();
+      expect(screen.getByText(/retry-tenant/)).toBeTruthy();
+      expect(fetchSpy.mock.calls[1][1].headers.Authorization).toBe(
+        `Bearer ${credential}`,
+      );
+      expect(
+        screen.queryByRole("button", { name: "Retry sign in" }),
+      ).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+      expect(screen.queryByText(/retry-tenant/)).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Retry sign in" }),
+      ).toBeNull();
+    },
+  );
+
+  it("cancels pending verification and ignores a stale identity after another sign-in", async () => {
+    let finish: (response: Response) => void = () => {};
+    const old = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    const fetchSpy = vi
+      .fn()
+      .mockReturnValueOnce(old)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            subject: "new",
+            tenant_id: "new-tenant",
+            role: "analyst",
+            expires_at: new Date(Date.now() + 600000).toISOString(),
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ items: [], next_cursor: null, has_more: false }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Development access token"), {
+      target: { value: "old-credential" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel sign in" }));
+    expect(fetchSpy.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(screen.queryByRole("button", { name: "Retry sign in" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Development access token"), {
+      target: { value: "new-credential" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(
+      await screen.findByText("No alerts match these filters"),
+    ).toBeTruthy();
+    await act(async () =>
+      finish(
+        new Response(
+          JSON.stringify({
+            subject: "old",
+            tenant_id: "stale-tenant",
+            role: "admin",
+            expires_at: new Date(Date.now() + 600000).toISOString(),
+          }),
+        ),
+      ),
+    );
+    expect(screen.queryByText(/stale-tenant/)).toBeNull();
+    expect(screen.getByText(/new-tenant/)).toBeTruthy();
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("discards retry credentials at token expiry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-22T01:00:00Z"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("{}", { status: 503 })),
+    );
+    render(<App />);
+    const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 2 }));
+    fireEvent.change(screen.getByLabelText("Development access token"), {
+      target: { value: `header.${payload}.signature` },
+    });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" })),
+    );
+    expect(screen.getByRole("button", { name: "Retry sign in" })).toBeTruthy();
+    await act(async () => vi.advanceTimersByTime(3000));
+    expect(screen.getByRole("alert")).toHaveProperty(
+      "textContent",
+      "Your session expired. Sign in again to continue.",
+    );
+    expect(screen.queryByRole("button", { name: "Retry sign in" })).toBeNull();
+    expect(
+      (screen.getByLabelText("Development access token") as HTMLInputElement)
+        .value,
+    ).toBe("");
   });
 
   it("discards an in-flight response after sign out", async () => {
