@@ -9,7 +9,7 @@ created: 2026-10-21
 
 # Phase 4 — Validation Strategy
 
-Contract only: no Phase4 tests have run. Revised sixteen-plan ownership below addresses independent plan-check findings. Existing Phase3 acceptance stays closed; this is not permission to relax its tests.
+Samplingcontract: original16plansapprovedR2;04-01nowhasactualnative17/web9/static/OpenAPIpassesbutindependentcodereviewreopenedcurrentintegrationacceptance. Inserted04-17repairbefore04-02awaitsplancheck;notallPhase4testsrun. ExistingPhase3acceptancestaysclosedbutnewregressionsmustfix,nopermissiontorelaxoldtests.
 
 ## Test Infrastructure
 
@@ -38,6 +38,7 @@ Quick Go feedback once packages exist: `cd backend && go test -race -timeout 60s
 | 04-13-1/2,04-14-1/2 | LIVE01,02,03;AUTH03;UI02,06 | T04-27..31 twoactualreplicas/slowreader/expiry/LISTENkill | `^TestPhase4Stream$`; new |
 | 04-15-1/2 | All20Phase4requirements | T04-32..34 fulltenantmatrix andrealproxybrowser | `^TestPhase4TenantMatrix$` and `bash scripts/check-phase4-browser.sh`; new |
 | 04-16-1/2; publication04-16-3 | All20Phase4requirements | T04-35..36 completefailclosedCIunion/scopedauthority | `bash scripts/check-phase4-tests.sh all`,browser+legacygates; new |
+| 04-17-1/2/3 (wave2,blocks04-02) | AUTH01,03;API03;UI02,06 | CR01/02/WR01..03 privatekeyhandoff/actualViteAPIroute/503retry/validHS384/exactredaction | helperPythonnegativecontrols;literalquery-apilifecycle;retained`TestReadyz|TestHealthz|TestBinaryLifecycle`5m;nativeAuth6m;actualmake dev-up/check-stack/seed16m;allpendingrepair |
 
 Native command for each row: `bash scripts/go-test-nonempty.sh './testphase4/...' '^TestPhase4FAMILY$' -tags=phase4 -race -timeout=6m -p=1`; use10m for Delivery/Stream. Replace FAMILY with the literal family shown, not a broad union. Each task's automated command is the fail-closed GREEN target. RED runs are separate invocations with each actual exit and assertion retained, not semicolon-masked aggregates. Eight complete families run again in04-16.
 
@@ -68,4 +69,4 @@ Primary behaviors automated. Final visual review should inspect fourpages at375/
 - [ ] Native / model / static / browser evidence distinguished.
 - [ ] Planning contract linked by finalplans; no execution pass claimed.
 
-Approval: independent revision2 plancheckerPASSED,16plans/32implementationtasks,0blockers/0warnings. `nyquist_compliant:true` means approvedsamplingdesign ONLY; wave_0_complete remainsfalse until executioncreatesandverifiesthefixtures. NoactualapplicationtestPASSclaimed. See04-PLAN-CHECK-R2.md.
+Approval: original16plans/32implementationtasks independentR2PASS; inserted17adds3taskswithautomatedtargets/ownedfixtures,awaitingindependentrepairplancheck. `nyquist_compliant:true` retainsoriginalsamplingdesignapproval,notrepairacceptance orwholephaseexecution; wave_0_complete remainsfalse. Actual04-01proofinSUMMARYandreviewcounterevidencein04-REVIEW. No wholePhase4PASSclaimed.

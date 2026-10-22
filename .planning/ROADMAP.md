@@ -256,7 +256,7 @@ Plans:
   4. A new alert appears in the Alerts page over SSE (no token in the URL) without refresh. After a dropped connection or killed LISTEN link, the client reconnects and backfills via `seq` with no permanent gaps, and every query-api replica delivers every alert, including through a real proxy
   5. Overview, Alerts, Events and Rules pages work with loading, empty, error and reconnecting states, a typed OpenAPI client, safe event JSON rendering, and keyboard-operable controls (viewers see mutation controls hidden or disabled)
 
-**Plans**: 17 plans in 17 ordered waves. Original16 approvedR2; 04-17 is a source-review repair inserted after04-01 before04-02 (repairplancheckpending).
+**Plans**: 17 plans in 17 ordered waves. Original16 approvedR2; source-reviewrepair04-17insertedafter04-01before04-02andindependentlyapproved(0issues). Executionacceptancepending.
 
 - [ ] 04-01: Sign in and read real tenant alerts
 - [ ] 04-17: Repair private JWT launch wiring, Vite API reachability and security negative controls (blocks04-02)

@@ -24,7 +24,7 @@ Current focus: Phase4 plans16/16 approved by independent checkerR2, all20require
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
 Plan: 04-01 implementation committed; review repair04-17 required before04-02.
-Status: Review found2blockers/3warnings; repair planning under verification.
+Status: Review found2blockers/3warnings; repair04-17independentlyplanned/PASS0issues,readytoexecute.
 Progress: 56/73 accepted numberedplans;04-01SUMMARYf28ef6e exists but independentreviewreopens its integrationacceptance,notyetrootaccepted.
 Overallphaseprogress3/6=50%. GREEN50ba19f passednative17/web9/OpenAPI11/Go-race-vet-build/lint; rootpostwavebuild+make testPASS. Subsequentindependentreviewfoundstartupsecretforwarding/browserproxyblockersand503feedback/HS384/leaktestwarnings. Preserve earlieractualpassesbutdon'toverridenewcounterevidence.
 
