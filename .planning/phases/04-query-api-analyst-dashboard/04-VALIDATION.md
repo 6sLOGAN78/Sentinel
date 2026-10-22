@@ -9,7 +9,7 @@ created: 2026-10-21
 
 # Phase 4 — Validation Strategy
 
-Samplingcontract: original16plansapprovedR2;04-01nowhasactualnative17/web9/static/OpenAPIpassesbutindependentcodereviewreopenedcurrentintegrationacceptance. Inserted04-17repairbefore04-02awaitsplancheck;notallPhase4testsrun. ExistingPhase3acceptancestaysclosedbutnewregressionsmustfix,nopermissiontorelaxoldtests.
+Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapprovedandnowacceptedwith04-01afteractualnativeAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/seed1000proof. IndependentR1reviewclean21-fileunionandrootpostwavebuild+make testPASS. Fullhistoryscannerzero; allsixsourcefindingsclosed. NotallPhase4testsrun. ExistingPhase3acceptancestaysclosedbutnewregressionsmustfix,nopermissiontorelaxoldtests.
 
 ## Test Infrastructure
 
@@ -38,7 +38,7 @@ Quick Go feedback once packages exist: `cd backend && go test -race -timeout 60s
 | 04-13-1/2,04-14-1/2 | LIVE01,02,03;AUTH03;UI02,06 | T04-27..31 twoactualreplicas/slowreader/expiry/LISTENkill | `^TestPhase4Stream$`; new |
 | 04-15-1/2 | All20Phase4requirements | T04-32..34 fulltenantmatrix andrealproxybrowser | `^TestPhase4TenantMatrix$` and `bash scripts/check-phase4-browser.sh`; new |
 | 04-16-1/2; publication04-16-3 | All20Phase4requirements | T04-35..36 completefailclosedCIunion/scopedauthority | `bash scripts/check-phase4-tests.sh all`,browser+legacygates; new |
-| 04-17-1/2/3 (wave2,blocks04-02) | AUTH01,03;API03;UI02,06 | CR01/02/WR01..03 privatekeyhandoff/actualViteAPIroute/503retry/validHS384/exactredaction | helperPythonnegativecontrols;literalquery-apilifecycle;retained`TestReadyz|TestHealthz|TestBinaryLifecycle`5m;nativeAuth6m;actualmake dev-up/check-stack/seed16m;allpendingrepair |
+| 04-17-1/2/3 (wave2,accepted) | AUTH01,03;API03;UI02,06 | CR01/02/WR01..04 privatekeyhandoff/actualViteAPIroute/503retry/validHS384/exactredaction/isolatedexpiry | helper8/script59;actualquery-apilifecycle;retained`TestReadyz|TestHealthz|TestBinaryLifecycle`5m;nativeAuth19/6m;actualmake dev-up/check-stack/seed16m;cleanR1+rootpostwavePASS;seeSUMMARY/review |
 
 Native command for each row: `bash scripts/go-test-nonempty.sh './testphase4/...' '^TestPhase4FAMILY$' -tags=phase4 -race -timeout=6m -p=1`; use10m for Delivery/Stream. Replace FAMILY with the literal family shown, not a broad union. Each task's automated command is the fail-closed GREEN target. RED runs are separate invocations with each actual exit and assertion retained, not semicolon-masked aggregates. Eight complete families run again in04-16.
 
@@ -46,7 +46,7 @@ Runner: `scripts/check-phase4-tests.sh` must check each exactselector independen
 
 ## Wave 0 Requirements
 
-- [ ] 04-01-1 owns phase4-tagged native fixture embeddedin auth_test.go; tests use actualbuiltquery-api process overHTTP sincecmd/main notimportable. No empty stubs counted as coverage. Laterfamilies own focusedtestfiles.
+- [x] 04-01-1 owns phase4-tagged native fixture embeddedin auth_test.go; tests use actualbuiltquery-api process overHTTP sincecmd/main notimportable. No empty stubs counted as coverage. Laterfamilies own focusedtestfiles.
 - [ ] 04-03-1 owns browser session/componentfixtures; 04-15-1/2 own pinnedPlaywright+Chromium/privateJWTrealbrowserharness.
 - [ ] 04-08-2 applies007auditmigration;04-12-2 applies008deliverymigration withpreexisting/concurrentcutoverproof;noSQL-onlyverification.
 - [ ] 04-15-1/2 own pinnedproxyimage/config/composeoverlay andcausalbufferingnegativecontrol.
@@ -69,4 +69,4 @@ Primary behaviors automated. Final visual review should inspect fourpages at375/
 - [ ] Native / model / static / browser evidence distinguished.
 - [ ] Planning contract linked by finalplans; no execution pass claimed.
 
-Approval: original16plans/32implementationtasks independentR2PASS; inserted17adds3taskswithautomatedtargets/ownedfixtures,awaitingindependentrepairplancheck. `nyquist_compliant:true` retainsoriginalsamplingdesignapproval,notrepairacceptance orwholephaseexecution; wave_0_complete remainsfalse. Actual04-01proofinSUMMARYandreviewcounterevidencein04-REVIEW. No wholePhase4PASSclaimed.
+Approval: original16plans/32implementationtasks independentR2PASS; inserted17adds3tasksandindependentplancheckPASS. Plans01/17nowacceptedaftercleanR1source-reviewandactualgates; historicalcounterevidencepreservedinR0reports. `nyquist_compliant:true` retainssamplingdesignapproval,notwholephaseexecution; wave_0_complete remainsfalse whilelaterfixturespending. No wholePhase4PASSclaimed.

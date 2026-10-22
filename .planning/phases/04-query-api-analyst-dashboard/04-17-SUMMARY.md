@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "17"
-status: pending_independent_r1_review
+status: complete
 subsystem: auth
 tags: [jwt, compose, python, vite, react, integration]
 requires:
@@ -41,7 +41,7 @@ completed: 2026-10-22
 
 Private local JWT provisioning now connects the supported Make/Compose/host launchers to real dashboard session and tenant workflow reads through Vite.
 
-**Acceptance remains pending independent R1 review.** The first independent review closed all five original findings, with zero blockers and one new fixture warning, WR-04. Its expired-token fixture is now corrected with causal RED/GREEN evidence below; independent re-review remains required. Root resolved the historical scanner gate through the independently approved three exact fingerprints and a passing full-history scan. This summary does not authorize 04-02, mark requirements accepted, or update overall tracking. The requirements field above copies the plan's incremental coverage IDs.
+**Root accepted all three tasks after independent R1 review and post-wave checks.** Review at `a302b65`, source `11dddea`, is clean: zero blockers/warnings. All five original findings and WR-04 are closed. Root resolved the historical scanner gate through the independently approved three exact fingerprints and passing full-history scans. Root's fresh build and `make test` chain exited zero at 09:20:02Z. Plan 04-02 may proceed; these incremental coverage IDs do not mark whole Phase 4 requirements accepted.
 
 ## Performance
 
@@ -127,7 +127,7 @@ Karpathy guidance kept the changes within the approved launch/authentication rep
 
 ## Deferred Issues and Remaining Gates
 
-- **Independent R1 review pending:** root must review frozen source `11dddea2fd58e38f841feb761edbcfee40800492` for WR-04 closure. The first independent review closed the five original findings and reported zero blockers/one new warning; this local correction is not a clean independent re-review. Original `04-REVIEW-01-R0.md` and current review reports are unchanged by this executor. Task 3 is not accepted until R1 is clean.
+- **Independent R1 review completed:** `04-REVIEW.md` is clean at `a302b65`, source `11dddea2fd58e38f841feb761edbcfee40800492`. It independently closes WR-04 and carries forward the original five closures with explicit unchanged-source proof. Original `04-REVIEW-01-R0.md` and `04-REVIEW-17-R0.md` retain their historical findings. All three tasks are accepted after root's additional post-wave check.
 - **Historical scanner gate resolved by root:** earlier scans exited 1 on exactly three historical planning fingerprints (`778d3db` / `04-07-PLAN.md:58`; `5d11ca2` / `04-17-PLAN.md:70,101`). Independent review approved only those exact prose fingerprints under A1; root applied them in `852de68` and obtained the actual zero-finding full-history result recorded above. Original failures/reports remain preserved. This executor did not edit the allowlist, ownership proposal or review reports, and no broad exception/history rewrite was added.
 - **Phase4-tag quality findings resolved:** historical `phase4-static.log` and reconfirming `lint-quality-before.log` retain the six findings; `lint-quality-green.log` now records zero issues after root's explicit fixture assignment. Earlier private baseline isolation/Go overlay attempts failed setup/typecheck and are not counted as baseline or acceptance proof. Default and integration gates also remain green.
 - No full Phase 4, Phase 3 aggregate, full browser/SSE, hosted CI or performance/RSS guarantee is claimed. No 04-02 or Phase 5 work began. Overall tracking remains root-owned.
@@ -140,7 +140,11 @@ New private file handling, child secret environments, loopback proxy and retry c
 
 ## Next Phase Readiness
 
-Return to the orchestrator for independent R1 review and tracking reconciliation. Do not treat summary presence or the resolved historical scanner gate as accepted repair completion, and do not start 04-02 until R1 is clean.
+Independent R1 review, scanner and root post-wave gates are complete. Root reconciled 04-01/04-17 as 2/17 accepted plans; proceed to approved 04-02. No Phase 5 transition or Phase 4 publication is authorized here.
+
+## Root acceptance addendum
+
+At reviewed HEAD `a302b65`, root independently ran `timeout 300 bash -c 'cd backend && go build ./... && cd ../web && npm run build && cd .. && make test'`. Private `root-post-review-gates.log` records actual command, SHA/start/end, exit 0 at 2026-10-22T09:20:02.477971Z; backend race, web 15 tests and generator 121 tests passed. This is bounded post-wave proof, not full integration/whole Phase 4 or hosted CI. The pinned full-history scanner separately passed 496 commits at `a302b65`; final metadata is scanned again before dispatch. User configuration and `.serena` remain untouched/unstaged.
 
 ## Self-Check: PASSED
 
