@@ -1,6 +1,8 @@
 # 04-04 ownership amendment A1 — retained cache-key assertions
 
-Status: PROPOSED; independent approval required before editing the extra file.
+Status: APPROVED by independent04-04-OWNERSHIP-A1-CHECK (PASS,0issues).
+Root added the exact extra fixture path to PLAN/Task2 ownership. Runtime/source
+acceptance remains pending; the three other component failures are not waived.
 
 ## Cause and bounded scope
 
