@@ -1,96 +1,118 @@
 ---
 phase: 04-query-api-analyst-dashboard
-reviewed: 2026-10-22T16:07:09Z
+reviewed: 2026-10-22T16:47:30Z
 depth: standard
-review_slice: 04-02
-review_sha: 9a2174982b6996c67103c2e3049435e5540c9d9b
-source_sha: 0b15694e02b8f0dabb6d8dce587baba62e721c08
-diff_base: 987a4a4a6308ea9eef350af10e9c5a9a1f9dd713
+review_slice: 04-03
+review_sha: 4ed9a93c496ff843c6b17140074d1799b4e8ffeb
+source_sha: 6bb0ac84ef7d0267cc5a4f54ec8d8b7e0a6e9bc4
+diff_base: 21ebf9840c57edd3125ba0b8be3d7508c525d5e5
 files_reviewed: 9
 files_reviewed_list:
-  - backend/internal/auth/jwt.go
-  - backend/internal/auth/jwt_test.go
-  - backend/internal/config/config.go
-  - backend/internal/config/config_test.go
-  - backend/cmd/dev-jwt/main.go
-  - backend/cmd/query-api/main.go
-  - backend/testphase4/auth_test.go
-  - .env.example
-  - docs/operations.md
+  - web/package.json
+  - web/package-lock.json
+  - web/src/api/client.ts
+  - web/src/auth/session.tsx
+  - web/src/auth/session.test.tsx
+  - web/src/pages/Alerts.tsx
+  - web/src/App.tsx
+  - web/src/App.test.tsx
+  - web/src/styles.css
 findings:
-  critical: 0
+  critical: 1
   warning: 0
   info: 0
-  total: 0
-status: clean
+  total: 1
+status: issues_found
 ---
 
-# Phase 4 Plan 02: Code Review Report
+# Phase 4 Plan 03: Code Review Report
 
-**Reviewed:** 2026-10-22T16:07:09Z
+**Reviewed:** 2026-10-22T16:47:30Z
 
-**Depth:** standard; full read of nine files and contextual tracing of consumers, launchers, middleware and retained fixtures.
+**Depth:** standard; full nine-file review, dependency-lock comparison and contextual tracing of the entrypoint, verified session endpoint, PG list contract and installed client/cache implementations.
 
-**Status:** clean — no actionable BLOCKER or WARNING found in this slice.
+**Status:** issues_found — one BLOCKER credential-clearing regression.
 
 ## Narrative Findings (AI reviewer)
 
-### Summary and assessment
+### Summary
 
-The local/test token CLI and central auth configuration conform to the approved 04-02 increment. Source review found no demonstrated incorrect behavior, security vulnerability or robustness defect requiring a finding. This assessment follows implementation and boundary analysis; passing tests and a SUMMARY were not treated as acceptance by themselves. Root acceptance and later Phase 4 gates remain separate.
+The provider and actual Alerts query use one QueryClient, verified identity, session generations and cancellation guards. A separate token draft in the shell escapes that lifecycle: editing the token field during verification leaves credential text available after subsequent sign-out. This is a demonstrated regression from the accepted base, whose signOut explicitly cleared that state. The slice requires repair before acceptance.
 
-The nine-file source union exactly matches the diff from 987a4a4a6308ea9eef350af10e9c5a9a1f9dd713 to 0b15694e02b8f0dabb6d8dce587baba62e721c08. All nine remain unchanged at frozen HEAD 9a2174982b6996c67103c2e3049435e5540c9d9b. This increment changes no dependency, Make/Compose, browser or canonical contract source. The environment template and operator guide were read as operational source.
+The scope is exactly the nine paths listed above, matching the diff from the reliable base to source 6bb0ac8. Their bytes remain unchanged at frozen HEAD 4ed9a93. The lockfile was included explicitly despite the generic review workflow's lockfile exclusion. No structural/fallow pre-pass was supplied or run.
 
-No AGENTS.md, .codex/skills/, .agents/skills/ or .codexignore exists in the working directory. Repository ignore rules were respected; generated web/src/api/schema.d.ts was excluded. No fallow pre-pass was provided or run. GSD review instructions governed scope, causal findings and report format.
+No AGENTS.md, .codex/skills/, .agents/skills/ or .codexignore was found in the working directory. Repository ignore rules were respected; generated schema declarations were consulted only as an API boundary, not counted as submitted source. The GSD review instructions, React guidance on component identity/effect dependencies, UI accessibility guidance and approved manual-CSS UI-SPEC informed the review. No redesign or implementation was performed.
 
-### Boundary analysis and strengths
+### Critical Issues
 
-- **Central configuration.** /home/logan78/Desktop/Sentinel/backend/internal/config/config.go:128 rejects absent, short, oversized, blank and NUL/CR/LF-containing keys without printing supplied values. The 32..4096-byte bounds are inclusive. Fixed issuer/audience defaults and validation agree. The per-service required-sections map requires Auth only for query-api/dev-jwt; all four producer services keep their prior requirements. /home/logan78/Desktop/Sentinel/backend/internal/config/config_test.go:59 covers the six rejection categories and all four producers without a dashboard key.
-- **Actual handoff and constructor.** /home/logan78/Desktop/Sentinel/backend/cmd/query-api/main.go:48 passes validated Auth fields to the verifier before opening dependencies. /home/logan78/Desktop/Sentinel/backend/internal/auth/jwt.go:54 independently rejects short keys and noncontract issuer/audience values and copies key bytes. The constructor retains minimum-only key validation; config.Load enforces blank/upper/line-break restrictions at its sole production caller. There is no current unvalidated production path, so duplicate constructor validation was not invented as a defect.
-- **Mint authority and output.** /home/logan78/Desktop/Sentinel/backend/cmd/dev-jwt/main.go:31 permits only original, explicit dotted local/test process modes before dotenv loading. Required slug/subject/known-role flags, positional-argument refusal and inclusive 1-second..15-minute duration bounds precede signing at lines 37–47; the default is 15 minutes. Lines 53–62 set HS256 and every required claim, enforce the 8 KiB cap before stdout and emit one token. Flag diagnostics are discarded; main prints one fixed refusal message without supplied values. No key argument, environment dump or HTTP mint endpoint was added.
-- **Environment and operator workflow.** /home/logan78/Desktop/Sentinel/backend/internal/config/config.go:417 loads dotenv only when the process is already explicitly local. The pinned godotenv Load implementation preserves existing process variables, including explicit empty values; test mode skips dotenv. The root-directory command at /home/logan78/Desktop/Sentinel/docs/operations.md:72 does not depend on root .env discovery: scripts/dev_auth_env.py:92 supplies the existing private key under both environment names, and issuer/audience have fixed defaults. The helper checks a nonlocal parent before the documented child local-mode command. Make/query-api and Compose consume the same helper identity. An independent file loader or second key generator is unnecessary for this approved workflow.
-- **Retained authority and validation.** /home/logan78/Desktop/Sentinel/backend/internal/auth/jwt.go:65 retains HS256-only parsing, fixed issuer/audience, required identity/time claims, known roles, positive maximum 15-minute lifetime, 30-second leeway and 8 KiB input cap. Typed errors conceal parser details, and middleware stores only verified identity. The query-api change preserves tenant-derived PG list reads, readiness, the legacy API-key handler and explicit-bearer refusal. Contextual event handler, global logging/error middleware, PG store and lifecycle fixtures were checked for regressions.
-- **Independent fixtures.** /home/logan78/Desktop/Sentinel/backend/testphase4/auth_test.go:87 independently verifies the genuine HS384 signature before production rejection. The helper at line 175 verifies the same expired raw credential during its valid historical interval, including a positive bounded original lifetime, before current 401 assertions. Lines 95 and 239 retain exact JWT/API-key disclosure controls. Line 331 builds the actual CLI, independently checks claims/lifetimes and uses minted tokens against actual session/list handlers for local/test and all three roles. Refusal covers production/other modes, identity/duration/key failures and an unsupported key flag. The race-enabled 1-second fixture applies documented parser leeway while separately asserting original lifetime; historical expiry rejection remains intact.
+#### CR-01: BLOCKER — Shell retains a token draft after session revocation
 
-### Evidence inspected and limits
+**File:** /home/logan78/Desktop/Sentinel/web/src/App.tsx:23
 
-Selected command metadata, outcomes and assertions under .local/phase4-acceptance/04-02/ were inspected without displaying keys, tokens, headers, resolved Compose configuration or token-capture contents. The directory is 0700 and selected logs/capture are 0600. The private operator probe implementation was read to establish what its success asserts.
+**Related lines:** App.tsx:10, 68–77, 89; /home/logan78/Desktop/Sentinel/web/src/auth/session.tsx:104–124.
 
-| Retained evidence | Actual observation on 2026-10-22 |
+**Issue:** suppliedToken belongs to the long-lived AnalystShell and the input remains editable while verification is pending. The submit handler clears its previous value, but a user can immediately paste/type another token while awaiting /session. Successful verification hides the input without destroying AnalystShell or clearing this new value. The header's Sign out calls only the provider's signOut; that provider cannot reset the shell's local state. The sign-in screen consequently reappears with the token draft still in its password field. For example: submit A, enter B while verification is pending, let A verify, then sign out; the field contains B. B may also be a second paste of A.
+
+The same disconnected state has no clearing path when the provider's expiry/401 handlers revoke a session or retry attempt. The Cancel sign in handler clears it explicitly, but that does not cover header sign-out and automatic revocation. The accepted base's App.signOut included setSuppliedToken(""); extraction into the provider removed that coverage.
+
+This violates the current credential-clearing contract and leaves a credential accessible in the DOM after sign-out. Its scope is retained input text: the diagnostic confirmed authenticated authority was absent, and this finding does not claim backend authentication bypass or restored tenant query data.
+
+**Evidence:** A read-only in-memory transpilation of the actual App/session/client/Alerts modules used installed React, Testing Library, JSDOM, React Query and openapi-fetch. Only fetch was replaced with synthetic session/list responses; no component/provider/cache was replaced. At 2026-10-22T16:46:06.606Z–16:46:06.764Z, the sequence above produced two requests and:
+
+```json
+{"draftRetainedAfterSignOut":true,"authenticatedAuthorityPresent":false}
+```
+
+The bounded diagnostic exited 0 because it asserted the regression was reproduced; this is not a passing product acceptance test. No real token/key/header or capture file was read or printed. Two preliminary attempts failed in the diagnostic's CJS/ESM setup and are not product failures. An earlier successful observation was followed by intentional termination/join of that diagnostic's Node process because its library GC timer kept it alive; the final bounded run exited normally.
+
+**Fix:** Connect the token draft to the same lifecycle reset as the provider, so every sign-out, expiry, 401, verification restart and successful bootstrap clears the controlled input state. A reset/generation signal for a dedicated sign-in component is one option; keep raw credentials out of public context. Clear the draft before Retry sign in as well. Disabling edits during pending verification can prevent this particular sequence, but by itself does not clear a draft typed during retained-retry state when that attempt expires. Do not limit the repair to the header click handler.
+
+Add component regressions using the actual App tree: edit the field during pending verification, verify, sign out and assert its value is empty; edit it during retained-retry state, expire/revoke the attempt and assert it is empty. Retain current cache/authority assertions to prove the repair preserves cancellation and tenant isolation.
+
+### Other boundaries assessed
+
+- App.tsx:120–127 supplies one lazily created per-mount QueryClient to the provider and Alerts tree. The optional injected instance is that same client; existing actual-response cache assertions are not against a separate artificial cache.
+- session.tsx:92–102 revokes the generation before emptying the active credential and aborting its lifetime. It initiates cancellation without awaiting uncooperative network work, then clears both query and mutation caches. Installed query-core confirms clear is synchronous and cancelQueries handles its returned rejections.
+- client.ts:26–68 checks session lifetime before credential access, after fetch and after parsing. Alerts additionally checks the individual query signal before its request and after parsing; its signal is combined with the session lifetime. An old client fails its generation guard before obtaining a replacement credential. Status bodies are not exposed through APIError or UI text. Requests omit cookies, reject redirects and request no-store.
+- session.tsx:126–174 publishes authority only after the server response passes its identity guard and has future expiry. Unknown roles, missing identity properties, blank subjects and invalid/past expiry do not establish current authority. Retry credentials have a fixed finite deadline; decoded unverified expiry can only shorten retention. Authenticated expiry comes from /session. Current authenticated 401 revokes authority; availability failures retain explicit retry/cancel. These provider protections do not clear the separate shell draft described in CR-01.
+- Alerts.tsx:20–37 uses verified subject, tenant, role, session generation and the current normalized empty filter set in its actual query key. The generated AlertPage/AlertFilters contract is used directly. The current server emits the bounded 15-field PostgreSQL workflow DTO; this increment fabricates no canonical detection/evidence fields.
+- Alerts.tsx:41–135 retains populated data on a read error, uses fixed permission/unavailability copy and offers explicit retry. React text escapes summaries and identifiers. Native table and labelled mobile list use the same result. CSS provides semantic colors, focus indicators, a skip link, 44px controls, responsive wrapping and reduced-motion handling. Other pages, filters, pagination, dialogs and SSE are later owned increments.
+- package/lock inspection found the exact new pins @tanstack/react-query 5.104.5 and openapi-fetch 0.17.0, with query-core 5.104.5 and openapi-typescript-helpers 0.1.0. Parsing all 278 package records against the base found no existing version changes; other semantic changes are root dependency additions and the two optional-peer dev metadata adjustments. Installed React Query's React/types peers accept the existing React 19 stack. This is compatibility review of these pinned packages, not a fresh dependency-security certification.
+
+### Retained evidence and limits
+
+Selected private command metadata/results and the browser measurement report were inspected. They support what their commands exercise; they do not override the source finding above.
+
+| Evidence | Observation |
 |---|---|
-| config-red.log | 09:28:02.139062–09:28:03.866103Z, exit 1: six intended config rejection assertions received nil; JWT characterization passed. |
-| native-red.log | 09:28:08.999923–09:28:15.038900Z, exit 1: 25 non-CLI cases passed; absent CLI build was setup failure, not per-input behavioral RED. |
-| task-green-verified.log | 09:36:02.656453–09:36:15.369952Z, exit 0: exact nonempty phase4 Auth/race/6m family, package 11.479s; 26 top-level/24 nested CLI cases. Focused auth/config units in this chain are explicitly cached. |
-| default-regressions.log / retained-openapi.log | Exit 0: default Go race suite, web 15, generator 121 and 11 actual OpenAPI cases. These are retained executor runs, not fresh reviewer executions. |
-| static-verified.log | 09:36:03.826644–09:36:10.676815Z, exit 0: bounded default vet/build/lint, phase4 vet/lint and integration vet/lint; three zero-issue lint results. |
-| preserved-startup.log | At source 0b15694, 09:37:10.120402–09:38:23.600405Z, exit 0: normal make dev-up/check-stack; all four dependencies/five apps healthy, topic/retention/auto-create-off and real readiness/dependency checks. |
-| operator-post-startup.log | At source 0b15694, 09:38:39.617455–09:38:39.699841Z, exit 0: actual helper/CLI token reaches rebuilt Compose session/demo-tenant list with verified identity and unchanged existing key bytes. This is not a complete tenant matrix. |
-| final-history-scan.log / final-history-report.json | At 89d5ccb, 09:41:45.935686–09:41:46.881477Z, exit 0: 500 commits/no leaks; report independently checked as an empty JSON array. Installed scanner independently reports 8.30.1. Scan predates frozen tracking HEAD and this artifact. |
+| app-cache-red.log / query-abort-red.log | Genuine missing-cache assertions and canceled-query-body resolution failure are recorded separately. The absent provider import is setup-only; already-correct expiry/abort behavior is not invented RED. |
+| web-mobile-final.log | 28 tests, typecheck, lint, build and format checks exited 0 at 16:30:49Z. Component fetch responses are mocked, while the actual provider and query cache execute. The suite does not exercise CR-01's post-submit field edit. |
+| native-after.log | Exact nonempty phase4 Auth/race/6m family exited 0 at 16:29:03Z; package 21.924s. Backend/native source is unchanged in this slice. |
+| make-default-final.log / openapi-final.log | Default aggregate and OpenAPI command exited 0. Default Go output explicitly includes cached results; the retained source suite reports 11 OpenAPI cases. These are executor runs, not new reviewer executions. |
+| browser-mobile-final.log / browser-mobile-results.json | Retained real Chromium/helper/CLI/Vite/API/PG flow reports 50 workflows, verified viewer, session/list HTTP 200, keyboard skip, sign-out/reload and widths 375/768/1024/1440 without document overflow. Controls measure at least 44px. This reviewer did not rerun the browser or independently certify that harness. |
+| contrast-final.log | Eleven static computed color pairs passed their declared thresholds. This is not rendered accessibility certification. |
+| final-history-scan.log / final-history-report.json | Retained scan at 798e5ca exited 0; the report was independently parsed as an empty array. It predates this report and is not a fresh reviewer scan. |
 
-Precommit GREEN logs identify tests-only base 3c8aea5 plus the then-working implementation subsequently committed as 0b15694. They are not relabelled as tests against an already committed GREEN tree. The tests-only commit precedes implementation; causal RED is the six config assertions. Existing correct JWT cases and the absent CLI setup failure are not claimed as newly failing security behavior. The summary preserves that distinction.
-
-This reviewer performed read-only diagnostics and source/evidence inspection. No native suite, producer, restart, browser, replacement scan or full integration aggregate was run. Root retains post-review verification and final metadata hygiene responsibility.
+Precommit verification logs identify the tests-only base plus the then-working source subsequently committed as 6bb0ac8; they were not relabelled as commands against an already committed GREEN tree. Prior browser launch/setup failures and the corrected skip-link hash assertion remain historical fixture facts, not production regressions.
 
 ### Explicitly declined judgments
 
-Full role-sensitive 403 mutations are not certified: 04-02 implements/modifies no mutation route, and 04-08/04-09 own that delivery. Current session/list reads legitimately accept known roles; existing API-key authority was checked for regression.
+No full Phase 4, hosted CI, publication, performance or fresh Phase 3 aggregate acceptance is asserted. No expensive native suite, browser, producer, restart, agent, worktree or remote action was run by this reviewer.
 
-Richer browser sessions, cache isolation, responsive/accessibility behavior and full browser acceptance are not certified: browser source is unchanged, with refinements and actual browser acceptance owned by 04-03/04-15. Helper/CLI/API evidence and the earlier Vite routing review cannot establish those outcomes.
+Full filter/cursor history, additional routes, detail/evidence/triage, SSE replay and proxy/two-replica/full tenant-matrix behavior remain with their later numbered owners. The current empty filter key is valid for this increment; absent future scaffolding is not a finding.
 
-Complete tenant coverage, full filtered event/alert APIs, summary/rules and SSE replay/recovery are not certified: those contracts have later numbered owners. Existing tenant-bound reads and auth compatibility were checked for regressions instead of declaring later features missing from this increment.
+The client is not an independent full JSON Schema validator for every workflow field or arbitrary corrupt upstream payload. The current native verified-session producer enforces tenant grammar and known roles, and the real PG handler emits the declared DTO. This review does not certify behavior against every possible compromised/malformed server response; ordinary invalid verification bodies and existing guarded cases were reviewed. Browser 200% zoom, screen-reader behavior and complete cross-browser history are also not certified by the retained viewport/component evidence.
 
-Production identity-provider/deployment integration is not certified: this CLI refuses production mode, while fixed-contract production signature verification is intentional. No production identity provider was exercised. Performance, whole-Phase-4 acceptance, a fresh Phase-3 aggregate and hosted CI are not established by this standard review.
+The individual-query body-cancellation regression is covered by the current test and guards. This review does not infer future filter/mutation/SSE race coverage from that one test or claim that clearing a mutation cache cancels future mutation effects. No such production operations exist in this increment.
 
-### Preserved history and handoff
+### Preservation and handoff
 
-Before replacement, 04-REVIEW.md was byte-identical to preserved 04-REVIEW-17-R1.md. That accepted R1 report, original 04-REVIEW-01-R0.md / 04-REVIEW-17-R0.md, ownership checks and retained failures remain intact. This report introduces no reopened or waived prior finding.
+Before replacement, 04-REVIEW.md was byte-identical to preserved 04-REVIEW-02-R0.md (SHA-256 e8bc9b4f24b22a8567e7b8b8d343437c8a18ea87e68407325d5767e8f2b66886). That report and original 01/17 R0 and accepted 17 R1 reports were left intact.
 
-Only this REVIEW.md was written. No source, index, HEAD, shared tracking, user-owned .planning/config.json or .serena/ was modified; no commit, agent, worktree, remote action or later-plan implementation was performed. The scoped source review is clean and ready for root acceptance checks.
+Only this REVIEW.md was written. No source, generated API declaration, index, HEAD, shared tracking, user-owned .planning/config.json or .serena/ was changed. No commit was made. CR-01 remains open for the orchestrator's authorized repair and re-review.
 
 ---
 
-_Reviewed: 2026-10-22T16:07:09Z_
-
 _Reviewer: gsd-code-reviewer_
 
-_Depth: standard; nine-file 04-02 scope_
+_Depth: standard; nine-file 04-03 scope_
