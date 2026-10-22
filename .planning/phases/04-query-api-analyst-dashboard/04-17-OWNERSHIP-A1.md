@@ -1,6 +1,7 @@
 # 04-17 ownership amendment A1 — proposed historical scanner fingerprints
 
-Status: pending independent review; no scanner exception applied yet.
+Status: independently APPROVED in 04-17-OWNERSHIP-A1-CHECK.md; root applied only
+the three approved fingerprints. Full-history replacement scan still required.
 
 The pinned full-history scan reports three generic-api-key matches in earlier
 planning prose, not application credentials. Root inspected the exact historical

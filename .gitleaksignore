@@ -7,3 +7,8 @@
 # Historical YAML-validation plan prose describing duplicated or absent fields;
 # the match is policy wording, not a credential. Exempt only this fingerprint.
 171497e5baeccbeb44d12b698be02ceec6b91d65:.planning/phases/03-detection-alert-pipeline/03-08-PLAN.md:generic-api-key:148
+# Historical Phase4 test-policy prose, independently classified in
+# 04-17-OWNERSHIP-A1-CHECK.md. Exact fingerprints only; no credential values.
+778d3dbb5b6a373604e26b0f9193c6d01008142f:.planning/phases/04-query-api-analyst-dashboard/04-07-PLAN.md:generic-api-key:58
+5d11ca2d72cdc303a27e75900eb4d4afd4434108:.planning/phases/04-query-api-analyst-dashboard/04-17-PLAN.md:generic-api-key:70
+5d11ca2d72cdc303a27e75900eb4d4afd4434108:.planning/phases/04-query-api-analyst-dashboard/04-17-PLAN.md:generic-api-key:101
