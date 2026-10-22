@@ -1,12 +1,14 @@
 ---
 phase: 04-query-api-analyst-dashboard
-reviewed: 2026-10-22T21:59:40Z
+reviewed: 2026-10-22T22:07:49Z
 depth: standard
 review_slice: 04-04
-review_round: R0
-review_sha: 31ab1ccc7a63e228b84dcbf0a40b0b9cde89acc6
-source_sha: 0abb49d2855225faba0949ac86aa33255ce4224c
+review_round: R1
+review_sha: 654d410ca16d46b4c322a82c5ddcf6dc2317e7c3
+source_sha: 2c14c8c774c1f7661ace08fa9cc03c63e40bd725
 diff_base: 3dee0ab075c0c96b6bc8257722a9aa21b2ee358d
+prior_review_sha: 31ab1ccc7a63e228b84dcbf0a40b0b9cde89acc6
+prior_source_sha: 0abb49d2855225faba0949ac86aa33255ce4224c
 files_reviewed: 10
 files_reviewed_list:
   - backend/internal/query/alerts.go
@@ -22,87 +24,98 @@ files_reviewed_list:
 generated_boundary_context:
   - web/src/api/schema.d.ts
 findings:
-  critical: 1
+  critical: 0
   warning: 0
   info: 0
-  total: 1
-status: issues_found
+  total: 0
+status: clean
 ---
 
 # Phase 4 Plan 04: Code Review Report
 
-**Reviewed:** 2026-10-22T21:59:40Z
+**Reviewed:** 2026-10-22T22:07:49Z
 
-**Depth:** standard; all ten tracked scoped files read in full, plus the ignored generated declaration as boundary context.
+**Depth:** standard; focused repair re-review with explicit unchanged-file carry-forward from the preserved full ten-source-file R0.
 
-**Status:** issues_found — one BLOCKER; independent source acceptance must wait for repair and re-review.
+**Status:** clean — historical BLOCKER CR-01 is closed; no remaining actionable finding established in this slice.
 
 ## Narrative Findings (AI reviewer)
 
-### Summary and scope
+### Summary and method
 
-Normal user edits of the UTC time inputs can produce requests the API necessarily rejects. This breaks a delivered filter path despite the retained native, component and browser passes. No additional actionable security or correctness finding was established in the remaining reviewed code.
+The time-input repair canonicalizes native whole-minute values to UTC millisecond timestamps before they enter draft state, the request, cache key or URL. It preserves valid seconds/milliseconds and handles empty/invalid native values without calling toISOString on an invalid Date. The strict server parser is unchanged.
 
-The explicit eleven-path envelope comprises the ten tracked source paths above and ignored generated web/src/api/schema.d.ts. The declaration was read in full but excluded from the source count under the generated-file rule; its SHA-256 is e6bbab8336ea22bfe93d1105c741b048414d083eb0114de31a0922fe65f26b7d. All ten tracked files were independently confirmed byte-identical between source candidate 0abb49d, frozen HEAD 31ab1cc and the working tree. Scoped git diff --check passed.
+This is independent source review of repair source 2c14c8c at frozen HEAD 654d410. It is not whole-Phase-4 acceptance. Root owns post-wave verification, acceptance and shared tracking.
 
-Read 04-04 PLAN/SUMMARY, shared CONTRACT, approved UI-SPEC, VALIDATION, RESEARCH, PROJECT/current STATE, full A1 amendment/check, ADR0006/0008, actual session/client/App callers, PG003 and retained store/event-handler boundaries. No AGENTS.md, project .codex/skills/, .agents/skills/ or .codexignore exists in the working directory. No structural/fallow pre-pass was supplied or run. GSD review, Karpathy and applicable UI/UX guidance informed the review. No unavailable React/Postgres skill was represented as read; actual SQL, migration and installed Go AEAD documentation were inspected directly.
+Both changed source files were read in full afresh: web/src/pages/Alerts.tsx (483 lines) and web/src/pages/Alerts.test.tsx (515 lines), together with their complete repair diff, updated SUMMARY, preserved full R0 and actual API-client/server-validator context. The other eight scoped source files and ignored generated declaration retain their original full R0 assessment by explicit byte identity below. This is not a claim of ten fresh full-file reads or new runtime executions.
 
-### Critical Issues
+No structural/fallow pre-pass was supplied or run. Project-instruction/ignore context and previously read GSD review, Karpathy and UI/UX guidance remain applicable. No unavailable skill is represented as read. Authorized ignored evidence was consulted only as verification context, not counted as submitted source.
 
-#### CR-01: BLOCKER — native time edits send timestamps rejected by the API
+### Unchanged-file proof and scope preservation
 
-**File:** /home/logan78/Desktop/Sentinel/web/src/pages/Alerts.tsx:294 and :307
+The following Git blobs are identical at original source 0abb49d, repair source 2c14c8c, frozen HEAD 654d410 and the current working files:
 
-**Related boundary:** /home/logan78/Desktop/Sentinel/web/src/pages/Alerts.tsx:94; /home/logan78/Desktop/Sentinel/backend/internal/query/alerts.go:202
-
-**Issue:** Both datetime-local handlers append `Z` directly to the native input value. A datetime-local input normalizes a whole-minute value to `YYYY-MM-DDTHH:mm`, even when assigned zero seconds/milliseconds with step 0.001. Selecting From `2026-10-21T00:00` and To `2026-10-22T00:00` stores and sends `2026-10-21T00:00Z` and `2026-10-22T00:00Z`. Date.parse-based validFilters accepts this ordered 24-hour range. parseQueryTime requires explicit seconds and rejects both values, so Apply filters produces HTTP 400 and the generic load error. Retry repeats the invalid request. Editing just one bound to a whole minute is sufficient. This is ordinary supported user input.
-
-**Reviewer reproduction:** A read-only Node diagnostic using installed jsdom assigned `2026-10-21T00:00:00.000` to the actual native input type; input.value returned `2026-10-21T00:00`. A second diagnostic evaluated the actual validFilters function extracted/transpiled from Alerts.tsx and the actual backend regex extracted from alerts.go. For the two onChange-produced values above it returned `actualValidFilters: true` and `actualBackendPatternAccepts: [false,false]`. toISOString converts the same valid UTC instants to accepted `2026-10-21T00:00:00.000Z` and `2026-10-22T00:00:00.000Z`. No source or fixture was written for these diagnostics. This is a DOM/parser boundary reproduction, not a newly executed full HTTP/browser run.
-
-**Fix:** Canonicalize each nonempty valid datetime-local value as UTC before it enters normalized filters/request/key, for example `new Date(value + "Z").toISOString()` after checking the parsed instant is finite. Preserve empty-value and malformed-link recovery so the repair does not reintroduce RangeError. Use identical normalized values in request, cache key and URL. Add an owned Alerts component regression for valid minute-only From/To edits asserting exact canonical UTC millisecond request values; retain second/millisecond input behavior and reversed/malformed-range cases. Keep strict server validation.
-
-**Why current evidence misses it:** Alerts.test.tsx covers valid non-time filters and invalid/reversed time ranges, but no successful minute-only user time edit. The real browser harness fills status, severity, rule and search, but never either time field. Native tests construct timestamps using Go's RFC3339 formatter. Their passing results do not cover this mismatch. The missing regression belongs to CR-01 and is not separately counted.
-
-### Remaining boundary assessment
-
-These observations bound the review; they do not waive CR-01 or establish whole-phase acceptance.
-
-- PG query_alerts.go:29–37 applies verified tenant, half-open range, status, severity, rule and escaped literal search before limit+1. Selection, cursor predicate and descending order use the same millisecond tuple, including PG003's actual submillisecond rows. Caller cancellation reaches the bounded store context; scan/iteration errors propagate. No extra index or performance guarantee is demanded.
-- query/alerts.go:115–151 obtains authenticated tenant authority before storage access, rejects query parsing errors and maps storage/cursor failures to bounded public errors. Raw UTF-8/control validation precedes trim. Page, range, query multiplicity and cursor byte bounds are enforced. WorkflowAlert contains exactly fifteen PG003 public fields; no canonical detection/evidence values are fabricated or fetched from ClickHouse for this list.
-- cursor.go:32–98 derives a distinct AEAD key through HMAC/domain separation, uses installed Go random-nonce GCM correctly, authenticates payloads and binds endpoint, tenant, normalized filters, frozen range, limit and tuple. Omitted ranges come from authenticated payloads. Installed Go documentation confirms generated/prepended nonces and the zero-size nonce argument; its documented per-key message limit is not an unlimited key-lifetime claim.
-- The query key includes verified subject/tenant/role/generation and the same query object passed to the typed client. Superseded requests use abort signals through existing lifetime/body guards. Session subtree cleanup clears current URL cursors; history owner markers prevent subsequent sessions from restoring old page authority. Cursor-only links preserve absent opaque bounds without decoding. Explicit previous history is capped at twenty and resets on filter/history/session changes.
-- A1's App.test.tsx diff contains one strict HTTP-derived helper and exactly two approved seventh-element expectation replacements. The first six identity/generation elements and prior security cases remain unchanged. The helper validates the corresponding HTTP request's exact default keys, limit 50, finite canonical UTC millisecond values and exactly 24 hours; it neither derives expectations from cache values nor uses partial key matching.
-- OpenAPI/generated list types retain the workflow DTO boundary and canonical Event/Alert schemas, adding search/cursor constraints. Command wiring registers the alert list once through authenticated dependencies and retains legacy event lookup. Manual CSS/mobile list and labelled filter/error/page controls are reused; no unsafe HTML rendering or new design framework was introduced.
-
-### Retained evidence and limits
-
-Selected actual logs/result metadata and the complete browser harness in authorized ignored .local/phase4-acceptance/04-04 were read. Directory mode is 0700 and sampled evidence files are 0600. No key, bearer value, Authorization capture or resolved Compose configuration was printed. These are executor runs, not fresh reviewer executions:
-
-| Retained evidence, October 22 UTC | Actual result and scope |
+| Unchanged reviewed source | Git blob |
 |---|---|
-| native-red.log, 21:14:14–21:14:20 | Exit 1: actual HTTP valid filters rejected, empty/malformed fields accepted. Setup is distinct from behavioral RED. |
-| native-postlimit-negative.log, 21:21:01–21:21:06 | Exit 1 at intended full-page assertion, two items versus three. Correct SQL restored; causal negative control. |
-| web-resume-diagnosis.log, 21:28:57–21:29:01 | Exit 1, 46/47: cursor-only request invents from/to. Current source preserves omitted bounds. |
-| web-malformed-range-red.log / native-search-controls-red.log | Separate actual exit-1 RangeError and raw newline-search 200-versus-400 failures. Current corresponding paths are repaired; neither covers CR-01. |
-| web-quality-green.log, 21:31:24–21:31:36 | Exit 0: web 48, typecheck/lint/build/format. Metadata identifies tests-only HEAD plus working GREEN. |
-| native-clean.log, 21:38:05–21:38:30 | Exit 0: separate nonempty Alerts/Auth phase4 race selectors, six-minute caps; retained Auth 26 top-level/24 nested CLI cases. |
-| native-filter-fixtures-final.log, 21:39:11–21:39:18 | Exit 0: strengthened actual Alerts HTTP/PG family, package 3.832s, phase4 vet/lint zero issues. |
-| browser-final.log/results, 21:38:03–21:38:19 | Exit 0: fresh race-built API, actual helper/CLI/PG, private Vite proxy, cached Chromium at 1440/375. Distinct full three-row pages, Previous/Back/Forward, exact cursor-only page, search/Clear/signout, no route mocks. No time edits. |
-| default-final.log, ending 21:53:12 | Exit 0: default aggregate, web 48 and generator 121. Cached package results remain identified as cached. |
-| final-history-scan.log/report, 21:55:17–21:55:18 | Exit 0 at d47e124; parsed JSON is exactly an empty array. Retained scanner evidence is not blanket security certification. |
+| backend/internal/query/alerts.go | 9efd8aa3616ede8397ecc56e0c8ff75c08b0580b |
+| backend/internal/query/cursor.go | 913d2b26a7ae18615b9a7656a8abc66978a1be2d |
+| backend/internal/query/cursor_test.go | 29b044920a438dfde2496f06c1abdf782944795b |
+| backend/internal/storage/postgres/query_alerts.go | b47ea5c5a030eb25ed813fb6198756ba2c7fafe5 |
+| backend/testphase4/alerts_test.go | 3f2efb0cbb9bab28c727145cda6b23b55a1debc1 |
+| api/openapi.yaml | 69e6c315194d1ed7110092cb25b82d69102c4322 |
+| backend/cmd/query-api/main.go | 648b81021e1f73ebd55d42280afe6f73fc5e34b5 |
+| web/src/App.test.tsx | 37f5e8db64c5238273b1837c543a4b1211d34a9d |
 
-Browser metadata records all observed alert responses 200, 44px controls and no document overflow, browser storage exposure, console warnings/errors or page errors. The harness establishes its limited exercised paths; this reviewer did not rerun the browser or inspect screenshots anew. Historical web-first 41/46, later type/lint failures and cursor-unit setup limitations remain disclosed; no per-case causal RED is invented for already-correct or initially unbuildable cases.
+The two changed files separately match repair source, frozen HEAD and the working tree. Generated web/src/api/schema.d.ts retains SHA-256 e6bbab8336ea22bfe93d1105c741b048414d083eb0114de31a0922fe65f26b7d, identical to R0. It remains boundary context excluded from the ten-source count. The eleven-path ownership envelope is unchanged.
 
-### Assessment, declined future judgments and preservation
+The diff from repair resume base caf3aa5 contains only the two frontend files and the updated SUMMARY. The production diff adds one six-line helper and changes its two call sites. An independent prefix/suffix comparison verifies that the original complete Alerts test file remains byte-preserved around one inserted test block; existing tests were not replaced or weakened. Scoped git diff --check passed. A1's strict App fixtures, backend SQL/auth/cursors, OpenAPI, client/provider/CSS and prior security cases are unchanged.
 
-Fix CR-01 before accepting 04-04. The bounded repair belongs to existing owned page/component-test paths and requires no new subsystem. Re-review should verify canonical conversion, a causal regression and affected gates. Root owns subsequent acceptance/tracking; the prior four accepted slices remain four of seventeen.
+### Closed historical BLOCKER CR-01: native time edits rejected by API
 
-No demand is made for future detail/evidence/triage/events/rules/Overview/SSE/durable replay/proxy/two-replica/full tenant-matrix features, status-edit snapshot isolation, an extra migration/index or Phase5. Their absence is not counted as a defect in 04-04. No fresh full Phase3 aggregate, complete accessibility/screen-reader/200%-zoom/cross-browser audit, performance guarantee, hosted CI or security certification is claimed.
+Original finding: immutable 04-REVIEW-04-R0.md, CR-01. This closure is not a new finding counted in the frontmatter.
 
-Before replacement the old report matched preserved 04-REVIEW-03-R1.md (SHA-256 cdff77cab9e47d3d49a5fb5d4a022273e73c4ae4e97a905bfdbf82dbea720987). All earlier reports and A1 artifacts remain unchanged. Only this designated report was written. No source, index, HEAD, STATE, user-owned .planning/config.json or .serena/ was changed; no commit, agent, worktree, service startup, producer, later slice or remote action occurred.
+**Reviewed locations:** /home/logan78/Desktop/Sentinel/web/src/pages/Alerts.tsx:94, :300 and :313; /home/logan78/Desktop/Sentinel/web/src/pages/Alerts.test.tsx:90, :145 and :164; /home/logan78/Desktop/Sentinel/backend/internal/query/alerts.go:202.
+
+utcInput now interprets a nonempty native datetime-local value explicitly as UTC, tests the resulting instant for finiteness, and only then calls toISOString. Both From and To handlers use that function. A native value such as 2026-10-21T00:00 becomes 2026-10-21T00:00:00.000Z before navigation/query construction; no request-only conversion can leave the key or URL with a different representation. The UTC label's semantics do not depend on the browser's local timezone.
+
+Empty input returns an empty string immediately; an invalid parsed instant also returns empty. Existing newFilterRange defaults cleared bounds, and malformed URL values still follow their existing recoverable validation path. The patch does not relax the seven-day bound or server syntax. The broader query/filter/paging/session architecture remains the original reviewed implementation.
+
+A reviewer-performed read-only diagnostic extracted/transpiled the actual current utcInput function, passed values normalized by installed jsdom's datetime-local input, and compared nonempty results with the actual backend regex. Minute, second and millisecond values produced the expected accepted canonical timestamps; empty and malformed native values produced empty strings without exceptions. No fixture/source write, server, browser or suite execution was needed for that diagnostic.
+
+The seven added actual-App cases use fetch-only responses. They cover both minute fields, seconds, milliseconds, exactly seven days, each minute field alone, and over-seven-day rejection followed by cleared defaults. Multi-input cases assert exact HTTP query fields, exact URL fields and the full verified subject/tenant/role/generation query key. The two single-field cases verify the corresponding request timestamp. Original reversed/malformed range, cursor-only/history/debounce, cache/privacy and credential-draft cases remain intact.
+
+No remaining causal path for CR-01 was established.
+
+### Retained causal and runtime evidence
+
+Selected actual private logs, parsed result metadata and the complete focused browser harness were read. Directory .local/phase4-acceptance/04-04/cr01 is 0700 and sampled files are 0600. No real key, token, Authorization capture or resolved Compose configuration was printed. These are executor runs, not newly run reviewer tests:
+
+| Evidence, October 22 UTC | Observed result and practical limit |
+|---|---|
+| time-red.log, 22:03:23–22:03:26 | Exit 1: five exact canonical-request assertion failures, two passing characterizations, twelve unrelated cases excluded. Four failures exercise the original minute-format cause; the seconds case additionally requires canonical .000 representation even though the old seconds-only value already satisfied server syntax. Millisecond and safe-empty behavior were already passing, not invented RED. |
+| web-green.log, 22:03:42–22:03:55 | Exit 0: all 55 web cases and bounded typecheck/lint/build/format. Logs identify tests-only HEAD 10d43c7 plus working production changes later committed as 2c14c8c. |
+| stack-before.log, 22:03:43–22:03:58 | Exit 0: preserved services, readiness and dependencies healthy; no new startup/restart claim. |
+| browser-green.log/results, 22:04:35–22:04:41 | Exit 0: actual native minute edits, fresh race-built API, real PG, private Vite proxy and helper/CLI at 1440/375; HTTP 200 and three own-tenant workflow rows at both widths. |
+| default-green.log, 22:04:45–22:04:55 | Exit 0: default Go build and bounded make test, including web 55 and generator 121. Cached Go package outputs remain cached results. |
+| native-green.log, 22:04:44–22:05:02 | Exit 0: independent exact nonempty Alerts/Auth phase4 race selectors with six-minute caps, retaining Auth 26 top-level/24 nested CLI cases; cursor unit race selector has a 60-second cap and returns cached. Backend source is unchanged. |
+| final-history-scan.log/report, 22:06:03–22:06:04 | Exit 0 at frozen 654d410, pinned scanner 8.30.1, 527 commits. Source and final JSON reports were independently parsed as exactly empty arrays; no scanner exception changed. |
+
+The focused browser harness does not intercept responses or mock routes. It builds the current API, uses preserved synthetic native PG data and private actual helper/CLI credentials, fills both From and To with minute-only strings, and explicitly checks that native input values have sixteen characters. It waits for the precise canonical-range response, checks HTTP 200, three actual own-tenant rows, exact expected canonical from/to/limit and identical URL query values. This directly exercises the boundary missing from the original browser flow.
+
+Its result records no document overflow, browser persistence, console/page errors or credential DOM/URL exposure at 1440/375, and its sign-out assertion checks the displayed token draft is empty. These observations supplement the original broader paging/filter/history flow; they do not replace it or establish a full accessibility/tenant matrix. The reviewer did not rerun Chromium or inspect its screenshots anew.
+
+Original R0 failures, post-limit mutation evidence, cursor-only/malformed-time/raw-control RED and earlier intermediate test/type/lint failures remain historical evidence, unmodified. Their provenance and limitations remain in the preserved R0 and SUMMARY. Passing gates do not independently establish source correctness; closure rests on the traced repair and targeted boundary evidence.
+
+### Assessment, limits and preservation
+
+The full declared 04-04 source scope now has no remaining actionable finding established by the original full review plus this focused repair review. CR-01 is closed. Root must perform its own post-wave acceptance and tracking; this report does not advance the four previously accepted slices or start 04-05.
+
+The original PG filtering/tuple/cursor/DTO, authority/cache/session-history and A1 assessments are carried forward by byte identity. No future detail/evidence/triage/events/rules/Overview/SSE/replay/proxy/two-replica/full tenant-matrix feature, status-edit snapshot isolation, extra index/migration or Phase5 is demanded here. No fresh Phase3 aggregate, hosted CI, production security/performance certification, complete accessibility, screen-reader, 200%-zoom or cross-browser guarantee is claimed.
+
+Before replacement, current REVIEW.md matched immutable 04-REVIEW-04-R0.md, SHA-256 5b97a2c1dafe6ecd3412921f86a483ef9945a37c9db29d247febf34b6f6e3cf5. R0, all prior 03/02/17/01 reports and A1 artifacts are preserved. Only this designated report was written; no source, index, HEAD, STATE, SDK, user-owned .planning/config.json or .serena/ was changed. No commit, agent, worktree, producer, service startup, expensive runtime suite, later plan or remote action occurred.
 
 ---
 
 _Reviewer: gsd-code-reviewer_
 
-_Depth: standard; explicit 04-04 ten-source-file scope plus generated boundary context_
+_Depth: standard; focused R1 with byte-proven carry-forward of the original full ten-source-file review_

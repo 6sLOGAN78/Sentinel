@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "04"
-status: pending-independent-source-review
+status: complete
 subsystem: api
 tags: [postgres, keyset-pagination, authenticated-cursors, react-query, openapi]
 requires:
@@ -42,7 +42,7 @@ completed: 2026-10-22
 
 PostgreSQL now supplies full filtered workflow pages with stable millisecond tuples and authenticated frozen cursors; the Alerts UI supports filters, debounced search, finite paging and session-safe deep links.
 
-**PENDING INDEPENDENT R1 SOURCE REVIEW AND ROOT ACCEPTANCE.** CR-01 repair source: `2c14c8c774c1f7661ace08fa9cc03c63e40bd725`, following tests-only RED `10d43c7c3fe6271adc0c5384d6e8754226fdf765` on resume base `caf3aa520b14ba723689f2abf8f9437bc121239f`. Original candidate `0abb49d2855225faba0949ac86aa33255ce4224c` and its recorded checks below are historical evidence: the independent R0 found one blocker despite those passes. Accepted starting base is `3dee0ab075c0c96b6bc8257722a9aa21b2ee358d`. Requirement IDs describe incremental coverage, not whole-phase completion. Root owns independent review and STATE/ROADMAP/REQUIREMENTS updates. No 04-05, Phase5, publication or hosted CI was started.
+**ROOT ACCEPTED after clean independent R1 and post-wave checks.** R1 at `654d410`, repair source `2c14c8c774c1f7661ace08fa9cc03c63e40bd725`, closes CR-01 with zero findings; root build and `make test` exit 0 at 22:09:29Z. Tests-only RED is `10d43c7` on resume base `caf3aa5`. Original candidate `0abb49d` and its earlier passing checks remain historical evidence that did not cover minute edits; original R0 remains preserved. Requirement IDs are incremental, not whole-phase completion. Root advances Phase 4 to 5/17 accepted and may execute approved 04-05; Phase5/publication/hosted CI remain unauthorized here.
 
 ## Ownership and timing
 
@@ -155,6 +155,12 @@ New wrapper logs record exact commands, SHA/working changes, UTC start/end/actua
 
 Actual Chromium uses the existing cached browser, private Vite runtime proxy to the current independent API binary, preserved native synthetic PG workflows and private helper/actual CLI credentials. It fills both From/To controls with minute-only strings, confirms native values have16characters, applies filters, waits for the precise real list response and asserts HTTP200, three actual own-tenant workflows, exact expected canonical from/to/limit and identical URL query values. No response route or payload is mocked. At1440/375 it also checks page identity, meaningful content, no overlay/console/page errors, no document overflow/storage/credential DOM/URL exposure and an empty draft after Sign out. `browser-time-results.json` and visually inspected `time-edits-1440.png`/`time-edits-375.png` retain proof. Owned API/Vite/Chromium processes were stopped and joined; only the owned temporary binary/directory was removed.
 
-These focused time-edit observations supplement the original broader browser flow; they are not a new whole-phase/SSE/proxy/tenant-matrix/accessibility/cross-browser certification. Existing backend/static/OpenAPI proof remains carried forward because repair source changes only the two frontend files. New native/default/web checks pass; no old caps or strict parser changed. No unresolved local repair issue is known, but R1 and root acceptance remain required.
+These focused time-edit observations supplement the original broader browser flow; they are not a new whole-phase/SSE/proxy/tenant-matrix/accessibility/cross-browser certification. Existing backend/static/OpenAPI proof remains carried forward because repair source changes only the two frontend files. New native/default/web checks pass; no old caps or strict parser changed. Subsequent clean R1 and root acceptance are recorded below.
 
-Repair self-check PASSED: both owned repair paths and RED10d43c7/GREEN2c14c8c exist, RED precedes GREEN, only those two source files differ from resume basecaf3aa5, generated schema is unchanged, no tracked deletion or stub/new trust boundary was introduced, and all original48 tests plus7cases pass. The private source scan report is empty and modes are correct. Final committed-summary scan follows separately; root shared tracking/reviews are untouched.
+Repair self-check PASSED: both owned repair paths and RED10d43c7/GREEN2c14c8c exist, RED precedes GREEN, only those two source files differ from resume basecaf3aa5, generated schema is unchanged, no tracked deletion or stub/new trust boundary was introduced, and all original48 tests plus7cases pass. The private source scan report is empty and modes are correct. Final committed-summary scan follows separately; executor left root tracking/reviews untouched.
+
+## Root acceptance addendum
+
+Independent `04-REVIEW-04-R1.md` is clean at `654d410`, source `2c14c8c`: CR-01 closed, zero blockers/warnings/info. It freshly reads both repair files and proves the other eight tracked files and generated boundary unchanged. It inspects actual component/native/browser/scanner evidence without claiming fresh reviewer runtime runs. Four causal RED failures isolate minute-only API incompatibility; the fifth seconds assertion enforces canonical formatting although the old seconds syntax was API-valid. Two millisecond/empty characterizations already passed; no extra production defect is invented.
+
+Root independently ran `timeout 300 bash -c 'cd backend && go build ./... && cd ../web && npm run build && cd .. && make test'` at `654d410`. Private `root-post-r1-gates.log` records exit 0 at 2026-10-22T22:09:29.213272Z, including backend race, web 55 and generator 121. Final metadata is scanned again before dispatch. Whole Phase4, full Phase3 aggregate, hosted CI, accessibility/security/performance certification remain outside these scoped gates.

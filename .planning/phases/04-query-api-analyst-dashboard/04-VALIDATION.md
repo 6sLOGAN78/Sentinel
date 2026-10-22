@@ -15,6 +15,8 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 04-03nowacceptedafterCR01credential-draftrepair: web36/static/nativeAuth26+24/defaultGo/make test/OpenAPI11/actualChromiumPGpathPASS. IndependentR1cleanat0151e19/sourcea793313,rootpostwaveEXIT0at21:06:00Z. OriginalfourviewportCSSproofandnew1440/375draft-clearingbrowserproofremainseparate; historicalstartupEXIT2notrelabelledgreen,subsequentstackcheckPASS. Cache/session/typedclientarecurrentdelivery;filters/detail/SSE/fullbrowsermatrixremainlaterplans.
 
+04-04nowacceptedafterminute-time-editCR01repair: actualAlerts/Auth26+24/cursor/default/static/OpenAPI11/web55/currentbinaryChromiumfilter+cursor+minuteeditflowsPASS. Full10tracked+generatedR0thenfocusedR1cleanat654d410/source2c14c8c;rootpostwaveEXIT0at22:09:29Z. A1strictAppfixtureexceptionindependentlyapproved,exact11paths. Post-limitmutant2vs3andallhistoricalfailuresretained;527commitfullhistoryzero. Details/SSE/fullmatrixremainlaterowners.
+
 ## Test Infrastructure
 
 Go testing/race in `backend/`; Vitest/Testing Library in `web/`; native integration `backend/test/`; proposed pinned Playwright against a real preserved stack and same-origin proxy. Exact new version pins resolved before installation. No new global tools or external accounts.
