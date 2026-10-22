@@ -4,10 +4,66 @@ import { SessionProvider, useSession } from "./auth/session";
 import Alerts from "./pages/Alerts";
 import "./styles.css";
 
-function AnalystShell() {
-  const { session, pending, error, canRetry, signIn, retrySignIn, signOut } =
+function SignInPanel() {
+  const { pending, canRetry, signInRevision, signIn, retrySignIn, signOut } =
     useSession();
-  const [suppliedToken, setSuppliedToken] = useState("");
+  const [draft, setDraft] = useState({ revision: signInRevision, value: "" });
+  // Reset before committing stale input, preserving the field and its focus.
+  if (draft.revision !== signInRevision)
+    setDraft({ revision: signInRevision, value: "" });
+  const suppliedToken = draft.value;
+  const setSuppliedToken = (value: string) =>
+    setDraft({ revision: signInRevision, value });
+  return (
+    <section className="sign-in-panel" aria-labelledby="sign-in-title">
+      <h2 id="sign-in-title">Sign in to Sentinel</h2>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const credential = suppliedToken;
+          setSuppliedToken("");
+          void signIn(credential);
+        }}
+      >
+        <label htmlFor="development-token">Development access token</label>
+        <input
+          id="development-token"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          maxLength={8192}
+          aria-describedby="token-help"
+          value={suppliedToken}
+          onChange={(event) => setSuppliedToken(event.target.value)}
+          required
+        />
+        <p id="token-help">
+          Generate a short-lived token with the local development CLI. Tokens
+          stay in memory.
+        </p>
+        <button type="submit" disabled={pending}>
+          Sign in
+        </button>
+      </form>
+      <div className="sign-in-actions">
+        {canRetry && (
+          <button disabled={pending} onClick={() => void retrySignIn()}>
+            Retry sign in
+          </button>
+        )}
+        {(pending || canRetry) && (
+          <button className="secondary" onClick={() => signOut()}>
+            Cancel sign in
+          </button>
+        )}
+      </div>
+      {pending && <p role="status">Verifying access token…</p>}
+    </section>
+  );
+}
+
+function AnalystShell() {
+  const { session, error, signOut } = useSession();
   return (
     <div className={session ? "app-shell authenticated" : "app-shell"}>
       <a className="skip-link" href="#main-content">
@@ -51,62 +107,7 @@ function AnalystShell() {
         </nav>
       )}
       <main id="main-content" tabIndex={-1}>
-        {!session ? (
-          <section className="sign-in-panel" aria-labelledby="sign-in-title">
-            <h2 id="sign-in-title">Sign in to Sentinel</h2>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const credential = suppliedToken;
-                setSuppliedToken("");
-                void signIn(credential);
-              }}
-            >
-              <label htmlFor="development-token">
-                Development access token
-              </label>
-              <input
-                id="development-token"
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={8192}
-                aria-describedby="token-help"
-                value={suppliedToken}
-                onChange={(event) => setSuppliedToken(event.target.value)}
-                required
-              />
-              <p id="token-help">
-                Generate a short-lived token with the local development CLI.
-                Tokens stay in memory.
-              </p>
-              <button type="submit" disabled={pending}>
-                Sign in
-              </button>
-            </form>
-            <div className="sign-in-actions">
-              {canRetry && (
-                <button disabled={pending} onClick={() => void retrySignIn()}>
-                  Retry sign in
-                </button>
-              )}
-              {(pending || canRetry) && (
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    setSuppliedToken("");
-                    signOut();
-                  }}
-                >
-                  Cancel sign in
-                </button>
-              )}
-            </div>
-            {pending && <p role="status">Verifying access token…</p>}
-          </section>
-        ) : (
-          <Alerts key={session.generation} />
-        )}
+        {!session ? <SignInPanel /> : <Alerts key={session.generation} />}
         {error && (
           <p className="error-state" role="alert">
             {error}

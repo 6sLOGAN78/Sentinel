@@ -24,6 +24,7 @@ type SessionContextValue = {
   pending: boolean;
   error: string;
   canRetry: boolean;
+  signInRevision: number;
   signIn: (credential: string) => Promise<void>;
   retrySignIn: () => Promise<void>;
   signOut: (message?: string) => void;
@@ -81,6 +82,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
+  const [signInRevision, setSignInRevision] = useState(0);
   const [deadline, setDeadline] = useState(0);
   const generation = useRef(0);
   const active = useRef<{
@@ -104,6 +106,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(
     (message = "") => {
       dispose();
+      setSignInRevision((revision) => revision + 1);
       setAuthority(null);
       setPending(false);
       setCanRetry(false);
@@ -126,6 +129,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const verify = useCallback(
     async (credential: string, retryUntil: number) => {
       dispose();
+      setSignInRevision((revision) => revision + 1);
       setAuthority(null);
       if (!credential || retryUntil <= Date.now()) {
         signOut(expired);
@@ -185,6 +189,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         pending,
         error,
         canRetry,
+        signInRevision,
         signIn: (credential) => {
           const raw = credential.trim();
           return verify(raw, retryExpiry(raw));
