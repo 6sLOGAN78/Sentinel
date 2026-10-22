@@ -1,127 +1,96 @@
 ---
 phase: 04-query-api-analyst-dashboard
-reviewed: 2026-10-22T09:16:55Z
+reviewed: 2026-10-22T16:07:09Z
 depth: standard
-review_revision: R1
-review_sha: a302b65cd6b511f23502592cc0712842e4fcde55
-source_sha: 11dddea2fd58e38f841feb761edbcfee40800492
-prior_full_review_sha: c3b060bbcfdcd364f353e2d95f10208e318c925e
-review_slice: 04-01 and 04-17
-review_method: focused_delta_with_unchanged_scope_carry_forward
-diff_base: 358114c
-repair_diff_base: f28ef6eba7172bf66c01a75b8e2ee7f1f3d7d787
-delta_base: c3b060bbcfdcd364f353e2d95f10208e318c925e
-files_reviewed: 21
+review_slice: 04-02
+review_sha: 9a2174982b6996c67103c2e3049435e5540c9d9b
+source_sha: 0b15694e02b8f0dabb6d8dce587baba62e721c08
+diff_base: 987a4a4a6308ea9eef350af10e9c5a9a1f9dd713
+files_reviewed: 9
 files_reviewed_list:
-  - .env.example
-  - .github/workflows/ci.yml
-  - Makefile
-  - api/openapi.yaml
-  - backend/cmd/query-api/main.go
-  - backend/go.mod
-  - backend/go.sum
   - backend/internal/auth/jwt.go
-  - backend/internal/storage/postgres/query_alerts.go
-  - backend/test/lifecycle_test.go
-  - backend/test/openapi_test.go
+  - backend/internal/auth/jwt_test.go
+  - backend/internal/config/config.go
+  - backend/internal/config/config_test.go
+  - backend/cmd/dev-jwt/main.go
+  - backend/cmd/query-api/main.go
   - backend/testphase4/auth_test.go
-  - deployments/compose/docker-compose.yml
+  - .env.example
   - docs/operations.md
-  - scripts/dev_auth_env.py
-  - scripts/test_dev_auth_env.py
-  - web/src/App.test.tsx
-  - web/src/App.tsx
-  - web/src/api/types.test.ts
-  - web/vite.config.ts
-  - .gitleaksignore
 findings:
   critical: 0
   warning: 0
   info: 0
   total: 0
 status: clean
-historical_scanner_amendment: approved_and_applied_exactly
-scanner_gate: passed_at_reviewed_head
 ---
 
-# Phase 4 Plans 01 and 17: Code Review Report — R1
+# Phase 4 Plan 02: Code Review Report
 
-**Status:** clean — no unresolved BLOCKER or WARNING in the scoped review.
+**Reviewed:** 2026-10-22T16:07:09Z
 
-**Frozen HEAD:** a302b65cd6b511f23502592cc0712842e4fcde55
+**Depth:** standard; full read of nine files and contextual tracing of consumers, launchers, middleware and retained fixtures.
 
-**Source candidate:** 11dddea2fd58e38f841feb761edbcfee40800492
-
-**Depth and method:** standard; focused repair re-review plus the unchanged scope carried forward from the full 21-file review at c3b060b. This revision does not claim that all files or runtime gates were freshly rerun.
+**Status:** clean — no actionable BLOCKER or WARNING found in this slice.
 
 ## Narrative Findings (AI reviewer)
 
-WR-04 is closed. The repaired expired credential has valid original temporal relationships, verifies independently during its historical validity interval, and is then rejected by both actual production endpoints using the same signed bytes. No new defect was found in the reviewed delta. The original five findings remain closed. The previously approved scanner amendment was applied exactly, and the retained pinned full-history scan at the frozen HEAD has zero findings and exit 0.
+### Summary and assessment
 
-### Scope continuity and preserved history
+The local/test token CLI and central auth configuration conform to the approved 04-02 increment. Source review found no demonstrated incorrect behavior, security vulnerability or robustness defect requiring a finding. This assessment follows implementation and boundary analysis; passing tests and a SUMMARY were not treated as acceptance by themselves. Root acceptance and later Phase 4 gates remain separate.
 
-The prior full review is preserved in 04-REVIEW-17-R0.md, Git blob 0652add1743e1ae7badc58167d192d6b157a11af. It records all 21 source files read in full, the five original closures, and WR-04 as the sole remaining WARNING. The original 04-01 review is preserved verbatim in 04-REVIEW-01-R0.md, blob 58fef39594e4c6fac6d1e01b555e79d1f6f3e9e6. The bounded ownership check remains unchanged, blob 8330646e59c7ec367f895f8857e469018aa69bd7. These historical reports keep their original outcomes.
+The nine-file source union exactly matches the diff from 987a4a4a6308ea9eef350af10e9c5a9a1f9dd713 to 0b15694e02b8f0dabb6d8dce587baba62e721c08. All nine remain unchanged at frozen HEAD 9a2174982b6996c67103c2e3049435e5540c9d9b. This increment changes no dependency, Make/Compose, browser or canonical contract source. The environment template and operator guide were read as operational source.
 
-The exact 21-file list in that prior report was parsed and compared with Git changes from c3b060b through a302b65. Only backend/testphase4/auth_test.go and .gitleaksignore changed; the other 19 files are byte-identical. All 21 are also unchanged from source commit 11dddea through frozen HEAD a302b65. The complete repository diff adds only those two source changes plus the named review/ownership/SUMMARY artifacts. Production auth, query storage/routes, browser code, launch helper, Make/Compose, CI, dependencies and scanner configuration are unchanged. R1 read the full current Auth fixture, full verifier, full ignore file, the fixture/ignore diffs, relevant route/caller code, updated summary delta, and new private evidence. Unchanged source conclusions are carried from R0, not represented as a second full read.
+No AGENTS.md, .codex/skills/, .agents/skills/ or .codexignore exists in the working directory. Repository ignore rules were respected; generated web/src/api/schema.d.ts was excluded. No fallow pre-pass was provided or run. GSD review instructions governed scope, causal findings and report format.
 
-No AGENTS.md or project skill directories were present in the original full review. No structural pre-pass was provided. Ignored generated web/src/api/schema.d.ts remains excluded from the source count. Later approved CLI/configuration, richer client, filtering, triage, SSE and full browser acceptance remain outside this completed increment's review.
+### Boundary analysis and strengths
 
-### Closure of WR-04 — WARNING, expired-token fixture
+- **Central configuration.** /home/logan78/Desktop/Sentinel/backend/internal/config/config.go:128 rejects absent, short, oversized, blank and NUL/CR/LF-containing keys without printing supplied values. The 32..4096-byte bounds are inclusive. Fixed issuer/audience defaults and validation agree. The per-service required-sections map requires Auth only for query-api/dev-jwt; all four producer services keep their prior requirements. /home/logan78/Desktop/Sentinel/backend/internal/config/config_test.go:59 covers the six rejection categories and all four producers without a dashboard key.
+- **Actual handoff and constructor.** /home/logan78/Desktop/Sentinel/backend/cmd/query-api/main.go:48 passes validated Auth fields to the verifier before opening dependencies. /home/logan78/Desktop/Sentinel/backend/internal/auth/jwt.go:54 independently rejects short keys and noncontract issuer/audience values and copies key bytes. The constructor retains minimum-only key validation; config.Load enforces blank/upper/line-break restrictions at its sole production caller. There is no current unvalidated production path, so duplicate constructor validation was not invented as a defect.
+- **Mint authority and output.** /home/logan78/Desktop/Sentinel/backend/cmd/dev-jwt/main.go:31 permits only original, explicit dotted local/test process modes before dotenv loading. Required slug/subject/known-role flags, positional-argument refusal and inclusive 1-second..15-minute duration bounds precede signing at lines 37–47; the default is 15 minutes. Lines 53–62 set HS256 and every required claim, enforce the 8 KiB cap before stdout and emit one token. Flag diagnostics are discarded; main prints one fixed refusal message without supplied values. No key argument, environment dump or HTTP mint endpoint was added.
+- **Environment and operator workflow.** /home/logan78/Desktop/Sentinel/backend/internal/config/config.go:417 loads dotenv only when the process is already explicitly local. The pinned godotenv Load implementation preserves existing process variables, including explicit empty values; test mode skips dotenv. The root-directory command at /home/logan78/Desktop/Sentinel/docs/operations.md:72 does not depend on root .env discovery: scripts/dev_auth_env.py:92 supplies the existing private key under both environment names, and issuer/audience have fixed defaults. The helper checks a nonlocal parent before the documented child local-mode command. Make/query-api and Compose consume the same helper identity. An independent file loader or second key generator is unnecessary for this approved workflow.
+- **Retained authority and validation.** /home/logan78/Desktop/Sentinel/backend/internal/auth/jwt.go:65 retains HS256-only parsing, fixed issuer/audience, required identity/time claims, known roles, positive maximum 15-minute lifetime, 30-second leeway and 8 KiB input cap. Typed errors conceal parser details, and middleware stores only verified identity. The query-api change preserves tenant-derived PG list reads, readiness, the legacy API-key handler and explicit-bearer refusal. Contextual event handler, global logging/error middleware, PG store and lifecycle fixtures were checked for regressions.
+- **Independent fixtures.** /home/logan78/Desktop/Sentinel/backend/testphase4/auth_test.go:87 independently verifies the genuine HS384 signature before production rejection. The helper at line 175 verifies the same expired raw credential during its valid historical interval, including a positive bounded original lifetime, before current 401 assertions. Lines 95 and 239 retain exact JWT/API-key disclosure controls. Line 331 builds the actual CLI, independently checks claims/lifetimes and uses minted tokens against actual session/list handlers for local/test and all three roles. Refusal covers production/other modes, identity/duration/key failures and an unsupported key flag. The race-enabled 1-second fixture applies documented parser leeway while separately asserting original lifetime; historical expiry rejection remains intact.
 
-**Current file:** /home/logan78/Desktop/Sentinel/backend/testphase4/auth_test.go:137-150,170-208
+### Evidence inspected and limits
 
-The original fixture set exp to one minute ago while leaving iat/nbf at now; it was independently invalid under production jwt.go:78-79. Tests-only commit 5147aa8 added the independent fixture checks and demonstrated the old negative one-minute lifetime. GREEN commit 11dddea changes only the expired case's iat and nbf to ten minutes ago (lines 205-208), retaining exp one minute ago and all existing native subtests/assertions.
+Selected command metadata, outcomes and assertions under .local/phase4-acceptance/04-02/ were inspected without displaying keys, tokens, headers, resolved Compose configuration or token-capture contents. The directory is 0700 and selected logs/capture are 0600. The private operator probe implementation was read to establish what its success asserts.
 
-Before either endpoint call, requireOtherwiseValidExpiredCredential receives the same raw string used at lines 147-149. It independently parses that raw credential with HS256, the correct key, issuer, audience, subject, required expiration/not-before, issued-at checking, strict decoding and 30-second leeway, using a clock five minutes ago (170-182). It asserts required dates, a positive lifetime no longer than 15 minutes, nbf <= exp, current expiry beyond the 30-second leeway, successful historical verification, and the expected tenant/role (183-194).
-
-The repaired interval is nine minutes long and valid at the independent clock. At the real current clock, both /api/v1/session and /api/v1/alerts must return 401, and exact JWT/API-key absence checks remain required. The production route middleware and verifier are unchanged. Thus the old independent lifetime/not-before defects cannot mask the current expiration assertion. No permissive parser or historical clock was added to production.
-
-The retained behavioral RED names reject_expired and fails at the positive-lifetime assertion with -1m; its other 18 subtests pass. The GREEN repeats the exact nonempty phase4/race/6m Auth family and passes all 19 subtests, package 6.571s. This supports fixture repair; it is not represented as a production verifier defect or mutation test.
-
-### Carried-forward disposition of the original five findings
-
-| Finding | Disposition and causal proof retained from the full review |
+| Retained evidence | Actual observation on 2026-10-22 |
 |---|---|
-| CR-01 — BLOCKER, missing launch key | **Closed.** Makefile:4,78 routes Compose and host query-api through the private wrapper before child local-mode settings; other host services have both JWT names removed. dev_auth_env.py:92-101 checks modes/overrides and forwards both names; Compose:297-299 explicitly maps the dotted application key. main.go:48-54 still fails closed on missing/short keys. lifecycle_test.go:95-104 supplies independent random keys, and 304-322 tests actual missing/short-key startup rejection. Retained readiness helpers reuse serviceEnv. Actual host, lifecycle/readiness, dev-up and exact 1000-ID seed evidence remains preserved. The new normal dev-up/check-stack log independently observes all nine healthy at source 11dddea. |
-| CR-02 — BLOCKER, browser/API routing | **Closed.** vite.config.ts:6-8 binds loopback and fixes /api proxy target to 127.0.0.1:8081. Header-only relative fetches and docs/operations.md:46-69 connect the supported launchers. The reviewed real Vite probe verifies session JSON and an own-tenant PG list with a foreign fixture excluded. Original HTML RED and JSON GREEN are retained. No full browser/SSE execution is inferred. |
-| WR-01 — WARNING, availability feedback | **Closed.** App.tsx:136-180 distinguishes session 401 from network/5xx/invalid identity failures and supplies a retry action. Input clears immediately; retry credentials remain only in a ref with a finite deadline. Success/cancel/sign-out/expiry/unmount clear credentials and abort work; aborted checks after fetch and JSON parsing suppress stale identity/data. Existing component tests cover availability retry, cancellation, expiry and stale responses. Browser source/tests are unchanged. |
-| WR-02 — WARNING, HS384 fixture | **Closed.** Current auth_test.go:301-304 signs HS384 with SHA384. Its independent parser at 88-93 accepts the fixture; the unchanged production whitelist accepts HS256 only and the actual endpoint loop rejects HS384. Fresh Auth GREEN retains both independent-validity and production-rejection cases. |
-| WR-03 — WARNING, exact credential disclosure | **Closed.** Current auth_test.go:222-229 checks exact nonempty credentials without added punctuation. Lines 95-98 test verbatim JWT and API-key disclosure independently; 147-149 retain the real response checks. Sanitized logger/error mapping is unchanged. Fresh Auth GREEN retains these controls. |
+| config-red.log | 09:28:02.139062–09:28:03.866103Z, exit 1: six intended config rejection assertions received nil; JWT characterization passed. |
+| native-red.log | 09:28:08.999923–09:28:15.038900Z, exit 1: 25 non-CLI cases passed; absent CLI build was setup failure, not per-input behavioral RED. |
+| task-green-verified.log | 09:36:02.656453–09:36:15.369952Z, exit 0: exact nonempty phase4 Auth/race/6m family, package 11.479s; 26 top-level/24 nested CLI cases. Focused auth/config units in this chain are explicitly cached. |
+| default-regressions.log / retained-openapi.log | Exit 0: default Go race suite, web 15, generator 121 and 11 actual OpenAPI cases. These are retained executor runs, not fresh reviewer executions. |
+| static-verified.log | 09:36:03.826644–09:36:10.676815Z, exit 0: bounded default vet/build/lint, phase4 vet/lint and integration vet/lint; three zero-issue lint results. |
+| preserved-startup.log | At source 0b15694, 09:37:10.120402–09:38:23.600405Z, exit 0: normal make dev-up/check-stack; all four dependencies/five apps healthy, topic/retention/auto-create-off and real readiness/dependency checks. |
+| operator-post-startup.log | At source 0b15694, 09:38:39.617455–09:38:39.699841Z, exit 0: actual helper/CLI token reaches rebuilt Compose session/demo-tenant list with verified identity and unchanged existing key bytes. This is not a complete tenant matrix. |
+| final-history-scan.log / final-history-report.json | At 89d5ccb, 09:41:45.935686–09:41:46.881477Z, exit 0: 500 commits/no leaks; report independently checked as an empty JSON array. Installed scanner independently reports 8.30.1. Scan predates frozen tracking HEAD and this artifact. |
 
-The descriptor-relative private filesystem/owner/permission/symlink/hardlink/concurrency analysis, child-only environment/argv/output checks, parameterized tenant SQL, actual DTO columns, canonical contracts and complete CI selector/cap analysis in 04-REVIEW-17-R0.md remain applicable by the explicit unchanged-source proof. In particular, the only prior CI change remains the helper hygiene test; no retained Phase 3 block, selector, matrix, failure handling or time cap changed.
+Precommit GREEN logs identify tests-only base 3c8aea5 plus the then-working implementation subsequently committed as 0b15694. They are not relabelled as tests against an already committed GREEN tree. The tests-only commit precedes implementation; causal RED is the six config assertions. Existing correct JWT cases and the absent CLI setup failure are not claimed as newly failing security behavior. The summary preserves that distinction.
 
-### R1 evidence inspected
+This reviewer performed read-only diagnostics and source/evidence inspection. No native suite, producer, restart, browser, replacement scan or full integration aggregate was run. Root retains post-review verification and final metadata hygiene responsibility.
 
-Private logs are under .local/phase4-acceptance/04-17/ and the inspected files retain mode 0600. Commands, actual base SHAs, UTC times, named outcomes and exits were read. Precommit logs identify their base plus the then-working repair subsequently committed; they are not relabelled as execution at final HEAD.
+### Explicitly declined judgments
 
-| Evidence | Actual observation |
-|---|---|
-| expiry-fixture-behavior-red.log | Base 852de68 plus tests subsequently committed as 5147aa8; 09:07:18.285815–09:07:24.248891Z; exact Auth/phase4/race/6m; exit 1 at the old fixture's -1m lifetime, other 18 subtests pass. Initial dependency-connection setup failure is separately retained and is not counted as behavioral RED. |
-| expiry-fixture-green.log | Base 5147aa8 plus the two timestamps subsequently committed as 11dddea; 09:08:03.336868–09:08:10.901155Z; exact Auth/phase4/race/6m; all 19 subtests pass, package 6.571s, exit 0. |
-| expiry-static-green.log | Same precommit base/repair; 09:08:04.530756–09:08:16.648271Z; phase4 vet/lint, default race/vet/build/lint, integration vet/lint; each command retains its 120s cap, default Go test 60s; chain exits 0 with zero lint issues. Some default packages are explicitly cached. |
-| wr04-fresh-stack.log | Source 11dddea; 09:08:58.918601–09:10:16.778483Z; normal timeout 16m make dev-up followed by check-stack; exit 0. All four dependencies/five applications healthy, topic partitions/retention/auto-create-off, listener ports, real readiness and dependency queries pass. No reset or new seed producer is claimed. |
-| wr04-final-history-scan.log / wr04-final-history-report.json | Frozen HEAD a302b65; 09:13:25.928009–09:13:26.779257Z; full-history redacted gitleaks scan, 496 commits, no leaks found, exit 0; JSON report is exactly an empty array. Reviewer separately checked the executable version is 8.30.1. |
+Full role-sensitive 403 mutations are not certified: 04-02 implements/modifies no mutation route, and 04-08/04-09 own that delivery. Current session/list reads legitimately accept known roles; existing API-key authority was checked for regression.
 
-The earlier 59 script tests, 15 web/type-fixture tests, 11 OpenAPI tests, full readiness/lifecycle selection, host/Vite HTTP probes and exact 1000-ID seed records remain earlier evidence as documented in R0/SUMMARY. They were not all freshly rerun for this test-only delta, and this report makes no contrary claim. This reviewer did not rerun native producers/tests, restart services or execute a replacement scan; the new observations above are retained executor/root evidence inspected independently.
+Richer browser sessions, cache isolation, responsive/accessibility behavior and full browser acceptance are not certified: browser source is unchanged, with refinements and actual browser acceptance owned by 04-03/04-15. Helper/CLI/API evidence and the earlier Vite routing review cannot establish those outcomes.
 
-### Applied scanner amendment
+Complete tenant coverage, full filtered event/alert APIs, summary/rules and SSE replay/recovery are not certified: those contracts have later numbered owners. Existing tenant-bound reads and auth compatibility were checked for regressions instead of declaring later features missing from this increment.
 
-**Decision: the applied amendment exactly conforms to prior bounded APPROVE. Scanner gate passes at the reviewed HEAD.**
+Production identity-provider/deployment integration is not certified: this CLI refuses production mode, while fixed-contract production signature verification is intentional. No production identity provider was exercised. Performance, whole-Phase-4 acceptance, a fresh Phase-3 aggregate and hosted CI are not established by this standard review.
 
-Commit 852de68 adds two explanatory comment lines and only the three previously approved complete commit/path/rule/line fingerprints to .gitleaksignore: historical 778d3db.../04-07-PLAN.md:58 and 5d11ca2.../04-17-PLAN.md:70,101. A read-only set/order comparison verified those exact three lines against 04-17-OWNERSHIP-A1-CHECK.md and verified every earlier exception is unchanged. The prior historical-line inspection classified these as test-policy/session-outage prose with no usable credential.
+### Preserved history and handoff
 
-No scanner rule/path/content-wide allowlist, scanner configuration or scanner CI command changed. Any other fingerprint remains subject to the normal failure gate. Earlier exit-1 logs/reports remain preserved, and the exact empty report/full-history exit-0 evidence above supersedes their pending gate without erasing them. The frozen scan predates this review-artifact update; root should retain normal final metadata hygiene/scanning before any later acceptance or publication.
+Before replacement, 04-REVIEW.md was byte-identical to preserved 04-REVIEW-17-R1.md. That accepted R1 report, original 04-REVIEW-01-R0.md / 04-REVIEW-17-R0.md, ownership checks and retained failures remain intact. This report introduces no reopened or waived prior finding.
 
-### Review limits and handoff
-
-All six recorded findings are closed without a waiver. This is a clean source review for 04-01/04-17 and the named source candidate. It does not certify whole-Phase-4 completion, full Phase-3 aggregate, full browser/SSE, hosted CI or a performance/security guarantee, and it performs no later-slice work.
-
-Only 04-REVIEW.md was updated during R1. The immutable R0 reports, ownership check, source and user-owned .planning/config.json/.serena changes were preserved. No commit, remote action or publication was performed. The orchestrator owns acceptance/tracking and subsequent workflow decisions.
+Only this REVIEW.md was written. No source, index, HEAD, shared tracking, user-owned .planning/config.json or .serena/ was modified; no commit, agent, worktree, remote action or later-plan implementation was performed. The scoped source review is clean and ready for root acceptance checks.
 
 ---
 
-_Reviewed: 2026-10-22T09:16:55Z_
+_Reviewed: 2026-10-22T16:07:09Z_
 
 _Reviewer: gsd-code-reviewer_
 
-_Depth: standard; focused R1 delta with explicit unchanged 21-file scope carry-forward_
+_Depth: standard; nine-file 04-02 scope_

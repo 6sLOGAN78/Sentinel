@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "02"
-status: pending_independent_review
+status: complete
 subsystem: auth
 tags: [jwt, config, cli, echo, integration]
 requires:
@@ -39,12 +39,12 @@ completed: 2026-10-22
 
 The development CLI mints short-lived HS256 tokens from the existing private signing key, while centralized configuration rejects invalid keys and contract-mismatched issuer/audience settings.
 
-**Implementation and automated verification are ready for independent source review. This plan is not root-accepted.** The requirement IDs above describe this slice's incremental coverage, not completed whole-phase requirements. Root owns STATE/ROADMAP/REQUIREMENTS and review reports; no shared tracking was edited.
+**Root accepted this plan after clean independent source review and post-wave checks.** The nine-file review at `9a21749`, source `0b15694`, has zero blockers/warnings. Root's fresh build and `make test` chain passed at 16:11:04Z. The requirement IDs above describe incremental coverage, not completed whole-phase requirements. Root owns shared tracking; proceed to 04-03, not Phase 5 or remote publication.
 
 ## Performance
 
 - Recorded verification span: 2026-10-22T09:28:02.139062Z through 09:38:39.699841Z, approximately 11 minutes. Initial instruction/source reading and final documentation are outside this measured span; this is not active execution time or a performance benchmark.
-- Tasks: 2/2 implemented and locally verified; mandatory independent source review pending.
+- Tasks: 2/2 implemented, locally verified and root-accepted after independent source review.
 - Exact source ownership: nine files, including two newly created files. No tenth source file, dependency, Make/Compose change, scanner exception or remote operation was introduced.
 - Source candidate: `0b15694e02b8f0dabb6d8dce587baba62e721c08`, based on accepted HEAD `987a4a4a6308ea9eef350af10e9c5a9a1f9dd713`.
 
@@ -113,7 +113,13 @@ Tests-only `3c8aea5` precedes implementation `0b15694`. Causal RED is the six ce
 
 No goal-blocking stub exists in the changed files. Empty CLI flag defaults are deliberate required-input validation, not unwired UI data. Private environment handoff, CLI mint guard and JWT validation remain within T04-04/T04-05; no unregistered HTTP endpoint, schema trust boundary or new private-key file access implementation was introduced. No authentication gate occurred.
 
-Production minting is refused; matching production signature verification is supported by the same fixed verifier configuration, not claimed as a tested production identity-provider/deployment integration. Full role-sensitive mutations, browser/session refinements and complete tenant coverage remain later approved slices. Independent source review is pending; this summary is an execution handoff and not review acceptance. Stop before 04-03, Phase5 or remote publication.
+Production minting is refused; matching production signature verification is supported by the same fixed verifier configuration, not claimed as a tested production identity-provider/deployment integration. Full role-sensitive mutations, browser/session refinements and complete tenant coverage remain later approved slices. Independent review is clean in `04-REVIEW-02-R0.md`; root accepted this slice, enabling approved 04-03. Phase 5 and remote publication remain unauthorized here.
+
+## Root acceptance addendum
+
+Independent standard review read all nine source files and traced their consumers; zero blockers, warnings or info findings. It inspected actual RED/GREEN/CLI/operator/startup/scanner evidence without rerunning those producers. Preserved report: `04-REVIEW-02-R0.md`, frozen HEAD `9a21749`, source `0b15694`.
+
+Root separately ran `timeout 300 bash -c 'cd backend && go build ./... && cd ../web && npm run build && cd .. && make test'` at `9a21749`; private `root-post-review-gates.log` records exit 0 at 2026-10-22T16:11:04.022219Z, with backend race, web 15 tests and generator 121 tests. Final metadata is scanned again before dispatch. Phase 4 is 3/17 accepted; no full Phase 4, hosted CI or fresh Phase 3 aggregate pass is inferred.
 
 ## Self-Check: PASSED
 

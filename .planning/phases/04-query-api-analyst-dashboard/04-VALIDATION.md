@@ -11,6 +11,8 @@ created: 2026-10-21
 
 Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapprovedandnowacceptedwith04-01afteractualnativeAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/seed1000proof. IndependentR1reviewclean21-fileunionandrootpostwavebuild+make testPASS. Fullhistoryscannerzero; allsixsourcefindingsclosed. NotallPhase4testsrun. ExistingPhase3acceptancestaysclosedbutnewregressionsmustfix,nopermissiontorelaxoldtests.
 
+04-02nowaccepted: actualAuth26top-level/24CLIcases, focusedauth/configrace,defaultGo/web15/generator121/OpenAPI11/default+phase4+integrationstatic,normalpreservedstartupandactualhelper/CLI/APIhandoffallPASS. Nine-fileindependentreviewclean,rootpostwavebuild+make testEXIT0at16:11:04Z. TokenCLI/configclaimsremainincremental;03browsercacheisolationandlaterscopesnotyetdelivered.
+
 ## Test Infrastructure
 
 Go testing/race in `backend/`; Vitest/Testing Library in `web/`; native integration `backend/test/`; proposed pinned Playwright against a real preserved stack and same-origin proxy. Exact new version pins resolved before installation. No new global tools or external accounts.
