@@ -91,6 +91,12 @@ function timeInput(value: string) {
     : "";
 }
 
+function utcInput(value: string) {
+  if (!value) return "";
+  const instant = new Date(value + "Z");
+  return Number.isFinite(instant.getTime()) ? instant.toISOString() : "";
+}
+
 function validFilters(filters: Filters) {
   const from = Date.parse(filters.from),
     to = Date.parse(filters.to);
@@ -291,7 +297,7 @@ export default function Alerts() {
           onChange={(event) =>
             setDraft({
               ...draft,
-              from: event.target.value ? event.target.value + "Z" : "",
+              from: utcInput(event.target.value),
             })
           }
         />
@@ -304,7 +310,7 @@ export default function Alerts() {
           onChange={(event) =>
             setDraft({
               ...draft,
-              to: event.target.value ? event.target.value + "Z" : "",
+              to: utcInput(event.target.value),
             })
           }
         />
