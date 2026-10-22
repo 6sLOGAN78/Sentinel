@@ -140,6 +140,9 @@ func TestPhase4Auth(t *testing.T) {
 	} {
 		t.Run("reject_"+name, func(t *testing.T) {
 			raw := rejectedCredential(t, name, claims(tenantA), secretText, now)
+			if name == "expired" {
+				requireOtherwiseValidExpiredCredential(t, raw, secretText, tenantA, now)
+			}
 			for _, path := range []string{"/api/v1/session", "/api/v1/alerts"} {
 				status, body := getJSON(t, base+path, raw, key)
 				require.Equal(t, 401, status, "invalid bearer/key must not authorize dashboard")
@@ -162,6 +165,33 @@ func TestPhase4Auth(t *testing.T) {
 		status, _ := getJSON(t, ops+"/readyz", "", "")
 		require.Equal(t, 503, status, "readiness must report actual unreachable dependency")
 	})
+}
+
+func requireOtherwiseValidExpiredCredential(t *testing.T, raw, secret, tenant string, now time.Time) {
+	t.Helper()
+	claims := &struct {
+		jwt.RegisteredClaims
+		Tenant string `json:"tenant"`
+		Role   string `json:"role"`
+	}{}
+	parsed, err := jwt.ParseWithClaims(raw, claims, func(*jwt.Token) (any, error) { return []byte(secret), nil },
+		jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("sentinel-dev"),
+		jwt.WithAudience("sentinel-dashboard"), jwt.WithSubject("operator"),
+		jwt.WithExpirationRequired(), jwt.WithNotBeforeRequired(), jwt.WithIssuedAt(),
+		jwt.WithLeeway(30*time.Second), jwt.WithStrictDecoding(),
+		jwt.WithTimeFunc(func() time.Time { return now.Add(-5 * time.Minute) }))
+	require.NotNil(t, claims.IssuedAt)
+	require.NotNil(t, claims.NotBefore)
+	require.NotNil(t, claims.ExpiresAt)
+	lifetime := claims.ExpiresAt.Sub(claims.IssuedAt.Time)
+	require.Greater(t, lifetime, time.Duration(0), "expired fixture must have a positive original lifetime")
+	require.LessOrEqual(t, lifetime, 15*time.Minute)
+	require.False(t, claims.NotBefore.After(claims.ExpiresAt.Time), "not-before must not exceed expiration")
+	require.True(t, claims.ExpiresAt.Before(now.Add(-30*time.Second)), "fixture must be beyond expiration leeway")
+	require.NoError(t, err, "same signed credential must verify during its original validity interval")
+	require.True(t, parsed.Valid)
+	require.Equal(t, tenant, claims.Tenant)
+	require.Equal(t, "analyst", claims.Role)
 }
 
 func rejectedCredential(t *testing.T, name string, claims map[string]any, secret string, now time.Time) string {
