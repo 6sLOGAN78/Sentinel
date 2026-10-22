@@ -630,4 +630,158 @@ describe("App shell", () => {
     expect(screen.getByText("open")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
   });
+
+  it.each(["sign out", "verified expiry", "authenticated 401"])(
+    "clears a draft entered during verification after bootstrap and %s",
+    async (revocation) => {
+      vi.useFakeTimers();
+      const client = new QueryClient();
+      let finish: (response: Response) => void = () => {};
+      const verification = new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+      const fetchSpy = vi
+        .fn()
+        .mockReturnValueOnce(verification)
+        .mockResolvedValueOnce(Response.json(workflowPage()))
+        .mockResolvedValueOnce(new Response("{}", { status: 401 }));
+      vi.stubGlobal("fetch", fetchSpy);
+      render(<App queryClient={client} />);
+      signIn("submitted-credential");
+      fireEvent.change(screen.getByLabelText("Development access token"), {
+        target: { value: "disconnected-draft" },
+      });
+      expect(screen.getByRole("status").textContent).toBe(
+        "Verifying access token…",
+      );
+      await act(async () =>
+        finish(Response.json(identity("cache-tenant", 2000))),
+      );
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(screen.getByText("Cached tenant alert")).toBeTruthy();
+      expect(client.getQueryCache().getAll()).toHaveLength(1);
+      expect(screen.queryByLabelText("Development access token")).toBeNull();
+      expect(document.body.innerHTML).not.toContain("disconnected-draft");
+      if (revocation === "sign out")
+        fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+      else if (revocation === "verified expiry")
+        await act(async () => vi.advanceTimersByTime(2000));
+      else await act(async () => client.refetchQueries());
+      expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+      expect(screen.queryByText("Cached tenant alert")).toBeNull();
+      expect(client.getQueryCache().getAll()).toHaveLength(0);
+      expect((fetchSpy.mock.calls[1][0] as Request).signal.aborted).toBe(true);
+      expect(
+        screen.queryByRole("button", { name: "Retry sign in" }),
+      ).toBeNull();
+      expect(localStorage.length + sessionStorage.length).toBe(0);
+      expect(window.location.href).not.toContain("credential");
+      expect(screen.getByLabelText("Development access token")).toHaveProperty(
+        "value",
+        "",
+      );
+    },
+  );
+
+  it("clears a retained-retry draft when its automatic deadline revokes the attempt", async () => {
+    vi.useFakeTimers();
+    const client = new QueryClient();
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(new Response("{}", { status: 503 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<App queryClient={client} />);
+    await act(async () => signIn("opaque-submitted-credential"));
+    expect(screen.getByRole("button", { name: "Retry sign in" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Development access token"), {
+      target: { value: "disconnected-retry-draft" },
+    });
+    await act(async () => vi.advanceTimersByTime(15 * 60000));
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Your session expired. Sign in again to continue.",
+    );
+    expect(screen.queryByRole("button", { name: "Retry sign in" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect((fetchSpy.mock.calls[0][0] as Request).signal.aborted).toBe(true);
+    expect(localStorage.length + sessionStorage.length).toBe(0);
+    expect(screen.getByLabelText("Development access token")).toHaveProperty(
+      "value",
+      "",
+    );
+  });
+
+  it.each(["Retry sign in", "Sign in", "Cancel sign in"])(
+    "clears a retained-retry draft on %s without leaking or reusing the draft",
+    async (action) => {
+      const client = new QueryClient();
+      const fetchSpy = vi
+        .fn()
+        .mockResolvedValueOnce(new Response("{}", { status: 503 }))
+        .mockImplementation(() => new Promise<Response>(() => {}));
+      vi.stubGlobal("fetch", fetchSpy);
+      render(<App queryClient={client} />);
+      signIn("original-submitted-credential");
+      expect(await screen.findByRole("alert")).toBeTruthy();
+      fireEvent.change(screen.getByLabelText("Development access token"), {
+        target: { value: "replacement-draft" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: action }));
+      expect(client.getQueryCache().getAll()).toHaveLength(0);
+      expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+      expect((fetchSpy.mock.calls[0][0] as Request).signal.aborted).toBe(true);
+      if (action === "Cancel sign in") {
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole("status")).toBeNull();
+        expect(
+          screen.queryByRole("button", { name: "Retry sign in" }),
+        ).toBeNull();
+      } else {
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+        expect(
+          (fetchSpy.mock.calls[1][0] as Request).headers.get("Authorization"),
+        ).toBe(
+          action === "Retry sign in"
+            ? "Bearer original-submitted-credential"
+            : "Bearer replacement-draft",
+        );
+      }
+      expect(localStorage.length + sessionStorage.length).toBe(0);
+      expect(window.location.href).not.toContain("draft");
+      expect(screen.getByLabelText("Development access token")).toHaveProperty(
+        "value",
+        "",
+      );
+    },
+  );
+
+  it("clears a pending draft when verification itself returns 401", async () => {
+    const client = new QueryClient();
+    let finish: (response: Response) => void = () => {};
+    const fetchSpy = vi.fn().mockReturnValue(
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<App queryClient={client} />);
+    signIn("rejected-credential");
+    fireEvent.change(screen.getByLabelText("Development access token"), {
+      target: { value: "pending-draft" },
+    });
+    await act(async () => finish(new Response("{}", { status: 401 })));
+    expect(screen.getByRole("alert").textContent).toBe(
+      "This access token could not be verified. Check it or generate a new token.",
+    );
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry sign in" })).toBeNull();
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect((fetchSpy.mock.calls[0][0] as Request).signal.aborted).toBe(true);
+    expect(screen.getByLabelText("Development access token")).toHaveProperty(
+      "value",
+      "",
+    );
+  });
 });
