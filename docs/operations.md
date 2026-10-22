@@ -1,7 +1,7 @@
 # Detection and alert operations
 
 Phase 3 local/hosted acceptance and final 59/59 goal verification passed.
-Phase 4 is not started. The scoped
+Phase 4 sign-in and tenant workflow reads are in progress. The scoped
 [reservation R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
 is clean; it does not establish deployment or current-stack acceptance. Use this
 as the selected operator protocol; the final acceptance record must accompany a
@@ -27,6 +27,49 @@ databases, then starts all five applications. Repeating it preserves named
 volumes, topic layout, group identities and existing data. It reapplies configured
 retention; it does not authorize a rule change. The checked-in pinned shared image,
 static loopback-only health probe and read-only rules mount remain in use.
+
+`make dev-up` privately generates a stable random dashboard JWT signing key in
+ignored `.local/auth/jwt.key` (0600, owner only), with 0700 parent directories.
+The helper refuses symlinks, linked/nonregular files, foreign ownership and
+insecure existing permissions; it does not change or overwrite an existing key
+to repair an error. Keep the existing directories private. An optional operator
+override is read from `SENTINEL_AUTH_JWT_SECRET` in the environment, never an
+argument. An explicitly empty/short override fails. The bootstrap is local/test
+only and never disables authentication.
+
+Make forwards that key to Compose interpolation and explicitly into query-api as
+`SENTINEL_AUTH.JWT_SECRET`. Direct Compose startup requires the helper or the
+operator environment key; an unwrapped `config`/`ps` still works without a key,
+but query-api itself refuses to start without a valid key. Never print resolved
+Compose configuration or a child environment, which can contain credentials.
+
+For the dashboard, start the stack above, then in another terminal:
+
+```sh
+cd web
+npm run dev
+```
+
+Visit `http://127.0.0.1:5173`. Vite binds loopback and proxies `/api` only to the
+fixed local query API at `127.0.0.1:8081`. The sign-in form accepts an existing
+short-lived HS256 dashboard token with the documented issuer/audience and claims;
+the development token CLI is assigned to the next slice and is not implemented
+yet. Supplied tokens travel only in Authorization headers and remain in browser
+memory. Availability errors offer **Retry sign in**; **Cancel sign in**, expiry
+and sign-out clear the credential and abort pending work.
+
+For host query-api development, `make run SVC=query-api` reuses the same private
+key. When the Compose API is already running, choose unused listener ports:
+
+```sh
+env 'SENTINEL_SERVER.PORT=18081' 'SENTINEL_OPS.PORT=19105' make run SVC=query-api
+```
+
+To use that host process with the fixed Vite proxy, stop the Compose query-api
+service (preserve its volumes), then run the host process on 8081/9105 instead.
+Other `make run` services do not receive the dashboard JWT key. The normal
+`make seed` path still starts the preserved stack and verifies 1,000 exact event
+IDs using the existing event API-key contract.
 
 All published host ports bind loopback. Ingest/query use 8080/8081. Operations
 ports are ingest 9101, detector 9102, event-writer 9103, alert-writer 9104 and query

@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -254,7 +255,11 @@ func signToken(t *testing.T, claims map[string]any, secret, algorithm string) st
 	body, err := json.Marshal(claims)
 	require.NoError(t, err)
 	unsigned := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(body)
-	mac := hmac.New(sha256.New, []byte(secret))
+	newHash := sha256.New
+	if algorithm == "HS384" {
+		newHash = sha512.New384
+	}
+	mac := hmac.New(newHash, []byte(secret))
 	_, err = mac.Write([]byte(unsigned))
 	require.NoError(t, err)
 	return unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))

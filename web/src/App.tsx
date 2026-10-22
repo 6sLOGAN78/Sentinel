@@ -9,6 +9,52 @@ type AlertPage =
 const invalidToken =
   "This access token could not be verified. Check it or generate a new token.";
 const expired = "Your session expired. Sign in again to continue.";
+const unavailable = "Could not sign in. The service is unavailable. Try again.";
+
+function retryExpiry(credential: string) {
+  const maximum = Date.now() + 15 * 60 * 1000;
+  try {
+    const payload = credential
+      .split(".")[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+    const claims: unknown = JSON.parse(atob(payload));
+    if (
+      typeof claims === "object" &&
+      claims !== null &&
+      "exp" in claims &&
+      typeof claims.exp === "number" &&
+      Number.isFinite(claims.exp)
+    ) {
+      // An unverified expiry can only shorten credential retention. Identity
+      // and authority still come exclusively from the verified server session.
+      return Math.min(maximum, claims.exp * 1000);
+    }
+  } catch {
+    // An opaque credential still has a finite in-memory retry lifetime.
+  }
+  return maximum;
+}
+
+function isSession(value: unknown): value is Session {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "subject" in value &&
+    typeof value.subject === "string" &&
+    value.subject.trim() !== "" &&
+    "tenant_id" in value &&
+    typeof value.tenant_id === "string" &&
+    value.tenant_id !== "" &&
+    "role" in value &&
+    (value.role === "viewer" ||
+      value.role === "analyst" ||
+      value.role === "admin") &&
+    "expires_at" in value &&
+    typeof value.expires_at === "string" &&
+    Number.isFinite(Date.parse(value.expires_at))
+  );
+}
 
 export default function App() {
   const [suppliedToken, setSuppliedToken] = useState("");
@@ -16,14 +62,28 @@ export default function App() {
   const [page, setPage] = useState<AlertPage | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [canRetry, setCanRetry] = useState(false);
+  const [retryUntil, setRetryUntil] = useState(0);
   const token = useRef("");
+  const retryCredential = useRef("");
   const active = useRef<AbortController | null>(null);
 
-  useEffect(() => () => active.current?.abort(), []);
+  useEffect(
+    () => () => {
+      active.current?.abort();
+      token.current = "";
+      retryCredential.current = "";
+    },
+    [],
+  );
 
   function signOut(message = "") {
     active.current?.abort();
+    active.current = null;
     token.current = "";
+    retryCredential.current = "";
+    setCanRetry(false);
+    setRetryUntil(0);
     setSuppliedToken("");
     setSession(null);
     setPage(null);
@@ -32,13 +92,14 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!session) return;
+    const deadline = session ? Date.parse(session.expires_at) : retryUntil;
+    if (!deadline) return;
     const timer = window.setTimeout(
       () => signOut(expired),
-      Math.max(0, Date.parse(session.expires_at) - Date.now()),
+      Math.max(0, deadline - Date.now()),
     );
     return () => window.clearTimeout(timer);
-  }, [session]);
+  }, [session, retryUntil]);
 
   async function loadAlerts(controller: AbortController) {
     setPending(true);
@@ -67,29 +128,53 @@ export default function App() {
 
   async function signIn(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    active.current?.abort();
-    const controller = new AbortController();
-    active.current = controller;
-    setPending(true);
-    setError("");
     const credential = suppliedToken.trim();
     setSuppliedToken("");
+    await verifySession(credential, retryExpiry(credential));
+  }
+
+  async function verifySession(credential: string, deadline: number) {
+    active.current?.abort();
+    setSuppliedToken("");
+    if (!credential || deadline <= Date.now()) {
+      signOut(expired);
+      return;
+    }
+    const controller = new AbortController();
+    active.current = controller;
+    retryCredential.current = credential;
+    setRetryUntil(deadline);
+    setCanRetry(false);
+    setPending(true);
+    setError("");
     try {
       const response = await fetch("/api/v1/session", {
         headers: { Authorization: `Bearer ${credential}` },
         signal: controller.signal,
         cache: "no-store",
       });
-      if (!response.ok) throw new Error("identity");
-      const verified: Session = await response.json();
       if (controller.signal.aborted) return;
+      if (response.status === 401) {
+        signOut(invalidToken);
+        return;
+      }
+      if (!response.ok) throw new Error("availability");
+      const verified: unknown = await response.json();
+      if (controller.signal.aborted) return;
+      if (!isSession(verified)) throw new Error("availability");
+      if (Date.parse(verified.expires_at) <= Date.now()) {
+        signOut(expired);
+        return;
+      }
+      retryCredential.current = "";
+      setRetryUntil(0);
       token.current = credential;
       setSession(verified);
       await loadAlerts(controller);
     } catch {
       if (!controller.signal.aborted) {
-        token.current = "";
-        setError(invalidToken);
+        setCanRetry(true);
+        setError(unavailable);
         setPending(false);
       }
     }
@@ -135,6 +220,19 @@ export default function App() {
                 Sign in
               </button>
             </form>
+            {canRetry && (
+              <button
+                disabled={pending}
+                onClick={() =>
+                  void verifySession(retryCredential.current, retryUntil)
+                }
+              >
+                Retry sign in
+              </button>
+            )}
+            {(pending || canRetry) && (
+              <button onClick={() => signOut()}>Cancel sign in</button>
+            )}
           </section>
         ) : (
           <section aria-labelledby="alerts-title">
