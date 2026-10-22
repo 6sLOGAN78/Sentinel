@@ -94,6 +94,10 @@ func TestPhase4Alerts(t *testing.T) {
 	insert(28, tenant, "acknowledged", "critical", "DENY_SPIKE", "Critical fixture", baseTime.Add(time.Second))
 	insert(29, tenant, "open", "high", "AUTH_BRUTE_FORCE", "At exclusive end", now)
 	insert(30, tenant, "open", "high", "AUTH_BRUTE_FORCE", "Before inclusive start", baseTime.Add(-time.Millisecond))
+	// Independent competing rows make omission of either severity or rule fail
+	// the exact tuple/full-page assertion, even when the other filter is present.
+	insert(32, tenant, "open", "high", "PORT_SCAN", "Competing rule", baseTime.Add(time.Second))
+	insert(33, tenant, "open", "low", "AUTH_BRUTE_FORCE", "Competing severity", baseTime.Add(time.Second))
 	var precision int
 	require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_workflows WHERE tenant_id=$1
 	 AND created_at <> date_trunc('milliseconds', created_at)`, tenant).Scan(&precision))
@@ -188,6 +192,12 @@ func TestPhase4Alerts(t *testing.T) {
 			require.Len(t, page.Items, 1)
 			require.Equal(t, ids[26], page.Items[0].ID)
 		}
+		q.Set("search", "lItErAl")
+		require.Len(t, getPage(t, q, token).Items, 2, "case-insensitive literal summary match")
+		q.Set("search", "192.0.2.44")
+		require.Len(t, getPage(t, q, token).Items, 2, "literal entity match")
+		q.Set("search", "' OR 1=1 --")
+		require.Empty(t, getPage(t, q, token).Items, "search text cannot become SQL")
 		q = url.Values{"status": {"acknowledged"}, "severity": {"critical"}, "rule_id": {"DENY_SPIKE"}}
 		page := getPage(t, q, token)
 		require.Len(t, page.Items, 1)

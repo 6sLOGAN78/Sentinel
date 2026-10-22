@@ -3,12 +3,10 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +24,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/httpx"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
+	"github.com/6sLOGAN78/sentinel/internal/query"
 	"github.com/6sLOGAN78/sentinel/internal/redisx"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 	storagepostgres "github.com/6sLOGAN78/sentinel/internal/storage/postgres"
@@ -41,11 +40,14 @@ const (
 	clickhouseReadTimeout  = 30 * time.Second
 	clickhouseMaxOpenConns = 4
 	clickhouseMaxIdleConns = 2
-	defaultAlertLimit      = 50
 )
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
 	jwtVerifier, err := auth.NewVerifier([]byte(cfg.Auth.JWTSecret), cfg.Auth.Issuer, cfg.Auth.Audience)
+	if err != nil {
+		return err
+	}
+	cursors, err := query.NewCursorCodec([]byte(cfg.Auth.JWTSecret))
 	if err != nil {
 		return err
 	}
@@ -115,7 +117,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	eventquery.NewHandler(verifier, storageclickhouse.NewEventStore(clickhouseConn)).Register(e)
 	e.GET("/api/v1/session", getSession, jwtVerifier.Middleware)
 	alerts := storagepostgres.NewAlertStore(db.Pool, alertQueryTimeout)
-	e.GET("/api/v1/alerts", listAlerts(alerts), jwtVerifier.Middleware)
+	query.NewHandler(query.Dependencies{Alerts: alerts, Auth: jwtVerifier, Cursors: cursors}).Register(e)
 
 	server := httpx.New(cfg.Server, e)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)
@@ -157,41 +159,4 @@ func getSession(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, p)
-}
-
-func alertLimit(c echo.Context) (int, error) {
-	for key, values := range c.QueryParams() {
-		if (key != "limit" && key != "cursor") || len(values) != 1 {
-			return 0, errs.NewBadRequestError("Invalid alert query", false, nil, nil, nil)
-		}
-	}
-	if raw := c.QueryParam("limit"); raw != "" {
-		limit, err := strconv.Atoi(raw)
-		if err != nil {
-			return 0, errs.NewBadRequestError("Invalid alert limit", false, nil, nil, nil)
-		}
-		return limit, nil
-	}
-	return defaultAlertLimit, nil
-}
-
-func listAlerts(alerts *storagepostgres.AlertStore) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		p, err := auth.RequirePrincipal(c)
-		if err != nil {
-			return err
-		}
-		limit, err := alertLimit(c)
-		if err != nil {
-			return err
-		}
-		page, err := alerts.ListAlerts(c.Request().Context(), p.TenantID, limit, c.QueryParam("cursor"))
-		if errors.Is(err, storagepostgres.ErrInvalidAlertPage) {
-			return errs.NewBadRequestError("Invalid alert page", false, nil, nil, nil)
-		}
-		if err != nil {
-			return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
-		}
-		return c.JSON(http.StatusOK, page)
-	}
 }

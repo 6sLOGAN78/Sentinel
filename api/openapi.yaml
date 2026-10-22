@@ -157,9 +157,14 @@ paths:
       operationId: listAlerts
       summary: Search alerts
       description: |
-        PostgreSQL workflow page ordered by descending (created_at, alert_id), scoped to
-        the verified tenant. This first slice supports limit/cursor over a frozen last
-        24 hours; richer time/severity/status/rule filters below arrive in the list slice.
+        PostgreSQL workflows filtered before limiting, scoped to the verified tenant.
+        Stable descending (created_at truncated to milliseconds, alert_id). The UTC
+        half-open range defaults to the last 24 hours and is at most 7 days. Times must
+        use Z with at most 3 fractional digits. Cursors authenticate endpoint, tenant,
+        frozen range, normalized filters and limit; changing these returns 400.
+        Search is a case-insensitive literal substring of summary or entity_key,
+        trimmed and bounded to 128 UTF-8 bytes; %, _ and backslash are literal.
+        Unknown, repeated, empty or malformed query fields return 400.
         No ClickHouse detection fields are fabricated or required for this read.
       security:
         - BearerAuth: []
@@ -169,6 +174,7 @@ paths:
         - $ref: "#/components/parameters/Severity"
         - $ref: "#/components/parameters/Status"
         - $ref: "#/components/parameters/RuleID"
+        - $ref: "#/components/parameters/AlertSearch"
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
       responses:
@@ -450,7 +456,15 @@ components:
       description: Opaque cursor returned as next_cursor by the previous page.
       schema:
         type: string
-        maxLength: 512
+        maxLength: 2048
+    AlertSearch:
+      name: search
+      in: query
+      required: false
+      description: Trimmed case-insensitive literal summary/entity substring, at most 128 UTF-8 bytes. Control characters are invalid.
+      schema:
+        type: string
+        maxLength: 128
     Limit:
       name: limit
       in: query

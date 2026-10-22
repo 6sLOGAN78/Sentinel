@@ -394,7 +394,14 @@ describe("filtered alert pages", () => {
 
   it("keeps malformed time deep links recoverable without sending a list request", async () => {
     window.history.replaceState(null, "", "/alerts?to=invalid");
-    const fetchSpy = vi.fn(async () => Response.json({ subject: "filters-operator", tenant_id: "filters-tenant", role: "viewer", expires_at: new Date(Date.now()+600000).toISOString() }));
+    const fetchSpy = vi.fn(async () =>
+      Response.json({
+        subject: "filters-operator",
+        tenant_id: "filters-tenant",
+        role: "viewer",
+        expires_at: new Date(Date.now() + 600000).toISOString(),
+      }),
+    );
     vi.stubGlobal("fetch", fetchSpy);
     render(<App />);
     signIn();

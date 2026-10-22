@@ -51,6 +51,24 @@ function signIn(credential = "memory-credential") {
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 }
 
+function defaultAlertFilters(requestIndex: number) {
+  const request = vi.mocked(fetch).mock.calls[requestIndex][0];
+  expect(request).toBeInstanceOf(Request);
+  const url = new URL((request as Request).url);
+  expect(url.pathname).toBe("/api/v1/alerts");
+  expect([...url.searchParams.keys()].sort()).toEqual(["from", "limit", "to"]);
+  expect(url.searchParams.get("limit")).toBe("50");
+  const from = url.searchParams.get("from")!;
+  const to = url.searchParams.get("to")!;
+  for (const value of [from, to]) {
+    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(Number.isFinite(Date.parse(value))).toBe(true);
+    expect(new Date(value).toISOString()).toBe(value);
+  }
+  expect(Date.parse(to) - Date.parse(from)).toBe(86400000);
+  return { from, to, limit: 50 };
+}
+
 describe("App shell", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -399,7 +417,7 @@ describe("App shell", () => {
       "viewer",
       expect.any(Number),
       "alerts",
-      {},
+      defaultAlertFilters(1),
     ]);
     expect(cached[0].state.data).toEqual(workflowPage());
     expect(
@@ -480,7 +498,7 @@ describe("App shell", () => {
       "viewer",
       expect.any(Number),
       "alerts",
-      {},
+      defaultAlertFilters(3),
     ]);
     expect(
       JSON.stringify(cached.map((query) => query.state.data)),
