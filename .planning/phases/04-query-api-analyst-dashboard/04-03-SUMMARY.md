@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "03"
-status: pending_independent_source_review
+status: pending_independent_source_r1_review
 subsystem: auth
 tags: [react, typescript, jwt, react-query, openapi-fetch, accessibility]
 requires:
@@ -27,6 +27,7 @@ key-decisions:
   - "Use one QueryClient throughout the actual Alerts/session tree; allow a caller-supplied client without a separate test cache."
   - "Revoke generation before aborting requests and clearing cache; check cancellation again after body parsing."
   - "Display only delivered Alerts navigation; later pages, filters, cursor history and SSE keep their numbered owners."
+  - "Own credential drafts in the sign-in panel and clear them synchronously on nonsecret verification/revocation revisions; discard the panel on verified bootstrap."
 patterns-established:
   - "A session client can obtain a credential only after its generation/lifetime check, and cannot return stale parsed results."
 requirements-completed: [AUTH-01, AUTH-03, UI-02, UI-06]
@@ -36,9 +37,11 @@ completed: 2026-10-22
 
 # Phase 4 Plan 03: Typed session isolation and analyst shell Summary
 
-The Alerts page now reads real tenant workflows through generated OpenAPI requests and a verified-identity React Query cache, with cancellation and cache removal on expiry, sign-out, identity switch and unmount.
+The Alerts page reads real tenant workflows through generated OpenAPI requests and a verified-identity React Query cache; credential drafts now clear on verification restart and revocation and are discarded after verified bootstrap.
 
-**PENDING INDEPENDENT SOURCE REVIEW.** Two implementation tasks are locally verified at source `6bb0ac84ef7d0267cc5a4f54ec8d8b7e0a6e9bc4`, based on accepted `21ebf9840c57edd3125ba0b8be3d7508c525d5e5`. This is a review candidate, not root acceptance or whole-Phase-4 completion. Requirement IDs describe incremental coverage only. Root owns STATE/ROADMAP/REQUIREMENTS, review reports and post-wave acceptance; none were updated by this executor.
+**PENDING INDEPENDENT R1 SOURCE REVIEW.** CR-01 repair source is `a793313d84630c0f9daf6d3b1f049382ad28e7ed`, following tests-only RED `56b1d4c7d8ef190756414798333ebf6032d71f8b` on resume base `b2106bf90f236b178c34756b401b6c22246aebf0`. All repair gates below passed; independent R1 and root post-wave acceptance remain required. Root keeps Phase 4 at 3/17 accepted. This is not whole-Phase-4 completion, publication authority or permission to begin 04-04.
+
+The original candidate was `6bb0ac84ef7d0267cc5a4f54ec8d8b7e0a6e9bc4`, based on accepted `21ebf9840c57edd3125ba0b8be3d7508c525d5e5`. Its original implementation, 28-test, native and browser records below remain historical evidence; the clean-looking original gates did not cover CR-01. The immutable `04-REVIEW-03-R0.md` records that finding. Requirement IDs describe incremental coverage only. Root owns STATE/ROADMAP/REQUIREMENTS, review reports and post-wave acceptance; none were updated by this repair executor.
 
 ## Performance and ownership
 
@@ -117,6 +120,41 @@ Dependency setup is committed separately to keep the RED commits tests-only. Pro
 
 Karpathy/TDD/debugging guidance kept production within the nine paths and distinguished observed failures from already-correct behavior. React guidance kept credentials in refs and tied requests to session lifecycle. UI/UX guidance and the approved manual-CSS contract led to the responsive list and explicit color/focus/target checks. Verification guidance required actual outputs before the review handoff.
 
+## CR-01 repair: credential draft lifecycle
+
+The original nine-file review found that a second draft entered while `/session` was pending survived bootstrap and reappeared after sign-out. Drafts typed during retained retry also survived automatic deadline expiry. The provider correctly revoked authority and cleared the real cache throughout; this was retained credential text, not an authentication bypass. The original finding and all prior reports are preserved unchanged.
+
+Repair ownership is exactly `web/src/App.test.tsx`, `web/src/App.tsx` and `web/src/auth/session.tsx`, within the original nine-file source union. No client/query/page/CSS/dependency/backend/Compose/scanner rule changed. No tracked file was deleted. User configuration and `.serena/` remain untouched and unstaged; no SDK state mutation, agent, worktree, remote action, 04-04 or Phase 5 work occurred.
+
+- Tests-only RED `56b1d4c` adds eight actual-App cases with only fetch replaced. Six fail at the intended nonempty-input assertions: pending edit → bootstrap → sign-out, verified expiry or authenticated 401; retained-retry edit → deadline expiry or Retry; and pending edit → verification 401. Restart and Cancel already pass and are characterized honestly. Every case uses the same supplied QueryClient as the actual provider/Alerts tree and retains authority, cache, abort and relevant privacy assertions. All original 28 tests and their assertions remain intact.
+- Minimal GREEN `a793313` moves draft ownership into a module-level `SignInPanel`. Verified bootstrap removes that component and its local draft state. The provider supplies a nonsecret numeric `signInRevision`, advanced synchronously for every verification/retry/restart and sign-out path, including automatic expiry and both 401 paths. The controlled draft resets during rendering when that revision changes, before stale input can be committed. The input remains editable and retains its DOM identity across a reset. No effect-delayed clearing or raw credential context API was added; request generation, credential refs, body guards and cache disposal are unchanged.
+- An initial keyed-panel implementation passed all eight focused cases but detached the old input before five existing clearing assertions could observe its empty value. `web-first.log` records those five real failures. The final controlled reset preserves the input and all existing tests without changing their assertions. This is a repaired implementation attempt, not additional behavioral RED or a waived gate. No refactor commit was needed.
+
+React's official documentation, retrieved through Context7, confirms both removal of component state on unmount and conditional same-component state adjustment before child/DOM commit. The latter preserves the existing field while resetting the credential. TDD, review-response, debugging, Karpathy and verification guidance required a causal reproduction, one bounded repair and actual outputs. Frontend/Playwright guidance supplied the focused rendered check below.
+
+New private evidence is exclusively under `.local/phase4-acceptance/04-03/cr01/`: directory 0700, every script/log/report/screenshot 0600. Original evidence was not overwritten. Each wrapper records command, UTC start/end, actual exit, elapsed monotonic duration, HEAD and working source paths; child test/build umask is 022. Precommit logs identify tests-only HEAD `56b1d4c` plus the working implementation subsequently committed as `a793313`; they do not claim GREEN had already been committed. Verification span is 20:53:22–20:57:34 UTC on October 22, approximately 4m12s, excluding instruction reading and metadata. It is not active-time or performance proof.
+
+| New evidence, Oct 22 UTC | Actual command/result |
+|---|---|
+| `draft-red.log`, 20:53:22–20:53:24 | `cd web && timeout 120s npm test -- src/App.test.tsx -t 'draft'`; exit 1, six intended value failures, two already-passing characterizations; unrelated cases excluded by focused selector. |
+| `draft-green.log`, 20:54:00–20:54:02 | Same focused command; exit 0, eight cases pass with the initial keyed implementation; superseded by full-suite correction below. |
+| `web-first.log`, 20:54:22–20:54:25 | Full web chain stops at npm test; exit 1, five existing input-reference clearing assertions fail, 31 tests pass; subsequent chain commands did not execute. |
+| `web-green.log`, 20:55:07–20:55:18 | `cd web && timeout 120s npm test && timeout 120s npm run typecheck && timeout 120s npm run lint && timeout 120s npm run build && timeout 120s npm run format:check`; exit 0, 36/36 tests and every quality gate. |
+| `stack-readiness.log`, 20:54:22 | `timeout 120s bash scripts/check-stack.sh`; exit 1, Kafka not healthy. No native or browser pass inferred. |
+| `preserved-startup.log`, 20:54:45–20:55:23 | `timeout 16m bash -c 'make dev-up && timeout 120s bash scripts/check-stack.sh'`; exit 2 at unhealthy detector during normal preserved startup. The chained stack check did not execute; no reset/prune/teardown or cap change occurred. |
+| `stack-recheck.log`, 20:55:46–20:56:00 | `timeout 120s bash scripts/check-stack.sh`; exit 0, every service/dependency, readiness, topic and native dependency check passes without further mutation. Bounded detector diagnostics retain prior PostgreSQL-unavailable startup messages; no new application defect or exact recovery cause is inferred. |
+| `native-green.log`, 20:55:46–20:56:00 | Exact unchanged Auth command shown earlier: nonempty phase4-only target, race, 6m deadline, -p=1; exit 0, package 12.294s, all 26 top-level/24 nested CLI cases. Real PG migrations and actual binaries/HTTP; backend source unchanged. |
+| `browser-green.log`, 20:57:06–20:57:08 | `timeout 120s node .local/phase4-acceptance/04-03/cr01/browser-draft.mjs`; exit 0 at committed `a793313`, focused actual Chromium flow described below. |
+| `default-green.log`, 20:57:14–20:57:25 | `timeout 300s bash -c 'cd backend && timeout 120s go build ./... && cd .. && make test'`; exit 0 at `a793313`, backend default race (cached results are explicitly reported), web 36 and locked generator 121 tests. |
+| `source-history-scan.log`, 20:57:33–20:57:34 | Pinned gitleaks 8.30.1 full-history redacted scan at `a793313`, 120s cap; exit 0, 512 commits, report exactly `[]`, no allowlist change. Final committed-summary scan follows separately. |
+| `evidence-audit.log` | Exit 0: exact three repair paths/nine-file union, tests-only RED before GREEN, no deletions, native26/CLI24/web36, named actual zero exits, private modes, signing-key absence and empty source scan. |
+
+Focused rendered QA used existing cached Playwright `1.64.0-alpha-1790635538000` and Chromium1248 because the Browser plugin is absent. No package/browser download or project dependency change occurred. Flow: `/alerts` → helper/actual CLI token → submit → hold the actual HTTP200 `/session` response → enter the token again during verification → release the unchanged real response → verified viewer and 50 actual PG workflow rows → Sign out → empty password field and no tenant results. The controlled network delay replays the original server response unchanged; it is not an invented session/list payload. Both 1440px and 375px pass page identity, meaningful content, overlay absence, zero console warnings/errors/page errors, no storage/URL/DOM credential exposure and no document overflow. `browser-draft-results.json` records those observations. `draft-cleared-1440.png` and `draft-cleared-375.png` were visually inspected and show the empty sign-in field with readable copy. Owned Vite/Chromium processes were stopped and joined.
+
+The browser check proves this focused sign-out regression with real data. Automatic timers/401/retry paths have actual-component proof with fetch-only responses; native Auth remains a separate backend proof. Historical full four-viewport/keyboard/reduced-motion/contrast evidence remains valid for unchanged CSS and is not relabelled as a fresh full run. No full Phase 4, SSE, tenant-matrix, screen-reader, 200% zoom, hosted CI, publication, performance or fresh Phase 3 aggregate acceptance is claimed.
+
+**[Rule 1 — CR-01 credential clearing regression]** The original review finding triggered the tests-only RED and bounded App/provider GREEN above. **[Rule 3 — Stopped verification prerequisites]** Normal preserved startup restored dependencies; its detector-health exit remains an actual failure distinct from the subsequent successful stack/native/browser gates. No architecture, source ownership or threat acceptance expanded. No goal-blocking stub, new trust boundary, authentication gate or deferred repair issue remains; independent R1 is still pending. Root alone advances shared tracking after clean R1 and post-wave gates.
+
 ## Known stubs, threat surface and readiness
 
 No goal-blocking stub or TODO remains in the owned implementation. Empty state/ref values are the real signed-out or empty-result state, with an actual verified HTTP data source. No fake later-page metrics/data, canonical fields, cursor history or stream status was introduced. T04-06 cache isolation and T04-07 memory-only credentials cover the new browser boundaries; no new backend endpoint, database schema or unregistered file-access surface was introduced.
@@ -126,3 +164,5 @@ Independent source review and root post-wave acceptance remain required before 0
 ## Self-Check: PASSED
 
 Verified all nine owned paths and five task/setup commits, tests-only commits before GREEN, zero tracked deletions and scoped diff whitespace. Actual evidence audit confirms private directory/file modes, exact key absence, named zero exits and empty source-history report. Final working-tree changes outside this summary are only the pre-existing user configuration and `.serena/`. Summary commit and final metadata scan follow separately; this self-check validates local claims, not independent source acceptance.
+
+Repair self-check also PASSED: the three authorized repair files and `56b1d4c`/`a793313` exist, RED precedes GREEN, the original nine-file union is retained, every original App assertion remains unchanged, and the new audit verifies actual 36-test/native26/CLI24 gates and private evidence. Source is identical to the verified candidate; no new stub/threat surface or shared tracking/review report mutation occurred. This committed summary remains PENDING R1, with final full-history metadata scan performed separately after its commit.
