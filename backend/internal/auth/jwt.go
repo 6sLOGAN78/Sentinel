@@ -44,14 +44,21 @@ type claims struct {
 }
 
 // Verifier accepts only the fixed development issuer/audience and HS256.
-type Verifier struct{ secret []byte }
+type Verifier struct {
+	secret   []byte
+	issuer   string
+	audience string
+}
 
 // NewVerifier requires an operator-provided key of at least 32 bytes.
-func NewVerifier(secret []byte) (*Verifier, error) {
+func NewVerifier(secret []byte, issuer, audience string) (*Verifier, error) {
 	if len(secret) < minSecretBytes {
 		return nil, errors.New("dashboard JWT secret must contain at least 32 bytes")
 	}
-	return &Verifier{secret: append([]byte(nil), secret...)}, nil
+	if issuer != "sentinel-dev" || audience != "sentinel-dashboard" {
+		return nil, errors.New("dashboard JWT issuer and audience must match the fixed contract")
+	}
+	return &Verifier{secret: append([]byte(nil), secret...), issuer: issuer, audience: audience}, nil
 }
 
 // Verify checks signature and all required claims before constructing a principal.
@@ -67,7 +74,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	}
 	c := &claims{}
 	token, err := jwt.ParseWithClaims(raw, c, func(*jwt.Token) (any, error) { return v.secret, nil },
-		jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("sentinel-dev"), jwt.WithAudience("sentinel-dashboard"),
+		jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer(v.issuer), jwt.WithAudience(v.audience),
 		jwt.WithExpirationRequired(), jwt.WithNotBeforeRequired(), jwt.WithIssuedAt(),
 		jwt.WithLeeway(tokenLeeway), jwt.WithStrictDecoding())
 	if err != nil || token == nil || !token.Valid {

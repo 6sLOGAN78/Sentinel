@@ -26,6 +26,7 @@ const (
 	sectionIngest      = "ingest"
 	sectionWriter      = "writer"
 	sectionDetector    = "detector"
+	sectionAuth        = "auth"
 	levelInfo          = "info"
 	envPrefix          = "SENTINEL_"
 	envKeyPrimaryEnv   = "SENTINEL_PRIMARY.ENV"
@@ -96,6 +97,7 @@ const (
 	ServiceEventWriter = "event-writer"
 	ServiceAlertWriter = "alert-writer"
 	ServiceQueryAPI    = "query-api"
+	ServiceDevJWT      = "dev-jwt"
 )
 
 // Config is the complete runtime configuration for a Sentinel binary.
@@ -113,6 +115,26 @@ type Config struct {
 	Ingest        IngestConfig         `koanf:"ingest"`
 	Writer        WriterConfig         `koanf:"writer"`
 	Detector      DetectorConfig       `koanf:"detector"`
+	Auth          AuthConfig           `koanf:"auth"`
+}
+
+// AuthConfig has no default signing key. Issuer/audience are fixed by the v1 contract.
+type AuthConfig struct {
+	JWTSecret string `koanf:"jwt_secret"`
+	Issuer    string `koanf:"issuer"`
+	Audience  string `koanf:"audience"`
+}
+
+func validateAuth(cfg AuthConfig) error {
+	const minKeyBytes, maxKeyBytes = 32, 4096
+	if len(cfg.JWTSecret) < minKeyBytes || len(cfg.JWTSecret) > maxKeyBytes ||
+		strings.TrimSpace(cfg.JWTSecret) == "" || strings.ContainsAny(cfg.JWTSecret, "\x00\r\n") {
+		return errors.New("validate auth config: JWT key must contain 32..4096 bytes without line breaks")
+	}
+	if cfg.Issuer != "sentinel-dev" || cfg.Audience != "sentinel-dashboard" {
+		return errors.New("validate auth config: issuer and audience must match the dashboard contract")
+	}
+	return nil
 }
 
 // DetectorConfig loads immutable startup rules and bounds one owned batch.
@@ -366,7 +388,8 @@ func requiredSections() map[string][]string {
 		ServiceDetector:    {sectionKafka, sectionDatabase, sectionDetector},
 		ServiceEventWriter: {sectionKafka, sectionClickHouse, sectionWriter},
 		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse, sectionWriter},
-		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis},
+		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis, sectionAuth},
+		ServiceDevJWT:      {sectionAuth},
 	}
 }
 
@@ -461,6 +484,8 @@ func splitList(value string) []string {
 
 func setDefaults(k *koanf.Koanf) {
 	defaults := map[string]any{
+		"auth.issuer":                                "sentinel-dev",
+		"auth.audience":                              "sentinel-dashboard",
 		"server.bind_address":                        "",
 		"server.read_timeout":                        defaultHTTPSeconds,
 		"server.write_timeout":                       defaultHTTPSeconds,
@@ -564,6 +589,12 @@ func validateFor(cfg *Config, sections []string) error {
 	}
 
 	for _, section := range sections {
+		if section == sectionAuth {
+			if err := validateAuth(cfg.Auth); err != nil {
+				return err
+			}
+			continue
+		}
 		var target any
 
 		switch section {
@@ -607,7 +638,7 @@ func defaultOpsPort(service string) string {
 		return "9103"
 	case ServiceAlertWriter:
 		return "9104"
-	case ServiceQueryAPI:
+	case ServiceQueryAPI, ServiceDevJWT:
 		return "9105"
 	default:
 		return ""

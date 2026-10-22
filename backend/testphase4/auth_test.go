@@ -153,7 +153,7 @@ func TestPhase4Auth(t *testing.T) {
 		})
 	}
 	t.Run("development_cli", func(t *testing.T) {
-		testDevelopmentCLI(t, ctx, root, base, secretText, tenantA)
+		testDevelopmentCLI(ctx, t, root, base, secretText, tenantA)
 	})
 	t.Run("legacy_key_not_broadened_or_fallback", func(t *testing.T) {
 		status, _ := getJSON(t, base+"/api/v1/events/"+uuid.NewString(), "", key)
@@ -328,7 +328,7 @@ func signToken(t *testing.T, claims map[string]any, secret, algorithm string) st
 	return unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-func testDevelopmentCLI(t *testing.T, ctx context.Context, root, base, secret, tenant string) {
+func testDevelopmentCLI(ctx context.Context, t *testing.T, root, base, secret, tenant string) {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "dev-jwt")
 	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/dev-jwt")
@@ -336,17 +336,30 @@ func testDevelopmentCLI(t *testing.T, ctx context.Context, root, base, secret, t
 	build.Stdout, build.Stderr = io.Discard, io.Discard
 	require.NoError(t, build.Run(), "build actual CLI; missing command is setup failure, not behavioral RED")
 	args := []string{"--tenant", tenant, "--subject", "operator", "--role", "analyst", "--lifetime", "10m"}
-	for _, mode := range []string{"local", "test"} {
-		t.Run("mint_"+mode, func(t *testing.T) {
-			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, mode, secret, args)
+	for _, tc := range []struct {
+		mode, role, lifetime string
+		wantLifetime         time.Duration
+	}{
+		{"local", "analyst", "10m", 10 * time.Minute},
+		{"test", "analyst", "10m", 10 * time.Minute},
+		{"test", "viewer", "1s", time.Second},
+		{"test", "admin", "15m", 15 * time.Minute},
+		{"local", "viewer", "", 15 * time.Minute},
+	} {
+		t.Run("mint_"+tc.mode+"_"+tc.role+"_"+tc.lifetime, func(t *testing.T) {
+			mintArgs := []string{"--tenant", tenant, "--subject", "operator", "--role", tc.role}
+			if tc.lifetime != "" {
+				mintArgs = append(mintArgs, "--lifetime", tc.lifetime)
+			}
+			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, tc.mode, secret, mintArgs)
 			require.NoError(t, runErr)
-			require.Empty(t, stderr, "successful mint must not log")
+			requireNoOutput(t, stderr)
 			raw := strings.TrimSuffix(string(stdout), "\n")
 			require.Equal(t, 2, strings.Count(raw, "."), "stdout must contain exactly one JWT")
 			require.False(t, strings.ContainsAny(raw, "\r\n \t"))
 			require.True(t, credentialsAbsent(stdout, secret), "stdout must never disclose signing key")
 			require.NoError(t, os.WriteFile(filepath.Join(t.TempDir(), "token"), stdout, 0o600))
-			verifyMintedCredential(t, raw, secret, tenant)
+			verifyMintedCredential(t, raw, secret, tenant, tc.role, tc.wantLifetime)
 			for _, path := range []string{"/api/v1/session", "/api/v1/alerts"} {
 				status, body := getJSON(t, base+path, raw, "")
 				require.Equal(t, http.StatusOK, status, "actual minted token must reach production handler")
@@ -358,7 +371,7 @@ func testDevelopmentCLI(t *testing.T, ctx context.Context, root, base, secret, t
 		t.Run("refuse_"+mode, func(t *testing.T) {
 			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, mode, secret, args)
 			require.Error(t, runErr)
-			require.Empty(t, stdout)
+			requireNoOutput(t, stdout)
 			require.NotEmpty(t, stderr)
 			require.True(t, credentialsAbsent(stderr, secret))
 		})
@@ -380,7 +393,7 @@ func testInvalidCLIInputs(t *testing.T, binary, root, secret string, args []stri
 			invalidArgs := append(append([]string(nil), args...), tc.flag, tc.value)
 			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, "test", secret, invalidArgs)
 			require.Error(t, runErr)
-			require.Empty(t, stdout)
+			requireNoOutput(t, stdout)
 			require.True(t, credentialsAbsent(stderr, secret))
 		})
 	}
@@ -388,7 +401,7 @@ func testInvalidCLIInputs(t *testing.T, binary, root, secret string, args []stri
 		t.Run("refuse_key_length_"+strconv.Itoa(len(value)), func(t *testing.T) {
 			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, "test", value, args)
 			require.Error(t, runErr)
-			require.Empty(t, stdout)
+			requireNoOutput(t, stdout)
 			require.True(t, credentialsAbsent(stderr, value))
 		})
 	}
@@ -411,21 +424,32 @@ func runDevelopmentCLI(t *testing.T, binary, root, mode, secret string, args []s
 	return stdout.Bytes(), stderr.Bytes(), err
 }
 
-func verifyMintedCredential(t *testing.T, raw, secret, tenant string) {
+func verifyMintedCredential(t *testing.T, raw, secret, tenant, role string, lifetime time.Duration) {
 	t.Helper()
 	claims := jwt.MapClaims{}
 	parsed, err := jwt.ParseWithClaims(raw, claims, func(*jwt.Token) (any, error) { return []byte(secret), nil },
 		jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("sentinel-dev"), jwt.WithAudience("sentinel-dashboard"),
-		jwt.WithSubject("operator"), jwt.WithExpirationRequired(), jwt.WithNotBeforeRequired(), jwt.WithIssuedAt())
-	require.True(t, err == nil, "CLI token must independently verify without logging credential details")
+		jwt.WithSubject("operator"), jwt.WithExpirationRequired(), jwt.WithNotBeforeRequired(), jwt.WithIssuedAt(),
+		jwt.WithLeeway(30*time.Second))
+	if err != nil {
+		t.Fatal("CLI token must independently verify; credential details withheld")
+	}
 	require.True(t, parsed.Valid)
 	require.Equal(t, tenant, claims["tenant"])
-	require.Equal(t, "analyst", claims["role"])
+	require.Equal(t, role, claims["role"])
 	iat, err := claims.GetIssuedAt()
 	require.NoError(t, err)
 	exp, err := claims.GetExpirationTime()
 	require.NoError(t, err)
-	require.Equal(t, 10*time.Minute, exp.Sub(iat.Time))
+	require.Equal(t, lifetime, exp.Sub(iat.Time))
+}
+
+// Do not let an assertion print unexpected token/key output into test logs.
+func requireNoOutput(t *testing.T, output []byte) {
+	t.Helper()
+	if len(output) != 0 {
+		t.Fatal("expected no output; credential details withheld")
+	}
 }
 
 func getJSON(t *testing.T, url, token, key string) (int, []byte) {

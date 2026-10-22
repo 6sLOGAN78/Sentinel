@@ -18,7 +18,7 @@ func TestVerifierClaims(t *testing.T) {
 	key := make([]byte, 48)
 	_, err := rand.Read(key)
 	require.NoError(t, err)
-	verifier, err := auth.NewVerifier(key)
+	verifier, err := auth.NewVerifier(key, "sentinel-dev", "sentinel-dashboard")
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, name := range []string{
@@ -84,7 +84,7 @@ func verifierFixture(t *testing.T, name string, claims jwt.MapClaims, key []byte
 
 func TestVerifierRequiresKey(t *testing.T) {
 	for _, size := range []int{0, 1, 31} {
-		_, err := auth.NewVerifier(make([]byte, size))
+		_, err := auth.NewVerifier(make([]byte, size), "sentinel-dev", "sentinel-dashboard")
 		require.Error(t, err)
 	}
 }

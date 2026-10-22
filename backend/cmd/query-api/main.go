@@ -45,11 +45,7 @@ const (
 )
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
-	secret, present := os.LookupEnv("SENTINEL_AUTH.JWT_SECRET")
-	if !present {
-		return errors.New("SENTINEL_AUTH.JWT_SECRET is required")
-	}
-	jwtVerifier, err := auth.NewVerifier([]byte(secret))
+	jwtVerifier, err := auth.NewVerifier([]byte(cfg.Auth.JWTSecret), cfg.Auth.Issuer, cfg.Auth.Audience)
 	if err != nil {
 		return err
 	}

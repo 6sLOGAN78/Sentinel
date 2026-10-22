@@ -51,11 +51,10 @@ npm run dev
 ```
 
 Visit `http://127.0.0.1:5173`. Vite binds loopback and proxies `/api` only to the
-fixed local query API at `127.0.0.1:8081`. The sign-in form accepts an existing
-short-lived HS256 dashboard token with the documented issuer/audience and claims;
-the development token CLI is assigned to the next slice and is not implemented
-yet. Supplied tokens travel only in Authorization headers and remain in browser
-memory. Availability errors offer **Retry sign in**; **Cancel sign in**, expiry
+fixed local query API at `127.0.0.1:8081`. Mint a token using the development CLI
+below and paste it into the masked sign-in field. Supplied tokens travel only in
+Authorization headers and remain in browser memory. Availability errors offer
+**Retry sign in**; **Cancel sign in**, expiry
 and sign-out clear the credential and abort pending work.
 
 For host query-api development, `make run SVC=query-api` reuses the same private
@@ -70,6 +69,45 @@ service (preserve its volumes), then run the host process on 8081/9105 instead.
 Other `make run` services do not receive the dashboard JWT key. The normal
 `make seed` path still starts the preserved stack and verifies 1,000 exact event
 IDs using the existing event API-key contract.
+
+## Mint a development access token
+
+Build from the repository root, then run through the same private key helper
+used by `make dev-up` and host query-api. Choose an existing tenant and a
+pseudonymous operator subject; the tenant is a lowercase slug of at most 63
+characters. Role must explicitly be `viewer`, `analyst` or `admin`.
+
+```sh
+mkdir -p .local/bin
+(cd backend && go build -o ../.local/bin/dev-jwt ./cmd/dev-jwt)
+python3 -B scripts/dev_auth_env.py -- env 'SENTINEL_PRIMARY.ENV=local' \
+  .local/bin/dev-jwt --tenant demo --subject local-analyst --role analyst --lifetime 10m
+```
+
+The final command deliberately emits exactly one secret token to stdout. Run it
+in a private terminal, paste the token into the dashboard and clear the terminal
+afterward. Never send its stdout to shared logs, screenshots, a URL or a tracked
+file. For a private local capture instead, apply `umask 077` before redirecting
+stdout to an ignored file under `.local/`; keep the directory 0700/file 0600 and
+remove the token when finished. No token or signing key belongs in command-line
+arguments. The helper reads the existing owner-only key or the operator's secret
+environment override; it never generates a second identity for the CLI.
+
+Lifetime defaults to 15 minutes; `--lifetime` accepts 1 second through 15 minutes.
+Tenant, subject and role are required. Tokens use HS256 with fixed issuer
+`sentinel-dev`, audience `sentinel-dashboard` and required `exp`, `iat`, `nbf`.
+The verifier retains 30 seconds of clock leeway and an 8 KiB token cap. The key
+has no default and must contain 32..4096 bytes without line breaks; configuration
+rejects any other issuer/audience. Only query-api and dev-jwt require this key:
+producer services retain their existing startup requirements.
+
+The CLI requires explicit `SENTINEL_PRIMARY.ENV=local` or `test`; all other modes
+refuse minting with empty stdout and sanitized stderr. The helper also rejects
+an explicitly nonlocal parent mode before applying the child command above.
+There is no HTTP mint endpoint or production identity provider. Production
+query-api may verify matching externally provisioned tokens using its private
+configured key and fixed contract, but the development CLI cannot mint in
+production. Successful local minting does not validate a production deployment.
 
 All published host ports bind loopback. Ingest/query use 8080/8081. Operations
 ports are ingest 9101, detector 9102, event-writer 9103, alert-writer 9104 and query
