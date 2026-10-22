@@ -203,6 +203,8 @@ func rejectedCredential(t *testing.T, name string, claims map[string]any, secret
 	case "wrong_algorithm":
 		algorithm = "HS384"
 	case "expired":
+		claims["iat"] = now.Add(-10 * time.Minute).Unix()
+		claims["nbf"] = now.Add(-10 * time.Minute).Unix()
 		claims["exp"] = now.Add(-time.Minute).Unix()
 	default:
 		delete(claims, name)
