@@ -192,6 +192,10 @@ assert not key or key not in repr(sys.argv)
                                     capture_output=True, text=True, timeout=20, check=False)
             self.assertEqual(result.returncode, 0, "MODEL make command handoff failed")
             self.assertNotIn(self.key.read_text(), result.stdout + result.stderr)
+        result = subprocess.run(["make", "run", "SVC=query-api"], cwd=self.root,
+                                env={**env, "SENTINEL_PRIMARY.ENV": "production"},
+                                capture_output=True, text=True, timeout=20, check=False)
+        self.assertNotEqual(result.returncode, 0, "make must not hide explicit nonlocal mode from bootstrap")
 
     def test_real_compose_mapping_and_readonly_without_key(self):
         for credential in (None, secrets.token_hex(32)):
