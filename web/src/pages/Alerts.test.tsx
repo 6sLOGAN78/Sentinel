@@ -174,18 +174,9 @@ describe("filtered alert pages", () => {
     const firstURL = requests[0].url;
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     await screen.findByText("Second filtered page");
-    const secondLocation = window.location.href;
-    const secondState: unknown = window.history.state;
     expect(new URL(requests[1].url).searchParams.get("from")).toBe(
       new URL(firstURL).searchParams.get("from"),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
-    await screen.findByText("First filtered page");
-    await act(async () => {
-      window.history.replaceState(secondState, "", secondLocation);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
-    await screen.findByText("Second filtered page");
     await act(async () => {
       window.history.back();
     });
@@ -195,6 +186,16 @@ describe("filtered alert pages", () => {
       window.history.forward();
     });
     await screen.findByText("Second filtered page");
+    // Traversal resets the bounded explicit trail. Rebuild it with Next, then
+    // test Previous independently of native Back/Forward history entries.
+    await act(async () => { window.history.back(); });
+    await screen.findByText("First filtered page");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Next page" })).toHaveProperty("disabled", false));
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByText("Second filtered page");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Previous page" })).toHaveProperty("disabled", false));
+    fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
+    await screen.findByText("First filtered page");
   });
 
   it("reads filter/cursor deep links and clears pagination when filters reset", async () => {
@@ -222,10 +223,12 @@ describe("filtered alert pages", () => {
     });
     await screen.findByText("Page 0");
     for (let n = 1; n <= 22; n++) {
+      await waitFor(() => expect(screen.getByRole("button", { name: "Next page" })).toHaveProperty("disabled", false));
       fireEvent.click(screen.getByRole("button", { name: "Next page" }));
       await screen.findByText("Page " + n);
     }
     for (let n = 21; n >= 2; n--) {
+      await waitFor(() => expect(screen.getByRole("button", { name: "Previous page" })).toHaveProperty("disabled", false));
       fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
       await screen.findByText("Page " + n);
     }
@@ -237,6 +240,8 @@ describe("filtered alert pages", () => {
   it.each(["signout", "expiry", "unauthorized"])(
     "clears URL and in-memory cursors on %s and cannot restore old-session history",
     async (reason) => {
+      // Install the fake clock before SessionProvider schedules its expiry.
+      if (reason === "expiry") vi.useFakeTimers({ shouldAdvanceTime: true });
       let unauthorized = false;
       const { requests, cache, switchTenant } = await start(
         async () =>
@@ -251,7 +256,6 @@ describe("filtered alert pages", () => {
       const oldLocation = window.location.href;
       const oldState: unknown = window.history.state;
       if (reason === "expiry") {
-        vi.useFakeTimers();
         await act(async () => {
           await vi.advanceTimersByTimeAsync(30001);
         });
@@ -283,6 +287,24 @@ describe("filtered alert pages", () => {
       ).toHaveProperty("disabled", true);
     },
   );
+
+  it("preserves server-frozen ranges for cursor-only deep links and subsequent pages", async () => {
+    window.history.replaceState(null, "", "/alerts?cursor=frozen-server-cursor&limit=3");
+    const { requests, cache } = await start();
+    await screen.findByText("First filtered page");
+    expect([...new URL(requests[0].url).searchParams.keys()].sort()).toEqual(["cursor", "limit"]);
+    expect(cache.getQueryCache().getAll()[0].queryKey[6]).toEqual({ cursor: "frozen-server-cursor", limit: 3 });
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect([...new URL(requests[1].url).searchParams.keys()].sort()).toEqual(["cursor", "limit"]);
+    expect(new URL(requests[1].url).searchParams.get("cursor")).toBe("page-2");
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "resolved" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    await waitFor(() => expect(requests).toHaveLength(3));
+    const changed = new URL(requests[2].url).searchParams;
+    expect(changed.has("cursor")).toBe(false);
+    expect(Date.parse(changed.get("to")!) - Date.parse(changed.get("from")!)).toBe(86400000);
+  });
 
   it("announces loading/empty/errors and retries the same current filters", async () => {
     let resolve: (response: Response) => void = () => {};
