@@ -87,6 +87,108 @@ describe("filtered alert pages", () => {
     window.history.replaceState(null, "", "/alerts");
   });
 
+  it.each([
+    [
+      "2026-10-21T00:00",
+      "2026-10-22T00:00",
+      "2026-10-21T00:00:00.000Z",
+      "2026-10-22T00:00:00.000Z",
+    ],
+    [
+      "2026-10-21T00:00:01",
+      "2026-10-22T00:00:02",
+      "2026-10-21T00:00:01.000Z",
+      "2026-10-22T00:00:02.000Z",
+    ],
+    [
+      "2026-10-21T00:00:01.123",
+      "2026-10-22T00:00:02.456",
+      "2026-10-21T00:00:01.123Z",
+      "2026-10-22T00:00:02.456Z",
+    ],
+    [
+      "2026-10-15T00:00",
+      "2026-10-22T00:00",
+      "2026-10-15T00:00:00.000Z",
+      "2026-10-22T00:00:00.000Z",
+    ],
+  ])(
+    "canonicalizes edited UTC inputs %s / %s before requests, keys and URLs",
+    async (fromInput, toInput, from, to) => {
+      const { requests, cache } = await start();
+      await screen.findByText("First filtered page");
+      fireEvent.change(screen.getByLabelText("From (UTC)"), {
+        target: { value: fromInput },
+      });
+      fireEvent.change(screen.getByLabelText("To (UTC)"), {
+        target: { value: toInput },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+      await waitFor(() => expect(requests).toHaveLength(2));
+      const actual = new URL(requests[1].url).searchParams;
+      expect(Object.fromEntries(actual)).toEqual({ from, to, limit: "50" });
+      expect(
+        Object.fromEntries(new URLSearchParams(window.location.search)),
+      ).toEqual({ from, to, limit: "50" });
+      expect(cache.getQueryCache().getAll().at(-1)!.queryKey).toEqual([
+        "session",
+        "filters-operator",
+        "filters-tenant",
+        "viewer",
+        expect.any(Number),
+        "alerts",
+        { from, to, limit: 50 },
+      ]);
+    },
+  );
+
+  it.each(["From (UTC)", "To (UTC)"])(
+    "canonicalizes a single whole-minute edit of %s",
+    async (label) => {
+      const { requests } = await start();
+      await screen.findByText("First filtered page");
+      const initial = new URL(requests[0].url).searchParams;
+      const field = label.startsWith("From") ? "from" : "to";
+      const minute = new Date(initial.get(field)!).toISOString().slice(0, 16);
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value: minute },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+      await waitFor(() => expect(requests).toHaveLength(2));
+      expect(new URL(requests[1].url).searchParams.get(field)).toBe(
+        minute + ":00.000Z",
+      );
+    },
+  );
+
+  it("rejects a time range beyond seven days and safely defaults cleared time inputs", async () => {
+    const { requests } = await start();
+    await screen.findByText("First filtered page");
+    fireEvent.change(screen.getByLabelText("From (UTC)"), {
+      target: { value: "2026-10-14T00:00" },
+    });
+    fireEvent.change(screen.getByLabelText("To (UTC)"), {
+      target: { value: "2026-10-22T00:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    await screen.findByText("Choose a valid UTC time range of at most 7 days.");
+    expect(requests).toHaveLength(1);
+    fireEvent.change(screen.getByLabelText("From (UTC)"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("To (UTC)"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    const q = new URL(requests[1].url).searchParams;
+    expect(new Date(q.get("from")!).toISOString()).toBe(q.get("from"));
+    expect(new Date(q.get("to")!).toISOString()).toBe(q.get("to"));
+    expect(Date.parse(q.get("to")!) - Date.parse(q.get("from")!)).toBe(
+      86400000,
+    );
+  });
+
   it("applies labelled filters to actual requests and normalized identity cache keys", async () => {
     const { requests, cache } = await start();
     await screen.findByText("First filtered page");
