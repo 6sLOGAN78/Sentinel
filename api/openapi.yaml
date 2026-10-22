@@ -24,6 +24,26 @@ tags:
   - name: ops
 
 paths:
+  /api/v1/session:
+    get:
+      tags: [session]
+      operationId: getSession
+      summary: Read the verified dashboard identity
+      description: Requires an HS256 JWT from sentinel-dev for sentinel-dashboard. Responses must not be cached.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Verified identity; no signing key or bearer credential is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   "/api/v1/events:batch":
     post:
       tags: [ingest]
@@ -136,7 +156,11 @@ paths:
       tags: [alerts]
       operationId: listAlerts
       summary: Search alerts
-      description: Cursor pagination ordered by (created_at, alert_id). Scoped to the caller tenant.
+      description: |
+        PostgreSQL workflow page ordered by descending (created_at, alert_id), scoped to
+        the verified tenant. This first slice supports limit/cursor over a frozen last
+        24 hours; richer time/severity/status/rule filters below arrive in the list slice.
+        No ClickHouse detection fields are fabricated or required for this read.
       security:
         - BearerAuth: []
       parameters:
@@ -515,6 +539,64 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+    Session:
+      type: object
+      additionalProperties: false
+      required: [subject, tenant_id, role, expires_at]
+      properties:
+        subject:
+          type: string
+          minLength: 1
+        tenant_id:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,62}$"
+        role:
+          enum: [viewer, analyst, admin]
+        expires_at:
+          $ref: "#/components/schemas/UTCTimestamp"
+
+    WorkflowAlert:
+      description: Authoritative public PostgreSQL workflow fields. Canonical immutable Alert remains separate for ClickHouse details.
+      type: object
+      additionalProperties: false
+      required: [alert_id, tenant_id, created_at, updated_at, rule_id, rule_version, severity, entity_key, summary, event_count, window_start, window_end, status, assignee, version]
+      properties:
+        alert_id:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        tenant_id:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,62}$"
+        created_at:
+          $ref: "#/components/schemas/UTCTimestamp"
+        updated_at:
+          $ref: "#/components/schemas/UTCTimestamp"
+        rule_id:
+          type: string
+        rule_version:
+          type: integer
+          minimum: 1
+        severity:
+          $ref: "#/components/schemas/Severity"
+        entity_key:
+          type: string
+        summary:
+          type: string
+        event_count:
+          type: integer
+          minimum: 1
+        window_start:
+          $ref: "#/components/schemas/UTCTimestamp"
+        window_end:
+          $ref: "#/components/schemas/UTCTimestamp"
+        status:
+          $ref: "#/components/schemas/AlertStatus"
+        assignee:
+          type: [string, "null"]
+        version:
+          type: integer
+          minimum: 1
+
     Error:
       type: object
       additionalProperties: false
@@ -756,7 +838,7 @@ components:
           type: array
           maxItems: 200
           items:
-            $ref: "#/components/schemas/Alert"
+            $ref: "#/components/schemas/WorkflowAlert"
         next_cursor:
           type: [string, "null"]
         has_more:

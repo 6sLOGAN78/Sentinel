@@ -52,8 +52,26 @@ describe("generated API types", () => {
       sample_event_ids: [],
       dedupe_key: "k",
     };
+    expect(alert.dedupe_key).toBe("k");
+    const workflow: AlertList["items"][number] = {
+      alert_id: "a".repeat(64),
+      tenant_id: "acme",
+      rule_id: "BRUTE_FORCE",
+      rule_version: 1,
+      severity: "high",
+      status: "open",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      window_start: "2026-01-01T00:00:00Z",
+      window_end: "2026-01-01T00:05:00Z",
+      entity_key: "198.51.100.7",
+      summary: "many failures",
+      event_count: 5,
+      assignee: null,
+      version: 1,
+    };
     const alerts: AlertList = {
-      items: [alert],
+      items: [workflow],
       next_cursor: null,
       has_more: false,
     };

@@ -100,7 +100,7 @@ func TestPhase4Auth(t *testing.T) {
 		require.NotNil(t, page.NextCursor)
 		for _, row := range page.Items {
 			require.Equal(t, tenantA, row["tenant_id"])
-			require.Len(t, row, 16, "only actual public PG workflow columns")
+			require.Len(t, row, 15, "only actual public PG workflow columns")
 			for _, absent := range []string{"sample_event_ids", "dedupe_key", "schema_version", "seq", "immutable_fingerprint"} {
 				require.NotContains(t, row, absent)
 			}

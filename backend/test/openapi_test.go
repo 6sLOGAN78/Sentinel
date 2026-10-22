@@ -63,6 +63,7 @@ func TestOpenAPIRoutes(t *testing.T) {
 	t.Parallel()
 
 	want := []string{
+		"GET /api/v1/session",
 		"POST /api/v1/events:batch",
 		"GET /api/v1/events",
 		"GET /api/v1/events/{event_id}",
