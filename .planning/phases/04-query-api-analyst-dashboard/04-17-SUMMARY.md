@@ -33,7 +33,7 @@ key-decisions:
   - "Proxy browser API requests only to fixed loopback 8081; retain retry credentials only in memory with expiry and cancellation."
   - "Check explicit nonlocal parent mode before applying host child local settings."
 requirements-completed: [AUTH-01, AUTH-03, API-03, UI-02, UI-06]
-duration: 41min
+duration: 46min
 completed: 2026-10-22
 ---
 
@@ -45,7 +45,7 @@ Private local JWT provisioning now connects the supported Make/Compose/host laun
 
 ## Performance
 
-- Recorded evidence span: 2026-10-22T00:59:09Z through approximately 01:40Z, about 41 minutes; initial instruction reading is not measured. This is elapsed observation, not active execution or a performance benchmark.
+- Recorded evidence span: 2026-10-22T00:59:09Z through approximately 01:45Z, about 46 minutes; initial instruction reading is not measured. This includes the root-requested fixture-quality follow-up and is elapsed observation, not active execution or a performance benchmark.
 - The final stack/HTTP/helper gate ended at 01:20:11Z. A later evidence audit records 01:39:51Z. The reason for that clock interval is unestablished; no interruption or suspension cause is inferred.
 - Source boundary: exactly the 12 approved files. Root owns STATE/ROADMAP/REQUIREMENTS updates. User-owned `.planning/config.json` and `.serena/` remain untouched and unstaged.
 
@@ -65,12 +65,13 @@ Private local JWT provisioning now connects the supported Make/Compose/host laun
 4. Task 2 GREEN: `a554ce5` — fixed proxy, session state handling, valid HS384 fixture and operator documentation.
 5. Task 3 causal follow-up RED: `acd675c` — actual Make with controlled child exposes host settings hiding explicit nonlocal mode.
 6. Task 3 follow-up GREEN: `a8b062e` — check original parent mode before applying local child settings.
+7. Root-requested Task 3 quality repair: `a1fbd4f` — extract rejected-credential fixture construction, wrap long lines, rename shadowed outage base and use `http.StatusOK`; all 19 subtests and 44 assertion calls retained.
 
 The metadata commit records this pending-review handoff separately. No history rewrite, branch change, remote push or hosted CI was performed.
 
 ## Verification and Evidence
 
-Raw evidence is ignored under `.local/phase4-acceptance/04-17/`, directories 0700 and files 0600. Every command log records its actual base SHA, command, UTC start/end and exit. Precommit logs identify the then-current base plus the owned working changes subsequently committed; they do not claim those changes already existed in the base commit. Backend/web implementation is unchanged after `a554ce5`; the later source change is only Make's wrapper order and its test.
+Raw evidence is ignored under `.local/phase4-acceptance/04-17/`, directories 0700 and files 0600. Every command log records its actual base SHA, command, UTC start/end and exit. Precommit logs identify the then-current base plus the owned working changes subsequently committed; they do not claim those changes already existed in the base commit. Production backend/web implementation is unchanged after `a554ce5`; subsequent changes are Make's wrapper order/test and the scoped Auth test-fixture quality repair.
 
 | Evidence | Actual result |
 |---|---|
@@ -95,25 +96,29 @@ Raw evidence is ignored under `.local/phase4-acceptance/04-17/`, directories 070
 | `final-handoff-stack.log` | At `a8b062e`, actual check-stack, actual Vite session/own PG list and helper 8 tests all passed; 01:19:55–01:20:11Z, exit 0. |
 | `hygiene.log` / `post-seed-final.log` | Pins, ADR, literal-dotenv and private Docker-context guards passed; no secret-bearing Compose configuration was printed. |
 | `evidence-audit-final.log` | Exit 0; verified required actual exits, private modes, exact local-key absence from logs/tracked changes, all 12 source paths, and unchanged production verifier/canonical schema/PG DTO. |
+| `lint-quality-before.log` → `lint-quality-green.log` | Reconfirmed six phase4-tag quality findings at root's base `6e136cd`, exit 1; after the fixture-only repair, phase4 vet/lint exit 0 with zero issues, 01:44:54–01:44:56Z. Both commands retain their 120s ceilings. |
+| `auth-quality-green.log` | Actual nonempty `^TestPhase4Auth$`, phase4/race/6m, exit 0 after the fixture repair. All 19 prior subtest names and their order are preserved; exact assertions remain unchanged. |
+| `retained-quality-static.log` | Default Go race suite (60s Go/120s command caps), default vet/build/lint and integration-tag vet/lint all exit 0 after the fixture repair; each static command retains its 120s ceiling, 01:44:56–01:45:03Z. |
 
 Filesystem/concurrency tests use actual temporary directories and child processes. Make command capture is explicitly a MODEL with controlled Go/Docker children, separate from the actual host/stack/HTTP evidence above. Foreign-owner policy is tested by injecting the expected uid in an unprivileged child while retaining actual opens/fstats; it is not presented as a real privileged chown test.
 
 ## TDD Gate Compliance
 
-Each focused source repair has a preceding tests-only commit and a separately observed causal failure. The original runtime startup and actual Vite HTML failures precede their fixes. `helper-red.log` also contains missing-helper setup errors; those errors are not claimed as behavioral RED for each individual filesystem safeguard. Security hardening checks that already passed correct production remain characterization/negative-control evidence. The HS384 RED identifies the broken fixture, not a production verifier defect.
+Each focused behavior repair has a preceding tests-only commit and a separately observed causal failure. The original runtime startup and actual Vite HTML failures precede their fixes. `helper-red.log` also contains missing-helper setup errors; those errors are not claimed as behavioral RED for each individual filesystem safeguard. Security hardening checks that already passed correct production remain characterization/negative-control evidence. The HS384 RED identifies the broken fixture, not a production verifier defect. The later fixture-quality refactor uses actual lint exit 1 → 0 evidence; it is not presented as a new behavioral RED/GREEN cycle.
 
 ## Deviations from Plan
 
 1. **[Rule 1 — Owned fixture lint]** Integration-tag lint caught one newly introduced shadowed `err` in lifecycle key generation. Reused the existing variable; integration vet/lint then passed. Included in `0ab0bc2`. No linter was weakened.
 2. **[Rule 1 — Host mode handoff]** Final verification exposed the new host launcher applying local mode before the helper checked explicit parent mode. A causal Make regression (`acd675c`) failed before moving the wrapper ahead of local child settings (`a8b062e`). Helper/actual host and full normal preserved seed checks passed afterward. No additional source file was needed.
+3. **[Root-requested quality closure]** After the initial checkpoint, root explicitly assigned the six inherited phase4-tag diagnostics to this already-owned fixture. A small rejected-credential helper reduced test-family complexity; formatting, the outage URL name and HTTP status constant were corrected without suppressions or configuration changes. Commit `a1fbd4f` retains all 19 subtests and 44 assertion calls; phase4/default/integration vet/lint and actual native Auth passed. This authorization supersedes the earlier deferral of those six findings.
 
 Karpathy guidance kept the changes within the approved launch/authentication repair. TDD/debugging and verification guidance supplied the observed failure → focused fix → actual runtime verification sequence. React guidance kept transient credentials in refs and cleanup tied to session lifetime; Compose guidance preserved existing pinned dependencies, loopback ports and volumes.
 
 ## Deferred Issues and Remaining Gates
 
-- **Independent review pending:** root must review the frozen source `a8b062e891115e6c80d264cbeaa1ad50b53c6de1` against all five original findings and new helper/wiring safety. Original `04-REVIEW-01-R0.md` is unchanged. Task 3 is not accepted until that review is clean.
+- **Independent review pending:** root must review the frozen source `a1fbd4f7b8393616bb199853734156f2b9dd91cb` against all five original findings and new helper/wiring safety. Original `04-REVIEW-01-R0.md` is unchanged. Task 3 is not accepted until that review is clean.
 - **Full-history scanner is NOT green:** pinned gitleaks 8.30.1 exited 1 with exactly three historical planning matches, all predating this repair's source commits: `778d3db` / `04-07-PLAN.md:58`; `5d11ca2` / `04-17-PLAN.md:70` and `:101`. Final redacted report: `.local/phase4-acceptance/04-17/final-secret-report.json`. Root owns classification and any precise follow-up; this executor did not edit planning history, change the allowlist or waive the gate. No implementation commit was reported by this scan.
-- **Additional phase4-tag lint is NOT green:** `phase4-static.log` reports six diagnostics in inherited Auth fixture code: cognitive complexity 25, shadowed `base`, three overlong lines and literal HTTP 200. These source constructs/control flow predate this repair. Required default and integration lint are green. Attempted private baseline isolation/Go overlay did not produce a valid baseline lint run (internal-import/typecheck failures), so no executed baseline equivalence is claimed. These unrelated fixture findings were left unchanged and reported for root disposition.
+- **Phase4-tag quality findings resolved:** historical `phase4-static.log` and reconfirming `lint-quality-before.log` retain the six findings; `lint-quality-green.log` now records zero issues after root's explicit fixture assignment. Earlier private baseline isolation/Go overlay attempts failed setup/typecheck and are not counted as baseline or acceptance proof. Default and integration gates also remain green.
 - No full Phase 4, Phase 3 aggregate, full browser/SSE, hosted CI or performance/RSS guarantee is claimed. No 04-02 or Phase 5 work began. Overall tracking remains root-owned.
 
 ## Known Stubs and Threat Surface
@@ -128,4 +133,4 @@ Return to the orchestrator for independent review, historical scanner classifica
 
 ## Self-Check: PASSED
 
-Verified both new source/test files, this summary and all six recorded task commits exist; checked scoped diff whitespace and zero unexpected deletions. Private evidence audit verified actual gate exits and the exact 12-source boundary before this metadata file was added. This self-check verifies the handoff's claims, not independent acceptance; the scanner and extra tag-lint failures remain explicitly recorded above.
+Verified both new source/test files, this summary and all seven recorded task commits exist; checked scoped diff whitespace and zero unexpected deletions. Private evidence audit verified actual gate exits and the exact 12-source boundary before the initial metadata file was added. The quality follow-up also preserved all 19 native subtests and 44 assertion calls; its phase4/default/integration gate exits are zero. This self-check verifies the handoff's claims, not independent acceptance; historical scanner findings and independent review remain open.
