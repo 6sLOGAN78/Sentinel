@@ -6,7 +6,50 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 import App from "./App";
+
+function identity(tenant = "cache-tenant", lifetime = 600000) {
+  return {
+    subject: "verified-operator",
+    tenant_id: tenant,
+    role: "viewer",
+    expires_at: new Date(Date.now() + lifetime).toISOString(),
+  };
+}
+
+function workflowPage(summary = "Cached tenant alert") {
+  return {
+    items: [
+      {
+        alert_id: "b".repeat(64),
+        tenant_id: "cache-tenant",
+        created_at: "2026-10-21T12:00:00Z",
+        updated_at: "2026-10-21T12:00:00Z",
+        rule_id: "AUTH_BRUTE_FORCE",
+        rule_version: 1,
+        severity: "high",
+        entity_key: "192.0.2.10",
+        summary,
+        event_count: 10,
+        window_start: "2026-10-21T11:59:00Z",
+        window_end: "2026-10-21T12:00:00Z",
+        status: "open",
+        assignee: null,
+        version: 1,
+      },
+    ],
+    next_cursor: null,
+    has_more: false,
+  };
+}
+
+function signIn(credential = "memory-credential") {
+  fireEvent.change(screen.getByLabelText("Development access token"), {
+    target: { value: credential },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+}
 
 describe("App shell", () => {
   afterEach(() => {
@@ -321,5 +364,117 @@ describe("App shell", () => {
     expect(screen.queryAllByRole("row")).toHaveLength(0);
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
     vi.unstubAllGlobals();
+  });
+
+  it("caches the actual alert response under verified identity and clears it on sign out", async () => {
+    const client = new QueryClient();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(identity()))
+        .mockResolvedValueOnce(Response.json(workflowPage())),
+    );
+    render(<App queryClient={client} />);
+    signIn();
+    expect(await screen.findByText("Cached tenant alert")).toBeTruthy();
+    const cached = client
+      .getQueryCache()
+      .getAll()
+      .filter((query) => query.state.data !== undefined);
+    expect(cached).toHaveLength(1);
+    expect(cached[0].queryKey).toEqual([
+      "session",
+      "verified-operator",
+      "cache-tenant",
+      "viewer",
+      expect.any(Number),
+      "alerts",
+      {},
+    ]);
+    expect(cached[0].state.data).toEqual(workflowPage());
+    expect(
+      JSON.stringify(
+        client
+          .getQueryCache()
+          .getAll()
+          .map((query) => query.queryKey),
+      ),
+    ).not.toContain("memory-credential");
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+    expect(screen.queryByText("Cached tenant alert")).toBeNull();
+  });
+
+  it("expires verified authority and its actual cached data without waiting for a 401", async () => {
+    vi.useFakeTimers();
+    const client = new QueryClient();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(identity("cache-tenant", 2000)))
+        .mockResolvedValueOnce(Response.json(workflowPage())),
+    );
+    render(<App queryClient={client} />);
+    await act(async () => signIn());
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(screen.getByText("Cached tenant alert")).toBeTruthy();
+    expect(
+      client
+        .getQueryCache()
+        .getAll()
+        .some((query) => query.state.data !== undefined),
+    ).toBe(true);
+    await act(async () => vi.advanceTimersByTime(2000));
+    expect(screen.queryByText("Cached tenant alert")).toBeNull();
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Your session expired. Sign in again to continue.",
+    );
+    expect(screen.queryByText(/cache-tenant/)).toBeNull();
+  });
+
+  it("never repopulates the old tenant cache when an uncooperative request finishes after new login", async () => {
+    const client = new QueryClient();
+    let finish: (response: Response) => void = () => {};
+    const delayed = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(identity()))
+      .mockReturnValueOnce(delayed)
+      .mockResolvedValueOnce(Response.json(identity("new-tenant")))
+      .mockResolvedValueOnce(
+        Response.json({ items: [], next_cursor: null, has_more: false }),
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<App queryClient={client} />);
+    signIn("old-credential");
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    signIn("new-credential");
+    expect(
+      await screen.findByText("No alerts match these filters"),
+    ).toBeTruthy();
+    await act(async () =>
+      finish(Response.json(workflowPage("Old tenant secret"))),
+    );
+    expect(screen.queryByText("Old tenant secret")).toBeNull();
+    const cached = client.getQueryCache().getAll();
+    expect(cached).toHaveLength(1);
+    expect(cached[0].queryKey).toEqual([
+      "session",
+      "verified-operator",
+      "new-tenant",
+      "viewer",
+      expect.any(Number),
+      "alerts",
+      {},
+    ]);
+    expect(
+      JSON.stringify(cached.map((query) => query.state.data)),
+    ).not.toContain("Old tenant secret");
   });
 });
