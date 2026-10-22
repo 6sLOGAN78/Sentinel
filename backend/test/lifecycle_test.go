@@ -293,6 +293,27 @@ func TestBinaryLifecycleBadPostgresPassword(t *testing.T) {
 	}
 }
 
+func TestBinaryLifecycleQueryAPIKeyRequired(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []string{"", "short"} {
+		t.Run("bytes-"+strconv.Itoa(len(key)), func(t *testing.T) {
+			t.Parallel()
+			env := without(serviceEnv(t, "query-api"), "SENTINEL_AUTH.JWT_SECRET=")
+			if key != "" {
+				env = append(env, "SENTINEL_AUTH.JWT_SECRET="+key)
+			}
+			p := startProc(t, "query-api", "", env)
+			if code := p.requireExit(t, failFastLimit); code == 0 {
+				t.Fatal("query-api accepted missing or short JWT key")
+			}
+			if !strings.Contains(p.output.String(), "JWT") {
+				t.Fatal("startup did not report JWT configuration failure")
+			}
+		})
+	}
+}
+
 func TestBinaryLifecycleKafkaDown(t *testing.T) {
 	t.Parallel()
 
