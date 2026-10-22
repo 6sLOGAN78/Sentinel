@@ -18,7 +18,7 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans16/16 approved by independent checkerR2, all20requirements covered. Executing under user `gsd-plan-phase 4 --auto`; Phase3 remains complete.
+Current focus: Phase4 original16plans plus independently approved repair04-17, all20requirements covered. Execute04-17 before04-02 under user `gsd-plan-phase 4 --auto`; Phase3 remains complete.
 
 ## Current Position
 
@@ -194,8 +194,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-21, Phase4 planning resumed.
-Resume: Continue04-01 Task2existinguncommittedimplementation. A1typefixtureownership8d6a891approved/repaired; A2exactsessionrouteexpectationownership0a111b5approvedbutnotappliedwhenexecutorvanished. Fixbackendownedlint17findingswithoutconfigweakening,rerunnativeAuth/web/OpenAPI/Go/lint/build,scopedGREENthenSUMMARY. No04-02beforeverified04-01. See04-01-OWNERSHIP-A1/A2;privateevidence.local/phase4-acceptance/04-01. Do notpush/launchhostedPhase4CIbeforeexplicit04-16authority. Preserveuserdirtyconfiguration/.serena.
+Last session:2026-10-22T00:56:58Z, Phase4 execution resumed.
+Resume: Execute approved04-17 startup/browser integration repair at4fc8f39. Independent17plancheckPASS0issues;04-01implementation50ba19f/SUMMARYf28ef6e retained but source review2blockers/3warnings reopens acceptance. Actual repair gates and clean independent review required before04-02. Root owns tracking; preserve original04-REVIEW-01-R0 evidence and private.local/phase4-acceptance logs. Do notpush/launchhostedPhase4CIbeforeexplicit04-16authority. Preserveuserdirtyconfiguration/.serena.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.
