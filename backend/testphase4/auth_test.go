@@ -40,6 +40,11 @@ func TestPhase4Auth(t *testing.T) {
 	require.NoError(t, err)
 	t.Setenv("SENTINEL_PRIMARY.ENV", "local")
 	t.Setenv("SENTINEL_ENV_FILE", filepath.Join(root, ".env"))
+	secret := make([]byte, 48)
+	_, err = rand.Read(secret)
+	require.NoError(t, err)
+	secretText := base64.RawURLEncoding.EncodeToString(secret)
+	t.Setenv("SENTINEL_AUTH.JWT_SECRET", secretText)
 	cfg, err := config.Load(config.ServiceQueryAPI)
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
@@ -68,10 +73,6 @@ func TestPhase4Auth(t *testing.T) {
 	}
 	key, err := apikeys.NewStore(db.Pool).Create(ctx, tenantA, []string{apikeys.ScopeRead}, "phase4 fixture")
 	require.NoError(t, err)
-	secret := make([]byte, 48)
-	_, err = rand.Read(secret)
-	require.NoError(t, err)
-	secretText := base64.RawURLEncoding.EncodeToString(secret)
 	binary := filepath.Join(t.TempDir(), "query-api")
 	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/query-api")
 	build.Dir = filepath.Join(root, "backend")
@@ -136,6 +137,7 @@ func TestPhase4Auth(t *testing.T) {
 	})
 	for _, name := range []string{
 		"missing_token", "bad_signature", "wrong_algorithm", "expired", "oversized",
+		"none", "unknown_role", "wrong_issuer", "wrong_audience", "future_iat", "long_lifetime",
 		"iss", "aud", "sub", "tenant", "role", "exp", "iat", "nbf",
 	} {
 		t.Run("reject_"+name, func(t *testing.T) {
@@ -150,6 +152,9 @@ func TestPhase4Auth(t *testing.T) {
 			}
 		})
 	}
+	t.Run("development_cli", func(t *testing.T) {
+		testDevelopmentCLI(t, ctx, root, base, secretText, tenantA)
+	})
 	t.Run("legacy_key_not_broadened_or_fallback", func(t *testing.T) {
 		status, _ := getJSON(t, base+"/api/v1/events/"+uuid.NewString(), "", key)
 		require.Equal(t, 404, status, "legacy read key still reaches real event lookup")
@@ -202,6 +207,18 @@ func rejectedCredential(t *testing.T, name string, claims map[string]any, secret
 		signingKey += "x"
 	case "wrong_algorithm":
 		algorithm = "HS384"
+	case "none":
+		algorithm = "none"
+	case "unknown_role":
+		claims["role"] = "owner"
+	case "wrong_issuer":
+		claims["iss"] = "other-issuer"
+	case "wrong_audience":
+		claims["aud"] = "other-audience"
+	case "future_iat":
+		claims["iat"] = now.Add(time.Minute).Unix()
+	case "long_lifetime":
+		claims["exp"] = now.Add(15*time.Minute + time.Second).Unix()
 	case "expired":
 		claims["iat"] = now.Add(-10 * time.Minute).Unix()
 		claims["nbf"] = now.Add(-10 * time.Minute).Unix()
@@ -298,6 +315,9 @@ func signToken(t *testing.T, claims map[string]any, secret, algorithm string) st
 	body, err := json.Marshal(claims)
 	require.NoError(t, err)
 	unsigned := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(body)
+	if algorithm == "none" {
+		return unsigned + "."
+	}
 	newHash := sha256.New
 	if algorithm == "HS384" {
 		newHash = sha512.New384
@@ -306,6 +326,106 @@ func signToken(t *testing.T, claims map[string]any, secret, algorithm string) st
 	_, err = mac.Write([]byte(unsigned))
 	require.NoError(t, err)
 	return unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func testDevelopmentCLI(t *testing.T, ctx context.Context, root, base, secret, tenant string) {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "dev-jwt")
+	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/dev-jwt")
+	build.Dir = filepath.Join(root, "backend")
+	build.Stdout, build.Stderr = io.Discard, io.Discard
+	require.NoError(t, build.Run(), "build actual CLI; missing command is setup failure, not behavioral RED")
+	args := []string{"--tenant", tenant, "--subject", "operator", "--role", "analyst", "--lifetime", "10m"}
+	for _, mode := range []string{"local", "test"} {
+		t.Run("mint_"+mode, func(t *testing.T) {
+			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, mode, secret, args)
+			require.NoError(t, runErr)
+			require.Empty(t, stderr, "successful mint must not log")
+			raw := strings.TrimSuffix(string(stdout), "\n")
+			require.Equal(t, 2, strings.Count(raw, "."), "stdout must contain exactly one JWT")
+			require.False(t, strings.ContainsAny(raw, "\r\n \t"))
+			require.True(t, credentialsAbsent(stdout, secret), "stdout must never disclose signing key")
+			require.NoError(t, os.WriteFile(filepath.Join(t.TempDir(), "token"), stdout, 0o600))
+			verifyMintedCredential(t, raw, secret, tenant)
+			for _, path := range []string{"/api/v1/session", "/api/v1/alerts"} {
+				status, body := getJSON(t, base+path, raw, "")
+				require.Equal(t, http.StatusOK, status, "actual minted token must reach production handler")
+				require.True(t, credentialsAbsent(body, raw, secret))
+			}
+		})
+	}
+	for _, mode := range []string{"production", "staging", "development", "LOCAL", ""} {
+		t.Run("refuse_"+mode, func(t *testing.T) {
+			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, mode, secret, args)
+			require.Error(t, runErr)
+			require.Empty(t, stdout)
+			require.NotEmpty(t, stderr)
+			require.True(t, credentialsAbsent(stderr, secret))
+		})
+	}
+	testInvalidCLIInputs(t, binary, root, secret, args)
+}
+
+func testInvalidCLIInputs(t *testing.T, binary, root, secret string, args []string) {
+	t.Helper()
+	for _, tc := range []struct{ name, flag, value string }{
+		{"missing tenant", "--tenant", ""}, {"invalid tenant", "--tenant", "../tenant"},
+		{"missing subject", "--subject", ""}, {"blank subject", "--subject", "   "},
+		{"missing role", "--role", ""}, {"unknown role", "--role", "owner"},
+		{"zero lifetime", "--lifetime", "0s"}, {"negative lifetime", "--lifetime", "-1s"},
+		{"long lifetime", "--lifetime", "15m1s"}, {"subsecond lifetime", "--lifetime", "1ms"},
+		{"malformed lifetime", "--lifetime", "tomorrow"}, {"no key argument", "--jwt-secret", "unused"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalidArgs := append(append([]string(nil), args...), tc.flag, tc.value)
+			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, "test", secret, invalidArgs)
+			require.Error(t, runErr)
+			require.Empty(t, stdout)
+			require.True(t, credentialsAbsent(stderr, secret))
+		})
+	}
+	for _, value := range []string{"", "short"} {
+		t.Run("refuse_key_length_"+strconv.Itoa(len(value)), func(t *testing.T) {
+			stdout, stderr, runErr := runDevelopmentCLI(t, binary, root, "test", value, args)
+			require.Error(t, runErr)
+			require.Empty(t, stdout)
+			require.True(t, credentialsAbsent(stderr, value))
+		})
+	}
+}
+
+func runDevelopmentCLI(t *testing.T, binary, root, mode, secret string, args []string) ([]byte, []byte, error) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), binary, args...)
+	cmd.Dir = filepath.Join(root, "backend")
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != "SENTINEL_PRIMARY.ENV" && name != "SENTINEL_AUTH.JWT_SECRET" {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	cmd.Env = append(cmd.Env, "SENTINEL_PRIMARY.ENV="+mode, "SENTINEL_AUTH.JWT_SECRET="+secret)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+func verifyMintedCredential(t *testing.T, raw, secret, tenant string) {
+	t.Helper()
+	claims := jwt.MapClaims{}
+	parsed, err := jwt.ParseWithClaims(raw, claims, func(*jwt.Token) (any, error) { return []byte(secret), nil },
+		jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("sentinel-dev"), jwt.WithAudience("sentinel-dashboard"),
+		jwt.WithSubject("operator"), jwt.WithExpirationRequired(), jwt.WithNotBeforeRequired(), jwt.WithIssuedAt())
+	require.True(t, err == nil, "CLI token must independently verify without logging credential details")
+	require.True(t, parsed.Valid)
+	require.Equal(t, tenant, claims["tenant"])
+	require.Equal(t, "analyst", claims["role"])
+	iat, err := claims.GetIssuedAt()
+	require.NoError(t, err)
+	exp, err := claims.GetExpirationTime()
+	require.NoError(t, err)
+	require.Equal(t, 10*time.Minute, exp.Sub(iat.Time))
 }
 
 func getJSON(t *testing.T, url, token, key string) (int, []byte) {

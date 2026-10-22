@@ -1,10 +1,13 @@
 package config_test
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"math"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +41,10 @@ func TestLoadRejectsMalformedBindAddress(t *testing.T) {
 // setCompleteEnv sets every variable any binary needs.
 func setCompleteEnv(t *testing.T) {
 	t.Helper()
+	key := make([]byte, 48)
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+	t.Setenv("SENTINEL_AUTH.JWT_SECRET", base64.RawURLEncoding.EncodeToString(key))
 
 	t.Setenv("SENTINEL_PRIMARY.ENV", "test")
 	t.Setenv("SENTINEL_REDIS.ADDRESS", "127.0.0.1:6379")
@@ -47,6 +54,35 @@ func setCompleteEnv(t *testing.T) {
 	t.Setenv("SENTINEL_DATABASE.HOST", "127.0.0.1")
 	t.Setenv("SENTINEL_DATABASE.USER", "sentinel")
 	t.Setenv("SENTINEL_DATABASE.NAME", "sentinel")
+}
+
+func TestLoadAuthBoundary(t *testing.T) {
+	for _, tc := range []struct{ name, key, value string }{
+		{"missing key", "SENTINEL_AUTH.JWT_SECRET", ""},
+		{"short key", "SENTINEL_AUTH.JWT_SECRET", "too-short"},
+		{"blank key", "SENTINEL_AUTH.JWT_SECRET", strings.Repeat(" ", 32)},
+		{"oversized key", "SENTINEL_AUTH.JWT_SECRET", strings.Repeat("x", 4097)},
+		{"wrong issuer", "SENTINEL_AUTH.ISSUER", "other-issuer"},
+		{"wrong audience", "SENTINEL_AUTH.AUDIENCE", "other-audience"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv(tc.key, tc.value)
+			_, err := config.Load(config.ServiceQueryAPI)
+			require.Error(t, err, "query-api must reject invalid auth configuration before startup")
+		})
+	}
+	for _, service := range []string{
+		config.ServiceIngest, config.ServiceDetector, config.ServiceEventWriter, config.ServiceAlertWriter,
+	} {
+		t.Run(service+" does not require dashboard key", func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv("SENTINEL_AUTH.JWT_SECRET", "")
+			t.Setenv("SENTINEL_AUTH.ISSUER", "irrelevant-to-producer")
+			_, err := config.Load(service)
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestLoadComplete(t *testing.T) {
