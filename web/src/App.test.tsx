@@ -110,7 +110,9 @@ describe("App shell", () => {
     fireEvent.change(input, { target: { value: "operator-token" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toBe("/api/v1/session");
+    expect(new URL(fetchSpy.mock.calls[0][0].url).pathname).toBe(
+      "/api/v1/session",
+    );
     expect(screen.queryByText("verified-tenant")).toBeNull();
     verify(
       new Response(
@@ -125,10 +127,17 @@ describe("App shell", () => {
     expect(await screen.findByText("Real workflow alert")).toBeTruthy();
     expect(screen.getByText(/verified-tenant/)).toBeTruthy();
     expect(input.value).toBe("");
-    expect(fetchSpy.mock.calls[1][0]).toBe("/api/v1/alerts");
-    for (const [, init] of fetchSpy.mock.calls) {
-      expect(init.headers.Authorization).toBe("Bearer operator-token");
-      expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(new URL(fetchSpy.mock.calls[1][0].url).pathname).toBe(
+      "/api/v1/alerts",
+    );
+    for (const [request] of fetchSpy.mock.calls) {
+      expect(request.headers.get("Authorization")).toBe(
+        "Bearer operator-token",
+      );
+      expect(request.signal).toBeInstanceOf(AbortSignal);
+      expect(request.url).not.toContain("operator-token");
+      expect(request.cache).toBe("no-store");
+      expect(request.credentials).toBe("omit");
     }
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
@@ -136,7 +145,7 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(screen.queryByText("Real workflow alert")).toBeNull();
     expect(screen.getByLabelText("Development access token")).toBeTruthy();
-    expect(fetchSpy.mock.calls[1][1].signal.aborted).toBe(true);
+    expect(fetchSpy.mock.calls[1][0].signal.aborted).toBe(true);
   });
 
   it("rejects an unverified identity and never loads alerts", async () => {
@@ -208,7 +217,7 @@ describe("App shell", () => {
         await screen.findByText("No alerts match these filters"),
       ).toBeTruthy();
       expect(screen.getByText(/retry-tenant/)).toBeTruthy();
-      expect(fetchSpy.mock.calls[1][1].headers.Authorization).toBe(
+      expect(fetchSpy.mock.calls[1][0].headers.get("Authorization")).toBe(
         `Bearer ${credential}`,
       );
       expect(
@@ -252,7 +261,7 @@ describe("App shell", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel sign in" }));
-    expect(fetchSpy.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(fetchSpy.mock.calls[0][0].signal.aborted).toBe(true);
     expect(screen.queryByRole("button", { name: "Retry sign in" })).toBeNull();
     fireEvent.change(screen.getByLabelText("Development access token"), {
       target: { value: "new-credential" },
@@ -476,5 +485,149 @@ describe("App shell", () => {
     expect(
       JSON.stringify(cached.map((query) => query.state.data)),
     ).not.toContain("Old tenant secret");
+  });
+
+  it("revokes the authenticated cache on an alert 401 without retrying credentials", async () => {
+    const client = new QueryClient();
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(identity()))
+      .mockResolvedValueOnce(new Response("unauthorized", { status: 401 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<App queryClient={client} />);
+    signIn();
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Your session expired. Sign in again to continue.",
+    );
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Retry sign in" })).toBeNull();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect((fetchSpy.mock.calls[1][0] as Request).signal.aborted).toBe(true);
+  });
+
+  it("offers an explicit alert retry after a service failure and renders only the real result", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(identity()))
+      .mockResolvedValueOnce(
+        new Response("service internals must not display", { status: 503 }),
+      )
+      .mockResolvedValueOnce(Response.json(workflowPage("Recovered workflow")));
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<App />);
+    signIn();
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Could not load alerts. Try again.",
+    );
+    expect(document.body.textContent).not.toContain("service internals");
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry loading alerts" }),
+    );
+    expect(await screen.findByText("Recovered workflow")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("uses verified expiry rather than unverified claims for the authenticated lifetime", async () => {
+    vi.useFakeTimers();
+    const payload = btoa(
+      JSON.stringify({
+        sub: "forged-subject",
+        tenant: "forged-tenant",
+        role: "admin",
+        exp: Date.now() / 1000 + 1,
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(identity("cache-tenant", 3000)))
+        .mockResolvedValueOnce(Response.json(workflowPage())),
+    );
+    render(<App />);
+    await act(async () => signIn(`header.${payload}.signature`));
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(screen.getByText("Cached tenant alert")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("forged-");
+    await act(async () => vi.advanceTimersByTime(1500));
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    await act(async () => vi.advanceTimersByTime(1500));
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  });
+
+  it("caps opaque retry credentials at fifteen minutes and does not extend them on retry", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(new Response("{}", { status: 503 })),
+        ),
+    );
+    render(<App />);
+    await act(async () => signIn("opaque-credential"));
+    await act(async () => vi.advanceTimersByTime(14 * 60000));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Retry sign in" })),
+    );
+    await act(async () => vi.advanceTimersByTime(60000));
+    expect(screen.queryByRole("button", { name: "Retry sign in" })).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Your session expired. Sign in again to continue.",
+    );
+  });
+
+  it("drops old data and uses a fresh generation when the same verified identity signs in again", async () => {
+    const client = new QueryClient();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(identity()))
+        .mockResolvedValueOnce(Response.json(workflowPage("First session")))
+        .mockResolvedValueOnce(Response.json(identity()))
+        .mockResolvedValueOnce(Response.json(workflowPage("Second session"))),
+    );
+    const view = render(<App queryClient={client} />);
+    signIn("first-token");
+    expect(await screen.findByText("First session")).toBeTruthy();
+    const original = client.getQueryCache().getAll()[0].queryKey;
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    signIn("second-token");
+    expect(await screen.findByText("Second session")).toBeTruthy();
+    expect(client.getQueryCache().getAll()).toHaveLength(1);
+    expect(client.getQueryCache().getAll()[0].queryKey).not.toEqual(original);
+    expect(screen.queryByText("First session")).toBeNull();
+    view.unmount();
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+    render(<App queryClient={client} />);
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(screen.queryByText("Second session")).toBeNull();
+  });
+
+  it("renders a labelled mobile list from the same real query result", async () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(identity()))
+        .mockResolvedValueOnce(Response.json(workflowPage("Mobile workflow"))),
+    );
+    render(<App />);
+    signIn();
+    expect(
+      await screen.findByRole("heading", { name: "Mobile workflow" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Tenant alerts" })).toBeTruthy();
+    expect(screen.getByText("AUTH_BRUTE_FORCE")).toBeTruthy();
+    expect(screen.getByText("open")).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
   });
 });
