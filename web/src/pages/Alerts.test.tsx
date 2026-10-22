@@ -43,7 +43,7 @@ function signIn() {
   fireEvent.change(screen.getByLabelText("Development access token"), {
     target: { value: "filter-test-credential" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Sign in", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 }
 
 async function start(
@@ -188,12 +188,23 @@ describe("filtered alert pages", () => {
     await screen.findByText("Second filtered page");
     // Traversal resets the bounded explicit trail. Rebuild it with Next, then
     // test Previous independently of native Back/Forward history entries.
-    await act(async () => { window.history.back(); });
+    await act(async () => {
+      window.history.back();
+    });
     await screen.findByText("First filtered page");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Next page" })).toHaveProperty("disabled", false));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Next page" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     await screen.findByText("Second filtered page");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Previous page" })).toHaveProperty("disabled", false));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Previous page" }),
+      ).toHaveProperty("disabled", false),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     await screen.findByText("First filtered page");
   });
@@ -223,12 +234,20 @@ describe("filtered alert pages", () => {
     });
     await screen.findByText("Page 0");
     for (let n = 1; n <= 22; n++) {
-      await waitFor(() => expect(screen.getByRole("button", { name: "Next page" })).toHaveProperty("disabled", false));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Next page" }),
+        ).toHaveProperty("disabled", false),
+      );
       fireEvent.click(screen.getByRole("button", { name: "Next page" }));
       await screen.findByText("Page " + n);
     }
     for (let n = 21; n >= 2; n--) {
-      await waitFor(() => expect(screen.getByRole("button", { name: "Previous page" })).toHaveProperty("disabled", false));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Previous page" }),
+        ).toHaveProperty("disabled", false),
+      );
       fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
       await screen.findByText("Page " + n);
     }
@@ -289,21 +308,38 @@ describe("filtered alert pages", () => {
   );
 
   it("preserves server-frozen ranges for cursor-only deep links and subsequent pages", async () => {
-    window.history.replaceState(null, "", "/alerts?cursor=frozen-server-cursor&limit=3");
+    window.history.replaceState(
+      null,
+      "",
+      "/alerts?cursor=frozen-server-cursor&limit=3",
+    );
     const { requests, cache } = await start();
     await screen.findByText("First filtered page");
-    expect([...new URL(requests[0].url).searchParams.keys()].sort()).toEqual(["cursor", "limit"]);
-    expect(cache.getQueryCache().getAll()[0].queryKey[6]).toEqual({ cursor: "frozen-server-cursor", limit: 3 });
+    expect([...new URL(requests[0].url).searchParams.keys()].sort()).toEqual([
+      "cursor",
+      "limit",
+    ]);
+    expect(cache.getQueryCache().getAll()[0].queryKey[6]).toEqual({
+      cursor: "frozen-server-cursor",
+      limit: 3,
+    });
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     await waitFor(() => expect(requests).toHaveLength(2));
-    expect([...new URL(requests[1].url).searchParams.keys()].sort()).toEqual(["cursor", "limit"]);
+    expect([...new URL(requests[1].url).searchParams.keys()].sort()).toEqual([
+      "cursor",
+      "limit",
+    ]);
     expect(new URL(requests[1].url).searchParams.get("cursor")).toBe("page-2");
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "resolved" } });
+    fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "resolved" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
     await waitFor(() => expect(requests).toHaveLength(3));
     const changed = new URL(requests[2].url).searchParams;
     expect(changed.has("cursor")).toBe(false);
-    expect(Date.parse(changed.get("to")!) - Date.parse(changed.get("from")!)).toBe(86400000);
+    expect(
+      Date.parse(changed.get("to")!) - Date.parse(changed.get("from")!),
+    ).toBe(86400000);
   });
 
   it("announces loading/empty/errors and retries the same current filters", async () => {
@@ -354,5 +390,17 @@ describe("filtered alert pages", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
     await screen.findByText("Choose a valid UTC time range of at most 7 days.");
     expect(requests).toHaveLength(1);
+  });
+
+  it("keeps malformed time deep links recoverable without sending a list request", async () => {
+    window.history.replaceState(null, "", "/alerts?to=invalid");
+    const fetchSpy = vi.fn(async () => Response.json({ subject: "filters-operator", tenant_id: "filters-tenant", role: "viewer", expires_at: new Date(Date.now()+600000).toISOString() }));
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<App />);
+    signIn();
+    await screen.findByText("Choose a valid UTC time range of at most 7 days.");
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(screen.getByRole("heading", { name: "Alerts" })).toBeTruthy();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
