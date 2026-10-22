@@ -8,6 +8,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionProvider, useSession } from "./session";
+import { createAPIClient } from "../api/client";
 
 function verified(tenant = "verified-tenant", lifetime = 600000) {
   return {
@@ -146,5 +147,30 @@ describe("session authority", () => {
     mount();
     expect(screen.getByText("No authority")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("rejects an aborted individual query even when response body parsing ignores cancellation", async () => {
+    let finish: (value: string) => void = () => {};
+    const body = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    const response = new Response();
+    response.text = () => body;
+    const fetchSpy = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchSpy);
+    const lifetime = new AbortController();
+    const query = new AbortController();
+    const client = createAPIClient(
+      () => "header-only-credential",
+      lifetime.signal,
+      () => true,
+      () => {},
+    );
+    const read = client.alerts({}, query.signal);
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    query.abort();
+    finish(JSON.stringify({ items: [], next_cursor: null, has_more: false }));
+    await expect(read).rejects.toHaveProperty("name", "AbortError");
+    expect(lifetime.signal.aborted).toBe(false);
   });
 });
