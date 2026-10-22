@@ -60,7 +60,8 @@ func TestPhase4Auth(t *testing.T) {
 		id := hex.EncodeToString(digest[:])
 		ids = append(ids, id)
 		_, err = db.Pool.Exec(ctx, `INSERT INTO alert_workflows
-			(alert_id,tenant_id,created_at,updated_at,rule_id,rule_version,severity,entity_key,summary,event_count,window_start,window_end,immutable_fingerprint)
+			(alert_id,tenant_id,created_at,updated_at,rule_id,rule_version,severity,entity_key,
+			 summary,event_count,window_start,window_end,immutable_fingerprint)
 			VALUES ($1,$2,$3,$3,'AUTH_BRUTE_FORCE',1,'high','192.0.2.10','Native authentication fixture',10,$4,$3,$1)`,
 			id, tenant, now.Add(time.Duration(i)*time.Millisecond), now.Add(-time.Minute))
 		require.NoError(t, err)
@@ -99,7 +100,9 @@ func TestPhase4Auth(t *testing.T) {
 	t.Run("verified_session", func(t *testing.T) {
 		status, body := getJSON(t, base+"/api/v1/session", token, "")
 		require.Equal(t, 200, status, "signed identity must reach production session handler")
-		require.JSONEq(t, `{"subject":"operator","tenant_id":"`+tenantA+`","role":"analyst","expires_at":"`+now.Add(10*time.Minute).Truncate(time.Second).Format(time.RFC3339)+`"}`, string(body))
+		expiresAt := now.Add(10 * time.Minute).Truncate(time.Second).Format(time.RFC3339)
+		require.JSONEq(t, `{"subject":"operator","tenant_id":"`+tenantA+
+			`","role":"analyst","expires_at":"`+expiresAt+`"}`, string(body))
 	})
 	t.Run("own_pg_workflows_only", func(t *testing.T) {
 		status, body := getJSON(t, base+"/api/v1/alerts", token, "")
@@ -131,27 +134,12 @@ func TestPhase4Auth(t *testing.T) {
 			require.Equal(t, 400, status)
 		}
 	})
-	for _, name := range []string{"missing_token", "bad_signature", "wrong_algorithm", "expired", "oversized", "iss", "aud", "sub", "tenant", "role", "exp", "iat", "nbf"} {
+	for _, name := range []string{
+		"missing_token", "bad_signature", "wrong_algorithm", "expired", "oversized",
+		"iss", "aud", "sub", "tenant", "role", "exp", "iat", "nbf",
+	} {
 		t.Run("reject_"+name, func(t *testing.T) {
-			c := claims(tenantA)
-			algorithm, signingKey := "HS256", secretText
-			switch name {
-			case "bad_signature":
-				signingKey += "x"
-			case "wrong_algorithm":
-				algorithm = "HS384"
-			case "expired":
-				c["exp"] = now.Add(-time.Minute).Unix()
-			default:
-				delete(c, name)
-			}
-			raw := signToken(t, c, signingKey, algorithm)
-			if name == "missing_token" {
-				raw = ""
-			}
-			if name == "oversized" {
-				raw = strings.Repeat("x", 8193)
-			}
+			raw := rejectedCredential(t, name, claims(tenantA), secretText, now)
 			for _, path := range []string{"/api/v1/session", "/api/v1/alerts"} {
 				status, body := getJSON(t, base+path, raw, key)
 				require.Equal(t, 401, status, "invalid bearer/key must not authorize dashboard")
@@ -166,14 +154,37 @@ func TestPhase4Auth(t *testing.T) {
 		require.Equal(t, 401, status, "present invalid bearer must not fall back to read key")
 	})
 	t.Run("pg_reads_with_clickhouse_unreachable", func(t *testing.T) {
-		base, ops := startQueryAPI(t, binary, root, secretText, freeAddress(t))
+		unreachableBase, ops := startQueryAPI(t, binary, root, secretText, freeAddress(t))
 		for _, path := range []string{"/api/v1/session", "/api/v1/alerts"} {
-			status, _ := getJSON(t, base+path, token, "")
+			status, _ := getJSON(t, unreachableBase+path, token, "")
 			require.Equal(t, 200, status, "PG slice must work without ClickHouse")
 		}
 		status, _ := getJSON(t, ops+"/readyz", "", "")
 		require.Equal(t, 503, status, "readiness must report actual unreachable dependency")
 	})
+}
+
+func rejectedCredential(t *testing.T, name string, claims map[string]any, secret string, now time.Time) string {
+	t.Helper()
+	algorithm, signingKey := "HS256", secret
+	switch name {
+	case "bad_signature":
+		signingKey += "x"
+	case "wrong_algorithm":
+		algorithm = "HS384"
+	case "expired":
+		claims["exp"] = now.Add(-time.Minute).Unix()
+	default:
+		delete(claims, name)
+	}
+	raw := signToken(t, claims, signingKey, algorithm)
+	if name == "missing_token" {
+		raw = ""
+	}
+	if name == "oversized" {
+		raw = strings.Repeat("x", 8193)
+	}
+	return raw
 }
 
 func credentialsAbsent(body []byte, credentials ...string) bool {
@@ -238,7 +249,7 @@ func startQueryAPI(t *testing.T, binary, root, secret, chAddress string) (string
 		resp, err := client.Get("http://" + opsAddress + "/healthz")
 		if err == nil {
 			_ = resp.Body.Close()
-			if resp.StatusCode == 200 {
+			if resp.StatusCode == http.StatusOK {
 				return "http://" + httpAddress, "http://" + opsAddress
 			}
 		}
