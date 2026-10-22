@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "03"
-status: pending_independent_source_r1_review
+status: complete
 subsystem: auth
 tags: [react, typescript, jwt, react-query, openapi-fetch, accessibility]
 requires:
@@ -39,14 +39,14 @@ completed: 2026-10-22
 
 The Alerts page reads real tenant workflows through generated OpenAPI requests and a verified-identity React Query cache; credential drafts now clear on verification restart and revocation and are discarded after verified bootstrap.
 
-**PENDING INDEPENDENT R1 SOURCE REVIEW.** CR-01 repair source is `a793313d84630c0f9daf6d3b1f049382ad28e7ed`, following tests-only RED `56b1d4c7d8ef190756414798333ebf6032d71f8b` on resume base `b2106bf90f236b178c34756b401b6c22246aebf0`. All repair gates below passed; independent R1 and root post-wave acceptance remain required. Root keeps Phase 4 at 3/17 accepted. This is not whole-Phase-4 completion, publication authority or permission to begin 04-04.
+**ROOT ACCEPTED after clean independent R1 and post-wave checks.** CR-01 repair source is `a793313d84630c0f9daf6d3b1f049382ad28e7ed`, following tests-only RED `56b1d4c7d8ef190756414798333ebf6032d71f8b` on resume base `b2106bf90f236b178c34756b401b6c22246aebf0`. R1 at `0151e19` closes CR-01 with zero findings; root build and `make test` exited 0 at 21:06:00Z. Phase 4 is 4/17 accepted, and approved 04-04 may proceed. This is not whole-Phase-4 completion or publication authority.
 
 The original candidate was `6bb0ac84ef7d0267cc5a4f54ec8d8b7e0a6e9bc4`, based on accepted `21ebf9840c57edd3125ba0b8be3d7508c525d5e5`. Its original implementation, 28-test, native and browser records below remain historical evidence; the clean-looking original gates did not cover CR-01. The immutable `04-REVIEW-03-R0.md` records that finding. Requirement IDs describe incremental coverage only. Root owns STATE/ROADMAP/REQUIREMENTS, review reports and post-wave acceptance; none were updated by this repair executor.
 
 ## Performance and ownership
 
 - Recorded setup/verification span: 2026-10-22T16:15:38.341399Z–16:34:17.543367Z, approximately 19 minutes. Initial instruction reading and final metadata work are outside that span; it is not measured active time or a benchmark.
-- Tasks: 2/2 implemented and locally verified, awaiting independent source review.
+- Tasks: 2/2 implemented, locally verified and root-accepted after independent R1.
 - Exact source union: nine approved paths, five newly created. No backend, generated schema/type fixture, main entrypoint, Vite configuration, Make/Compose, scanner exception or tenth source path changed. No tracked file was deleted.
 - User-owned `.planning/config.json` and `.serena/` remain untouched and unstaged. No agent/worktree, later plan, remote push or hosted CI was started.
 
@@ -153,16 +153,22 @@ Focused rendered QA used existing cached Playwright `1.64.0-alpha-1790635538000`
 
 The browser check proves this focused sign-out regression with real data. Automatic timers/401/retry paths have actual-component proof with fetch-only responses; native Auth remains a separate backend proof. Historical full four-viewport/keyboard/reduced-motion/contrast evidence remains valid for unchanged CSS and is not relabelled as a fresh full run. No full Phase 4, SSE, tenant-matrix, screen-reader, 200% zoom, hosted CI, publication, performance or fresh Phase 3 aggregate acceptance is claimed.
 
-**[Rule 1 — CR-01 credential clearing regression]** The original review finding triggered the tests-only RED and bounded App/provider GREEN above. **[Rule 3 — Stopped verification prerequisites]** Normal preserved startup restored dependencies; its detector-health exit remains an actual failure distinct from the subsequent successful stack/native/browser gates. No architecture, source ownership or threat acceptance expanded. No goal-blocking stub, new trust boundary, authentication gate or deferred repair issue remains; independent R1 is still pending. Root alone advances shared tracking after clean R1 and post-wave gates.
+**[Rule 1 — CR-01 credential clearing regression]** The original review finding triggered the tests-only RED and bounded App/provider GREEN above. **[Rule 3 — Stopped verification prerequisites]** Normal preserved startup restored dependencies; its detector-health exit remains an actual failure distinct from the subsequent successful stack/native/browser gates. No architecture, source ownership or threat acceptance expanded. No goal-blocking stub, new trust boundary, authentication gate or deferred repair issue remains; independent R1 subsequently passed as recorded in the root addendum. Root advances shared tracking only after clean R1 and post-wave gates.
 
 ## Known stubs, threat surface and readiness
 
 No goal-blocking stub or TODO remains in the owned implementation. Empty state/ref values are the real signed-out or empty-result state, with an actual verified HTTP data source. No fake later-page metrics/data, canonical fields, cursor history or stream status was introduced. T04-06 cache isolation and T04-07 memory-only credentials cover the new browser boundaries; no new backend endpoint, database schema or unregistered file-access surface was introduced.
 
-Independent source review and root post-wave acceptance remain required before 04-04. Root must keep shared tracking at 3/17 accepted until review clears; this summary does not advance it. Full Phase 3 aggregate, complete Phase 4, hosted CI/publication and Phase 5 are outside this handoff. The normal preserved stack remains running; the probe's owned Vite/Chromium processes were stopped and joined.
+Independent R1 and root post-wave acceptance are complete; root advances tracking to 4/17 accepted and approved 04-04. Full Phase 3 aggregate, complete Phase 4, hosted CI/publication and Phase 5 are outside this handoff. The last actual stack check was healthy; owned Vite/Chromium probe processes were stopped and joined.
 
 ## Self-Check: PASSED
 
 Verified all nine owned paths and five task/setup commits, tests-only commits before GREEN, zero tracked deletions and scoped diff whitespace. Actual evidence audit confirms private directory/file modes, exact key absence, named zero exits and empty source-history report. Final working-tree changes outside this summary are only the pre-existing user configuration and `.serena/`. Summary commit and final metadata scan follow separately; this self-check validates local claims, not independent source acceptance.
 
-Repair self-check also PASSED: the three authorized repair files and `56b1d4c`/`a793313` exist, RED precedes GREEN, the original nine-file union is retained, every original App assertion remains unchanged, and the new audit verifies actual 36-test/native26/CLI24 gates and private evidence. Source is identical to the verified candidate; no new stub/threat surface or shared tracking/review report mutation occurred. This committed summary remains PENDING R1, with final full-history metadata scan performed separately after its commit.
+Repair self-check also PASSED: the three authorized repair files and `56b1d4c`/`a793313` exist, RED precedes GREEN, the original nine-file union is retained, every original App assertion remains unchanged, and the new audit verifies actual 36-test/native26/CLI24 gates and private evidence. Source is identical to the verified candidate; no new stub/threat surface or executor shared-tracking/review mutation occurred. The original handoff was pending R1; the root acceptance below supersedes that gate without rewriting its failure evidence.
+
+## Root acceptance addendum
+
+Independent `04-REVIEW-03-R1.md` is clean at frozen `0151e19`, source `a793313`: CR-01 closed, zero blockers/warnings/info. Its focused method freshly reads the three repair files and proves unchanged-file identity for the carried original scope. It independently inspected causal six-case RED, 36-test GREEN, native26/CLI24, actual delayed-HTTP browser proof and scanner exit 0/report `[]`, while preserving the original detector startup exit 2 separately from later stack success.
+
+Root ran `timeout 300 bash -c 'cd backend && go build ./... && cd ../web && npm run build && cd .. && make test'` at `0151e19`; private `root-post-r1-gates.log` records exit 0 at 2026-10-22T21:06:00.537603Z, including backend race, web 36 and generator 121. Final metadata is scanned again before dispatch. Whole Phase 4/native matrix/hosted CI/accessibility/performance are not certified by these scoped gates.

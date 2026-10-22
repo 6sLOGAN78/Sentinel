@@ -11,7 +11,9 @@ created: 2026-10-21
 
 Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapprovedandnowacceptedwith04-01afteractualnativeAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/seed1000proof. IndependentR1reviewclean21-fileunionandrootpostwavebuild+make testPASS. Fullhistoryscannerzero; allsixsourcefindingsclosed. NotallPhase4testsrun. ExistingPhase3acceptancestaysclosedbutnewregressionsmustfix,nopermissiontorelaxoldtests.
 
-04-02nowaccepted: actualAuth26top-level/24CLIcases, focusedauth/configrace,defaultGo/web15/generator121/OpenAPI11/default+phase4+integrationstatic,normalpreservedstartupandactualhelper/CLI/APIhandoffallPASS. Nine-fileindependentreviewclean,rootpostwavebuild+make testEXIT0at16:11:04Z. TokenCLI/configclaimsremainincremental;03browsercacheisolationandlaterscopesnotyetdelivered.
+04-02nowaccepted: actualAuth26top-level/24CLIcases, focusedauth/configrace,defaultGo/web15/generator121/OpenAPI11/default+phase4+integrationstatic,normalpreservedstartupandactualhelper/CLI/APIhandoffallPASS. Nine-fileindependentreviewclean,rootpostwavebuild+make testEXIT0at16:11:04Z. TokenCLI/configclaimsremainincremental;03browsercacheisolationisverifiedbelowandlaterscopesremainpending.
+
+04-03nowacceptedafterCR01credential-draftrepair: web36/static/nativeAuth26+24/defaultGo/make test/OpenAPI11/actualChromiumPGpathPASS. IndependentR1cleanat0151e19/sourcea793313,rootpostwaveEXIT0at21:06:00Z. OriginalfourviewportCSSproofandnew1440/375draft-clearingbrowserproofremainseparate; historicalstartupEXIT2notrelabelledgreen,subsequentstackcheckPASS. Cache/session/typedclientarecurrentdelivery;filters/detail/SSE/fullbrowsermatrixremainlaterplans.
 
 ## Test Infrastructure
 
@@ -49,7 +51,8 @@ Runner: `scripts/check-phase4-tests.sh` must check each exactselector independen
 ## Wave 0 Requirements
 
 - [x] 04-01-1 owns phase4-tagged native fixture embeddedin auth_test.go; tests use actualbuiltquery-api process overHTTP sincecmd/main notimportable. No empty stubs counted as coverage. Laterfamilies own focusedtestfiles.
-- [ ] 04-03-1 owns browser session/componentfixtures; 04-15-1/2 own pinnedPlaywright+Chromium/privateJWTrealbrowserharness.
+- [x] 04-03-1 owns browser session/componentfixtures; delivered36testsandactualbrowserpathproof.
+- [ ] 04-15-1/2 pinnedfullPlaywright/Chromium/privateJWTacceptanceharnessremainpending.
 - [ ] 04-08-2 applies007auditmigration;04-12-2 applies008deliverymigration withpreexisting/concurrentcutoverproof;noSQL-onlyverification.
 - [ ] 04-15-1/2 own pinnedproxyimage/config/composeoverlay andcausalbufferingnegativecontrol.
 - [ ] 04-16-1/2 ownclosed8familyrunner,negativeMODELguards andpreservedlegacyCIunion/caps.

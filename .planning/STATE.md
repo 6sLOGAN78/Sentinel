@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-22T20:48:30Z"
+last_updated: "2026-10-22T21:06:00Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 73
-  completed_plans: 59
+  completed_plans: 60
   percent: 50
 ---
 
@@ -18,17 +18,21 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02accepted; execute04-03 typed session-isolated browser shell under user `gsd-plan-phase 4 --auto`. All20requirements planned; Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03accepted; execute04-04 filtered alert pages/stable cursors under user `gsd-plan-phase 4 --auto`. All20requirements planned; Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-03 implemented (wave4/17), source-review repair required; 04-01, repair04-17 and04-02 accepted.
-Status: 04-03 source6bb0ac8/SUMMARY798e5ca actualgatesPASS, but independent nine-file review foundCR-01: shell token draft survives sign-out/automaticrevocation after editing during verification/retry. Provider/cache authority stillclears. Repair ownedApp/session/tests withcausalRED/GREEN andindependentR1before04-04; preserve04-REVIEW-03-R0.
-Progress: 59/73 accepted numberedplans; Phase4 3/17accepted,14remaining. Overallphaseprogress3/6=50%.
+Plan: 04-04 next (wave5/17); 04-01, repair04-17,04-02 and04-03 accepted.
+Status: 04-03 CR01closedafterRED56b1d4c/GREENa793313,independentR1cleanat0151e19,rootbuild+make testEXIT0at21:06:00Z. Web36/nativeAuth26+24/default/static/OpenAPI11/realChromiumdataanddraft-clearingproofPASS;fullhistory513commitszero. Preserveoriginal03R0/startupfailureandseparatelaterstackPASS.
+Progress: 60/73 accepted numberedplans; Phase4 4/17accepted,13remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
 ## Latest Verified Evidence
+
+- Phase4 slice03 accepted after cleanindependentR1at0151e19/sourcea793313,
+  rootpostwavebuild+make testEXIT0at21:06:00Z,actualcache/session/native/browsergates.
+  OriginalCR01andcausalREDretained; preserved04-REVIEW-03-R0/R1. Continue04-04.
 
 - Phase4 slice02 accepted after nine-filecleanindependentreviewat9a21749/source0b15694,
   actualCLI/API/config/nativegatesandrootpostwavebuild+make testEXIT0at16:11:04Z.
@@ -80,8 +84,8 @@ ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readines
 ## Current Work / Next Action
 
 Phase3 is complete; final documentation repeat39621468170 at358114c passedall10jobs.
-User explicitly requested Phase4 `--auto`. Original16plansindependentR2PASS,repair17independentlyapproved;17numberedplans/all20IDscovered/UI6/6PASS. Rootaccepted01/17/02aftercleanindependentreviewsandactualgates; execute04-03next. Validationfixturesforlaterslicesstillpending. Research/plannerfailurespreviouslyrecoveredinline; reviewerusagelimitretriedsuccessfullyafteruserresume, no purchase/upgrade. NoPhase5transition; explicitPhase4remoteapprovalcheckpoint04-16.
-SDKstatecommands repeated knowntrackingmiscounts: supplementals03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md isn'tanumberedexecutedplan; parsedhistoricalstatusprose doesn'treopenpassedPhase3. Rootreconciledactual13+22+21+17=73numberedplans,59accepted,3/6phases; no gatewaived.
+User explicitly requested Phase4 `--auto`. Original16plansindependentR2PASS,repair17independentlyapproved;17numberedplans/all20IDscovered/UI6/6PASS. Rootaccepted01/17/02/03aftercleanindependentreviewsandactualgates; execute04-04next. Validationfixturesforlaterslicesstillpending. Research/plannerfailurespreviouslyrecoveredinline; reviewerusagelimitretriedsuccessfullyafteruserresume, no purchase/upgrade. NoPhase5transition; explicitPhase4remoteapprovalcheckpoint04-16.
+SDKstatecommands repeated knowntrackingmiscounts: supplementals03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md isn'tanumberedexecutedplan; parsedhistoricalstatusprose doesn'treopenpassedPhase3. Rootreconciledactual13+22+21+17=73numberedplans,60accepted,3/6phases; no gatewaived.
 Finalclosuretracking is documentation-only relative to tested7a72028.
 Preserve userdirty.planning/config.json/.serena unstaged. No liveproducer remains.
 
@@ -203,8 +207,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-22T20:48:30Z, Phase4 review-repair resumed (local2026-10-23).
-Resume: Repair04-03 CR-01 shell token-draft lifecycle at6bb0ac8; allpreviousactualgatesPASSbutnine-fileindependentreviewfoundcredentialtextretentionafterrevocation. Preserve04-REVIEW-03-R0; causalcomponentRED/minimalGREEN/R1/rootpostwave requiredbefore04-04. Keep3/17accepted. Preservedreviews04-REVIEW-17-R1/02-R0. Rootowns tracking. Do notpush/launchhostedPhase4CIbeforeexplicit04-16authority. Preserveuserdirtyconfiguration/.serena.
+Last session:2026-10-22T21:06:00Z, Phase4 plan03accepted (local2026-10-23).
+Resume: Execute04-04 filtered alert pages/stable cursors afteraccepted01/17/02/03. Plan03CR01closedbycausalRED/GREENa793313,cleanR1at0151e19,rootpostwaveEXIT0. Preserve04-REVIEW-03-R0/R1andallprivatefailureevidence. Rootowns tracking. Do notpush/launchhostedPhase4CIbeforeexplicit04-16authority. Preserveuserdirtyconfiguration/.serena.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.
