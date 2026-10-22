@@ -133,6 +133,8 @@ jobs:
       - run: scripts/check-pins.sh
       - run: scripts/check-adrs.sh
       - run: scripts/check-makefile-dotenv.sh
+      - name: private local JWT bootstrap regressions
+        run: python3 -B -m unittest discover -s scripts -p test_dev_auth_env.py
       - name: Docker context hygiene regressions
         run: python3 -B -m unittest discover -s scripts -p test_docker_context.py
       - name: Docker context excludes private material

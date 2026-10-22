@@ -295,6 +295,8 @@ services:
       - "127.0.0.1:8081:8081"
       - "127.0.0.1:9105:9105"
     environment:
+      # Empty permits read-only config/ps; the actual binary refuses an empty key.
+      SENTINEL_AUTH.JWT_SECRET: ${SENTINEL_AUTH_JWT_SECRET:-}
       SENTINEL_PRIMARY.ENV: local
       SENTINEL_SERVER.BIND_ADDRESS: 0.0.0.0
       SENTINEL_SERVER.PORT: "8081"

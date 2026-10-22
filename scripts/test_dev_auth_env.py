@@ -83,7 +83,7 @@ class DevAuthTests(unittest.TestCase):
 
     def test_existing_unsafe_paths_are_rejected_without_repair(self):
         for kind in ("local_symlink", "auth_symlink", "key_symlink", "directory",
-                     "wide_parent", "wide_key", "short", "empty", "oversized", "hardlink"):
+                     "wide_parent", "wide_key", "short", "empty", "oversized", "hardlink", "fifo"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 helper = root / "scripts/dev_auth_env.py"
@@ -105,6 +105,8 @@ class DevAuthTests(unittest.TestCase):
                             key.symlink_to(target / "uncreated")
                         elif kind == "directory":
                             key.mkdir(mode=0o700)
+                        elif kind == "fifo":
+                            os.mkfifo(key, mode=0o600)
                         elif kind == "wide_parent":
                             auth.chmod(0o755)
                         else:
@@ -122,7 +124,7 @@ class DevAuthTests(unittest.TestCase):
                     self.assertEqual((after.st_ino, after.st_mode), (info.st_ino, info.st_mode))
                 self.assertFalse((target / "uncreated").exists())
 
-    def test_foreign_owner_rejected_using_real_unprivileged_process(self):
+    def test_foreign_owner_policy_checks_real_files(self):
         self.provision()
         # The uid is a policy input; real stat/opens still execute. No chown or
         # elevated privileges are needed to exercise the foreign-owner branch.

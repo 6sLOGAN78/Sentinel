@@ -4,6 +4,8 @@ package test_test
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"os"
 	"os/exec"
@@ -91,6 +93,12 @@ func serviceEnv(t *testing.T, service string) []string {
 		env = append(env, ch...)
 		env = append(env, pg...)
 	case "query-api":
+		key := make([]byte, 48)
+		_, err = rand.Read(key)
+		if err != nil {
+			t.Fatalf("generate independent test key: %v", err)
+		}
+		env = append(env, "SENTINEL_AUTH.JWT_SECRET="+base64.RawURLEncoding.EncodeToString(key))
 		env = append(env, pg...)
 		env = append(env, ch...)
 		env = append(env, redis...)
