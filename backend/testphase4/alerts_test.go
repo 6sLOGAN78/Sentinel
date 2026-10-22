@@ -22,6 +22,8 @@ import (
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/database"
+	"github.com/6sLOGAN78/sentinel/internal/query"
+	storagepostgres "github.com/6sLOGAN78/sentinel/internal/storage/postgres"
 )
 
 type alertListRow struct {
@@ -80,10 +82,7 @@ func TestPhase4Alerts(t *testing.T) {
 		require.NoError(t, insertErr)
 	}
 	for i := 1; i <= 24; i++ {
-		status := "resolved"
-		if i%2 == 1 {
-			status = "open"
-		}
+		status := []string{"resolved", "open"}[i%2]
 		// PG003 is timestamptz (microseconds), not timestamptz(3). Reverse
 		// microsecond order inside each millisecond to expose cursor mismatch.
 		created := baseTime.Add(time.Duration((i-1)/4)*time.Millisecond + time.Duration(4-(i-1)%4)*100*time.Microsecond)
@@ -106,7 +105,8 @@ func TestPhase4Alerts(t *testing.T) {
 	base, _ := startQueryAPI(t, binary, root, secret, "")
 	tokenFor := func(owner string) string {
 		return signToken(t, map[string]any{"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "alerts-operator",
-			"tenant": owner, "role": "analyst", "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
+			"tenant": owner, "role": "analyst", "iat": now.Unix(), "nbf": now.Unix(),
+			"exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
 	}
 	token := tokenFor(tenant)
 	getPage := func(t *testing.T, q url.Values, credential string) alertListPage {
@@ -123,7 +123,7 @@ func TestPhase4Alerts(t *testing.T) {
 	}
 	t.Run("full_sparse_status_pages_and_exact_millisecond_tuples", func(t *testing.T) {
 		q, seen := filters(), []string{}
-		for pageNumber := 0; pageNumber < 4; pageNumber++ {
+		for pageNumber := range 4 {
 			page := getPage(t, q, token)
 			require.Len(t, page.Items, 3, "status predicates must run before LIMIT; enough matches remain")
 			for _, row := range page.Items {
@@ -144,7 +144,9 @@ func TestPhase4Alerts(t *testing.T) {
 				require.Nil(t, page.Next)
 			}
 		}
-		want := []string{ids[23], ids[21], ids[19], ids[17], ids[15], ids[13], ids[11], ids[9], ids[7], ids[5], ids[3], ids[1]}
+		want := []string{
+			ids[23], ids[21], ids[19], ids[17], ids[15], ids[13], ids[11], ids[9], ids[7], ids[5], ids[3], ids[1],
+		}
 		require.Equal(t, want, seen)
 	})
 	t.Run("authenticated_cursor_tamper_and_binding", func(t *testing.T) {
@@ -156,7 +158,11 @@ func TestPhase4Alerts(t *testing.T) {
 			t.Run(field, func(t *testing.T) {
 				changed, cloneErr := url.ParseQuery(q.Encode())
 				require.NoError(t, cloneErr)
-				values := map[string]string{"status": "resolved", "severity": "low", "rule_id": "PORT_SCAN", "search": "different", "from": baseTime.Add(-time.Millisecond).Format(time.RFC3339Nano), "to": now.Add(time.Millisecond).Format(time.RFC3339Nano), "limit": "4"}
+				values := map[string]string{
+					"status": "resolved", "severity": "low", "rule_id": "PORT_SCAN", "search": "different",
+					"from": baseTime.Add(-time.Millisecond).Format(time.RFC3339Nano),
+					"to":   now.Add(time.Millisecond).Format(time.RFC3339Nano), "limit": "4",
+				}
 				changed.Set(field, values[field])
 				status, _ := getJSON(t, base+"/api/v1/alerts?"+changed.Encode(), token, "")
 				require.Equal(t, 400, status)
@@ -164,15 +170,18 @@ func TestPhase4Alerts(t *testing.T) {
 		}
 		status, _ := getJSON(t, base+"/api/v1/alerts?"+q.Encode(), tokenFor(foreign), "")
 		require.Equal(t, 400, status, "foreign verified tenant cannot replay cursor")
-		raw, err := base64.RawURLEncoding.DecodeString(*page.Next)
-		require.NoError(t, err)
+		raw, decodeErr := base64.RawURLEncoding.DecodeString(*page.Next)
+		require.NoError(t, decodeErr)
 		raw[len(raw)/2] ^= 1
 		q.Set("cursor", base64.RawURLEncoding.EncodeToString(raw))
 		status, _ = getJSON(t, base+"/api/v1/alerts?"+q.Encode(), token, "")
 		require.Equal(t, 400, status, "well-formed base64 mutation must fail authentication")
 	})
 	t.Run("literal_search_all_filters_and_halfopen_range", func(t *testing.T) {
-		q := url.Values{"from": {baseTime.Format(time.RFC3339Nano)}, "to": {now.Format(time.RFC3339Nano)}, "severity": {"low"}, "rule_id": {"PORT_SCAN"}}
+		q := url.Values{
+			"from": {baseTime.Format(time.RFC3339Nano)}, "to": {now.Format(time.RFC3339Nano)},
+			"severity": {"low"}, "rule_id": {"PORT_SCAN"},
+		}
 		for _, search := range []string{"%", "_", `\`, `%_\`} {
 			q.Set("search", search)
 			page := getPage(t, q, token)
@@ -189,7 +198,8 @@ func TestPhase4Alerts(t *testing.T) {
 		first := getPage(t, q, token)
 		require.Len(t, first.Items, 2)
 		require.NotNil(t, first.Next)
-		insert(31, tenant, "open", "high", "AUTH_BRUTE_FORCE", "Arrived after frozen end", time.Now().UTC().Add(time.Millisecond))
+		insert(31, tenant, "open", "high", "AUTH_BRUTE_FORCE", "Arrived after frozen end",
+			time.Now().UTC().Add(time.Millisecond))
 		q.Set("cursor", *first.Next)
 		page := getPage(t, q, token)
 		require.Len(t, page.Items, 2)
@@ -198,9 +208,22 @@ func TestPhase4Alerts(t *testing.T) {
 		}
 		require.LessOrEqual(t, len(getPage(t, url.Values{"limit": {"200"}}, token).Items), 200)
 	})
-	for _, query := range []string{"limit=0", "limit=201", "limit=-1", "limit=1.5", "limit=", "limit=3&limit=3", "status=open&status=open", "cursor=", "cursor=bad", "cursor=" + strings.Repeat("x", 2049),
+	t.Run("pg_caller_cancellation", func(t *testing.T) {
+		canceled, stop := context.WithCancel(ctx)
+		stop()
+		_, readErr := storagepostgres.NewAlertStore(db.Pool, 5*time.Second).ListAlerts(canceled, tenant,
+			query.AlertFilters{ListOptions: query.ListOptions{From: baseTime, To: now, Limit: 3}}, nil)
+		require.ErrorIs(t, readErr, context.Canceled, "caller cancellation reaches the actual PG adapter")
+	})
+	for _, query := range []string{
+		"limit=0", "limit=201", "limit=-1", "limit=1.5", "limit=", "limit=3&limit=3", "status=open&status=open",
+		"cursor=", "cursor=bad", "cursor=" + strings.Repeat("x", 2049),
 		"severity=urgent", "status=closed", "rule_id=oops", "tenant_id=" + foreign,
-		"from=2026-10-21T00:00:00.0001Z", "from=2026-10-21T00:00:00%2B01:00", "from=invalid", "from=2026-10-22T00:00:00Z&to=2026-10-21T00:00:00Z", "from=2026-10-01T00:00:00Z&to=2026-10-09T00:00:00Z", "search=" + strings.Repeat("x", 129), "search=" + url.QueryEscape(strings.Repeat("é", 65)), "search=%00", "search=%ff", "limit=%zz"} {
+		"from=2026-10-21T00:00:00.0001Z", "from=2026-10-21T00:00:00%2B01:00", "from=invalid",
+		"from=2026-10-22T00:00:00Z&to=2026-10-21T00:00:00Z", "from=2026-10-01T00:00:00Z&to=2026-10-09T00:00:00Z",
+		"search=" + strings.Repeat("x", 129), "search=" + url.QueryEscape(strings.Repeat("é", 65)),
+		"search=%00", "search=%ff", "limit=%zz", "search=%0Atrimmed", "search=trimmed%0A",
+	} {
 		t.Run("invalid_"+query[:min(len(query), 48)], func(t *testing.T) {
 			status, _ := getJSON(t, base+"/api/v1/alerts?"+query, token, "")
 			require.Equal(t, 400, status)
