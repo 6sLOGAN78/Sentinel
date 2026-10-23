@@ -41,9 +41,12 @@ completed: 2026-10-23
 **Verified-tenant event JSON with strict dual credential dispatch and an escaped native detail dialog.**
 
 Implementation tasks are complete, but this candidate is **not accepted**. Independent
-source review and the root postwave gate remain pending. Full-history scanning also
-found one historical planning-prose match described below; it remains unresolved by
-this executor. Phase4 stays7/17 accepted. Requirement IDs above describe incremental
+source review and the root postwave gate remain pending. Full-history scanning
+found one historical planning-prose match described below; root subsequently
+resolved it through independentSCAN-A2classification and one exact fingerprint
+exception. Actualfullhistoryatd2a3e43EXIT0/zero findings/557commits,0.819s,
+END2026-10-23T05:35:55Z,private root-disposition-history-scan.log. Original
+failed scan remains unchanged. Phase4 stays7/17 accepted. Requirement IDs above describe incremental
 coverage, not whole-phase acceptance or permission to advance.
 
 ## Task commits and ownership
@@ -165,11 +168,14 @@ and subsequent native-focus proof remain distinct historical evidence.
 
 Full-history scanner finding: `generic-api-key` in historical root-owned
 `04-07-PLAN.md:63`, commit `5c0454cab0d0eca0ba6541e8a98082275a971571`.
-Source/generated scans are clear, but full-history scanning is blocked pending
-root disposition. No Secret/Match was printed, no allowlist changed, no history
-was rewritten and no thirteenth path was edited. Root was informed before handoff.
-The source candidate and this summary must not be treated as accepted until this
-gate, independent review and root postwave checks clear.
+Source/generated scans were clear but the executor correctly stopped before
+changing scanner ownership. Root then proposed SCAN-A2; independent classification
+confirmed historicaltest-policyprose,notcredential. Rootdeclared.gitleaksignore
+asthirteenthmetadata/reviewpathbeforeaddingonlytheexactfingerprint/commentin
+d2a3e43. Existingexceptions/config/pin/commands/historyremainunchanged; no broad
+exclusion or credential waiver. Fullhistory nowEXIT0/zero as recorded above.
+No Secret/Match was printed. Independent source review and root postwave still
+must clear before acceptance; original failure is not retroactively green.
 
 Karpathy guidance kept edits causal; React documentation confirmed native-dialog
 effect cleanup under StrictMode. Existing UI-SPEC supplied the design without a
@@ -185,4 +191,5 @@ Both task commits exist and RED precedes GREEN. The cumulative changed source un
 is inside the approved twelve-path envelope. Source whitespace checks pass; no
 tracked file deletion or unexpected source/untracked artifact remains. Only user
 configuration and `.serena/` are dirty. This checks artifact claims, not acceptance:
-the historical scanner finding and independent/root gates remain pending.
+the independent/root gates remain pending. Scanner closure afterward is recorded
+above, with explicit independentlyapprovedrootmetadataexception.
