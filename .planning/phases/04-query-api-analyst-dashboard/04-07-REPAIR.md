@@ -1,6 +1,6 @@
 # 04-07 review repair — persistent detail identity vs transient generation
 
-Status: pending_causal_RED; acceptance remains7/17.
+Status: CR01closed_by_R1_new_CR02_navigation_repair_pending; acceptance remains7/17.
 
 IndependentR0at3738d7a/source242b162foundoneBLOCKER: persisted event detail
 history compares sentinelEventsOwner including transient session generation.
@@ -63,3 +63,21 @@ all-nine/full-pipelinePASSclaim. Rootassessesstackreadinessafterhandoff.
 
 Sourceandmetadata self-check passed; review/rootpostwave remains pending.
 OriginalR0findings and all failed/successful attempts remain distinct evidence.
+
+## R1 counterexample — Events popstate rewrites destination Alerts filters
+
+IndependentR1at1dd2997/sourceec14c34closesCR01butfindsnewCR02BLOCKER:
+Events popstate nowalwayswriteLocation evenwhenactualBacknavigatesto/alerts.
+ActualStrictModeApp/history.back differentialreproduction: startingAlerts
+severity=critical/status=open/search=needle,Events,Back; pre-repairR0retains
+allfiltersandfilteredrequest,ec14c34dropsfiltersandsendsunfilteredrequest.
+All112existingwebtestsPASSbutmissthisinterpagehistorycase. PreserveR1report
+04-REVIEW-07-R1; noacceptanceuntilnewrepairR2/rootgate/stackholdresolved.
+
+BoundedrepairONLYexistingEvents.tsx/Events.test.tsx: pinactualbackfromEvents
+tofilteredAlertsURLandrealclientrequest,causaltests-onlyREDthenminimalowned
+pathnameguardbeforeEventsadopts/rewriteshistory. Retainrewritesforaccepted/
+rejectedEventsentries,CR01freshpageidentityandstale/foreignguards. No App/
+Alerts/session source edits,unownedfiles,framework/deps or otherrefactor.
+Repeataffectedweb/native/contracts/browser/default/static/scanner,independent
+R2androotgate. Separatestackdetectorrestartremainsunresolved, nofullstackPASS.
