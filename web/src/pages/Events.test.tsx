@@ -640,6 +640,139 @@ describe("safe event detail dialog through actual App", () => {
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+  async function signIn(credential = "accepted") {
+    fireEvent.change(screen.getByLabelText("Development access token"), {
+      target: { value: credential },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  }
+  async function freshPage() {
+    // A hard reload creates fresh modules/provider counters, but preserves the
+    // browser URL/history. React cleanup is restored away by the caller below.
+    vi.resetModules();
+    const FreshApp = (await import("../App")).default;
+    const cache = new QueryClient();
+    render(
+      <StrictMode>
+        <FreshApp queryClient={cache} />
+      </StrictMode>,
+    );
+    return cache;
+  }
+  async function failedLoginThenDetail() {
+    window.history.replaceState(null, "", "/events?limit=1");
+    const fixture = {
+      identity: {
+        subject: "events-operator",
+        tenant_id: "events-tenant",
+        role: "viewer",
+      },
+      requests: [] as Request[],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        if (new URL(request.url).pathname === "/api/v1/session") {
+          if (request.headers.get("Authorization") === "Bearer rejected")
+            return new Response("", { status: 401 });
+          return Response.json({
+            ...fixture.identity,
+            expires_at: new Date(Date.now() + 600000).toISOString(),
+          });
+        }
+        fixture.requests.push(request);
+        return Response.json(
+          new URL(request.url).pathname.endsWith(id) ? event() : page(),
+        );
+      }),
+    );
+    const cache = await freshPage();
+    await signIn("rejected");
+    await screen.findByText(
+      "This access token could not be verified. Check it or generate a new token.",
+    );
+    await signIn();
+    await screen.findByText("Native event");
+    fireEvent.click(screen.getByRole("button", { name: `View event ${id}` }));
+    await within(await screen.findByRole("dialog")).findByText(/recorded-xxx/);
+    return {
+      fixture,
+      cache,
+      url: window.location.href,
+      state: structuredClone(window.history.state),
+    };
+  }
+  it("restores the same verified event deep link after failed login and a fresh-page reload", async () => {
+    const saved = await failedLoginThenDetail();
+    const before = saved.fixture.requests.length;
+    cleanup();
+    // Real browser reload does not run the old React unmount URL cleanup.
+    window.history.replaceState(saved.state, "", saved.url);
+    await freshPage();
+    await signIn();
+    await screen.findByText("Native event");
+    expect(new URLSearchParams(window.location.search).get("event_id")).toBe(
+      id,
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Event details" });
+    await within(dialog).findByText(/recorded-xxx/);
+    expect(
+      saved.fixture.requests
+        .slice(before)
+        .some((request) => new URL(request.url).pathname.endsWith(id)),
+    ).toBe(true);
+  });
+  it.each([
+    { subject: "another-operator" },
+    { tenant_id: "another-tenant" },
+    { role: "analyst" },
+  ])(
+    "rejects a persisted event deep link for a different verified identity %j",
+    async (changed) => {
+      const saved = await failedLoginThenDetail();
+      cleanup();
+      window.history.replaceState(saved.state, "", saved.url);
+      Object.assign(saved.fixture.identity, changed);
+      const before = saved.fixture.requests.length;
+      await freshPage();
+      await signIn();
+      await screen.findByText("Native event");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(new URLSearchParams(window.location.search).has("event_id")).toBe(
+        false,
+      );
+      expect(
+        saved.fixture.requests
+          .slice(before)
+          .some((request) => new URL(request.url).pathname.endsWith(id)),
+      ).toBe(false);
+    },
+  );
+  it("rejects old event history after same-page logout and same-identity sign-in", async () => {
+    const saved = await failedLoginThenDetail();
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByRole("heading", { name: "Sign in to Sentinel" });
+    expect(saved.cache.getQueryCache().getAll()).toHaveLength(0);
+    expect(new URLSearchParams(window.location.search).has("event_id")).toBe(
+      false,
+    );
+    await signIn();
+    await screen.findByText("Native event");
+    const before = saved.fixture.requests.length;
+    act(() => {
+      window.history.pushState(saved.state, "", saved.url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(new URLSearchParams(window.location.search).has("event_id")).toBe(
+      false,
+    );
+    expect(
+      saved.fixture.requests
+        .slice(before)
+        .some((request) => new URL(request.url).pathname.endsWith(id)),
+    ).toBe(false);
+  });
   it("shows loading, honest dependency error and retry", async () => {
     let release!: (r: Response) => void;
     let first = true;
