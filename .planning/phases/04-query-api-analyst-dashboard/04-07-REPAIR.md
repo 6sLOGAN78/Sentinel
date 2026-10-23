@@ -81,3 +81,31 @@ rejectedEventsentries,CR01freshpageidentityandstale/foreignguards. No App/
 Alerts/session source edits,unownedfiles,framework/deps or otherrefactor.
 Repeataffectedweb/native/contracts/browser/default/static/scanner,independent
 R2androotgate. Separatestackdetectorrestartremainsunresolved, nofullstackPASS.
+
+## CR02 executor results — pending independent R2
+
+RED843ba72, GREENcc22566 at rootbaselinebe7ef9b. ProductiondeltaONLYone
+pathnameguardatstartofEvents popstatebeforeanyread/stateupdate/URLwrite.
+ExistingCR01ownership/adoption/privacymechanism unchanged. TwonewactualStrictMode
+Appcases(realhistory.back/forward)assertdestinationAlertsURL/controls/alltyped
+queryfilters,selectedalert/detailrequestvariant,andForwardEventsURL/results.
+BothREDfailnullseverityvscritical; all112priorcasesremain,114final.
+
+Private07cr02-*logs2026-10-23UTC: RED1/1.364s12:56:33–35; focusedGREEN0/
+1.404s12:56:49–50; finalweb114/type/lint/build/format0/15.480sends12:59:14;
+normalmake test0/18.122s(Go race/web114/gen121); quickrace+3modevet/build/lint
+0/20.601s; nativeEvents/Auth/Alerts6m0/15.103s,20.972s,15.260s; OpenAPI11/
+race60s0/6.152s; exactcontract/runtime60s0/1.330s,1.244s. ActualcurrentraceAPI+
+CLI/helper/nativePGCH/Chromium1440+3750/9.854sends12:58:45: realfilteredAlerts
+->Events->BackpreservesURL/controls/APIquery->Forward,alongsideactualfailed401/
+retry/detailhardreload/sameidentity4→2andsafeJSON/focus/IPv6/missing/privacy.
+Browserresults/screenshotsprivatecr02/. Generatedschemahashunchanged.
+
+Initialcombinedwebgate runtime114PASSbuttypecheckEXIT2unsupportednewtest
+ByRoleOptions.exact;removedfourunsupportedoptionswithoutweakeningassertions,
+thenfinalweballqualityPASS. Earlierfailedgate preserved. Pinnedsource/generated
+reports[]; fullhistoryatcc22566EXIT0/567commits/0.942sends12:59:59Z,approved
+rootexceptionunchanged. Fullcommands/actualSHA/start/end/exitsineachprivatelog.
+Nootherpaths/deps/ignore/config/sharedtracking/session/App/Alertsedit;noextra
+stackaction/detectorinvestigation/fullstackPASS. Self-checkPASS; pendingR2,
+rootpostwaveandseparatedetector/readinesshold. No08/Phase5/remoteauthority.

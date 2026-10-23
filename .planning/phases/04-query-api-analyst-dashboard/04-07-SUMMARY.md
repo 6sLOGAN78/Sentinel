@@ -52,8 +52,10 @@ coverage, not whole-phase acceptance or permission to advance.
 Independent R0 subsequently found CR-01: a persisted detail owner embedded a
 generation that resets on hard reload. Its failed-login/retry reproduction was
 missing from the original passing gates. Repair RED`3260ab6`/GREEN`ec14c34`
-addresses that finding in the two already-owned Events files only; current
-source is pending independent R1 and root postwave. A separate detector restart
+addresses that finding in the two already-owned Events files only. Independent
+R1 closed CR-01 but found the interpage popstate regression CR-02. Its repair
+RED`843ba72`/GREEN`cc22566` is now pending independent R2 and root postwave.
+A separate detector restart
 condition after the host/server interruption leaves preserved-stack readiness
 for root assessment. Neither the original passes nor these scoped repair passes
 constitute whole-stack or whole-phase acceptance.
@@ -283,3 +285,69 @@ exist; RED3260ab6 and GREENec14c34 exist in order; source whitespace passes and 
 tracked file deletion occurred. No stub or new security surface was introduced.
 Only user config/.serena remain dirty outside the intentionally updated summary
 and repair evidence. Independent R1/root postwave and stack readiness remain open.
+
+## CR-02 repair evidence — pending R2
+
+Independent R1 closes CR-01 and establishes a new counterexample missed by the
+passing112-test suite: Events processed a popstate to `/alerts` and overwrote
+the destination's filters/selection before Alerts mounted. The prior passes
+remain valid scoped observations, not proof against this newly exercised path.
+
+Tests-only`843ba721e68df1ff82ed369e72f774d6875425c5` precedes minimal
+GREEN`cc22566de61b2c5a6d19812e960fd46e01bbf349`, on root baselinebe7ef9b.
+The production delta is exactly one pathname guard at the start of the Events
+popstate callback, before any state read/update or URL write. Events history
+adoption, CR-01 stable identity/document/generation policy and privacy guards
+are unchanged. No App, Alerts, session, backend, generated contract, scanner
+exception, dependency or other source file changed.
+
+Two actual StrictMode App cases start with critical/open/needle/rule/limit Alerts
+filters, navigate through the real Events navigation link, and invoke real
+`history.back()`/`history.forward()` rather than replacing the destination or
+dispatching a synthetic popstate. They assert destination URL, visible controls,
+all subsequent typed alert-list request filters and the selected alert/detail
+request in the selected-ID variant. They also assert Forward restores the Events
+URL/results. Existing112 cases remain; final total114. Both new cases fail
+causally before the guard because severity is removed (null vs critical).
+
+All following logs are private04-07 evidence, date2026-10-23UTC, with full
+commands/SHA/working state/precise start/end/actual exits:
+
+| Log | Start–end UTC | Exit / elapsed | Evidence |
+|---|---|---|---|
+| cr02-red | 12:56:33–12:56:35 | 1 /1.364s | Both real Back cases lose destination severity |
+| cr02-green | 12:56:49–12:56:50 | 0 /1.404s | Same two cases pass after only the pathname guard |
+| cr02-web-final | 12:58:58–12:59:14 | 0 /15.480s | All114 cases, type/lint/build/format |
+| cr02-default | 12:58:08–12:58:26 | 0 /18.122s | Normal make test300s outer: Go race/web114/gen121 |
+| cr02-quality | 12:58:08–12:58:28 | 0 /20.601s | Quick race60s and default/phase4/integration vet/build/lint |
+| cr02-native | 12:58:08–12:58:23 | 0 /15.103s | Exact native Events/race/6m, all retained search/detail cases |
+| cr02-auth | 12:58:08–12:58:29 | 0 /20.972s | Exact native Auth/race/6m and CLI cases |
+| cr02-alerts | 12:58:08–12:58:23 | 0 /15.260s | Exact native Alerts/race/6m |
+| cr02-openapi | 12:58:08–12:58:14 | 0 /6.152s | All11 OpenAPI/race/60s cases |
+| cr02-contract | 12:58:08–12:58:09 | 0 /1.330s | Exact nonempty TestOpenAPISecurity60s |
+| cr02-runtime | 12:58:08–12:58:09 | 0 /1.244s | Exact nonempty signed runtime dispatcher selector60s |
+| cr02-browser | 12:58:35–12:58:45 | 0 /9.854s | Actual current API/CLI/helper/native PG+CH, Chromium1440/375 |
+| cr02-source-scan | 12:59:44–12:59:45 | 0 /0.788s | Pinned8.30.1 staged repair and generated reports[] |
+| cr02-history | 12:59:58–12:59:59 | 0 /0.942s | Atcc22566,567commits,report[]; exact exception unchanged |
+
+Actual browser starts with filtered Alerts, verifies real failed401 followed by
+successful login, navigates to Events, presses Back and checks the exact saved
+Alerts URL, visible severity/status/search and real native API query, then presses
+Forward. It continues through the retained detail flow, real hard reload with
+same identity/generation4→2, canonical safe JSON, expanded IPv6, native focus/
+Escape, missing404 and logout/privacy. No mocked browser routes. Results and
+screenshots are in `cr02/`; generated schema hash remains unchanged.
+
+The first combined web gate passed114 runtime cases but exited2 at typecheck
+because the newly written component tests supplied four unsupported `exact`
+options to Testing Library ByRoleOptions. Removing those options preserves
+literal-name matching and every assertion; final web/type/lint/build/format
+then passed. This owned fixture correction is recorded, not relabelled green.
+
+Repair self-check: RED/GREEN commits and owned artifacts exist, whitespace is
+clean, no tracked deletion or unexpected source/untracked artifact occurred.
+Only the two declared source/test files changed; user dirt remains unstaged.
+No stub, new security surface or authority change. Detector/readiness remains
+a separate root-owned hold; no additional detector investigation, stack change,
+whole-stack pass or acceptance claim occurred in this CR-02 repair. Pending R2,
+root postwave and stack readiness; do not advance08 or Phase5.
