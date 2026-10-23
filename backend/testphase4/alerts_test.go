@@ -20,10 +20,15 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/6sLOGAN78/sentinel/internal/chmigrate"
 	"github.com/6sLOGAN78/sentinel/internal/config"
+	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/database"
+	detectionconfig "github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/query"
+	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 	storagepostgres "github.com/6sLOGAN78/sentinel/internal/storage/postgres"
+	"github.com/6sLOGAN78/sentinel/migrations"
 )
 
 type alertListRow struct {
@@ -113,6 +118,9 @@ func TestPhase4Alerts(t *testing.T) {
 			"exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
 	}
 	token := tokenFor(tenant)
+	t.Run("detail_canonical_evidence_and_tenant_boundaries", func(t *testing.T) {
+		testAlertDetails(t, ctx, cfg, base, binary, root, secret, token, tokenFor(foreign), tenant, foreign, ids)
+	})
 	getPage := func(t *testing.T, q url.Values, credential string) alertListPage {
 		t.Helper()
 		status, body := getJSON(t, base+"/api/v1/alerts?"+q.Encode(), credential, "")
@@ -239,4 +247,145 @@ func TestPhase4Alerts(t *testing.T) {
 			require.Equal(t, 400, status)
 		})
 	}
+}
+
+func testAlertDetails(t *testing.T, ctx context.Context, cfg *config.Config,
+	base, binary, root, secret, token, foreignToken, tenant, foreign string, ids map[int]string,
+) {
+	t.Helper()
+	_, err := chmigrate.New(cfg.ClickHouse.HTTPAddress, cfg.ClickHouse.User, cfg.ClickHouse.Password,
+		cfg.ClickHouse.Database, nil).Run(ctx, migrations.ClickHouse())
+	require.NoError(t, err, "native CH migrations are setup, not behavioral RED")
+	conn, err := storageclickhouse.Open(ctx, cfg.ClickHouse)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	now := contracts.NewTimestamp(time.Now().UTC())
+	missing, foreignOnly := uuid.NewString(), uuid.NewString()
+	events := make([]*contracts.Event, 0, 20)
+	samples := []string{missing, foreignOnly}
+	for range 18 {
+		event := &contracts.Event{SchemaVersion: 1, EventID: uuid.NewString(), TenantID: tenant,
+			OccurredAt: now, ReceivedAt: &now, Source: "phase4-detail", EventType: "auth.failure",
+			Attributes: map[string]any{"payload": `<img src=x onerror="alert('unsafe')">`}}
+		events = append(events, event)
+		samples = append(samples, event.EventID)
+	}
+	other := *events[0]
+	other.EventID, other.TenantID = foreignOnly, foreign
+	events = append(events, &other, events[0]) // Real duplicate must not consume a result slot.
+	require.NoError(t, storageclickhouse.NewEventStore(conn).InsertBatch(ctx, events))
+	detection := &contracts.Alert{SchemaVersion: 1, AlertID: ids[1], TenantID: tenant,
+		RuleID: "AUTH_BRUTE_FORCE", RuleVersion: 77, Severity: "high", Status: "open", CreatedAt: now,
+		WindowStart: contracts.NewTimestamp(now.Add(-time.Minute)), WindowEnd: now, EntityKey: "192.0.2.44",
+		Summary: "Canonical CH detection", EventCount: 20, SampleEventIDs: samples, DedupeKey: "actual-canonical-dedupe"}
+	require.NoError(t, detection.Validate())
+	orphan := *detection
+	orphan.AlertID = strings.ReplaceAll(uuid.NewString(), "-", "") + strings.Repeat("0", 32)
+	foreignDetection := *detection
+	foreignDetection.AlertID, foreignDetection.TenantID = ids[25], foreign
+	require.NoError(t, storageclickhouse.NewAlertStore(conn).InsertBatch(ctx,
+		[]*contracts.Alert{detection, detection, &orphan, &foreignDetection}))
+	read := func(t *testing.T, address, id, credential string, expected int) []byte {
+		t.Helper()
+		status, body := getJSON(t, address+"/api/v1/alerts/"+id, credential, "")
+		require.Equal(t, expected, status, "actual alert-detail HTTP behavior")
+		return body
+	}
+	t.Run("actual_canonical_and_missing_retained_evidence", func(t *testing.T) {
+		body := read(t, base, ids[1], token, 200)
+		var detail struct {
+			Workflow    query.WorkflowAlert `json:"workflow"`
+			Detection   contracts.Alert     `json:"detection"`
+			Evidence    []contracts.Event   `json:"evidence"`
+			Missing     []string            `json:"missing_evidence_ids"`
+			Explanation string              `json:"rule_explanation"`
+			History     []any               `json:"history"`
+		}
+		require.NoError(t, json.Unmarshal(body, &detail))
+		require.Equal(t, tenant, detail.Workflow.TenantID)
+		require.Equal(t, int64(1), detail.Workflow.RuleVersion, "PG metadata is not CH canonical authority")
+		require.Equal(t, *detection, detail.Detection)
+		require.Len(t, detail.Evidence, 18)
+		require.Equal(t, []string{missing, foreignOnly}, detail.Missing)
+		seen := map[string]bool{}
+		for _, event := range detail.Evidence {
+			require.Equal(t, tenant, event.TenantID)
+			require.False(t, seen[event.EventID])
+			seen[event.EventID] = true
+		}
+		require.NotNil(t, detail.History)
+		require.Empty(t, detail.History, "no fabricated audit before 08/09")
+		require.Contains(t, detail.Explanation, "unavailable")
+		require.Contains(t, detail.Explanation, "AUTH_BRUTE_FORCE")
+		require.Contains(t, detail.Explanation, "77")
+		require.NotContains(t, detail.Explanation, "threshold", "current config cannot stand in for version77")
+	})
+	t.Run("foreign_orphan_unknown_and_invalid", func(t *testing.T) {
+		read(t, base, ids[25], token, 404)
+		read(t, base, ids[1], foreignToken, 404)
+		read(t, base, orphan.AlertID, token, 404)
+		read(t, base, strings.Repeat("0", 64), token, 404)
+		read(t, base, "bad-id", token, 400)
+		read(t, base, url.PathEscape("' OR 1=1 --"), token, 400)
+		read(t, base, ids[1]+"?tenant_id="+foreign, token, 400)
+		read(t, base, ids[1], "", 401)
+	})
+	t.Run("retained_exact_manifest_and_unavailable_ambiguity", func(t *testing.T) {
+		db, openErr := database.New(ctx, cfg.Database, zerolog.Nop())
+		require.NoError(t, openErr)
+		defer db.Close()
+		rules := detectionconfig.Rules{SchemaVersion: 1}
+		for _, rule := range []string{"AUTH_BRUTE_FORCE", "PORT_SCAN", "REQUEST_FLOOD", "DENY_SPIKE"} {
+			rules.Rules = append(rules.Rules, detectionconfig.Rule{ID: rule, Version: 77, Enabled: true,
+				Threshold: 13, Window: time.Minute, Severity: "high", Cooldown: time.Minute})
+		}
+		manifest, marshalErr := json.Marshal(rules)
+		require.NoError(t, marshalErr)
+		group, fingerprint := "p4detail-"+uuid.NewString(), rules.Fingerprint()
+		fence := func(partition int, raw []byte) {
+			t.Helper()
+			_, insertErr := db.Pool.Exec(ctx, `INSERT INTO detection_partition_fences
+			(group_id,topic,partition_id,incarnation,member_id,generation,assignment_token,config_fingerprint,rules_manifest)
+			VALUES ($1,'phase4-detail',$2,$3,'fixture',1,1,$4,$5)`, group, partition, strings.Repeat("1", 64), fingerprint, raw)
+			require.NoError(t, insertErr)
+		}
+		fence(0, manifest)
+		canonical, marshalErr := json.Marshal(detection)
+		require.NoError(t, marshalErr)
+		_, insertErr := db.Pool.Exec(ctx, `INSERT INTO detection_decisions
+		(alert_id,group_id,tenant_id,rule_id,rule_version,entity_components,config_fingerprint,allowed,
+		trigger_occurred_at,effective_clock,topic,partition_id,source_offset,rule_ordinal,canonical_payload,
+		immutable_fingerprint,decision_generation) VALUES ($1,$2,$3,'AUTH_BRUTE_FORCE',77,'[]',$4,true,
+		$5,$5,'phase4-detail',0,0,0,$6,$1,1)`, ids[1], group, tenant, fingerprint, now.Time, canonical)
+		require.NoError(t, insertErr)
+		explanation := func() string {
+			var value struct {
+				Explanation string `json:"rule_explanation"`
+			}
+			require.NoError(t, json.Unmarshal(read(t, base, ids[1], token, 200), &value))
+			return value.Explanation
+		}
+		require.Contains(t, explanation(), "threshold 13", "actual retained exact-version definition")
+		conflicting := rules
+		conflicting.Rules = append([]detectionconfig.Rule(nil), rules.Rules...)
+		conflicting.Rules[0].Threshold = 999
+		badManifest, marshalErr := json.Marshal(conflicting)
+		require.NoError(t, marshalErr)
+		fence(1, badManifest)
+		require.Contains(t, explanation(), "unavailable", "conflicting retained data must not invent old parameters")
+		for partition := 2; partition <= 33; partition++ {
+			fence(partition, manifest)
+		}
+		require.Contains(t, explanation(), "unavailable", "row cap cannot establish unique history from truncated candidates")
+	})
+	t.Run("pg_first_when_ch_unreachable", func(t *testing.T) {
+		unavailable, _ := startQueryAPI(t, binary, root, secret, "127.0.0.1:1")
+		read(t, unavailable, ids[1], token, 503)
+		read(t, unavailable, ids[25], token, 404)
+		read(t, unavailable, orphan.AlertID, token, 404)
+		status, body := getJSON(t, unavailable+"/api/v1/alerts?limit=3", token, "")
+		require.Equal(t, 200, status, "PG list remains independent of CH")
+		require.NotContains(t, string(body), "dedupe_key")
+		require.NotContains(t, string(body), "sample_event_ids")
+	})
 }
