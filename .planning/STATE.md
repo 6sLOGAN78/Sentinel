@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-23T04:09:03Z"
+last_updated: "2026-10-23T05:06:58Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 73
-  completed_plans: 62
+  completed_plans: 63
   percent: 50
 ---
 
@@ -18,17 +18,19 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05accepted; execute04-06 unique event search under user `gsd-plan-phase 4 --auto`. All20requirements planned; Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03/04/05/06accepted; execute04-07 safe event details under user `gsd-plan-phase 4 --auto`. All20requirements planned; Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-06 candidate2436464 reviewedR0CR01/WR01; repairedRED4619571/GREEN2c6720e,pendingindependentR1/rootgate.04-05accepted.
-Status: ActualmixedIPv6native5vs15and6invaliddeep-linkREDcasespreserved; normalizedpostdedupeIPcomparison+derivedrestoredvalidationrepairPASSnativeEvents/Alerts/Auth,web90,OpenAPI11,three-modestatic,realChromium1440+375,normalmake testcachedGo/web90/generator121. See04-06-REPAIR/R0/private06logs. NoPhase4remoteauthoritybefore04-16.
-Progress: 62/73 accepted numberedplans; Phase4 6/17accepted,11remaining. Overallphaseprogress3/6=50%.
+Plan: 04-06 accepted afterR0CR01/WR01repairRED4619571/GREEN2c6720e,cleanR1/rootgate; execute04-07next.
+Status: ActualnativeEvents/Alerts/Auth,web90,OpenAPI11,three-modestatic,realChromium1440+375,normalmake testPASS;R1cleanatc1079a2,rootpostwaveEXIT0/12.834sat05:06:58Z(cachedGo/web90/gen121). StoredIPv6/deep-linkcounterexamplesandoriginalfailedattemptspreserved. NoPhase4remoteauthoritybefore04-16.
+Progress: 63/73 accepted numberedplans; Phase4 7/17accepted,10remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
 ## Latest Verified Evidence
+
+- Phase4 slice06acceptedafterR1cleanatc1079a2/source2c6720e androotpostwaveEXIT0at2026-10-23T05:06:58Z. ActualmixedIPv6ordereduniquepages,strictcursor/session/privacyandinvalidinitial/historylinksverified;web90/native/browser/defaultgatespassed. Preserved04-REVIEW-06-R0/R1; continue04-07.
 
 - Phase4 slice05 accepted after clean12-pathR0at1b033661/source01ca62a androotpostwaveEXIT0at2026-10-23T04:09:03Z. ActualPG-firstcanonicalCH/evidence/retained-rule/web64/browser1440+375 andnormalmake test passed; historicalfailuresretained. Preserved04-REVIEW-05-R0; continue04-06,notPhase5.
 
@@ -90,8 +92,8 @@ ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readines
 ## Current Work / Next Action
 
 Phase3 is complete; final documentation repeat39621468170 at358114c passedall10jobs.
-User explicitly requested Phase4 `--auto`. Original16plansindependentR2PASS,repair17independentlyapproved;17numberedplans/all20IDscovered/UI6/6PASS. Rootaccepted01/17/02/03/04/05aftercleanindependentreviewsandactualgates; execute04-06next. Validationfixturesforlaterslicesstillpending. Research/plannerfailurespreviouslyrecoveredinline; reviewerusagelimitretriedsuccessfullyafteruserresume, no purchase/upgrade. NoPhase5transition; explicitPhase4remoteapprovalcheckpoint04-16.
-SDKstatecommands repeated knowntrackingmiscounts: supplementals03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md isn'tanumberedexecutedplan; parsedhistoricalstatusprose doesn'treopenpassedPhase3. Rootreconciledactual13+22+21+17=73numberedplans,62accepted,3/6phases; no gatewaived.
+User explicitly requested Phase4 `--auto`. Original16plansindependentR2PASS,repair17independentlyapproved;17numberedplans/all20IDscovered/UI6/6PASS. Rootaccepted01/17/02/03/04/05/06aftercleanindependentreviewsandactualgates; execute04-07next. Validationfixturesforlaterslicesstillpending. Research/plannerfailurespreviouslyrecoveredinline; reviewerusagelimitretriedsuccessfullyafteruserresume, no purchase/upgrade. NoPhase5transition; explicitPhase4remoteapprovalcheckpoint04-16.
+SDKstatecommands repeated knowntrackingmiscounts: supplementals03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md isn'tanumberedexecutedplan; parsedhistoricalstatusprose doesn'treopenpassedPhase3. Rootreconciledactual13+22+21+17=73numberedplans,63accepted,3/6phases; no gatewaived.
 Finalclosuretracking is documentation-only relative to tested7a72028.
 Preserve userdirty.planning/config.json/.serena unstaged. No liveproducer remains.
 
@@ -213,8 +215,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-23T04:09:03Z, Phase4 plan05 accepted after cleanindependentreview/rootgate.
-Resume: Finish04-06independentR1ofrepairedsource2c6720e,thenrootpostwaveandacceptancebefore07. DoNOTrestartcandidate;committedRED6ffd056/aea966f/4619571,GREEN2436464/2c6720e. Only4originallyownedfileschangedinrepair;11-pathA1scopeunchanged. Maintain6/17accepteduntilcleanR1/rootgate. Preserveusercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority;noPhase5transition. Rootowns tracking. Priorfailures/reviewR0retained.
+Last session:2026-10-23T05:06:58Z, Phase4 plan06acceptedaftercleanR1/rootgate.
+Resume: Execute04-07safeeventdetailswithstrictdualcredentialdispatchandlegacylookupcompatibility; inspectactualwiring/guardedclientownershipBEFOREediting,checkpointifextraunownedpathsneeded.04-06complete,norestart. Maintain7/17accepteduntil07cleanreview/rootgate. Preserveusercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority;noPhase5transition. Rootowns tracking. Priorfailures/reviewR0retained.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.

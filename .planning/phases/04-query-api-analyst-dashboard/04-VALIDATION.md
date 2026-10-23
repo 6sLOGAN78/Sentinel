@@ -19,6 +19,8 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 04-05nowaccepted: actualPG-firstCHcanonical/evidence/retained-rule/nativeAlerts+Auth,OpenAPI11,web64,three-modequality,currentbinaryPG+CHChromium1440/375,normalmake testandpreservedstackPASS. Independent12-pathstandardreviewcleanat1b033661/source01ca62a;rootpostwavebuild+make testEXIT0/12.571sat2026-10-23T04:09:03Z(cachedGo,web64/generator121). StrictModeURLREDab98360/source01ca62arepair;historicaldefaulttimeoutsandbrowserfailuresretained,separateexact60srepeatPASSwithoutsource/capchanges. Preserved04-REVIEW-05-R0;536commitfullhistoryzeroatcandidate. Eventsearch/triage/SSE/fullmatrixremainlaterowners.
 
+04-06nowacceptedafterCR01storedIPv6andWR01invaliddeep-linkrepair: originalRED6ffd056,reviewRED4619571/GREEN2c6720e. ActualnativeEvents+Alerts+Auth,mixedIPv6allthreequeryspellings/fivefullpages,web90/OpenAPI11/three-modestatic/realChromium1440+375/defaultmake testPASS. Eleven-pathcumulativeR1cleanatc1079a2;rootpostwaveEXIT0/12.834sat05:06:58Z(cachedGo/web90/gen121). Preserved04-REVIEW-06-R0/R1;earlierpassesdidnotnegatecounterexamples. Eventdetails/triage/SSE/fullmatrixremainlaterowners.
+
 ## Test Infrastructure
 
 Go testing/race in `backend/`; Vitest/Testing Library in `web/`; native integration `backend/test/`; proposed pinned Playwright against a real preserved stack and same-origin proxy. Exact new version pins resolved before installation. No new global tools or external accounts.

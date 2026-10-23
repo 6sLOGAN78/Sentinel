@@ -1,6 +1,6 @@
 # 04-06 review repair
 
-Status: implemented_pending_R1; acceptance remains6/17.
+Status: accepted_after_clean_R1_and_root_gate; Phase4now7/17.
 
 Independent R0 atbc27d83/source2436464 found CR01 storedIPv6 spelling false
 negatives and WR01 invalid initial/history deep links stuck loading. Preserve
@@ -45,4 +45,6 @@ Actual final gates(private04-06logs,allEXIT0):
 
 The first repair static run failed only newtest integer-loopstyle; fixed using
 range5 and repeated quality/native. HistoricalR0findings/RED/failedstaticremain
-unaltered. No source changes after2c6720e. IndependentR1/rootpostwave stillneeded.
+unaltered. No source changes after2c6720e. IndependentR1atc1079a2cleanzeroissues,
+bothfindingsclosed,preserved04-REVIEW-06-R1. RootpostwaveEXIT0/12.834s,
+END05:06:58.827292Z,backend/webbuild+normalmake testcachedGo/web90/gen121.

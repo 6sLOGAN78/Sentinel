@@ -1,12 +1,13 @@
 ---
 phase: 04-query-api-analyst-dashboard
-reviewed: 2026-10-23T04:58:12Z
+reviewed: 2026-10-23T05:05:50Z
 depth: standard
 review_slice: 04-06
-review_round: R0
-review_sha: bc27d83abcbeba290a2e9d08f044c606b07d60d9
-source_sha: 2436464
+review_round: R1
+review_sha: c1079a2f0673bbbc8ee71939bbdfd830a1578a2a
+source_sha: 2c6720e
 diff_base: 74578e9
+repair_base: 2436464
 files_reviewed: 11
 files_reviewed_list:
   - backend/internal/query/events.go
@@ -21,79 +22,60 @@ files_reviewed_list:
   - web/src/App.tsx
   - web/src/api/client.ts
 generated_schema_sha256: 24c84112b5e3cd4abbd7bc7648b1fcd40ac5ad2a0e27999282800f350d83632e
+resolved_findings: [CR-01, WR-01]
 findings:
-  critical: 1
-  warning: 1
+  critical: 0
+  warning: 0
   info: 0
-  total: 2
-status: issues_found
+  total: 0
+status: clean
 ---
 
 # Phase 4 Plan 06: Code Review Report
 
-**Reviewed:** 2026-10-23T04:58:12Z
+**Reviewed:** 2026-10-23T05:05:50Z
 
-**Depth:** standard; all eleven explicitly declared paths read in full.
+**Depth:** standard; cumulative explicit eleven-path scope, with full re-read of all four repair files.
 
-**Status:** issues_found — one BLOCKER and one WARNING.
+**Status:** clean — zero unresolved BLOCKER or WARNING findings.
 
 ## Narrative Findings (AI reviewer)
 
 ### Summary and scope
 
-The event-search increment has a reproducible IPv6 false-negative bug and an invalid-deep-link state defect. Review covers source candidate 2436464 at frozen HEAD bc27d83abcbeba290a2e9d08f044c606b07d60d9 against accepted baseline 74578e9. Read the complete 04-06 PLAN, OWNERSHIP-A1, OWNERSHIP-A1-CHECK, CONTRACT, UI-SPEC and SUMMARY; the SUMMARY was context rather than correctness authority. Read each declared source/test file and its tracked diff. The expressly declared ignored generated schema was inspected and its hash verified without regeneration or staging.
+R1 closes both R0 findings on source 2c6720e at frozen HEAD c1079a2f0673bbbc8ee71939bbdfd830a1578a2a. No additional actionable defect was established in the bounded review. This conclusion applies to the delivered 04-06 search increment, not whole-phase acceptance or certification.
 
-No root AGENTS.md, .codexignore, project .codex/skills or .agents/skills directory was present. Applied the GSD code-review skill. No structural/fallow findings were supplied. Dependencies traced include event validation and ingestion normalization, Kafka serialization, native event insertion/Get and table schema, shared cursor/time/page primitives, bearer verification and legacy lookup, SessionProvider, existing Alerts navigation behavior, and React Query disabled-query state semantics.
+Read the complete 04-06-REPAIR and updated 04-06-SUMMARY as context, inspected the actual repair diff, and read all four changed files in full: native adapter, native Events tests, Events page and component tests. The original PLAN/A1/CHECK, CONTRACT/UI-SPEC, eleven source paths and relevant actual dependencies were read during R0. Verified that the six other tracked paths are byte-identical between original 2436464 and frozen c1079a2; the seventh unchanged path is the explicitly declared ignored generated schema, whose SHA-256 still matches 24c84112b5e3cd4abbd7bc7648b1fcd40ac5ad2a0e27999282800f350d83632e. R0 boundary analysis therefore remains applicable to the unchanged source.
 
-### Critical Issues
+No root AGENTS.md, .codexignore or project .codex/skills/.agents/skills directory was present in the original context discovery. Continued the GSD code-review workflow. No structural/fallow pre-pass was supplied.
 
-#### CR-01: Canonicalizing only the query makes valid stored IPv6 events unsearchable
+### R0 finding disposition
 
-**Classification:** BLOCKER
+**CR-01 — resolved.** At `backend/internal/storage/clickhouse/query_events.go:59-65`, the adapter now compares `toIPv6OrNull(source_ip)` with the bound `toIPv6OrNull({ip:String})`. Both stored and requested representations are normalized after selection of the whole retained identity. Existing stored bytes remain intact. Tenant grouping/predicate, earliest-received whole nullable representation, time/type/outcome filters, tuple pagination, ordering, Limit+1 and query deadlines remain in their original positions. Source normalization is not moved into the pre-dedupe input.
 
-**File:** `/home/logan78/Desktop/Sentinel/backend/internal/storage/clickhouse/query_events.go:55-59`
+A reviewer-run read-only native SELECT confirmed the repaired expression returns true for compressed, expanded and uppercase spellings of `2001:db8::44`, preserves matching for `192.0.2.44`, and yields NULL rather than a match for absent or invalid source IPs. No IPv4/IPv6 false match was observed. The updated native fixture cycles all three accepted stored spellings; `events_test.go:285-312` searches each spelling across five three-row pages and compares the entire fifteen-ID sequence with the expected descending order. A missing cursor on an intermediate page would repeat a page and fail the final sequence assertion.
 
-**Related:** `/home/logan78/Desktop/Sentinel/backend/internal/query/events.go:216-221`
+**WR-01 — resolved.** At `web/src/pages/Events.tsx:216-221`, restored validation is derived from current applied filters on every render, including initialization and popstate updates. The displayed error combines explicit draft validation with restored-filter validation. Loading at :356 now uses `isLoading`, so a disabled query without data is not represented as a running request. The six cases at `Events.test.tsx:73-110` cover initial and history URLs for invalid IP, limit and reversed range, requiring the actionable message, no loading indicator and no extra request. Initial cases also exercise Clear filters recovery. These cases and the existing twenty Events tests passed in the independent focused run.
 
-**Issue:** The handler converts every IPv6 filter to `netip.Addr.String()`, but the adapter compares it directly to the retained `source_ip` String. The accepted Event contract permits expanded, zero-padded and uppercase IPv6 spellings: `contracts/event.go:328-343` validates without rewriting them, ingestion and Kafka preserve their original bytes, and `storage/clickhouse/events.go:70-74` inserts those bytes into Nullable(String). An event ingested with `2001:0db8:0:0:0:0:0:44` or `2001:DB8::44` appears in unfiltered results but disappears when searched by its own IP. Supplying the exact displayed spelling does not help because the handler always rewrites it to `2001:db8::44`. This violates the delivered IPv6 search behavior and can hide relevant retained events from investigations.
+### Regression analysis
 
-**Reproduction/evidence:** A reviewer-run read-only SELECT on the existing native ClickHouse server used `values('source_ip Nullable(String)', ('2001:0db8:0:0:0:0:0:44'), ('2001:DB8::44'), ('2001:db8::44'))`. Evaluating the adapter's comparison `source_ip = '2001:db8::44'` returned 0, 0 and 1 respectively, while `IPv6NumToString(IPv6StringToNum(source_ip))` returned `2001:db8::44` for all three rows. The native fixture stores only the already-compressed spelling (`events_test.go:291`); expanding the query at :158 does not exercise the stored-spelling case.
-
-**Fix:** After selecting the whole retained identity, compare IP addresses in a normalized/native address representation on both sides, preserving tenant selection, dedupe-before-filter semantics, nullable handling and bound parameters. Handle existing stored rows; normalizing only future writes is insufficient. Add native regression rows with expanded and uppercase IPv6 values and prove canonical and alternate query spellings return the same identities without duplicates or changed page order.
-
-### Warnings
-
-#### WR-01: Invalid Events deep links display a permanent loading state
-
-**Classification:** WARNING
-
-**File:** `/home/logan78/Desktop/Sentinel/web/src/pages/Events.tsx:211`
-
-**Related:** `/home/logan78/Desktop/Sentinel/web/src/pages/Events.tsx:133-142`, `/home/logan78/Desktop/Sentinel/web/src/pages/Events.tsx:350`
-
-**Issue:** Initial URL filters and popstate filters enter component state without setting validation. When an IP, limit or time range is invalid, `enabled` disables the query; a disabled query without data still has `isPending === true`, so the page displays “Loading events…” indefinitely although no request is running. IP debounce does not repair initial IP errors because draft and applied IP already match. Users following an invalid or stale filter link receive neither a field error nor an explanation until they manually submit or clear the form.
-
-**Reproduction/evidence:** Start at `/events?source_ip=bad`, `/events?limit=201`, or `/events?from=2026-10-23T00:00:00Z&to=2026-10-22T00:00:00Z`, then authenticate. A read-only diagnostic evaluated the actual extracted/transpiled filter helpers and the installed React Query QueryObserver. All three yielded `enabled:false`, `requests:0`, `isPending:true`, `isFetching:false`, `status:"pending"`. Source initializes validation to an empty string and renders loading from `isPending` alone. Existing invalid-filter tests submit the form after a valid initial load, missing URL initialization and Back/Forward.
-
-**Fix:** Validate restored filters at initialization and on popstate, show the appropriate existing validation message, and render loading only for an enabled fetch state (for example `isLoading`, with explicit invalid-filter handling). Add component cases for invalid initial URLs and history navigation, asserting a visible actionable error and no permanent loading indicator or request.
-
-### Other boundaries examined
-
-Traced verified tenant selection before storage, Named SQL parameters, whole nullable tuple selection before event filters/order/limit, earliest received_at and deterministic tie selection, millisecond UUID tuple pagination, half-open range/limit bounds, five-second caller-derived query deadlines, strict query fields, and disjoint event/alert AEAD AAD and payload binding. Examined single list registration, unchanged legacy lookup/non-downgrade, guarded client cancellation and post-body authority checks, current-session 401 handling, finite page envelopes, escaped event rendering, debounce, bounded previous history, owner markers, and App navigation/focus. No additional actionable finding was established at this depth. Future event details, triage, SSE, metrics and Phase 5 are outside this slice.
+The native change is confined to the source-IP predicate and tests; it does not alter event selection, storage representation, tenant authority, parameters, range/cursor validation or canonical Event schema. The UI change reads existing applied state without introducing a second state synchronization path, request source, credential path or history mutation. Existing query keys, session/caller cancellation, post-body authority checks, 401 handling, debounce, escaped event rendering, finite page envelope validation and bounded navigation remain unchanged. No new test reliability defect was established. Future detail/triage/SSE/metrics and Phase 5 functionality are outside the delivered slice.
 
 ### Independent diagnostics and limits
 
-- `go test -race ./internal/query -timeout=60s` from backend: exit 0, cached.
-- Direct `./node_modules/.bin/vitest run src/pages/Events.test.tsx` from web: exit 0, 20/20 tests, 1.83 seconds. No npm pretest or generated-file rewrite.
-- Read-only native ClickHouse SELECT over inline values: exit 0; IPv6 mismatch demonstrated above. No data/schema changes.
-- Actual filter-helper/installed QueryObserver diagnostic: exit 0; disabled permanent-pending states demonstrated above.
-- `git diff --check 74578e9..2436464` over the ten tracked declared paths: exit 0.
+| Reviewer-run check | Result |
+|---|---|
+| Direct `./node_modules/.bin/vitest run src/pages/Events.test.tsx` from web | Exit 0, 26/26 tests, 2.02 seconds. No npm pretest or schema regeneration. |
+| Read-only native ClickHouse SELECT over inline Nullable(String) values | Exit 0; all three IPv6 spellings match, IPv4 matches independently, NULL/invalid values do not match. |
+| `git diff --exit-code 2436464..c1079a2` over the six unchanged tracked paths | Exit 0, empty diff. |
+| Generated schema SHA-256 | Exact unchanged declared hash. |
+| Repair source `git diff --check 2436464..2c6720e` | Exit 0. |
 
-Prior native, full web, OpenAPI, browser and other gate results were not independently rerun or recertified here. Focused passing tests do not negate the counterexamples. This is standard source review, not whole-phase acceptance, accessibility certification or a production security guarantee. No service, migration, remote action or native write fixture was started by this reviewer.
+The root's recorded causal RED and native Events/Alerts/Auth, ninety-test web suite, static/OpenAPI/default and actual browser results were read as execution context. They were not independently rerun or recertified by this reviewer. The native SELECT above verifies expression semantics, not an independent full API fixture run. No new browser session, server, migration, native write fixture, dependency installation or remote operation was started. Standard review does not establish whole-phase tenant-matrix acceptance, production readiness, complete accessibility or performance guarantees.
 
 ### Preservation
 
-Only this designated report was written. The parent preserved the previous report as 04-REVIEW-05-R0.md. No source/test file, generated declaration, Git index, commit, root tracking, user configuration or .serena content was changed. No dependency was installed.
+Only this designated report was written. R0 remains preserved as 04-REVIEW-06-R0.md, SHA-256 e9fc40fe75afdd38702d32b65db05e91a87421b18ebd12e83043b38bacac2592. No source/test file, generated declaration, Git index, commit, root tracking, user configuration or .serena content was changed.
 
 ---
 

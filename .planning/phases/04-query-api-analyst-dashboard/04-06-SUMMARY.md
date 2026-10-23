@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "06"
-status: pending_independent_source_review
+status: complete
 subsystem: api
 tags: [clickhouse, events, cursor, react-query, openapi]
 requires:
@@ -40,12 +40,14 @@ completed: 2026-10-23
 
 # Phase 4 Plan 06: Unique event search
 
-**Pending independent source review and root acceptance.** Source candidate
+**ACCEPTED after clean independentR1 and root postwave.** Original source candidate
 `2436464` implements both tasks; reviewed counterexamples then required repair
 RED4619571/GREEN2c6720e. R0 found CR01IPv6 string false negatives and WR01invalid
 URL loading, preserved in04-REVIEW-06-R0. Both are now repaired and locally
-verified, pending independentR1/rootacceptance; see04-06-REPAIR for exact gates.
-Phase4 remains6/17 accepted. Requirement IDs
+verified. IndependentR1atc1079a2/source2c6720e closesbothfindingswithzeroissues,
+preserved04-REVIEW-06-R1. Rootpostwavebackend/webbuild+normalmake testEXIT0/
+12.834s,END2026-10-23T05:06:58.827292Z,cachedGo/web90/generator121,private
+root-postwave.log. See04-06-REPAIR for exact gates. Phase4 now7/17 accepted. Requirement IDs
 above represent incremental coverage, not whole-phase acceptance. No07,
 Phase5, remote push or hosted CI was performed.
 
@@ -184,4 +186,5 @@ loading. Clearfilters recovers.90webtests andquality/nativeEvents+Alerts+Auth/
 OpenAPI11/actualChromium1440+375/defaultmake test nowPASS. Full details, failed
 static-loopstyle attempt and actualtimestamps/durations are in04-06-REPAIR.
 Only four originallyowned source/test files changed from2436464; generated
-schema and otherreviewedpaths unchanged. This is not yet accepted.
+schema and otherreviewedpaths unchanged. IndependentR1 and rootpostwave then
+passed as recorded above; historical failures remain unchanged.
