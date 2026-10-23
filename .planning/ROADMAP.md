@@ -263,7 +263,7 @@ Plans:
 - [x] 04-02: Safe development token CLI and auth configuration
 - [x] 04-03: Typed session-isolated browser shell
 - [x] 04-04: Full filtered alert pages and stable cursors
-- [ ] 04-05: Alert evidence details and honest retention
+- [x] 04-05: Alert evidence details and honest retention — accepted2026-10-23 after clean12-pathreview androotpostwavePASS
 - [ ] 04-06: Unique event search
 - [ ] 04-07: Safe event JSON and legacy lookup compatibility
 - [ ] 04-08: Acknowledge with atomic optimistic audit
@@ -323,7 +323,7 @@ Plans:
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
 | 3. Detection & Alert Pipeline | 21/21 | Complete    | 2026-10-21 |
-| 4. Query API & Analyst Dashboard | 5/17 accepted | Executing 04-05 next | - |
+| 4. Query API & Analyst Dashboard | 6/17 accepted | Executing 04-06 next | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
 

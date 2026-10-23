@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "05"
-status: pending_independent_source_review
+status: complete
 subsystem: api
 tags: [postgres, clickhouse, evidence, react-query, dialog, openapi]
 requires:
@@ -44,7 +44,7 @@ completed: 2026-10-23
 
 Verified-tenant PG ownership now precedes immutable CH detection and bounded evidence reads; the analyst dialog shows missing retained IDs and honest recorded-rule explanations through the existing guarded typed client.
 
-**PENDING INDEPENDENT SOURCE REVIEW AND ROOT ACCEPTANCE.** Source candidate is `01ca62a52523869d1abd8fdd0e2609a671f911a8`. The executor has implemented both tasks and completed the scoped local gates below. Root alone owns shared tracking, independent review and acceptance; Phase4 remains 5/17 accepted until those gates clear. Requirement IDs above are incremental plan coverage, not whole-requirement or whole-phase acceptance. No 04-06, Phase5, push or hosted CI was performed.
+**ACCEPTED BY ROOT.** Source is `01ca62a52523869d1abd8fdd0e2609a671f911a8`. Independent standard review at frozen HEAD `1b033661` covered all twelve paths with zero findings; preserved report is `04-REVIEW-05-R0.md`. Root separately ran backend/web builds and normal `make test` under the unchanged300s post-wave outer budget: actual EXIT0/12.571s, END2026-10-23T04:09:03.893731Z, private `root-postwave.log` (cached Go results, web64 and generator121). Phase4 is now6/17 accepted. Requirement IDs above are incremental plan coverage, not whole-requirement or whole-phase acceptance. At this acceptance, no04-06, Phase5, push or hosted CI was performed. Earlier failures remain recorded below, not retrospectively relabelled.
 
 ## Ownership and provenance
 
@@ -133,7 +133,7 @@ Karpathy guidance kept changes narrow and causal; UI/UX guidance supplied the vi
 
 `backend/internal/query/alerts.go:144` intentionally returns empty history per the approved CONTRACT until04-08/09 implement audit reads. The final DTO/OpenAPI already declares the maximum two forward transitions; no status history is invented. This is the expressly assigned later refinement, not a claim that triage/audit is delivered by05. No other goal-blocking placeholder/TODO/stub was found in the owned source. T04-10/11/12 cover the new detail/evidence/rule trust surfaces; no additional unregistered endpoint/auth/file/schema boundary was introduced.
 
-No benchmark, security certification, full Phase3 aggregate, wholePhase4/native matrix, SSE or hosted CI result is claimed. Independent source review and root post-wave acceptance remain required before06. No shared tracking/SDK writes were performed by this executor.
+No benchmark, security certification, full Phase3 aggregate, wholePhase4/native matrix, SSE or hosted CI result is claimed. Independent source review and root post-wave acceptance subsequently passed as recorded above. No shared tracking/SDK writes were performed by this executor; root owns the acceptance updates.
 
 ## Self-Check: PASSED
 

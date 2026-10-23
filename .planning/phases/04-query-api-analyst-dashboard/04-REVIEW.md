@@ -1,28 +1,27 @@
 ---
 phase: 04-query-api-analyst-dashboard
-reviewed: 2026-10-22T22:07:49Z
+reviewed: 2026-10-23T04:06:43Z
 depth: standard
-review_slice: 04-04
-review_round: R1
-review_sha: 654d410ca16d46b4c322a82c5ddcf6dc2317e7c3
-source_sha: 2c14c8c774c1f7661ace08fa9cc03c63e40bd725
-diff_base: 3dee0ab075c0c96b6bc8257722a9aa21b2ee358d
-prior_review_sha: 31ab1ccc7a63e228b84dcbf0a40b0b9cde89acc6
-prior_source_sha: 0abb49d2855225faba0949ac86aa33255ce4224c
-files_reviewed: 10
+review_slice: 04-05
+review_round: R0
+review_sha: 1b033661baab712f38c0ff6e517733c50a84f04a
+source_sha: 01ca62a52523869d1abd8fdd0e2609a671f911a8
+diff_base: fdd3938
+files_reviewed: 12
 files_reviewed_list:
+  - api/openapi.yaml
+  - backend/cmd/query-api/main.go
   - backend/internal/query/alerts.go
-  - backend/internal/query/cursor.go
-  - backend/internal/query/cursor_test.go
+  - backend/internal/query/types.go
+  - backend/internal/storage/clickhouse/query_alerts.go
   - backend/internal/storage/postgres/query_alerts.go
   - backend/testphase4/alerts_test.go
-  - api/openapi.yaml
-  - web/src/pages/Alerts.tsx
-  - web/src/pages/Alerts.test.tsx
-  - backend/cmd/query-api/main.go
-  - web/src/App.test.tsx
-generated_boundary_context:
+  - web/src/api/client.ts
   - web/src/api/schema.d.ts
+  - web/src/components/AlertDetails.test.tsx
+  - web/src/components/AlertDetails.tsx
+  - web/src/pages/Alerts.tsx
+generated_schema_sha256: 8b49a4adf11528b42ddce1b0eb40bd52f5667132652ae9be0b3ad24efabe21aa
 findings:
   critical: 0
   warning: 0
@@ -31,91 +30,54 @@ findings:
 status: clean
 ---
 
-# Phase 4 Plan 04: Code Review Report
+# Phase 4 Plan 05: Code Review Report
 
-**Reviewed:** 2026-10-22T22:07:49Z
+**Reviewed:** 2026-10-23T04:06:43Z
 
-**Depth:** standard; focused repair re-review with explicit unchanged-file carry-forward from the preserved full ten-source-file R0.
+**Depth:** standard, full explicit twelve-path scope.
 
-**Status:** clean — historical BLOCKER CR-01 is closed; no remaining actionable finding established in this slice.
+**Status:** clean — no actionable BLOCKER or WARNING established in this slice.
 
 ## Narrative Findings (AI reviewer)
 
-### Summary and method
+### Summary and scope
 
-The time-input repair canonicalizes native whole-minute values to UTC millisecond timestamps before they enter draft state, the request, cache key or URL. It preserves valid seconds/milliseconds and handles empty/invalid native values without calling toISOString on an invalid Date. The strict server parser is unchanged.
+Read all twelve submitted files in full, including the explicitly authorized ignored generated declaration, and inspected their diff from accepted 04-04 baseline fdd3938. This is independent adversarial source review at frozen HEAD 1b033661baab712f38c0ff6e517733c50a84f04a of implementation source 01ca62a52523869d1abd8fdd0e2609a671f911a8. No reportable bug, security vulnerability or robustness defect was established. This conclusion applies to the delivered detail slice, not whole-Phase-4 acceptance or a security certification.
 
-This is independent source review of repair source 2c14c8c at frozen HEAD 654d410. It is not whole-Phase-4 acceptance. Root owns post-wave verification, acceptance and shared tracking.
+Read the complete 04-05 PLAN, approved OWNERSHIP-A1 and A1-CHECK, shared CONTRACT, approved UI-SPEC and SUMMARY. The SUMMARY supplied intended behavior, not evidence of source correctness. No root AGENTS.md, .codexignore, project .codex/skills or .agents/skills directory was present. Applied the available GSD code-review and Karpathy instructions. No structural/fallow pre-pass was supplied or performed.
 
-Both changed source files were read in full afresh: web/src/pages/Alerts.tsx (483 lines) and web/src/pages/Alerts.test.tsx (515 lines), together with their complete repair diff, updated SUMMARY, preserved full R0 and actual API-client/server-validator context. The other eight scoped source files and ignored generated declaration retain their original full R0 assessment by explicit byte identity below. This is not a claim of ten fresh full-file reads or new runtime executions.
+Relevant actual dependencies inspected include CH canonical AlertStore.Get and EventStore.Get, CH query settings, PG workflow storage and migrations 003/004/005, detector manifest binding/adoption, detection Rules/Fingerprint, canonical Alert/Event decoding and validation, writer validation, existing event handler, SessionProvider and App mounting. Earlier mapping/stack descriptions were not treated as current facts.
 
-No structural/fallow pre-pass was supplied or run. Project-instruction/ignore context and previously read GSD review, Karpathy and UI/UX guidance remain applicable. No unavailable skill is represented as read. Authorized ignored evidence was consulted only as verification context, not counted as submitted source.
+### Boundary analysis
 
-### Unchanged-file proof and scope preservation
+- **Ownership and SQL:** query/alerts.go:115–144 obtains the verified principal and validates the path before storage. PG query_alerts.go:67–85 directly binds both tenant and alert ID under the inherited timeout. CH follows successful ownership; unknown/foreign/orphan workflows gain no authority from CH. Queries use bound parameters. Dependency errors map to public 503; missing ownership/detection maps to 404. The existing PG list remains independent of CH and preserves its fifteen-field DTO, filtering, millisecond ordering and cursor handling.
+- **Canonical detection and evidence:** CH query_alerts.go:20–33 composes the tenant-scoped immutable read, fingerprint/conflict checks and canonical validation. Evidence at :39–65 caps recorded IDs at twenty, deduplicates before reading and shares one deadline. Each composed EventStore.Get has its own tenant-and-ID predicate and LIMIT 1; duplicate physical rows cannot consume another ID's result slot. Missing IDs remain explicit and unique in recorded order. Storage failures propagate instead of producing successful empty evidence. Existing event writer validation remains the write boundary.
+- **Recorded rules:** PG query_alerts.go:90–137 binds tenant, alert, rule and exact recorded version to the immutable decision's group/configuration fingerprint. It never substitutes startup parameters. The query returns at most thirty-three rows, using the last as an overflow sentinel; decoded manifests are bounded to 8192 bytes with schema/count/fingerprint checks and exact candidate agreement. Missing/null/invalid/overflowing/conflicting data yields explicit unavailability. Mutable fence binding/adoption and fingerprint semantics were checked: a retained matching definition supports the explanation without implying an immutable historical archive. SQL/transport errors still fail detail.
+- **DTO and generated types:** OpenAPI detail and Go JSON fields agree: workflow, canonical detection, evidence, missing_evidence_ids, rule_explanation and history. Canonical Event/Alert remain separate. Evidence/missing IDs are capped at twenty and future forward history at two. Empty current history is the approved 08/09 refinement, not an invented audit record or a defect in 05. Future PATCH/rules/events/stream contracts are not treated as delivered 05 behavior.
+- **Client lifetime:** client.ts:72–87 uses the existing generated authenticated client. It checks caller cancellation before dispatch and after parsing and checks generation/lifetime after parsing. Shared fetch combines caller/session signals, checks authority before credentials and after headers, and retains current-session 401 revocation. SessionProvider invalidates generation before abort/cache clearing; App keys the subtree by generation. Detail cache keys include verified subject, tenant, role, generation and selected ID. No credential enters public context, URLs, persistent storage or logs.
+- **Dialog, history and privacy:** AlertDetails uses native showModal, explicit initial close focus, cancellation, cleanup and connected-trigger restoration/fallback. JSON and identifiers render as escaped React text with wrapping. Alerts adds selection to its filter URL without forwarding alert_id to the list API. Selection state/ref, popstate handling and owner markers preserve StrictMode replay, Back/Forward and session isolation; cleanup removes the current cursor/selection. Existing UTC minute conversion, filter keys, previous-page bounds and draft/session behavior remain intact. The jsdom open/close shim does not prove native browser focus containment; no native-dialog defect was inferred from that shim.
+- **Test reliability:** native additions exercise actual binary wiring and PG/CH fixtures for evidence, tenant/orphan, outages and retained rules. Component assertions cover actual App/provider/client behavior through fetch-only responses, malicious text escaping, retention, loading/error/retry, deep links, StrictMode, focus restoration, cancellation and stale parsed bodies. No new reliability defect was established. Passing tests did not substitute for tracing the source.
 
-The following Git blobs are identical at original source 0abb49d, repair source 2c14c8c, frozen HEAD 654d410 and the current working files:
+### Independent diagnostics and limits
 
-| Unchanged reviewed source | Git blob |
+Reviewer-run checks on the frozen source:
+
+| Command | Actual result |
 |---|---|
-| backend/internal/query/alerts.go | 9efd8aa3616ede8397ecc56e0c8ff75c08b0580b |
-| backend/internal/query/cursor.go | 913d2b26a7ae18615b9a7656a8abc66978a1be2d |
-| backend/internal/query/cursor_test.go | 29b044920a438dfde2496f06c1abdf782944795b |
-| backend/internal/storage/postgres/query_alerts.go | b47ea5c5a030eb25ed813fb6198756ba2c7fafe5 |
-| backend/testphase4/alerts_test.go | 3f2efb0cbb9bab28c727145cda6b23b55a1debc1 |
-| api/openapi.yaml | 69e6c315194d1ed7110092cb25b82d69102c4322 |
-| backend/cmd/query-api/main.go | 648b81021e1f73ebd55d42280afe6f73fc5e34b5 |
-| web/src/App.test.tsx | 37f5e8db64c5238273b1837c543a4b1211d34a9d |
+| `go test -race -timeout=60s ./internal/query/...` from backend | Exit 0, cached; no claim of fresh uncached execution. |
+| `npm test -- --run src/components/AlertDetails.test.tsx` from web | Exit 0, 9/9 focused component cases. Existing pretest regenerated schema.d.ts; before/after SHA-256 is exactly the declared 8b49a4ad…21aa. This was an idempotent generated-file rewrite, not a source-content change. |
+| `git diff --check` | Exit 0 before writing this report. |
 
-The two changed files separately match repair source, frozen HEAD and the working tree. Generated web/src/api/schema.d.ts retains SHA-256 e6bbab8336ea22bfe93d1105c741b048414d083eb0114de31a0922fe65f26b7d, identical to R0. It remains boundary context excluded from the ten-source count. The eleven-path ownership envelope is unchanged.
+Executor native Auth/Alerts, full web/default/static/OpenAPI/browser and scanner results are recorded in SUMMARY and private evidence. They were not rerun or independently re-certified here. Earlier failed runs remain historical failures; no passing result is assigned retroactively. No native fixture, server, browser, migration, scanner, external service or remote operation was started by this reviewer. No new screenshot inspection or whole-suite acceptance is claimed.
 
-The diff from repair resume base caf3aa5 contains only the two frontend files and the updated SUMMARY. The production diff adds one six-line helper and changes its two call sites. An independent prefix/suffix comparison verifies that the original complete Alerts test file remains byte-preserved around one inserted test block; existing tests were not replaced or weakened. Scoped git diff --check passed. A1's strict App fixtures, backend SQL/auth/cursors, OpenAPI, client/provider/CSS and prior security cases are unchanged.
+Standard-depth source analysis and these focused checks do not establish cross-browser/accessibility certification, screen-reader or 200%-zoom behavior, future triage/audit/SSE integration, whole-Phase-4 tenant matrix, complete Phase-3 aggregate acceptance, production deployment readiness or performance. Root owns remaining acceptance and tracking.
 
-### Closed historical BLOCKER CR-01: native time edits rejected by API
+### Preservation
 
-Original finding: immutable 04-REVIEW-04-R0.md, CR-01. This closure is not a new finding counted in the frontmatter.
-
-**Reviewed locations:** /home/logan78/Desktop/Sentinel/web/src/pages/Alerts.tsx:94, :300 and :313; /home/logan78/Desktop/Sentinel/web/src/pages/Alerts.test.tsx:90, :145 and :164; /home/logan78/Desktop/Sentinel/backend/internal/query/alerts.go:202.
-
-utcInput now interprets a nonempty native datetime-local value explicitly as UTC, tests the resulting instant for finiteness, and only then calls toISOString. Both From and To handlers use that function. A native value such as 2026-10-21T00:00 becomes 2026-10-21T00:00:00.000Z before navigation/query construction; no request-only conversion can leave the key or URL with a different representation. The UTC label's semantics do not depend on the browser's local timezone.
-
-Empty input returns an empty string immediately; an invalid parsed instant also returns empty. Existing newFilterRange defaults cleared bounds, and malformed URL values still follow their existing recoverable validation path. The patch does not relax the seven-day bound or server syntax. The broader query/filter/paging/session architecture remains the original reviewed implementation.
-
-A reviewer-performed read-only diagnostic extracted/transpiled the actual current utcInput function, passed values normalized by installed jsdom's datetime-local input, and compared nonempty results with the actual backend regex. Minute, second and millisecond values produced the expected accepted canonical timestamps; empty and malformed native values produced empty strings without exceptions. No fixture/source write, server, browser or suite execution was needed for that diagnostic.
-
-The seven added actual-App cases use fetch-only responses. They cover both minute fields, seconds, milliseconds, exactly seven days, each minute field alone, and over-seven-day rejection followed by cleared defaults. Multi-input cases assert exact HTTP query fields, exact URL fields and the full verified subject/tenant/role/generation query key. The two single-field cases verify the corresponding request timestamp. Original reversed/malformed range, cursor-only/history/debounce, cache/privacy and credential-draft cases remain intact.
-
-No remaining causal path for CR-01 was established.
-
-### Retained causal and runtime evidence
-
-Selected actual private logs, parsed result metadata and the complete focused browser harness were read. Directory .local/phase4-acceptance/04-04/cr01 is 0700 and sampled files are 0600. No real key, token, Authorization capture or resolved Compose configuration was printed. These are executor runs, not newly run reviewer tests:
-
-| Evidence, October 22 UTC | Observed result and practical limit |
-|---|---|
-| time-red.log, 22:03:23–22:03:26 | Exit 1: five exact canonical-request assertion failures, two passing characterizations, twelve unrelated cases excluded. Four failures exercise the original minute-format cause; the seconds case additionally requires canonical .000 representation even though the old seconds-only value already satisfied server syntax. Millisecond and safe-empty behavior were already passing, not invented RED. |
-| web-green.log, 22:03:42–22:03:55 | Exit 0: all 55 web cases and bounded typecheck/lint/build/format. Logs identify tests-only HEAD 10d43c7 plus working production changes later committed as 2c14c8c. |
-| stack-before.log, 22:03:43–22:03:58 | Exit 0: preserved services, readiness and dependencies healthy; no new startup/restart claim. |
-| browser-green.log/results, 22:04:35–22:04:41 | Exit 0: actual native minute edits, fresh race-built API, real PG, private Vite proxy and helper/CLI at 1440/375; HTTP 200 and three own-tenant workflow rows at both widths. |
-| default-green.log, 22:04:45–22:04:55 | Exit 0: default Go build and bounded make test, including web 55 and generator 121. Cached Go package outputs remain cached results. |
-| native-green.log, 22:04:44–22:05:02 | Exit 0: independent exact nonempty Alerts/Auth phase4 race selectors with six-minute caps, retaining Auth 26 top-level/24 nested CLI cases; cursor unit race selector has a 60-second cap and returns cached. Backend source is unchanged. |
-| final-history-scan.log/report, 22:06:03–22:06:04 | Exit 0 at frozen 654d410, pinned scanner 8.30.1, 527 commits. Source and final JSON reports were independently parsed as exactly empty arrays; no scanner exception changed. |
-
-The focused browser harness does not intercept responses or mock routes. It builds the current API, uses preserved synthetic native PG data and private actual helper/CLI credentials, fills both From and To with minute-only strings, and explicitly checks that native input values have sixteen characters. It waits for the precise canonical-range response, checks HTTP 200, three actual own-tenant rows, exact expected canonical from/to/limit and identical URL query values. This directly exercises the boundary missing from the original browser flow.
-
-Its result records no document overflow, browser persistence, console/page errors or credential DOM/URL exposure at 1440/375, and its sign-out assertion checks the displayed token draft is empty. These observations supplement the original broader paging/filter/history flow; they do not replace it or establish a full accessibility/tenant matrix. The reviewer did not rerun Chromium or inspect its screenshots anew.
-
-Original R0 failures, post-limit mutation evidence, cursor-only/malformed-time/raw-control RED and earlier intermediate test/type/lint failures remain historical evidence, unmodified. Their provenance and limitations remain in the preserved R0 and SUMMARY. Passing gates do not independently establish source correctness; closure rests on the traced repair and targeted boundary evidence.
-
-### Assessment, limits and preservation
-
-The full declared 04-04 source scope now has no remaining actionable finding established by the original full review plus this focused repair review. CR-01 is closed. Root must perform its own post-wave acceptance and tracking; this report does not advance the four previously accepted slices or start 04-05.
-
-The original PG filtering/tuple/cursor/DTO, authority/cache/session-history and A1 assessments are carried forward by byte identity. No future detail/evidence/triage/events/rules/Overview/SSE/replay/proxy/two-replica/full tenant-matrix feature, status-edit snapshot isolation, extra index/migration or Phase5 is demanded here. No fresh Phase3 aggregate, hosted CI, production security/performance certification, complete accessibility, screen-reader, 200%-zoom or cross-browser guarantee is claimed.
-
-Before replacement, current REVIEW.md matched immutable 04-REVIEW-04-R0.md, SHA-256 5b97a2c1dafe6ecd3412921f86a483ef9945a37c9db29d247febf34b6f6e3cf5. R0, all prior 03/02/17/01 reports and A1 artifacts are preserved. Only this designated report was written; no source, index, HEAD, STATE, SDK, user-owned .planning/config.json or .serena/ was changed. No commit, agent, worktree, producer, service startup, expensive runtime suite, later plan or remote action occurred.
+The prior report remains byte-identical as 04-REVIEW-04-R1.md, SHA-256 16c8b5b5565c4b9adcb1b90a213ffe104dd0766e8b058c49ca37ca0ad3364099. Only this designated report has new content. No production/test content, Git index, HEAD, commit, STATE, SDK tracking, user .planning/config.json or .serena change was made. The explicitly included generated declaration remains ignored and byte-identical; it was not force-added. No later slice or Phase 5 advancement is authorized by this report.
 
 ---
 
 _Reviewer: gsd-code-reviewer_
 
-_Depth: standard; focused R1 with byte-proven carry-forward of the original full ten-source-file review_
+_Depth: standard; all twelve explicit source paths read in full_
