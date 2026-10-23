@@ -2,10 +2,12 @@
 
 Status: user_choice_1_approved; independent preflight04-07-STACK-RECOVERY-CHECK
 APPROVE/PASS,zeroissues. Runtime isolation/health/data/preservation gates pending.
-Actual admission now HOLD: free4,045,037,568bytes below4,294,967,296floor,
-EXIT2at22:50:20ZOct23. No runtime resources or credentials created; see report.
-Read-only defaultbuilder inventory shows~3.76GBpotentialreclaimablecache;
-cleanup is NOT authorized by choice1 and requires a separate user answer.
+Historical admission HOLD: free4,045,037,568bytes below4,294,967,296floor,
+EXIT2at22:50:20ZOct23;no runtime resources or credentials created. Userlater
+explicitlyapproveddefaultunusedbuildcacheONLY. Rootprune(no--all)EXIT0,
+3.717GBreclaimed/free7,720,230,912bytesat23:12:59Z;allimages/containers/volumes/
+networks/Gitstatusunchanged. See04-07-CACHE-CLEANUP. No furtherpruneauthorized;
+repeatfreshadmissionbeforestartup,alloriginalfloors/isolationgatesremain.
 User selected1 after being offered a fresh separate demo stack preserving
 existing containers/volumes versus restoring Kafka history. This authorizes
 new isolated local synthetic resources, NOT reset/restore/mutation of old state.

@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-23T13:08:56Z"
+last_updated: "2026-10-23T23:12:59Z"
 progress:
   total_phases: 6
   completed_phases: 3
@@ -18,12 +18,12 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05/06accepted;04-07localgatespassed,userchoice1approvedfreshSEPARATEdemo,butdiskadmissionholdbeforeanyruntimecreation. Awaitseparatecache-cleanupapprovalorfreedspace. Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03/04/05/06accepted;04-07localgatespassed,userchoice1approvedfreshSEPARATEdemo;separateapprovedcachecleanupdone,7.72GBfree,repeatadmissionandbuildnewstack. Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-07sourceR2/rootgatePASS;freshdemoC1preflightindependentPASS,butactualdiskadmissionEXIT2(3.767GiB<4GiB),0/6runtimegates,nofreshresourcescreated.07notaccepted.
+Plan: 04-07sourceR2/rootgatePASS;freshdemoC1preflightPASS;historicaldiskEXIT2clearedbyseparatelyapprovedcachecleanupEXIT0,0/6runtimegates,nofreshresourcescreatedyet.07notaccepted.
 Status: Actualweb114/native/browserreload+filteredBackForward/default/static/scan568zeroPASS. All6detectorcheckpointsbelowKafkaearliestretained,earliest=end/noactivegroupmembers;guardcorrectlyfailclosed. Noreset/offset/group/datachange. LocalgatecachedGo/web114/gen121PASSdoesnotrestoremissinghistory. See04-07-STACK-HOLD;noall9/pipelinePASS. NoPhase4remoteauthoritybefore04-16.
 Progress: 63/73 accepted numberedplans; Phase4 7/17accepted,10remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
@@ -216,7 +216,7 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 ## Session Continuity
 
 Last session:2026-10-23T13:08:56Z,07localrepairsR2/rootgatepassed;awaitoperatorKafka-historyrecoverychoice.
-Resume: Userchoice1freshdemoapprovedandindependentpreflightPASS. Actualadmissionat22:50:20ZOct23EXIT2/free4,045,037,568bytes<4,294,967,296min;NOnewcontainers/volumes/credentials/overlay/contextcreated. SeeSTACK-RECOVERYreport02942a8/privatefresh-stackprobe. Rootreadonlydefaultbuilderinventoryreports~3.76GBpotentialreclaimablebuildcache;userhasNOTyetapprovedcleanup. AskapprovalunusedDEFAULTbuildcacheONLY(no--all),preserveallimages/containers/volumes/source/Go cache;futurebuildsmayslow. Oruserfreesdiskmanually. Neverinfercleanupfromfreshdemochoice. Afterenoughspace,resumeexistingphase4_recover_stack(nofeature/source restart),repeatdisk/port/projectisolationguard,andactualnew9healthy/1000IDs/detectionverification. Oldstack/data/.env/usercfg/.serenapreserved;7/17/no08untilrecoveryaccepted,noPhase5/remotebefore16.
+Resume: Userchoice1freshSEPARATEdemoapproved;independentC1PASS. UserseparatelyapprovedunusedDEFAULTbuildcacheONLY;rootexactprune(no--all)EXIT0/3.717GBreclaimed/free7,720,230,912bytesat23:12:59Z;allimages/containers/volumes/networks/Gitstatusunchanged. SeeCACHE-CLEANUP. Resumeexistingphase4_recover_stackafterfreshdisk/port/project/isolationchecks;prioradmissionEXIT2preserved,NOnewruntimeyet. No furtherprune/sourcechangeauthorized. Actualnew9healthy/1000IDs/controlleddetection/oldpreservationgatesbefore07accept/08usingNEWcontext.7/17accepted,olddata/.env/usercfg/.serenapreserved,noPhase5/remotebefore16.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.
