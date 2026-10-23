@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	driverclickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/database"
+	"github.com/6sLOGAN78/sentinel/internal/query"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 	"github.com/6sLOGAN78/sentinel/migrations"
 )
@@ -66,9 +68,11 @@ func TestPhase4Events(t *testing.T) {
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	from := now.Add(-time.Hour)
+	t.Logf("EVENTS_FIXTURE tenant=%s from=%s to=%s", tenant, from.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	tokenFor := func(owner string) string {
 		return signToken(t, map[string]any{"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "events-operator",
-			"tenant": owner, "role": "viewer", "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
+			"tenant": owner, "role": "viewer", "iat": now.Unix(), "nbf": now.Unix(),
+			"exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
 	}
 	token := tokenFor(tenant)
 	binary := filepath.Join(t.TempDir(), "query-api")
@@ -83,25 +87,10 @@ func TestPhase4Events(t *testing.T) {
 		received := contracts.NewTimestamp(now.Add(-time.Minute))
 		return &contracts.Event{SchemaVersion: 1, EventID: id(n), TenantID: owner,
 			OccurredAt: contracts.NewTimestamp(at), ReceivedAt: &received, Source: "native-events", EventType: "auth.failure",
-			SourceIP: str("192.0.2.44"), Outcome: str("failure"), Attributes: map[string]any{"safe": "<img src=x onerror=alert(1)>"}}
+			SourceIP: str("192.0.2.44"), Outcome: str("failure"),
+			Attributes: map[string]any{"safe": "<img src=x onerror=alert(1)>"}}
 	}
-	events := make([]*contracts.Event, 0, 65)
-	for n := 1; n <= 60; n++ {
-		event := makeEvent(n, tenant, from.Add(time.Duration((n-1)/5)*time.Millisecond))
-		switch n % 4 {
-		case 2:
-			event.SourceIP, event.EventType, event.Outcome = str("2001:db8::44"), "net.request", str("success")
-		case 3:
-			event.SourceIP, event.EventType, event.Outcome = str("198.51.100.1"), "policy.decision", nil
-		case 0:
-			event.SourceIP, event.EventType, event.Outcome = str("203.0.113.1"), "auth.success", str("success")
-		}
-		events = append(events, event)
-	}
-	events = append(events, makeEvent(61, tenant, from.Add(-time.Millisecond)), makeEvent(62, tenant, now))
-	boundary := makeEvent(63, tenant, from)
-	boundary.EventType = "net.connection"
-	events = append(events, boundary, makeEvent(64, foreign, from.Add(time.Second)))
+	events := nativeEventFixtureRows(makeEvent, tenant, foreign, from, now)
 	store := storageclickhouse.NewEventStore(conn)
 	require.NoError(t, store.InsertBatch(ctx, events))
 	require.NoError(t, store.InsertBatch(ctx, events), "double insert immediately before queries")
@@ -117,6 +106,24 @@ func TestPhase4Events(t *testing.T) {
 	// Same received_at but different event time: deterministic tie chooses the
 	// lexically first canonical tuple, preserving the original earliest time.
 	require.NoError(t, store.InsertBatch(ctx, []*contracts.Event{later, moved, tie}))
+	var physical, unique uint64
+	require.NoError(t, conn.QueryRow(ctx, `SELECT count(),uniqExact(event_id) FROM events WHERE tenant_id={tenant:String}`,
+		driverclickhouse.Named("tenant", tenant)).Scan(&physical, &unique))
+	require.Greater(t, physical, unique, "actual physical duplicates exist before the immediately following reads")
+	t.Logf("EVENTS_PHYSICAL rows=%d identities=%d", physical, unique)
+	t.Run("native_adapter_keeps_earliest_received_representation", func(t *testing.T) {
+		items, listErr := storageclickhouse.NewQueryEventStore(conn).ListEvents(ctx, tenant, query.EventFilters{
+			ListOptions: query.ListOptions{From: from, To: now, Limit: 200},
+		})
+		require.NoError(t, listErr)
+		require.Len(t, items, 61)
+		for _, item := range items {
+			if item.EventID == id(1) {
+				require.Equal(t, from, item.OccurredAt.Time)
+				require.Equal(t, "auth.failure", item.EventType)
+			}
+		}
+	})
 	filters := func() url.Values {
 		return url.Values{"from": {from.Format(time.RFC3339Nano)}, "to": {now.Format(time.RFC3339Nano)}, "limit": {"3"},
 			"source_ip": {"192.0.2.44"}, "event_type": {"auth.failure"}, "outcome": {"failure"}}
@@ -131,32 +138,7 @@ func TestPhase4Events(t *testing.T) {
 		return page
 	}
 	t.Run("immediate_dedupe_full_pages_ties_and_filters", func(t *testing.T) {
-		q, seen := filters(), []string{}
-		for pageNumber := range 5 {
-			page := getPage(t, q, token)
-			require.Len(t, page.Items, 3)
-			for _, event := range page.Items {
-				require.Equal(t, tenant, event.TenantID)
-				require.Equal(t, "auth.failure", event.EventType)
-				require.Equal(t, "192.0.2.44", *event.SourceIP)
-				require.Equal(t, "failure", *event.Outcome)
-				require.NotContains(t, seen, event.EventID)
-				seen = append(seen, event.EventID)
-			}
-			require.Equal(t, pageNumber < 4, page.More)
-			if pageNumber < 4 {
-				require.NotNil(t, page.Next)
-				require.LessOrEqual(t, len(*page.Next), 2048)
-				q.Set("cursor", *page.Next)
-			} else {
-				require.Nil(t, page.Next)
-			}
-		}
-		want := []string{}
-		for n := 57; n >= 1; n -= 4 {
-			want = append(want, id(n))
-		}
-		require.Equal(t, want, seen)
+		testFullEventSearchPages(t, filters(), getPage, tenant, token, id)
 	})
 	t.Run("half_open_default_and_maximum_pages", func(t *testing.T) {
 		q := url.Values{"from": {from.Format(time.RFC3339Nano)}, "to": {now.Format(time.RFC3339Nano)}, "limit": {"200"}}
@@ -193,7 +175,11 @@ func TestPhase4Events(t *testing.T) {
 		first := getPage(t, q, token)
 		require.NotNil(t, first.Next)
 		q.Set("cursor", *first.Next)
-		for field, value := range map[string]string{"source_ip": "192.0.2.45", "event_type": "net.request", "outcome": "success", "limit": "4", "from": from.Add(-time.Millisecond).Format(time.RFC3339Nano), "to": now.Add(time.Millisecond).Format(time.RFC3339Nano)} {
+		for field, value := range map[string]string{
+			"source_ip": "192.0.2.45", "event_type": "net.request", "outcome": "success", "limit": "4",
+			"from": from.Add(-time.Millisecond).Format(time.RFC3339Nano),
+			"to":   now.Add(time.Millisecond).Format(time.RFC3339Nano),
+		} {
 			changed, parseErr := url.ParseQuery(q.Encode())
 			require.NoError(t, parseErr)
 			changed.Set(field, value)
@@ -217,8 +203,18 @@ func TestPhase4Events(t *testing.T) {
 		require.NotEqual(t, defaults.Items[0].EventID, next.Items[0].EventID)
 	})
 	t.Run("strict_invalid_queries", func(t *testing.T) {
-		for _, invalid := range []string{"limit=201", "limit=0", "limit=-1", "limit=1.5", "limit=999999999999999999999999", "limit=1&limit=2", "limit=", "cursor=", "cursor=bad", "cursor=" + strings.Repeat("x", 2049), "unknown=x", "tenant_id=" + foreign,
-			"event_type=unknown", "event_type=auth.failure&event_type=auth.success", "outcome=deny", "outcome=null", "source_ip=bad", "source_ip=192.0.2.1%27%20OR%201=1", "source_ip=fe80::1%25eth0", "source_ip=::ffff:192.0.2.1", "source_ip=", "from=bad", "from=2026-10-22T00:00:00%2B00:00", "to=2026-10-22T00:00:00.0001Z", "from=2026-10-20T00:00:00Z&to=2026-10-20T00:00:00Z", "from=2026-10-20T00:00:00Z&to=2026-10-19T00:00:00Z", "from=2026-10-01T00:00:00Z&to=2026-10-09T00:00:00Z", "from=2026-10-20T00:00:00Z&from=2026-10-21T00:00:00Z", "source_ip=%ZZ"} {
+		for _, invalid := range []string{
+			"limit=201", "limit=0", "limit=-1", "limit=1.5", "limit=999999999999999999999999",
+			"limit=1&limit=2", "limit=", "cursor=", "cursor=bad", "cursor=" + strings.Repeat("x", 2049),
+			"unknown=x", "tenant_id=" + foreign, "event_type=unknown", "event_type=auth.failure&event_type=auth.success",
+			"outcome=deny", "outcome=null", "source_ip=bad", "source_ip=192.0.2.1%27%20OR%201=1",
+			"source_ip=fe80::1%25eth0", "source_ip=::ffff:192.0.2.1", "source_ip=", "from=bad",
+			"from=2026-10-22T00:00:00%2B00:00", "to=2026-10-22T00:00:00.0001Z",
+			"from=2026-10-20T00:00:00Z&to=2026-10-20T00:00:00Z",
+			"from=2026-10-20T00:00:00Z&to=2026-10-19T00:00:00Z",
+			"from=2026-10-01T00:00:00Z&to=2026-10-09T00:00:00Z",
+			"from=2026-10-20T00:00:00Z&from=2026-10-21T00:00:00Z", "source_ip=%ZZ",
+		} {
 			t.Run(invalid[:min(len(invalid), 70)], func(t *testing.T) {
 				status, _ := getJSON(t, base+"/api/v1/events?"+invalid, token, "")
 				require.Equal(t, 400, status)
@@ -248,4 +244,63 @@ func TestPhase4Events(t *testing.T) {
 		status, _ := getJSON(t, unavailable+"/api/v1/events", token, "")
 		require.Equal(t, 503, status)
 	})
+}
+
+func testFullEventSearchPages(
+	t *testing.T, q url.Values, getPage func(*testing.T, url.Values, string) eventSearchPage,
+	tenant, token string, id func(int) string,
+) {
+	t.Helper()
+	seen := []string{}
+	for pageNumber := range 5 {
+		page := getPage(t, q, token)
+		require.Len(t, page.Items, 3)
+		for _, event := range page.Items {
+			require.Equal(t, tenant, event.TenantID)
+			require.Equal(t, "auth.failure", event.EventType)
+			require.Equal(t, "192.0.2.44", *event.SourceIP)
+			require.Equal(t, "failure", *event.Outcome)
+			require.NotContains(t, seen, event.EventID)
+			seen = append(seen, event.EventID)
+		}
+		require.Equal(t, pageNumber < 4, page.More)
+		if pageNumber < 4 {
+			require.NotNil(t, page.Next)
+			require.LessOrEqual(t, len(*page.Next), 2048)
+			q.Set("cursor", *page.Next)
+		} else {
+			require.Nil(t, page.Next)
+		}
+	}
+	want := []string{}
+	for n := 57; n >= 1; n -= 4 {
+		want = append(want, id(n))
+	}
+	require.Equal(t, want, seen)
+}
+
+func nativeEventFixtureRows(
+	makeEvent func(int, string, time.Time) *contracts.Event, tenant, foreign string, from, now time.Time,
+) []*contracts.Event {
+	str := func(s string) *string { return &s }
+	events := make([]*contracts.Event, 0, 65)
+	for n := 1; n <= 60; n++ {
+		event := makeEvent(n, tenant, from.Add(time.Duration((n-1)/5)*time.Millisecond))
+		switch n % 4 {
+		case 2:
+			event.SourceIP, event.EventType, event.Outcome = str("2001:db8::44"), "net.request", str("success")
+		case 3:
+			event.SourceIP, event.EventType, event.Outcome = str("198.51.100.1"), "policy.decision", nil
+		case 0:
+			event.SourceIP, event.EventType, event.Outcome = str("203.0.113.1"), "auth.success", str("success")
+		}
+		if n == 60 {
+			event.Source = "<img src=x onerror=alert(1)>"
+		}
+		events = append(events, event)
+	}
+	events = append(events, makeEvent(61, tenant, from.Add(-time.Millisecond)), makeEvent(62, tenant, now))
+	boundary := makeEvent(63, tenant, from)
+	boundary.EventType = "net.connection"
+	return append(events, boundary, makeEvent(64, foreign, from.Add(time.Second)))
 }

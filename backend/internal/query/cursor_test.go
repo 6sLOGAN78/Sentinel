@@ -75,3 +75,78 @@ func TestAlertCursorRejectsInvalidPayload(t *testing.T) {
 		require.ErrorIs(t, err, query.ErrInvalidQuery)
 	}
 }
+
+func TestEventCursorAuthenticationFiltersAndPosition(t *testing.T) {
+	secret := []byte(strings.Repeat("event-test-key-material-", 3))
+	codec, err := query.NewCursorCodec(secret)
+	require.NoError(t, err)
+	to := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	f := query.EventFilters{ListOptions: query.ListOptions{From: to.Add(-24 * time.Hour), To: to, Limit: 3},
+		SourceIP: "2001:db8::44", EventType: "net.request", Outcome: "success"}
+	position := query.EventPosition{OccurredAt: to.Add(-time.Hour), EventID: "00000000-0000-4000-8000-000000000001"}
+	token, err := codec.EncodeEvents("tenant-a", f, position)
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(token), 2048)
+	other, err := query.NewCursorCodec(secret)
+	require.NoError(t, err)
+	decoded, err := other.DecodeEvents(token, "tenant-a", f)
+	require.NoError(t, err, "replica sharing the validated secret can continue the page")
+	require.Equal(t, position, *decoded.After)
+	decoded.After = nil
+	require.Equal(t, f, decoded)
+	omitted := f
+	omitted.From, omitted.To = time.Time{}, time.Time{}
+	decoded, err = codec.DecodeEvents(token, "tenant-a", omitted)
+	require.NoError(t, err)
+	require.Equal(t, f.From, decoded.From)
+	require.Equal(t, f.To, decoded.To)
+	for _, change := range []func(*query.EventFilters){
+		func(v *query.EventFilters) { v.SourceIP = "192.0.2.1" },
+		func(v *query.EventFilters) { v.EventType = "auth.failure" },
+		func(v *query.EventFilters) { v.Outcome = "failure" },
+		func(v *query.EventFilters) { v.Limit = 4 },
+		func(v *query.EventFilters) { v.From = v.From.Add(time.Millisecond) },
+		func(v *query.EventFilters) { v.To = v.To.Add(time.Millisecond) },
+	} {
+		changed := f
+		change(&changed)
+		_, err = codec.DecodeEvents(token, "tenant-a", changed)
+		require.ErrorIs(t, err, query.ErrInvalidQuery)
+	}
+	_, err = codec.DecodeEvents(token, "tenant-b", f)
+	require.ErrorIs(t, err, query.ErrInvalidQuery)
+	af := query.AlertFilters{ListOptions: f.ListOptions}
+	for _, endpoint := range []string{"alerts", "events"} {
+		alertToken, encodeErr := codec.Encode(endpoint, "tenant-a", af,
+			query.Position{CreatedAt: position.OccurredAt, AlertID: strings.Repeat("a", 64)})
+		require.NoError(t, encodeErr)
+		_, err = codec.DecodeEvents(alertToken, "tenant-a", f)
+		require.ErrorIs(t, err, query.ErrInvalidQuery, "alert payload labelled events is a different authenticated type")
+		_, _, err = codec.Decode(token, endpoint, "tenant-a", af)
+		require.ErrorIs(t, err, query.ErrInvalidQuery)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	require.NoError(t, err)
+	for _, index := range []int{0, len(raw) / 2, len(raw) - 1} {
+		mutated := append([]byte(nil), raw...)
+		mutated[index] ^= 1
+		_, err = codec.DecodeEvents(base64.RawURLEncoding.EncodeToString(mutated), "tenant-a", f)
+		require.ErrorIs(t, err, query.ErrInvalidQuery)
+	}
+	for _, invalid := range []string{"", "bad", strings.Repeat("x", 2049)} {
+		_, err = codec.DecodeEvents(invalid, "tenant-a", f)
+		require.ErrorIs(t, err, query.ErrInvalidQuery)
+	}
+	for _, invalid := range []query.EventPosition{
+		{OccurredAt: to, EventID: position.EventID}, {OccurredAt: f.From.Add(-time.Millisecond), EventID: position.EventID},
+		{OccurredAt: f.From.Add(time.Microsecond), EventID: position.EventID},
+		{OccurredAt: f.From, EventID: strings.Repeat("a", 64)},
+	} {
+		_, err = codec.EncodeEvents("tenant-a", f, invalid)
+		require.ErrorIs(t, err, query.ErrInvalidQuery)
+	}
+	wrongKey, err := query.NewCursorCodec([]byte(strings.Repeat("other-event-test-key-", 3)))
+	require.NoError(t, err)
+	_, err = wrongKey.DecodeEvents(token, "tenant-a", f)
+	require.ErrorIs(t, err, query.ErrInvalidQuery)
+}

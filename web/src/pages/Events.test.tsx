@@ -9,6 +9,7 @@ import {
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
+import { createAPIClient } from "../api/client";
 import type { paths } from "../api/schema";
 
 type EventPage =
@@ -35,7 +36,7 @@ async function start(
   list: (r: Request) => Promise<Response> = async () => Response.json(page()),
   strict = false,
 ) {
-  window.history.replaceState(null, "", "/events");
+  window.history.replaceState(null, "", "/events?limit=1");
   const requests: Request[] = [];
   vi.stubGlobal(
     "fetch",
@@ -82,6 +83,12 @@ describe("event investigation through the actual App", () => {
     expect(
       screen.getByRole("link", { name: "Events" }).getAttribute("aria-current"),
     ).toBe("page");
+    expect(
+      screen.getByRole("link", { name: "Alerts" }).style.background,
+    ).toBe("transparent");
+    expect(
+      screen.getByRole("link", { name: "Events" }).style.background,
+    ).not.toBe("transparent");
   });
   it("shows loading and then the exact empty state", async () => {
     let release!: (r: Response) => void;
@@ -177,6 +184,12 @@ describe("event investigation through the actual App", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     await screen.findByText("First event");
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     await screen.findByText("Second event");
     fireEvent.change(screen.getByLabelText("Event type"), {
@@ -220,5 +233,144 @@ describe("event investigation through the actual App", () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     await screen.findByRole("heading", { name: "Events" });
+  });
+  it("retains the last real page if its refresh fails", async () => {
+    let fail = false;
+    const { cache } = await start(async () =>
+      fail ? new Response("", { status: 503 }) : Response.json(page()),
+    );
+    await screen.findByText("Native event");
+    fail = true;
+    await act(async () => {
+      await cache.invalidateQueries();
+    });
+    await screen.findByText("Could not load events. Try again.");
+    expect(screen.getByText("Native event")).toBeTruthy();
+    expect(screen.queryByText("No events match these filters")).toBeNull();
+  });
+  it("rejects invalid IP and ranges before changing the current page", async () => {
+    const { requests } = await start();
+    await screen.findByText("Native event");
+    fireEvent.change(screen.getByLabelText("Source IP"), {
+      target: { value: "invalid-ip" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(screen.getByText("Enter a valid IP address.")).toBeTruthy();
+    expect(requests).toHaveLength(1);
+    fireEvent.change(screen.getByLabelText("Source IP"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("From (UTC)"), {
+      target: { value: "2026-10-01T00:00" },
+    });
+    fireEvent.change(screen.getByLabelText("To (UTC)"), {
+      target: { value: "2026-10-23T00:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(
+      screen.getByText("Choose a valid UTC time range of at most 7 days."),
+    ).toBeTruthy();
+    expect(requests).toHaveLength(1);
+  });
+});
+
+describe("guarded event client boundary", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  function client() {
+    const lifetime = new AbortController();
+    const credential = vi.fn(() => "client-unit-credential");
+    const unauthorized = vi.fn();
+    let current = true;
+    return {
+      api: createAPIClient(
+        credential,
+        lifetime.signal,
+        () => current,
+        unauthorized,
+      ),
+      lifetime,
+      credential,
+      unauthorized,
+      expire: () => {
+        current = false;
+      },
+    };
+  }
+  it("checks old session and caller cancellation before obtaining credentials", async () => {
+    const transport = vi.fn(async () => Response.json(page()));
+    vi.stubGlobal("fetch", transport);
+    const ended = client();
+    ended.expire();
+    await expect(ended.api.events()).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(ended.credential).not.toHaveBeenCalled();
+    expect(transport).not.toHaveBeenCalled();
+    const active = client(),
+      caller = new AbortController();
+    caller.abort();
+    await expect(active.api.events({}, caller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(active.credential).not.toHaveBeenCalled();
+  });
+  it.each(["caller", "session"])(
+    "rejects stale data after body parsing when %s ends",
+    async (which) => {
+      let release!: (text: string) => void;
+      const response = Response.json(page());
+      vi.spyOn(response, "text").mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => response),
+      );
+      const active = client(),
+        caller = new AbortController();
+      const pending = active.api.events({}, caller.signal);
+      const rejected = expect(pending).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      await waitFor(() => expect(release).toBeTypeOf("function"));
+      if (which === "caller") caller.abort();
+      else {
+        active.expire();
+        active.lifetime.abort();
+      }
+      release(JSON.stringify(page()));
+      await rejected;
+    },
+  );
+  it("revokes the current session for401 and preserves503 as a dependency error", async () => {
+    for (const status of [401, 503]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("", { status })),
+      );
+      const active = client();
+      await expect(active.api.events()).rejects.toMatchObject({ status });
+      expect(active.unauthorized).toHaveBeenCalledTimes(status === 401 ? 1 : 0);
+    }
+  });
+  it.each([
+    { items: null, has_more: false, next_cursor: null },
+    {
+      items: Array.from({ length: 201 }, () => page().items[0]),
+      has_more: false,
+      next_cursor: null,
+    },
+    { ...page(), has_more: true, next_cursor: null },
+    { ...page(), next_cursor: "unexpected" },
+    { ...page(), has_more: true, next_cursor: "x".repeat(2049) },
+  ])("rejects malformed or unbounded event page %j", async (body) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(body)),
+    );
+    await expect(client().api.events()).rejects.toMatchObject({ status: 503 });
   });
 });
