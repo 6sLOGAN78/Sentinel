@@ -1,6 +1,7 @@
 # Approved separate demo recovery — bounded execution contract
 
-Status: user_choice_1_approved; independent preflight review pending.
+Status: user_choice_1_approved; independent preflight04-07-STACK-RECOVERY-CHECK
+APPROVE/PASS,zeroissues. Runtime isolation/health/data/preservation gates pending.
 User selected1 after being offered a fresh separate demo stack preserving
 existing containers/volumes versus restoring Kafka history. This authorizes
 new isolated local synthetic resources, NOT reset/restore/mutation of old state.
