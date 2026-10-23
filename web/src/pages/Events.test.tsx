@@ -773,6 +773,33 @@ describe("safe event detail dialog through actual App", () => {
         .some((request) => new URL(request.url).pathname.endsWith(id)),
     ).toBe(false);
   });
+  it("rejects prior-document event history after the restored session signs out", async () => {
+    const saved = await failedLoginThenDetail();
+    cleanup();
+    window.history.replaceState(saved.state, "", saved.url);
+    const restoredCache = await freshPage();
+    await signIn();
+    await within(await screen.findByRole("dialog")).findByText(/recorded-xxx/);
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByRole("heading", { name: "Sign in to Sentinel" });
+    expect(restoredCache.getQueryCache().getAll()).toHaveLength(0);
+    await signIn();
+    await screen.findByText("Native event");
+    const before = saved.fixture.requests.length;
+    act(() => {
+      window.history.pushState(saved.state, "", saved.url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(new URLSearchParams(window.location.search).has("event_id")).toBe(
+      false,
+    );
+    expect(
+      saved.fixture.requests
+        .slice(before)
+        .some((request) => new URL(request.url).pathname.endsWith(id)),
+    ).toBe(false);
+  });
   it("shows loading, honest dependency error and retry", async () => {
     let release!: (r: Response) => void;
     let first = true;

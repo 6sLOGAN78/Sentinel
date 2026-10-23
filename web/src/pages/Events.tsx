@@ -1,16 +1,48 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { APIError } from "../api/client";
 import type { EventFilters, EventPage } from "../api/client";
 import { useSession } from "../auth/session";
 import EventDetails from "../components/EventDetails";
 
-function readSelected(owner: string) {
+type EventOwner = {
+  identity: string;
+  page: string;
+  generation: number | undefined;
+};
+// A fresh document can restore its first verified identity from persisted
+// history. Later sessions in this document must not resurrect that old history.
+const pageScope = {
+  id: crypto.randomUUID(),
+  generation: undefined as number | undefined,
+};
+function ownsLocation(owner: EventOwner) {
+  const previous: unknown = window.history.state?.sentinelEventsOwner;
+  if (previous == null) return true;
   if (
-    window.history.state?.sentinelEventsOwner &&
-    window.history.state.sentinelEventsOwner !== owner
+    typeof previous !== "object" ||
+    !("identity" in previous) ||
+    previous.identity !== owner.identity ||
+    !("page" in previous) ||
+    typeof previous.page !== "string" ||
+    !previous.page ||
+    !("generation" in previous) ||
+    !Number.isInteger(previous.generation)
   )
-    return "";
+    return false;
+  return previous.page === owner.page
+    ? previous.generation === owner.generation
+    : pageScope.generation === undefined ||
+        pageScope.generation === owner.generation;
+}
+function readSelected(owner: EventOwner) {
+  if (!ownsLocation(owner)) return "";
   const id = new URLSearchParams(window.location.search).get("event_id") ?? "";
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
     id,
@@ -69,7 +101,7 @@ function queryFilters(f: Filters): EventFilters {
 }
 function writeLocation(
   f: Filters,
-  owner: string,
+  owner: EventOwner,
   replace = false,
   selected = readSelected(owner),
 ) {
@@ -150,12 +182,20 @@ function rowSummary(event: EventPage["items"][number]) {
 
 export default function Events() {
   const { session, client } = useSession();
-  const owner = `${session?.subject}:${session?.tenant_id}:${session?.role}:${session?.generation}`;
+  const owner = useMemo(
+    () => ({
+      identity: JSON.stringify([
+        session?.subject,
+        session?.tenant_id,
+        session?.role,
+      ]),
+      page: pageScope.id,
+      generation: session?.generation,
+    }),
+    [session?.subject, session?.tenant_id, session?.role, session?.generation],
+  );
   const [filters, setFilters] = useState(() =>
-    readFilters(
-      !window.history.state?.sentinelEventsOwner ||
-        window.history.state.sentinelEventsOwner === owner,
-    ),
+    readFilters(ownsLocation(owner)),
   );
   const current = useRef(filters);
   const [draft, setDraft] = useState(filters);
@@ -181,11 +221,10 @@ export default function Events() {
     writeLocation(next, owner);
   }
   useEffect(() => {
+    pageScope.generation ??= owner.generation;
     writeLocation(current.current, owner, true, selectedRef.current);
     const pop = () => {
-      const own =
-        !window.history.state?.sentinelEventsOwner ||
-        window.history.state.sentinelEventsOwner === owner;
+      const own = ownsLocation(owner);
       const next = readFilters(own);
       current.current = next;
       setFilters(next);
@@ -194,12 +233,15 @@ export default function Events() {
       setValidation("");
       selectedRef.current = readSelected(owner);
       setSelected(selectedRef.current);
-      if (!own) writeLocation(next, owner, true);
+      writeLocation(next, owner, true, selectedRef.current);
     };
     window.addEventListener("popstate", pop);
     return () => {
       window.removeEventListener("popstate", pop);
-      if (window.history.state?.sentinelEventsOwner === owner) {
+      if (
+        window.history.state?.sentinelEventsOwner?.page === owner.page &&
+        ownsLocation(owner)
+      ) {
         const url = new URL(window.location.href);
         url.searchParams.delete("cursor");
         url.searchParams.delete("event_id");
