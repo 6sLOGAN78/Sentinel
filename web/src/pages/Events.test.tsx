@@ -5,9 +5,10 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { createAPIClient } from "../api/client";
 import type { paths } from "../api/schema";
@@ -335,6 +336,96 @@ describe("guarded event client boundary", () => {
       },
     };
   }
+  const detailID = "00000000-0000-4000-8000-000000000001";
+  it("gets a typed event detail with the existing private transport", async () => {
+    const fetcher = vi.fn(async () => Response.json(page().items[0]));
+    vi.stubGlobal("fetch", fetcher);
+    const active = client();
+    expect(await active.api.eventDetail(detailID)).toEqual(page().items[0]);
+    const request = fetcher.mock.calls[0][0] as Request;
+    expect(new URL(request.url).pathname).toBe(`/api/v1/events/${detailID}`);
+    expect(new URL(request.url).search).toBe("");
+    expect(request.headers.get("Authorization")).toBe(
+      "Bearer client-unit-credential",
+    );
+    expect(request.cache).toBe("no-store");
+  });
+  it("guards event detail credentials before expired session or caller access", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const ended = client();
+    ended.expire();
+    await expect(ended.api.eventDetail(detailID)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(ended.credential).not.toHaveBeenCalled();
+    const active = client(),
+      caller = new AbortController();
+    caller.abort();
+    await expect(
+      active.api.eventDetail(detailID, caller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(active.credential).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it.each(["caller", "session"])(
+    "guards event detail parsed bodies after %s cancellation",
+    async (which) => {
+      let release!: (text: string) => void;
+      const response = Response.json(page().items[0]);
+      vi.spyOn(response, "text").mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => response),
+      );
+      const active = client(),
+        caller = new AbortController();
+      const rejected = expect(
+        active.api.eventDetail(detailID, caller.signal),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      await waitFor(() => expect(release).toBeTypeOf("function"));
+      if (which === "caller") caller.abort();
+      else {
+        active.expire();
+        active.lifetime.abort();
+      }
+      release(JSON.stringify(page().items[0]));
+      await rejected;
+    },
+  );
+  it.each([401, 404, 503])(
+    "keeps detail status %i and revokes only current401",
+    async (status) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("", { status })),
+      );
+      const active = client();
+      await expect(active.api.eventDetail(detailID)).rejects.toMatchObject({
+        status,
+      });
+      expect(active.unauthorized).toHaveBeenCalledTimes(status === 401 ? 1 : 0);
+    },
+  );
+  it.each([
+    null,
+    {},
+    { ...page().items[0], event_id: "wrong" },
+    { ...page().items[0], tenant_id: "" },
+  ])("rejects malformed event detail %j", async (body) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(body)),
+    );
+    await expect(client().api.eventDetail(detailID)).rejects.toMatchObject({
+      status: 503,
+    });
+  });
   it("checks old session and caller cancellation before obtaining credentials", async () => {
     const transport = vi.fn(async () => Response.json(page()));
     vi.stubGlobal("fetch", transport);
@@ -411,5 +502,180 @@ describe("guarded event client boundary", () => {
       vi.fn(async () => Response.json(body)),
     );
     await expect(client().api.events()).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+describe("safe event detail dialog through actual App", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const payload =
+    '<img src=x onerror="globalThis.__eventXSS=1"><script>globalThis.__eventXSS=1</script>';
+  function event() {
+    return {
+      ...page().items[0],
+      attributes: { payload, long: "recorded-" + "x".repeat(2200) },
+    };
+  }
+  const showDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLDialogElement.prototype,
+    "showModal",
+  );
+  const closeDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLDialogElement.prototype,
+    "close",
+  );
+  beforeEach(() => {
+    Object.defineProperties(HTMLDialogElement.prototype, {
+      showModal: {
+        configurable: true,
+        value() {
+          this.setAttribute("open", "");
+        },
+      },
+      close: {
+        configurable: true,
+        value() {
+          this.removeAttribute("open");
+        },
+      },
+    });
+  });
+  afterEach(() => {
+    if (showDescriptor)
+      Object.defineProperty(
+        HTMLDialogElement.prototype,
+        "showModal",
+        showDescriptor,
+      );
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+    if (closeDescriptor)
+      Object.defineProperty(
+        HTMLDialogElement.prototype,
+        "close",
+        closeDescriptor,
+      );
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
+    vi.unstubAllGlobals();
+    window.history.replaceState(null, "", "/alerts");
+  });
+  async function open(
+    detail: (r: Request) => Promise<Response> = async () =>
+      Response.json(event()),
+    strict = false,
+    deep = false,
+  ) {
+    const result = await start(
+      async (r) =>
+        new URL(r.url).pathname === `/api/v1/events/${id}`
+          ? detail(r)
+          : Response.json(page()),
+      strict,
+      `/events?limit=1${deep ? `&event_id=${id}` : ""}`,
+    );
+    await screen.findByText("Native event");
+    let trigger: HTMLElement | undefined;
+    if (!deep) {
+      trigger = screen.getByRole("button", { name: `View event ${id}` });
+      trigger.focus();
+      fireEvent.click(trigger);
+    }
+    return {
+      ...result,
+      trigger,
+      dialog: await screen.findByRole("dialog", { name: "Event details" }),
+    };
+  }
+  it("renders malicious attributes as pre/code text and restores exact trigger on Escape", async () => {
+    const { dialog, trigger, requests } = await open();
+    await within(dialog).findByText(/recorded-xxx/);
+    const code = dialog.querySelector("pre code")!;
+    expect(JSON.parse(code.textContent!)).toEqual(event());
+    expect(code.textContent).toContain(payload);
+    expect(code.textContent).toContain("2001:db8::44");
+    expect(dialog.querySelector("img,script")).toBeNull();
+    expect((globalThis as Record<string, unknown>).__eventXSS).toBeUndefined();
+    expect((code.parentElement as HTMLElement).style.whiteSpace).toBe(
+      "pre-wrap",
+    );
+    expect((code.parentElement as HTMLElement).style.overflowWrap).toBe(
+      "anywhere",
+    );
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("button", { name: "Close event details" }),
+    );
+    expect(new URLSearchParams(window.location.search).get("event_id")).toBe(
+      id,
+    );
+    expect(requests.some((r) => new URL(r.url).pathname.endsWith(id))).toBe(
+      true,
+    );
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+    expect(new URLSearchParams(window.location.search).has("event_id")).toBe(
+      false,
+    );
+  });
+  it("keeps initial and StrictMode event deep links and follows back/forward", async () => {
+    const { dialog } = await open(undefined, true, true);
+    await within(dialog).findByText(/recorded-xxx/);
+    expect(new URLSearchParams(window.location.search).get("event_id")).toBe(
+      id,
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Close event details" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    act(() => {
+      window.history.pushState(null, "", `/events?limit=1&event_id=${id}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await screen.findByRole("dialog", { name: "Event details" });
+    act(() => {
+      window.history.pushState(null, "", "/events?limit=1");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+  it("shows loading, honest dependency error and retry", async () => {
+    let release!: (r: Response) => void;
+    let first = true;
+    const { dialog } = await open(async () =>
+      first
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : Response.json(event()),
+    );
+    expect(within(dialog).getByText("Loading event details…")).toBeTruthy();
+    await act(async () => release(new Response("", { status: 503 })));
+    await within(dialog).findByText("Could not load event details. Try again.");
+    first = false;
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Retry loading event details",
+      }),
+    );
+    await within(dialog).findByText(/recorded-xxx/);
+  });
+  it("shows a tenant-safe missing-event state", async () => {
+    const { dialog } = await open(
+      async () => new Response("", { status: 404 }),
+    );
+    await within(dialog).findByText(
+      "This event was not found for your tenant.",
+    );
+    expect(dialog.querySelector("pre")).toBeNull();
+  });
+  it("aborts detail and clears its URL and cached JSON on logout", async () => {
+    const { requests, cache } = await open(async () => new Promise(() => {}));
+    const request = requests.find((r) => new URL(r.url).pathname.endsWith(id))!;
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByRole("heading", { name: "Sign in to Sentinel" });
+    expect(request.signal.aborted).toBe(true);
+    expect(cache.getQueryCache().getAll()).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(new URLSearchParams(window.location.search).has("event_id")).toBe(
+      false,
+    );
   });
 });

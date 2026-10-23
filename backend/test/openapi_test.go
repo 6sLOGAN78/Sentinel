@@ -144,10 +144,12 @@ func TestOpenAPISecurity(t *testing.T) {
 		case "POST " + pathBatch:
 			assert.Equal(t, []string{"ApiKeyAuth"}, names, key)
 		case "GET /api/v1/events/{event_id}":
-			assert.Equal(t, []string{"ApiKeyAuth"}, names, key)
+			assert.Equal(t, []string{"ApiKeyAuth", "BearerAuth"}, names, key)
 			require.NotNil(t, op.Security)
-			require.Len(t, *op.Security, 1, "lookup currently implements only API-key authentication")
-			assert.Equal(t, openapi3.SecurityRequirement{"ApiKeyAuth": []string{}}, (*op.Security)[0])
+			require.Len(t, *op.Security, 2, "lookup requires two separate nonempty OR alternatives")
+			assert.ElementsMatch(t, openapi3.SecurityRequirements{
+				{"ApiKeyAuth": []string{}}, {"BearerAuth": []string{}},
+			}, *op.Security)
 			assert.Contains(t, op.Description, "events:read")
 		case "GET /healthz", "GET /readyz":
 			assert.Empty(t, names, key)
