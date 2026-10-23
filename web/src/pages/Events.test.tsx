@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -338,7 +339,9 @@ describe("guarded event client boundary", () => {
   }
   const detailID = "00000000-0000-4000-8000-000000000001";
   it("gets a typed event detail with the existing private transport", async () => {
-    const fetcher = vi.fn(async () => Response.json(page().items[0]));
+    const fetcher = vi.fn<(request: Request) => Promise<Response>>(async () =>
+      Response.json(page().items[0]),
+    );
     vi.stubGlobal("fetch", fetcher);
     const active = client();
     expect(await active.api.eventDetail(detailID)).toEqual(page().items[0]);
@@ -540,6 +543,7 @@ describe("safe event detail dialog through actual App", () => {
     });
   });
   afterEach(() => {
+    cleanup();
     if (showDescriptor)
       Object.defineProperty(
         HTMLDialogElement.prototype,
@@ -589,7 +593,7 @@ describe("safe event detail dialog through actual App", () => {
     await within(dialog).findByText(/recorded-xxx/);
     const code = dialog.querySelector("pre code")!;
     expect(JSON.parse(code.textContent!)).toEqual(event());
-    expect(code.textContent).toContain(payload);
+    expect(JSON.parse(code.textContent!).attributes.payload).toBe(payload);
     expect(code.textContent).toContain("2001:db8::44");
     expect(dialog.querySelector("img,script")).toBeNull();
     expect((globalThis as Record<string, unknown>).__eventXSS).toBeUndefined();

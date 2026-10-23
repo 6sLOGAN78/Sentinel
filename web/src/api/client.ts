@@ -15,6 +15,8 @@ export type EventPage =
 export type EventFilters = NonNullable<
   paths["/api/v1/events"]["get"]["parameters"]["query"]
 >;
+export type EventDetail =
+  paths["/api/v1/events/{event_id}"]["get"]["responses"][200]["content"]["application/json"];
 
 export class APIError extends Error {
   constructor(readonly status: number) {
@@ -56,6 +58,27 @@ export function createAPIClient(
     },
   });
   return {
+    async eventDetail(id: string, signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const result = await client.GET("/api/v1/events/{event_id}", {
+        params: { path: { event_id: id } },
+        signal,
+      });
+      assertCurrent();
+      signal?.throwIfAborted();
+      const event = result.data;
+      if (
+        !event ||
+        event.event_id !== id ||
+        event.schema_version !== 1 ||
+        typeof event.tenant_id !== "string" ||
+        !event.tenant_id ||
+        typeof event.source !== "string" ||
+        typeof event.occurred_at !== "string"
+      )
+        throw new APIError(503);
+      return event;
+    },
     async events(filters: EventFilters = {}, signal?: AbortSignal) {
       signal?.throwIfAborted();
       const result = await client.GET("/api/v1/events", {

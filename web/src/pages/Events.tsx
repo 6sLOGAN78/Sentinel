@@ -3,6 +3,21 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { APIError } from "../api/client";
 import type { EventFilters, EventPage } from "../api/client";
 import { useSession } from "../auth/session";
+import EventDetails from "../components/EventDetails";
+
+function readSelected(owner: string) {
+  if (
+    window.history.state?.sentinelEventsOwner &&
+    window.history.state.sentinelEventsOwner !== owner
+  )
+    return "";
+  const id = new URLSearchParams(window.location.search).get("event_id") ?? "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+    id,
+  )
+    ? id
+    : "";
+}
 
 type Filters = {
   from: string;
@@ -52,11 +67,17 @@ function queryFilters(f: Filters): EventFilters {
     ...(f.cursor && { cursor: f.cursor }),
   };
 }
-function writeLocation(f: Filters, owner: string, replace = false) {
+function writeLocation(
+  f: Filters,
+  owner: string,
+  replace = false,
+  selected = readSelected(owner),
+) {
   const url = new URL(window.location.href);
   url.search = new URLSearchParams(
     Object.entries(queryFilters(f)).map(([k, v]) => [k, String(v)]),
   ).toString();
+  if (selected) url.searchParams.set("event_id", selected);
   window.history[replace ? "replaceState" : "pushState"](
     { sentinelEventsOwner: owner },
     "",
@@ -140,6 +161,16 @@ export default function Events() {
   const [draft, setDraft] = useState(filters);
   const [previous, setPrevious] = useState<Filters[]>([]);
   const [validation, setValidation] = useState("");
+  const [selected, setSelected] = useState(() => readSelected(owner));
+  const selectedRef = useRef(selected);
+  function selectEvent(id: string) {
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("event_id", id);
+    else url.searchParams.delete("event_id");
+    window.history.pushState({ sentinelEventsOwner: owner }, "", url);
+    selectedRef.current = id;
+    setSelected(id);
+  }
   const narrow = useSyncExternalStore(subscribeWidth, isNarrow);
   function navigate(next: Filters, trail: Filters[]) {
     current.current = next;
@@ -150,7 +181,7 @@ export default function Events() {
     writeLocation(next, owner);
   }
   useEffect(() => {
-    writeLocation(current.current, owner, true);
+    writeLocation(current.current, owner, true, selectedRef.current);
     const pop = () => {
       const own =
         !window.history.state?.sentinelEventsOwner ||
@@ -161,6 +192,8 @@ export default function Events() {
       setDraft(next);
       setPrevious([]);
       setValidation("");
+      selectedRef.current = readSelected(owner);
+      setSelected(selectedRef.current);
       if (!own) writeLocation(next, owner, true);
     };
     window.addEventListener("popstate", pop);
@@ -169,6 +202,7 @@ export default function Events() {
       if (window.history.state?.sentinelEventsOwner === owner) {
         const url = new URL(window.location.href);
         url.searchParams.delete("cursor");
+        url.searchParams.delete("event_id");
         window.history.replaceState({ sentinelEventsOwner: owner }, "", url);
       }
     };
@@ -395,6 +429,13 @@ export default function Events() {
                   <dt>Outcome</dt>
                   <dd>{event.outcome ?? "Absent"}</dd>
                 </dl>
+                <button
+                  className="secondary"
+                  aria-label={`View event ${event.event_id}`}
+                  onClick={() => selectEvent(event.event_id)}
+                >
+                  View details
+                </button>
               </li>
             ))}
           </ul>
@@ -415,6 +456,7 @@ export default function Events() {
                   <th scope="col">Source IP</th>
                   <th scope="col">Outcome</th>
                   <th scope="col">Summary</th>
+                  <th scope="col">Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -432,6 +474,15 @@ export default function Events() {
                     <td>{event.source_ip ?? "Absent"}</td>
                     <td>{event.outcome ?? "Absent"}</td>
                     <td>{rowSummary(event)}</td>
+                    <td>
+                      <button
+                        className="secondary"
+                        aria-label={`View event ${event.event_id}`}
+                        onClick={() => selectEvent(event.event_id)}
+                      >
+                        View details
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -463,6 +514,13 @@ export default function Events() {
             Next page
           </button>
         </div>
+      )}
+      {selected && (
+        <EventDetails
+          key={selected}
+          id={selected}
+          onClose={() => selectEvent("")}
+        />
       )}
     </section>
   );

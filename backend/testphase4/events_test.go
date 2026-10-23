@@ -67,7 +67,8 @@ func TestPhase4Events(t *testing.T) {
 	tenant, foreign := "p4events-"+uuid.NewString(), "p4other-"+uuid.NewString()
 	key, err := apikeys.NewStore(db.Pool).Create(ctx, tenant, []string{apikeys.ScopeRead}, "event search fixture")
 	require.NoError(t, err)
-	writeKey, err := apikeys.NewStore(db.Pool).Create(ctx, tenant, []string{apikeys.ScopeWrite}, "event detail write-only fixture")
+	writeKey, err := apikeys.NewStore(db.Pool).Create(ctx, tenant, []string{apikeys.ScopeWrite},
+		"event detail write-only fixture")
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	from := now.Add(-time.Hour)
@@ -255,47 +256,27 @@ func TestPhase4Events(t *testing.T) {
 		}
 	})
 	t.Run("single_event_verified_tenant_and_legacy_authority", func(t *testing.T) {
-		for _, tc := range []struct {
-			name, eventID, bearer, apiKey string
-			status                        int
-		}{
-			{"owned bearer", id(2), token, "", 200},
-			{"bearer wins over foreign key authority", id(64), token, key, 404},
-			{"foreign bearer cannot use own read key", id(2), tokenFor(foreign), key, 404},
-			{"foreign bearer owned event", id(64), tokenFor(foreign), key, 200},
-			{"foreign hidden", id(64), token, "", 404},
-			{"unknown hidden", id(99), token, "", 404},
-			{"invalid uuid", "invalid-id", token, "", 400},
-			{"legacy read", id(2), "", key, 200},
-			{"legacy write forbidden", id(2), "", writeKey, 403},
-			{"missing credentials", id(2), "", "", 401},
-			{"invalid key", id(2), "", "invalid", 401},
-			{"invalid bearer no fallback", id(2), "invalid", key, 401},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				status, body := getJSON(t, base+"/api/v1/events/"+tc.eventID, tc.bearer, tc.apiKey)
-				require.Equal(t, tc.status, status)
-				if status == 200 {
-					var got contracts.Event
-					require.NoError(t, json.Unmarshal(body, &got))
-					wantTenant := tenant
-					if tc.eventID == id(64) {
-						wantTenant = foreign
-					}
-					want, getErr := store.Get(ctx, wantTenant, tc.eventID)
-					require.NoError(t, getErr)
-					require.Equal(t, want, &got, "preserve actual canonical lookup bytes")
-				}
-				require.True(t, credentialsAbsent(body, tc.bearer, tc.apiKey))
-			})
-		}
+		testEventLookupAuthority(ctx, t, base, store, []eventDetailCase{
+			{"owned bearer", id(2), token, "", tenant, 200},
+			{"bearer wins over foreign key authority", id(64), token, key, "", 404},
+			{"foreign bearer cannot use own read key", id(2), tokenFor(foreign), key, "", 404},
+			{"foreign bearer owned event", id(64), tokenFor(foreign), key, foreign, 200},
+			{"foreign hidden", id(64), token, "", "", 404},
+			{"unknown hidden", id(99), token, "", "", 404},
+			{"invalid uuid", "invalid-id", token, "", "", 400},
+			{"legacy read", id(2), "", key, tenant, 200},
+			{"legacy write forbidden", id(2), "", writeKey, "", 403},
+			{"missing credentials", id(2), "", "", "", 401},
+			{"invalid key", id(2), "", "invalid", "", 401},
+			{"invalid bearer no fallback", id(2), "invalid", key, "", 401},
+		})
 	})
 	t.Run("every_present_authorization_selects_strict_bearer", func(t *testing.T) {
 		for _, headers := range [][]string{{""}, {"Basic invalid"}, {"Bearer"}, {"Bearer invalid"},
 			{"Bearer " + token, "Bearer " + token}, {"", "Bearer " + token}, {"Bearer " + token + ", Bearer " + token}} {
 			req, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/events/"+id(2), nil)
 			require.NoError(t, requestErr)
-			req.Header.Set("X-API-Key", key)
+			req.Header.Set("X-Api-Key", key)
 			for _, header := range headers {
 				req.Header.Add("Authorization", header)
 			}
@@ -307,6 +288,31 @@ func TestPhase4Events(t *testing.T) {
 			require.Equal(t, 401, response.StatusCode, "present malformed/empty/repeated bearer never uses read key")
 		}
 	})
+}
+
+type eventDetailCase struct {
+	name, eventID, bearer, apiKey, tenant string
+	status                                int
+}
+
+func testEventLookupAuthority(
+	ctx context.Context, t *testing.T, base string, store *storageclickhouse.EventStore, cases []eventDetailCase,
+) {
+	t.Helper()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, body := getJSON(t, base+"/api/v1/events/"+tc.eventID, tc.bearer, tc.apiKey)
+			require.Equal(t, tc.status, status)
+			if status == 200 {
+				var got contracts.Event
+				require.NoError(t, json.Unmarshal(body, &got))
+				want, getErr := store.Get(ctx, tc.tenant, tc.eventID)
+				require.NoError(t, getErr)
+				require.Equal(t, want, &got, "preserve actual canonical lookup bytes")
+			}
+			require.True(t, credentialsAbsent(body, tc.bearer, tc.apiKey))
+		})
+	}
 }
 
 func testFullEventSearchPages(

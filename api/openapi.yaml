@@ -7,9 +7,10 @@ info:
     The Event and Alert component schemas mirror backend/internal/contracts/schema/*.json,
     which are canonical; a drift test keeps them in sync.
 
-    Authentication: the implemented Phase 2 ingestion and single-event lookup routes
-    use scoped API keys in the X-API-Key header. Dashboard and list operations describe
-    planned Phase 4 bearer JWT contracts. The tenant is always resolved from the verified
+    Authentication: ingestion uses scoped API keys in the X-API-Key header. Single-event
+    lookup accepts a verified dashboard JWT or an events:read API key only when the
+    Authorization header is absent. Other dashboard operations require bearer JWTs.
+    The tenant is always resolved from the verified
     identity, never only from the request. Credentials are never accepted in URL query
     parameters, including for the SSE stream.
 servers:
@@ -134,12 +135,16 @@ paths:
       operationId: getEvent
       summary: Retrieve one event scoped to the tenant
       description: |
-        Requires an API key in the X-API-Key header with events:read scope. The tenant
-        comes from the verified key. An event belonging to another tenant returns the
-        same 404 response as an absent event. Bearer authentication is not implemented
-        for this operation in Phase 2.
+        Accepts a verified dashboard bearer JWT or, only when Authorization is absent,
+        an API key in the X-API-Key header with events:read scope. Every present
+        Authorization header selects strict JWT verification, including empty,
+        repeated, malformed or invalid headers; it never falls back to an API key.
+        The tenant comes from the selected verified identity. Foreign and unknown
+        IDs return the same 404. Invalid UUIDs return 400 and dependencies return 503.
+        Reads are bounded to five seconds and return the existing canonical Event.
       security:
         - ApiKeyAuth: []
+        - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/EventID"
       responses:

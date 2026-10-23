@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	driverclickhouse "github.com/ClickHouse/clickhouse-go/v2"
@@ -19,7 +18,6 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/auth"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/database"
-	"github.com/6sLOGAN78/sentinel/internal/errs"
 	"github.com/6sLOGAN78/sentinel/internal/eventquery"
 	"github.com/6sLOGAN78/sentinel/internal/httpx"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
@@ -113,8 +111,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	verifier := apikeys.NewVerifier(apikeys.NewStore(db.Pool), 0, 0, nil)
 	e := echo.New()
 	middleware.Apply(e, &log, cfg.Server.CORSAllowedOrigins)
-	e.Use(preventBearerDowngrade)
-	eventquery.NewHandler(verifier, storageclickhouse.NewEventStore(clickhouseConn)).Register(e)
+	eventquery.NewAuthenticatedHandler(verifier, jwtVerifier, storageclickhouse.NewEventStore(clickhouseConn)).Register(e)
 	e.GET("/api/v1/session", getSession, jwtVerifier.Middleware)
 	alerts := storagepostgres.NewAlertStore(db.Pool, alertQueryTimeout)
 	query.NewHandler(query.Dependencies{Alerts: alerts, Workflows: alerts,
@@ -141,18 +138,6 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
-}
-
-// Until the bearer event-detail slice, this route accepts API keys only.
-// Any supplied Authorization header must never downgrade to key authority.
-func preventBearerDowngrade(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		if strings.HasPrefix(c.Request().URL.Path, "/api/v1/events/") &&
-			len(c.Request().Header.Values("Authorization")) > 0 {
-			return errs.NewUnauthorizedError(http.StatusText(http.StatusUnauthorized), false)
-		}
-		return next(c)
-	}
 }
 
 func getSession(c echo.Context) error {

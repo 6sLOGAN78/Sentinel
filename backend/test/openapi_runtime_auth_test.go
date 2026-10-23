@@ -98,7 +98,7 @@ func contractLookupFixture(t *testing.T) (*echo.Echo, *contractLookupStore, stri
 	e := echo.New()
 	logger := zerolog.Nop()
 	middleware.Apply(e, &logger, nil)
-	eventquery.NewHandler(contractLookupVerifier{}, store).Register(e)
+	eventquery.NewAuthenticatedHandler(contractLookupVerifier{}, verifier, store).Register(e)
 	return e, store, token
 }
 
@@ -117,13 +117,14 @@ func checkLookupCredentialDispatch(t *testing.T) {
 		{name: "invalid bearer no fallback", headers: []string{"Bearer invalid"}, key: "contract-read-key", status: 401},
 		{name: "empty header no fallback", headers: []string{""}, key: "contract-read-key", status: 401},
 		{name: "malformed header no fallback", headers: []string{"Basic invalid"}, key: "contract-read-key", status: 401},
-		{name: "repeated header no fallback", headers: []string{"Bearer invalid", "Bearer invalid"}, key: "contract-read-key", status: 401},
+		{name: "repeated header no fallback", headers: []string{"Bearer invalid", "Bearer invalid"},
+			key: "contract-read-key", status: 401},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e, store, _ := contractLookupFixture(t)
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/events/"+store.event.EventID, nil)
 			if tc.key != "" {
-				req.Header.Set("X-API-Key", tc.key)
+				req.Header.Set("X-Api-Key", tc.key)
 			}
 			for _, value := range tc.headers {
 				req.Header.Add("Authorization", value)

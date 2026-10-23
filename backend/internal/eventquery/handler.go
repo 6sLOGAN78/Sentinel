@@ -6,17 +6,20 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
+	"github.com/6sLOGAN78/sentinel/internal/auth"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/errs"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
 
 const apiKeyHeader = "X-Api-Key" //nolint:gosec // Public HTTP header name, not a credential.
+const lookupTimeout = 5 * time.Second
 
 type verifier interface {
 	Authenticate(context.Context, string) (apikeys.Principal, error)
@@ -51,14 +54,50 @@ func (h *Handler) GetEvent(c echo.Context) error {
 	if !principal.HasScope(apikeys.ScopeRead) {
 		return errs.NewForbiddenError(http.StatusText(http.StatusForbidden), false)
 	}
+	return h.getEvent(c, principal.TenantID)
+}
 
+// AuthenticatedHandler dispatches the single production lookup route by header
+// presence. The isolated legacy handler remains compatible with direct callers.
+type AuthenticatedHandler struct {
+	legacy *Handler
+	bearer *auth.Verifier
+}
+
+// NewAuthenticatedHandler injects both verifiers explicitly; no global auth state.
+func NewAuthenticatedHandler(v verifier, bearer *auth.Verifier, store eventStore) *AuthenticatedHandler {
+	return &AuthenticatedHandler{legacy: NewHandler(v, store), bearer: bearer}
+}
+
+// Register installs exactly one dual-credential single-event route.
+func (h *AuthenticatedHandler) Register(e *echo.Echo) {
+	e.GET("/api/v1/events/:event_id", h.GetEvent)
+}
+
+// GetEvent never falls back to key authority for any present Authorization.
+func (h *AuthenticatedHandler) GetEvent(c echo.Context) error {
+	if _, present := c.Request().Header["Authorization"]; present {
+		return h.bearer.Middleware(func(c echo.Context) error {
+			principal, err := auth.RequirePrincipal(c)
+			if err != nil {
+				return err
+			}
+			return h.legacy.getEvent(c, principal.TenantID)
+		})(c)
+	}
+	return h.legacy.GetEvent(c)
+}
+
+func (h *Handler) getEvent(c echo.Context, tenant string) error {
 	eventID := c.Param("event_id")
 	parsed, err := uuid.Parse(eventID)
 	if err != nil || len(eventID) != 36 || parsed.String() != strings.ToLower(eventID) {
 		return errs.NewBadRequestError("Invalid event ID", false, nil, nil, nil)
 	}
 
-	event, err := h.store.Get(c.Request().Context(), principal.TenantID, eventID)
+	ctx, cancel := context.WithTimeout(c.Request().Context(), lookupTimeout)
+	defer cancel()
+	event, err := h.store.Get(ctx, tenant, eventID)
 	if errors.Is(err, storageclickhouse.ErrNotFound) {
 		return errs.NewNotFoundError("Event not found", false, nil)
 	}
