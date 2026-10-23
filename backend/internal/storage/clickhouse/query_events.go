@@ -55,7 +55,13 @@ func (s *QueryEventStore) ListEvents(
 		{"source_ip", "ip", f.SourceIP}, {"event_type", "type", f.EventType}, {"outcome", "outcome", f.Outcome},
 	} {
 		if filter.value != "" {
-			predicates = append(predicates, filter.column+" = {"+filter.name+":String}")
+			predicate := filter.column + " = {" + filter.name + ":String}"
+			if filter.column == "source_ip" {
+				// Stored Event bytes retain valid alternate IPv6 spellings.
+				// Normalize only the selected whole identity, never before dedupe.
+				predicate = "toIPv6OrNull(source_ip) = toIPv6OrNull({ip:String})"
+			}
+			predicates = append(predicates, predicate)
 			args = append(args, driverclickhouse.Named(filter.name, filter.value))
 		}
 	}

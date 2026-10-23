@@ -161,10 +161,6 @@ func TestPhase4Events(t *testing.T) {
 		q.Set("limit", "200")
 		ipv6 := getPage(t, q, token)
 		require.Len(t, ipv6.Items, 15, "IPv6 filter is canonicalized")
-		for _, spelling := range []string{"2001:db8::44", "2001:DB8::44"} {
-			q.Set("source_ip", spelling)
-			require.Equal(t, ipv6.Items, getPage(t, q, token).Items, "equivalent IPv6 query preserves identities and order")
-		}
 		q = filters()
 		q.Del("source_ip")
 		q.Set("event_type", "policy.decision")
@@ -173,6 +169,9 @@ func TestPhase4Events(t *testing.T) {
 		require.Len(t, getPage(t, q, token).Items, 15)
 		q.Set("source_ip", "192.0.2.99")
 		require.Empty(t, getPage(t, q, token).Items)
+	})
+	t.Run("stored_ipv6_spellings_share_ordered_unique_pages", func(t *testing.T) {
+		testIPv6SearchPages(t, filters(), getPage, token, id)
 	})
 	t.Run("cursor_binding_freezing_and_tamper", func(t *testing.T) {
 		q := filters()
@@ -281,6 +280,36 @@ func testFullEventSearchPages(
 		want = append(want, id(n))
 	}
 	require.Equal(t, want, seen)
+}
+
+func testIPv6SearchPages(
+	t *testing.T, q url.Values, getPage func(*testing.T, url.Values, string) eventSearchPage,
+	token string, id func(int) string,
+) {
+	t.Helper()
+	q.Set("event_type", "net.request")
+	q.Set("outcome", "success")
+	want := make([]string, 0, 15)
+	for n := 58; n >= 2; n -= 4 {
+		want = append(want, id(n))
+	}
+	for _, spelling := range []string{"2001:db8::44", "2001:0db8:0:0:0:0:0:44", "2001:DB8::44"} {
+		q.Set("source_ip", spelling)
+		q.Del("cursor")
+		seen := make([]string, 0, 15)
+		for number := range 5 {
+			page := getPage(t, q, token)
+			require.Len(t, page.Items, 3, "all spellings yield full unique pages")
+			for _, item := range page.Items {
+				seen = append(seen, item.EventID)
+			}
+			require.Equal(t, number < 4, page.More)
+			if page.Next != nil {
+				q.Set("cursor", *page.Next)
+			}
+		}
+		require.Equal(t, want, seen, "equivalent stored/query spellings preserve identity and order")
+	}
 }
 
 func nativeEventFixtureRows(

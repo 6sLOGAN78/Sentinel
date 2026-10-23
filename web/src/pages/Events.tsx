@@ -213,6 +213,12 @@ export default function Events() {
     refetchOnWindowFocus: false,
   });
   const page = events.data;
+  const restoredValidation = !isValidIP(filters.source_ip)
+    ? "Enter a valid IP address."
+    : !validRange(filters)
+      ? "Choose a valid UTC time range of at most 7 days."
+      : "";
+  const displayedValidation = validation || restoredValidation;
   return (
     <section aria-labelledby="events-title">
       <h2 id="events-title" tabIndex={-1}>
@@ -341,13 +347,13 @@ export default function Events() {
             Clear filters
           </button>
         </div>
-        {validation && (
+        {displayedValidation && (
           <p role="alert" className="error-state">
-            {validation}
+            {displayedValidation}
           </p>
         )}
       </form>
-      {events.isPending && <p role="status">Loading events…</p>}
+      {events.isLoading && <p role="status">Loading events…</p>}
       {events.isError && (
         <div className="error-state" role="alert">
           <p>
