@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "07"
-status: pending_independent_source_review
+status: locally_verified_pending_operator_stack_recovery
 subsystem: api
 tags: [events, jwt, api-key, clickhouse, react-query, dialog, openapi]
 requires:
@@ -40,8 +40,12 @@ completed: 2026-10-23
 
 **Verified-tenant event JSON with strict dual credential dispatch and an escaped native detail dialog.**
 
-Implementation tasks are complete, but this candidate is **not accepted**. Independent
-source review and the root postwave gate remain pending. Full-history scanning
+Implementation tasks and independent R2/source/root gates are complete, but this
+candidate is **not accepted** because of the separate preserved-stack Kafka
+history hold. R2 at2059335/sourcecc22566 closes CR-01/CR-02 with zero findings;
+preserved04-REVIEW-07-R2. Root independently ran backend/web builds and normal
+make test: EXIT0/13.857s,END2026-10-23T13:08:56.404072Z,cachedGo/web114/gen121,
+private root-postwave.log. Full-history scanning
 found one historical planning-prose match described below; root subsequently
 resolved it through independentSCAN-A2classification and one exact fingerprint
 exception. Actualfullhistoryatd2a3e43EXIT0/zero findings/557commits,0.819s,
@@ -54,10 +58,12 @@ generation that resets on hard reload. Its failed-login/retry reproduction was
 missing from the original passing gates. Repair RED`3260ab6`/GREEN`ec14c34`
 addresses that finding in the two already-owned Events files only. Independent
 R1 closed CR-01 but found the interpage popstate regression CR-02. Its repair
-RED`843ba72`/GREEN`cc22566` is now pending independent R2 and root postwave.
-A separate detector restart
-condition after the host/server interruption leaves preserved-stack readiness
-for root assessment. Neither the original passes nor these scoped repair passes
+RED`843ba72`/GREEN`cc22566` subsequently passed clean R2 and root postwave.
+Read-only Kafka bounds now establish detector checkpoints below earliest
+retained offsets in all six event partitions; each earliest equals end. The
+unchanged detector correctly refuses that missing history. See04-07-STACK-HOLD;
+operator must choose restoration or authorize a separate fresh synthetic stack
+preserving old state. No offsets/groups/data/volumes were reset. Neither the original passes nor these scoped repair passes
 constitute whole-stack or whole-phase acceptance.
 
 ## Task commits and ownership
@@ -349,5 +355,7 @@ clean, no tracked deletion or unexpected source/untracked artifact occurred.
 Only the two declared source/test files changed; user dirt remains unstaged.
 No stub, new security surface or authority change. Detector/readiness remains
 a separate root-owned hold; no additional detector investigation, stack change,
-whole-stack pass or acceptance claim occurred in this CR-02 repair. Pending R2,
-root postwave and stack readiness; do not advance08 or Phase5.
+whole-stack pass or acceptance claim occurred in this CR-02 repair. R2 and root
+postwave subsequently passed as recorded above. Stack recovery still requires
+operator direction; do not advance08 or Phase5. Historical failed scans,
+infrastructure setup failures and review counterexamples remain preserved.

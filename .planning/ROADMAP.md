@@ -265,7 +265,7 @@ Plans:
 - [x] 04-04: Full filtered alert pages and stable cursors
 - [x] 04-05: Alert evidence details and honest retention — accepted2026-10-23 after clean12-pathreview androotpostwavePASS
 - [x] 04-06: Unique event search — accepted2026-10-23 after IPv6/deep-linkrepair,cleanR1/rootpostwavePASS
-- [ ] 04-07: Safe event JSON and legacy lookup compatibility
+- [ ] 04-07: Safe event JSON and legacy lookup compatibility — local review/gates passed; operator Kafka-history recovery hold
 - [ ] 04-08: Acknowledge with atomic optimistic audit
 - [ ] 04-09: Resolve/history and redacted security logging
 - [ ] 04-10: Read-only active Rules page
@@ -323,7 +323,7 @@ Plans:
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
 | 3. Detection & Alert Pipeline | 21/21 | Complete    | 2026-10-21 |
-| 4. Query API & Analyst Dashboard | 7/17 accepted | Executing 04-07 next | - |
+| 4. Query API & Analyst Dashboard | 7/17 accepted | 04-07 operator recovery choice | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
 

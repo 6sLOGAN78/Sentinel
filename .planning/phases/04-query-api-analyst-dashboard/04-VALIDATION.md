@@ -21,6 +21,8 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 04-06nowacceptedafterCR01storedIPv6andWR01invaliddeep-linkrepair: originalRED6ffd056,reviewRED4619571/GREEN2c6720e. ActualnativeEvents+Alerts+Auth,mixedIPv6allthreequeryspellings/fivefullpages,web90/OpenAPI11/three-modestatic/realChromium1440+375/defaultmake testPASS. Eleven-pathcumulativeR1cleanatc1079a2;rootpostwaveEXIT0/12.834sat05:06:58Z(cachedGo/web90/gen121). Preserved04-REVIEW-06-R0/R1;earlierpassesdidnotnegatecounterexamples. Eventdetails/triage/SSE/fullmatrixremainlaterowners.
 
+04-07implementationlocallyverifiedbutNOTaccepted: strictdualauth/safeJSON/nativeEvents+Auth+Alerts/OpenAPI11+separatecontract/runtime/web114/3modestatic/default/browser1440+375actualPASS. CR01reloadRED3260ab6/GREENec14c34andCR02filteredBackRED843ba72/GREENcc22566closedbycleanR2at2059335;rootpostwaveEXIT0/13.857sat13:08:56Z(cachedGo/web114/gen121). ExacthistoricalproseSCAN-A2independentlyapproved;568commithistoryzeroat4259f4f. Newconcretestackhold: detectorcommittedoffsetsbelowearliestretainedinall6Kafkaeventpartitions,earliest=end;guardfailsclosed. Noreset/guardwaiver/fullpipelinePASS. Awaitoperatorbackuprestorationorapprovalfreshisolatedsyntheticstackpreservingoldstate;keep7/17accepted/no08. See04-07-STACK-HOLD.
+
 ## Test Infrastructure
 
 Go testing/race in `backend/`; Vitest/Testing Library in `web/`; native integration `backend/test/`; proposed pinned Playwright against a real preserved stack and same-origin proxy. Exact new version pins resolved before installation. No new global tools or external accounts.

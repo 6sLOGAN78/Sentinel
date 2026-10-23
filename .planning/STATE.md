@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-23T05:06:58Z"
+last_updated: "2026-10-23T13:08:56Z"
 progress:
   total_phases: 6
   completed_phases: 3
@@ -18,13 +18,13 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05/06accepted; execute04-07 safe event details under user `gsd-plan-phase 4 --auto`. All20requirements planned; Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03/04/05/06accepted;04-07localrepair/review/rootgatespassed,awaitoperatorKafka-historyrecoverychoice under user `gsd-plan-phase 4 --auto`. All20requirements planned; Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-07CR01closed;CR02RED843ba72/GREENcc22566/SUMMARY4259f4frepaired,pendingindependentR2/rootgateandoperatorstackrecoverychoice. R0/R1/SCAN-A2preserved.
-Status: Actualweb114/native/browserreload+filteredBackForward/default/static/scan568zeroPASS. Readonlydetectorholdnowconcrete: all6committedoffsetsbelowKafkaearliestretained,earliest=end/noactivegroupmembers;failclosedhistoryguard. Noreset/offset/group/datachange. See04-07-STACK-HOLD;noall9/pipelinePASS. NoPhase4remoteauthoritybefore04-16.
+Plan: 04-07CR01+CR02closedbycleanR2at2059335/sourcecc22566;rootpostwaveEXIT0/13.857sat13:08:56Z;awaitoperatorstackrecoverychoice,notaccepted. R0/R1/R2/SCAN-A2preserved.
+Status: Actualweb114/native/browserreload+filteredBackForward/default/static/scan568zeroPASS. All6detectorcheckpointsbelowKafkaearliestretained,earliest=end/noactivegroupmembers;guardcorrectlyfailclosed. Noreset/offset/group/datachange. LocalgatecachedGo/web114/gen121PASSdoesnotrestoremissinghistory. See04-07-STACK-HOLD;noall9/pipelinePASS. NoPhase4remoteauthoritybefore04-16.
 Progress: 63/73 accepted numberedplans; Phase4 7/17accepted,10remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
@@ -215,8 +215,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-23T12:17:15Z, resumedafterinterruption;HEAD2088a99/no07repairsourcechangesorproducerfound. Phase4plan06remainsaccepted;07CR01repairpending.
-Resume: IndependentR2ofsourcecc22566/metadata4259f4f,thenrootpostwave/scanner;07stillpendingbecauseconcreteKafka-historyoperatorrecoverychoice. Missingrangesrecorded04-07-STACK-HOLD;don'tresetoffsets/groups/PG/data/volumesorweakenhistoryguard. Requestrestorebackuporapprovalfreshisolatedsyntheticstackpreservingoldstateafterremainingreadonly/localgates. No08untilaccepted,maintain7/17,usercfg/.serenauntouched. R0/R1/SCAN-A2historypreserved,noPhase4remotebefore16/noPhase5.
+Last session:2026-10-23T13:08:56Z,07localrepairsR2/rootgatepassed;awaitoperatorKafka-historyrecoverychoice.
+Resume: No07implementation/reviewrerunneededunlesssourcechanges:cc22566R2clean,rootpostwavePASS,114web/native/browser/static/defaultverified. Awaituserchoicealreadyasked:restoremissingKafka-historyfrombackupORauthorizefreshSEPARATEisolatedsyntheticdemo,allcurrentcontainers/volumes/historypreserved. DoNOTresetexistingoffsets/groups/PG/data/volumesorweakenfailclosedguard. Missingranges04-07-STACK-HOLD.07notaccepted/7of17,no08untilholdresolvedandacceptancegatesclear. Usercfg/.serenauntouched,noPhase4remotebefore16/noPhase5. Priorfailure/reviewsR0/R1/R2preserved;currentownedproducernone.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.

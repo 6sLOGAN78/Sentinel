@@ -42,10 +42,11 @@ change consumer groups/config/state, clear PG fences/decisions/reservations,
 weaken the guard, delete volumes/topics or claim current-source gates repaired
 the historical pipeline. No such mutation was performed.
 
-Remaining safe work in current turn: independentR2 of CR02, rootpostwave
-build/defaulttests and metadata/scanner verification. Keep07pendingacceptance
+IndependentR2 of CR02 is now clean at2059335/sourcecc22566;rootpostwave
+build/defaulttestsEXIT0/13.857s,END13:08:56Z,cachedGo/web114/generator121.
+Metadata/finalscanner verification is separate. Keep07pendingacceptance
 and7/17accepted while this explicitly recorded stack hold remains unresolved.
-Then request a concrete operator choice: restore the missing Kafka history
+Root requested a concrete operator choice: restore the missing Kafka history
 from a suitable backup, or authorize a separate fresh isolated synthetic demo
 stack that leaves current containers/volumes/history intact. A fresh environment
 is not restoration or proof that the old detector processed the missing range.

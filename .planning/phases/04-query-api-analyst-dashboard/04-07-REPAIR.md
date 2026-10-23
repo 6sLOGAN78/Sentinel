@@ -1,6 +1,7 @@
 # 04-07 review repair — persistent detail identity vs transient generation
 
-Status: CR01closed_by_R1_new_CR02_navigation_repair_pending; acceptance remains7/17.
+Status: CR01_and_CR02_closed_by_clean_R2_root_gate_passed_operator_stack_hold;
+acceptance remains7/17.
 
 IndependentR0at3738d7a/source242b162foundoneBLOCKER: persisted event detail
 history compares sentinelEventsOwner including transient session generation.
@@ -28,6 +29,18 @@ static/default/scanner gates; retain previous failures/diagnosticlimits. No
 unownedsource,session.tsx/Appchange,dependency,fixtureweakening/deadlinechange,
 remote/destructive action, broadscannerignore orPhase5 authority. Independent
 R1 and rootpostwave required before accepting07/starting08. Rootowns tracking.
+
+## Current disposition — independent R2 and root postwave passed
+
+R2at2059335/sourcecc22566cleanzeroissues,resolvesCR01+CR02;preserved
+04-REVIEW-07-R2. Rootpostwavebackend/webbuild+make testEXIT0/13.857s,
+END2026-10-23T13:08:56.404072Z,cachedGo/web114/gen121,private root-postwave.log.
+Allimplementation/reviewrepairlocalgatescomplete;earlierpendingsectionsbelow
+arehistoricalexecutionprovenance. Acceptance stillheld7/17becauseactualKafka
+retainedstart=endbeyondall6detectorcheckpoints. See04-07-STACK-HOLD. No offset/
+group/PG/volume reset or historyguardweakening. Await operatorbackuprestoration
+or explicitapprovalforfreshseparateisolatedsyntheticstackpreservingoldstate.
+No08/Phase5/remoteauthorityorwholepipelinePASSinferred.
 
 ## Executor results — 2026-10-23, pending independent R1
 
