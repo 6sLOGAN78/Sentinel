@@ -224,6 +224,7 @@ export default function Events() {
     pageScope.generation ??= owner.generation;
     writeLocation(current.current, owner, true, selectedRef.current);
     const pop = () => {
+      if (window.location.pathname !== "/events") return;
       const own = ownsLocation(owner);
       const next = readFilters(own);
       current.current = next;

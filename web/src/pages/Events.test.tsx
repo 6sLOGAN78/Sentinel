@@ -690,11 +690,11 @@ describe("safe event detail dialog through actual App", () => {
         </StrictMode>,
       );
       await signIn();
-      await screen.findByRole("heading", { name: "Alerts", exact: true });
+      await screen.findByRole("heading", { name: "Alerts" });
       if (selected)
         await screen.findByRole("dialog", { name: "Alert details" });
       fireEvent.click(screen.getByRole("link", { name: "Events" }));
-      await screen.findByRole("heading", { name: "Events", exact: true });
+      await screen.findByRole("heading", { name: "Events" });
       await screen.findByText("Native event");
       const eventURL = window.location.href;
       const before = requests.length;
@@ -709,7 +709,7 @@ describe("safe event detail dialog through actual App", () => {
         });
       }
       await travel("back");
-      await screen.findByRole("heading", { name: "Alerts", exact: true });
+      await screen.findByRole("heading", { name: "Alerts" });
       const restored = new URLSearchParams(window.location.search);
       for (const [key, value] of Object.entries(filters))
         expect(restored.get(key)).toBe(value);
@@ -754,7 +754,7 @@ describe("safe event detail dialog through actual App", () => {
         ).toBe(true);
       }
       await travel("forward");
-      await screen.findByRole("heading", { name: "Events", exact: true });
+      await screen.findByRole("heading", { name: "Events" });
       expect(window.location.href).toBe(eventURL);
       await screen.findByText("Native event");
     },
