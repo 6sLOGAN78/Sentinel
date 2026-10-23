@@ -1,81 +1,108 @@
 ---
 phase: 04-query-api-analyst-dashboard
-reviewed: 2026-10-23T05:05:50Z
+reviewed: 2026-10-23T05:42:55Z
 depth: standard
-review_slice: 04-06
-review_round: R1
-review_sha: c1079a2f0673bbbc8ee71939bbdfd830a1578a2a
-source_sha: 2c6720e
-diff_base: 74578e9
-repair_base: 2436464
-files_reviewed: 11
+review_slice: 04-07
+review_sha: 3738d7a95ebf5ea581a6f52b77a14dfe11120b7e
+source_sha: 242b162abdb0f16708743bfbde016439954807fa
+diff_base: ea2529e104170923806a5be826f36f03a5c11039
+files_reviewed: 13
 files_reviewed_list:
   - backend/internal/query/events.go
-  - backend/internal/storage/clickhouse/query_events.go
-  - backend/internal/query/cursor_test.go
+  - backend/internal/eventquery/handler.go
   - backend/testphase4/events_test.go
-  - backend/cmd/query-api/main.go
-  - api/openapi.yaml
-  - web/src/api/schema.d.ts
+  - backend/test/openapi_runtime_auth_test.go
+  - web/src/components/EventDetails.tsx
   - web/src/pages/Events.tsx
   - web/src/pages/Events.test.tsx
-  - web/src/App.tsx
+  - api/openapi.yaml
+  - web/src/api/schema.d.ts
+  - backend/cmd/query-api/main.go
   - web/src/api/client.ts
-generated_schema_sha256: 24c84112b5e3cd4abbd7bc7648b1fcd40ac5ad2a0e27999282800f350d83632e
-resolved_findings: [CR-01, WR-01]
+  - backend/test/openapi_test.go
+  - .gitleaksignore
+generated_schema_sha256: 7c5d0c380ad4cdf3b17d2fdc25fa0a435d89d89fbc1855c005eb433514e46194
 findings:
-  critical: 0
+  critical: 1
   warning: 0
   info: 0
-  total: 0
-status: clean
+  total: 1
+status: issues_found
 ---
 
-# Phase 4 Plan 06: Code Review Report
+# Phase 4 Plan 07: Code Review Report
 
-**Reviewed:** 2026-10-23T05:05:50Z
+**Reviewed:** 2026-10-23T05:42:55Z
 
-**Depth:** standard; cumulative explicit eleven-path scope, with full re-read of all four repair files.
+**Depth:** standard; explicit thirteen-path scope.
 
-**Status:** clean — zero unresolved BLOCKER or WARNING findings.
+**Status:** issues_found — one BLOCKER; zero WARNING findings.
 
 ## Narrative Findings (AI reviewer)
 
 ### Summary and scope
 
-R1 closes both R0 findings on source 2c6720e at frozen HEAD c1079a2f0673bbbc8ee71939bbdfd830a1578a2a. No additional actionable defect was established in the bounded review. This conclusion applies to the delivered 04-06 search increment, not whole-phase acceptance or certification.
+One reproducible detail-link regression remains: a successful session reached after an earlier failed login cannot restore its selected event after a hard reload and same-identity sign-in. Passing existing tests do not cover this history-owner transition.
 
-Read the complete 04-06-REPAIR and updated 04-06-SUMMARY as context, inspected the actual repair diff, and read all four changed files in full: native adapter, native Events tests, Events page and component tests. The original PLAN/A1/CHECK, CONTRACT/UI-SPEC, eleven source paths and relevant actual dependencies were read during R0. Verified that the six other tracked paths are byte-identical between original 2436464 and frozen c1079a2; the seventh unchanged path is the explicitly declared ignored generated schema, whose SHA-256 still matches 24c84112b5e3cd4abbd7bc7648b1fcd40ac5ad2a0e27999282800f350d83632e. R0 boundary analysis therefore remains applicable to the unchanged source.
+Read all thirteen declared paths fully, the cumulative source diff from accepted06base ea2529e, 04-07 PLAN/A1/CHECK/preserved R0, SCAN-A2/CHECK, SUMMARY and shared CONTRACT/UI-SPEC. Traced relevant actual JWT middleware, API-key verifier/store, native event Get/list adapter, error middleware, App/session lifecycle and retained dialog/test consumers. No root AGENTS.md, .codexignore or project .codex/skills/.agents/skills directory was present. Used the GSD code-review workflow and surgical evidence guidance; no structural/fallow pre-pass was supplied.
 
-No root AGENTS.md, .codexignore or project .codex/skills/.agents/skills directory was present in the original context discovery. Continued the GSD code-review workflow. No structural/fallow pre-pass was supplied.
+The generated declaration is ignored, but explicitly included by the assigned scope as a read-only contract artifact; its SHA-256 matches the declared hash above. The unchanged query/events.go was also explicitly reviewed. The cumulative tracked delta contains ten feature paths plus the root-owned scanner metadata path; no additional feature source path was found.
 
-### R0 finding disposition
+### Critical Issues
 
-**CR-01 — resolved.** At `backend/internal/storage/clickhouse/query_events.go:59-65`, the adapter now compares `toIPv6OrNull(source_ip)` with the bound `toIPv6OrNull({ip:String})`. Both stored and requested representations are normalized after selection of the whole retained identity. Existing stored bytes remain intact. Tenant grouping/predicate, earliest-received whole nullable representation, time/type/outcome filters, tuple pagination, ordering, Limit+1 and query deadlines remain in their original positions. Source normalization is not moved into the pre-dedupe input.
+#### CR-01: [BLOCKER] Persisted event detail links depend on a session generation that resets on reload
 
-A reviewer-run read-only native SELECT confirmed the repaired expression returns true for compressed, expanded and uppercase spellings of `2001:db8::44`, preserves matching for `192.0.2.44`, and yields NULL rather than a match for absent or invalid source IPs. No IPv4/IPv6 false match was observed. The updated native fixture cycles all three accepted stored spellings; `events_test.go:285-312` searches each spelling across five three-row pages and compares the entire fifteen-ID sequence with the expected descending order. A missing cursor on an intermediate page would repeat a page and fail the final sequence assertion.
+**File:** `/home/logan78/Desktop/Sentinel/web/src/pages/Events.tsx:8-13`
 
-**WR-01 — resolved.** At `web/src/pages/Events.tsx:216-221`, restored validation is derived from current applied filters on every render, including initialization and popstate updates. The displayed error combines explicit draft validation with restored-filter validation. Loading at :356 now uses `isLoading`, so a disabled query without data is not represented as a running request. The six cases at `Events.test.tsx:73-110` cover initial and history URLs for invalid IP, limit and reversed range, requiring the actionable message, no loading indicator and no extra request. Initial cases also exercise Clear filters recovery. These cases and the existing twenty Events tests passed in the independent focused run.
+**Related locations:** `Events.tsx:153`, `Events.tsx:164`, `Events.tsx:183-184`; actual dependency `web/src/auth/session.tsx:87,94-96,129-168`.
 
-### Regression analysis
+**Issue:** readSelected rejects a persisted history entry unless sentinelEventsOwner exactly equals the current owner, which embeds the in-memory session generation. Browser history state survives a hard reload, but SessionProvider's generation counter starts again. A failed login, retry or earlier sign-out advances the old counter, so the same subsequently verified subject/tenant/role receives a different generation after reload. readSelected returns an empty selection; the mount effect then rewrites the URL without event_id. The selected event silently disappears despite a valid link and unchanged verified identity. This violates the required refresh/deep-link behavior and is distinct from deliberate cross-identity cleanup.
 
-The native change is confined to the source-IP predicate and tests; it does not alter event selection, storage representation, tenant authority, parameters, range/cursor validation or canonical Event schema. The UI change reads existing applied state without introducing a second state synchronization path, request source, credential path or history mutation. Existing query keys, session/caller cancellation, post-body authority checks, 401 handling, debounce, escaped event rendering, finite page envelope validation and bounded navigation remain unchanged. No new test reliability defect was established. Future detail/triage/SSE/metrics and Phase 5 functionality are outside the delivered slice.
+**Reproduction:** In the actual App under StrictMode, submit a credential rejected with401, then sign in successfully. Open an event detail and reload the page. Sign in with the same successful identity. The dialog does not reopen and event_id is removed from the URL. A first-attempt successful login followed by reload does restore the detail, which explains why the existing happy-path check misses it.
+
+A reviewer-run in-memory component harness loaded the actual App, Events, EventDetails, session and client source without editing files. It executed the failed-login/success/open sequence, retained the resulting URL/history state across a fresh App mount to emulate reload, and signed in with the same identity:
+
+| Observation | Before fresh mount | After same-identity sign-in |
+|---|---|---|
+| Persisted/current generation in owner | 4 | 2 |
+| event_id in URL | present | removed |
+| Event dialog | open | absent |
+| Detail requests after fresh mount | — | 0 |
+
+The harness used the same StrictMode wrapper as main.tsx. This is an independently executed component reproduction, not a new native-browser run.
+
+**Fix:** Separate persistent verified identity from the page-local session generation used for request/cache isolation. For example, persist a structured subject/tenant/role identity and a page-instance marker alongside the generation. On initial bootstrap in a new page instance, restore a syntactically valid event_id when the verified identity matches; within the same page, continue rejecting stale-generation entries and retain explicit sign-out/identity-change URL and cache cleanup. Do not simply remove the ownership check. Add a regression exercising failed login or retry, successful sign-in, opening a detail, preserving history state across a fresh StrictMode mount, and signing in as the same identity; also retain different-identity and same-page stale-session rejection.
+
+### Other boundary analysis
+
+No additional actionable defect was established in the bounded scope. Main registers one production detail route with NewAuthenticatedHandler and supplies the existing JWT verifier. Presence of Authorization selects strict JWT middleware; empty, repeated, malformed and invalid values do not reach the API-key branch. Genuine absence uses the retained read-key verifier/scope check. Verified tenant reaches parameterized native Get with a caller-derived five-second context and retained404/400/503 mapping. Other implemented dashboard routes retain bearer middleware; the legacy constructor is confined to retained direct consumers.
+
+The new typed detail method uses the existing guarded private transport, pre-credential session checks, combined caller/session cancellation, post-parse checks and current401 revocation. Event JSON is React text inside pre/code, with no HTML insertion. Native-dialog focus/Escape behavior is delegated to showModal; no defect is inferred from jsdom's lack of native focus trapping or browser-chrome focus. Query keys retain verified session generation. Existing search/IPv6/cursor/UTC/debounce/paging behavior was traced through the unchanged native adapter and reviewed page code.
+
+The OpenAPI event operation has exactly separate ApiKeyAuth and BearerAuth alternatives and describes strict presence-based dispatch. The runtime fixture uses the production dispatcher and a random-key, correctly claimed, independently verified signed JWT. Owned tests retain the authority/status matrix. Future triage/SSE/rules/overview and Phase5 work are outside this increment.
+
+### Scanner disposition
+
+Verified the exact .gitleaksignore delta against independently approved SCAN-A2/CHECK: only the short explanatory comment and the full commit/path/rule/line fingerprint for historical04-07PLAN line63 were appended; all existing exceptions remain unchanged. .gitleaks.toml is unchanged in the reviewed range. No broad rule/path/regex exclusion or scanner/history rewrite appears in the submitted delta.
+
+Read only nonsensitive metadata from the private original report: one generic-api-key finding at commit5c0454cab0d0eca0ba6541e8a98082275a971571, the declared planning file, line63, and the exact approved fingerprint. A2/CHECK independently classifies it as test-policy prose. The original log retains553commits/EXIT1 at source242b162; the subsequent disposition log records557commits/EXIT0 at d2a3e43f9b5606387446b2d0bba2caa4d89b44fe and its report has zero entries. No Secret/Match/authentication value or raw report was printed. These are inspected execution records, not a fresh reviewer-run full-history scan at frozen3738d7a.
 
 ### Independent diagnostics and limits
 
 | Reviewer-run check | Result |
 |---|---|
-| Direct `./node_modules/.bin/vitest run src/pages/Events.test.tsx` from web | Exit 0, 26/26 tests, 2.02 seconds. No npm pretest or schema regeneration. |
-| Read-only native ClickHouse SELECT over inline Nullable(String) values | Exit 0; all three IPv6 spellings match, IPv4 matches independently, NULL/invalid values do not match. |
-| `git diff --exit-code 2436464..c1079a2` over the six unchanged tracked paths | Exit 0, empty diff. |
-| Generated schema SHA-256 | Exact unchanged declared hash. |
-| Repair source `git diff --check 2436464..2c6720e` | Exit 0. |
+| Direct `./node_modules/.bin/vitest run` from web | Exit0; all106tests across6files;3.07s. No npm pretest or generated-schema rewrite. |
+| `go test -race ./internal/auth ./internal/eventquery ./internal/query -timeout=60s -count=1` from backend | Exit0; all three packages execute and pass. |
+| Focused Go race run selecting TestOpenAPI/TestEvent families in eventquery/query/test | Exit0; relevant packages pass. Its auth selection matched no tests, so the separate unfiltered auth run above was required and completed. |
+| Actual-source App/session/client StrictMode history reproduction described in CR-01 | Exit0; independently exposes the generation4→2 loss of event_id and dialog. |
+| Source-range `git diff --check` | Exit0. |
+| Generated schema SHA-256 | Exact declared hash. |
 
-The root's recorded causal RED and native Events/Alerts/Auth, ninety-test web suite, static/OpenAPI/default and actual browser results were read as execution context. They were not independently rerun or recertified by this reviewer. The native SELECT above verifies expression semantics, not an independent full API fixture run. No new browser session, server, migration, native write fixture, dependency installation or remote operation was started. Standard review does not establish whole-phase tenant-matrix acceptance, production readiness, complete accessibility or performance guarantees.
+The root's reported native current-binary, browser, default/static and scanner results were read as context, not substituted for source analysis or independently recertified. No native write fixture, migration, server, new browser session, dependency installation or remote operation was started for this review. Standard review does not establish whole-phase acceptance, accessibility certification or performance guarantees.
 
 ### Preservation
 
-Only this designated report was written. R0 remains preserved as 04-REVIEW-06-R0.md, SHA-256 e9fc40fe75afdd38702d32b65db05e91a87421b18ebd12e83043b38bacac2592. No source/test file, generated declaration, Git index, commit, root tracking, user configuration or .serena content was changed.
+Only this designated report was written; no source/test/generated declaration, Git index, commit, root tracking, user configuration or .serena content was changed. The previous06R1 report remains separately preserved as04-REVIEW-06-R1.md. Return CR-01 for repair and independent re-review before accepting07.
 
 ---
 

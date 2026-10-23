@@ -23,8 +23,8 @@ Current focus: Phase4 plans01/17/02/03/04/05/06accepted; execute04-07 safe event
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-07candidate242b162/REDc40b1e5/SUMMARYe9a7adb;sourcegatesPASS,SCAN-A2independenthistoricalproseclassificationPASS,rootexactexception/scanner/source-review/rootgatestillpending.
-Status: ActualnativeEvents/Alerts/Auth,web106,OpenAPI11+separatecontract/runtime,three-modestatic,realChromium1440+375,normalmake testPASS. Fullhistoryat242b162EXIT1onehistoricalPLANprosefingerprint;source/generatedreports[]. A2explicitlyaddsroot.gitleaksignore13thmetadata/reviewpathONLYexactfingerprint/comment,nobroadbypass. NoPhase4remoteauthoritybefore04-16.
+Plan: 04-07R0at3738d7a/source242b162foundCR01sameidentitydetailreloadlostafterfailedlogin/retry; repaircausalRED/GREENpending. Original13-pathreviewandSCAN-A2preserved.
+Status: Prioractualnative/web106/browser/static/defaultPASSdoesnotnegateR0counterexample. SCAN-A2classifiedexacthistoricalprose;onlyapprovedfingerprintadded,d2a3e43fullhistoryEXIT0/557commits. RepairownedEvents.tsx/Events.test.tsx only,persistentverifiedidentityvsperpagesessiongeneration,retainstale/foreign/sessionprivacyguards. NoPhase4remoteauthoritybefore04-16.
 Progress: 63/73 accepted numberedplans; Phase4 7/17accepted,10remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
@@ -216,7 +216,7 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 ## Session Continuity
 
 Last session:2026-10-23T05:06:58Z, Phase4 plan06acceptedaftercleanR1/rootgate.
-Resume: Finish07closeout,doNOTrestartsource242b162. ApplyindependentlyapprovedSCAN-A2exacthistoricalprosefingerprintafterdeclared13throotmetadataownership,repeatpinnedfullhistoryscan,independentsourcereviewfull12featurepaths+.gitleaksignore,rootpostwavebeforeacceptance/08. StrictAuthorizationpresencealwaysJWT/nokeyfallback/legacylookupretained;web106/currentbrowser/nativeactualPASS. Maintain7/17accepteduntilcleanreview/rootgate/scannerzero. Preserveusercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority;noPhase5transition. Priorfailedscanner/rejectedbrowserfocusassertionsretained.
+Resume: Execute07CR01repairper04-07-REPAIR;tests-onlycausalREDthenminimalGREENinownedeventspage/tests,realfailedlogin/retry/reloadbrowserproof,independentR1/rootpostwave/scannerzero beforeacceptance/08. DoNOTrestart242b162orweakenowner/cache/sessionguards. CurrentR0preserved04-REVIEW-07-R0;SCAN-A2exactexceptionapproved/applied,historyPASS557atd2a3e43. Maintain7/17accepted. Preserveusercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority;noPhase5transition. Priorfailedscanner/rejectedbrowserfocusassertionsretained.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.
