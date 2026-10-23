@@ -1,7 +1,8 @@
 # 04-07 ownership amendment A1 — actual event detail wiring
 
-Status: REVISED PROPOSAL after independentR0found one required contract-test
-path. IndependentR1approval required before source/test edits; R0preserved.
+Status: APPROVED by independentR1PASS/zeroissues after R0identified the required
+contract-test path. Root synchronizes PLAN/both tasks before source/test edits.
+R0preserved. This is planning approval, not runtime/source acceptance.
 
 Read-only inspection at accepted06baselineea2529e establishes two unavoidable
 runtime/client omissions from the original nine-path event-detail plan; the

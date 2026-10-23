@@ -23,7 +23,7 @@ Current focus: Phase4 plans01/17/02/03/04/05/06accepted; execute04-07 safe event
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-06 accepted afterR0CR01/WR01repairRED4619571/GREEN2c6720e,cleanR1/rootgate; execute04-07next.
+Plan: 04-06accepted;04-07A1R1independentPASS/zeroissues,exact12-pathenvelopeapproved; executeTask1causalREDthenTask2strictdualautheventdetails.
 Status: ActualnativeEvents/Alerts/Auth,web90,OpenAPI11,three-modestatic,realChromium1440+375,normalmake testPASS;R1cleanatc1079a2,rootpostwaveEXIT0/12.834sat05:06:58Z(cachedGo/web90/gen121). StoredIPv6/deep-linkcounterexamplesandoriginalfailedattemptspreserved. NoPhase4remoteauthoritybefore04-16.
 Progress: 63/73 accepted numberedplans; Phase4 7/17accepted,10remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
@@ -216,7 +216,7 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 ## Session Continuity
 
 Last session:2026-10-23T05:06:58Z, Phase4 plan06acceptedaftercleanR1/rootgate.
-Resume: Execute04-07safeeventdetailswithstrictdualcredentialdispatchandlegacylookupcompatibility; inspectactualwiring/guardedclientownershipBEFOREediting,checkpointifextraunownedpathsneeded.04-06complete,norestart. Maintain7/17accepteduntil07cleanreview/rootgate. Preserveusercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority;noPhase5transition. Rootowns tracking. Priorfailures/reviewR0retained.
+Resume: Execute04-07amended12-pathPLAN/A1R1approved;extrasmain.go/client.ts/openapi_test.goexplicit. StrictAuthorizationpresencealwaysJWT,nokeyfallback;actualruntime/nativeuseproductiondispatch;legacylookupcompatibilityretained. No13thsourcepathwithoutcausalcheckpointBEFOREedit.04-06complete,norestart. Maintain7/17accepteduntil07cleanreview/rootgate. Preserveusercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority;noPhase5transition. Rootowns tracking. Priorfailures/reviewR0retained.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.
