@@ -646,6 +646,119 @@ describe("safe event detail dialog through actual App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   }
+  it.each([false, true])(
+    "keeps destination Alerts filters on real Back/Forward (selected=%s)",
+    async (selected) => {
+      const alertID = "a".repeat(64);
+      const filters = {
+        severity: "critical",
+        status: "open",
+        search: "needle",
+        rule_id: "AUTH_BRUTE_FORCE",
+        limit: "5",
+      };
+      const params = new URLSearchParams(filters);
+      if (selected) params.set("alert_id", alertID);
+      window.history.replaceState(null, "", "/alerts?" + params);
+      const requests: Request[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (request: Request) => {
+          const path = new URL(request.url).pathname;
+          if (path === "/api/v1/session")
+            return Response.json({
+              subject: "events-operator",
+              tenant_id: "events-tenant",
+              role: "viewer",
+              expires_at: new Date(Date.now() + 600000).toISOString(),
+            });
+          requests.push(request);
+          if (path === "/api/v1/alerts")
+            return Response.json({
+              items: [],
+              next_cursor: null,
+              has_more: false,
+            });
+          if (path.startsWith("/api/v1/alerts/"))
+            return new Response("", { status: 404 });
+          return Response.json(page());
+        }),
+      );
+      render(
+        <StrictMode>
+          <App queryClient={new QueryClient()} />
+        </StrictMode>,
+      );
+      await signIn();
+      await screen.findByRole("heading", { name: "Alerts", exact: true });
+      if (selected)
+        await screen.findByRole("dialog", { name: "Alert details" });
+      fireEvent.click(screen.getByRole("link", { name: "Events" }));
+      await screen.findByRole("heading", { name: "Events", exact: true });
+      await screen.findByText("Native event");
+      const eventURL = window.location.href;
+      const before = requests.length;
+      async function travel(direction: "back" | "forward") {
+        await act(async () => {
+          await new Promise<void>((resolve) => {
+            window.addEventListener("popstate", () => resolve(), {
+              once: true,
+            });
+            window.history[direction]();
+          });
+        });
+      }
+      await travel("back");
+      await screen.findByRole("heading", { name: "Alerts", exact: true });
+      const restored = new URLSearchParams(window.location.search);
+      for (const [key, value] of Object.entries(filters))
+        expect(restored.get(key)).toBe(value);
+      expect(
+        (screen.getByLabelText("Severity") as HTMLInputElement).value,
+      ).toBe("critical");
+      expect((screen.getByLabelText("Status") as HTMLInputElement).value).toBe(
+        "open",
+      );
+      expect(
+        (screen.getByLabelText("Search alerts") as HTMLInputElement).value,
+      ).toBe("needle");
+      await waitFor(() =>
+        expect(
+          requests
+            .slice(before)
+            .some(
+              (request) => new URL(request.url).pathname === "/api/v1/alerts",
+            ),
+        ).toBe(true),
+      );
+      for (const request of requests
+        .slice(before)
+        .filter(
+          (request) => new URL(request.url).pathname === "/api/v1/alerts",
+        )) {
+        const query = new URL(request.url).searchParams;
+        for (const [key, value] of Object.entries(filters))
+          expect(query.get(key)).toBe(value);
+        expect(query.has("alert_id")).toBe(false);
+      }
+      expect(restored.get("alert_id")).toBe(selected ? alertID : null);
+      if (selected) {
+        await screen.findByRole("dialog", { name: "Alert details" });
+        expect(
+          requests
+            .slice(before)
+            .some(
+              (request) =>
+                new URL(request.url).pathname === `/api/v1/alerts/${alertID}`,
+            ),
+        ).toBe(true);
+      }
+      await travel("forward");
+      await screen.findByRole("heading", { name: "Events", exact: true });
+      expect(window.location.href).toBe(eventURL);
+      await screen.findByText("Native event");
+    },
+  );
   async function freshPage() {
     // A hard reload creates fresh modules/provider counters, but preserves the
     // browser URL/history. React cleanup is restored away by the caller below.
