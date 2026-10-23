@@ -1,6 +1,8 @@
 # 04-05 ownership amendment A1 — actual detail dependency wiring
 
-Status: PROPOSED; independent planning approval required before implementation.
+Status: APPROVED by independent04-05-OWNERSHIP-A1-CHECK (PASS,zeroissues).
+Root incorporated the exact three paths and constraints into PLAN/Task2 before
+implementation. Runtime/source acceptance and all original gates remain pending.
 
 Read-only inspection at accepted `fdd3938` found three necessary consumers or
 adapters absent from the original nine-file ownership. No source/test changes
