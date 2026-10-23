@@ -1,5 +1,6 @@
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -7,9 +8,11 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
-import type { AlertPage } from "../api/client";
+import { createAPIClient } from "../api/client";
+import type { AlertDetail, AlertPage } from "../api/client";
 
 const id = "a".repeat(64);
 const eventID = "00000000-0000-4000-8000-000000000001";
@@ -31,16 +34,22 @@ const workflow: AlertPage["items"][number] = {
   assignee: null,
   version: 1,
 };
-function detail() {
+function detail(): AlertDetail {
   return {
     workflow,
     detection: {
       schema_version: 1,
-      ...Object.fromEntries(
-        Object.entries(workflow).filter(
-          ([key]) => !["updated_at", "assignee", "version"].includes(key),
-        ),
-      ),
+      alert_id: id,
+      tenant_id: workflow.tenant_id,
+      created_at: workflow.created_at,
+      rule_id: workflow.rule_id,
+      rule_version: workflow.rule_version,
+      severity: workflow.severity,
+      status: "open",
+      entity_key: workflow.entity_key,
+      event_count: workflow.event_count,
+      window_start: workflow.window_start,
+      window_end: workflow.window_end,
       sample_event_ids: [eventID],
       dedupe_key: "recorded-" + "x".repeat(1000),
       summary: malicious,
@@ -71,6 +80,7 @@ function signIn() {
 async function start(
   read: (request: Request) => Promise<Response> = async () =>
     Response.json(detail()),
+  strict = false,
 ) {
   const requests: Request[] = [];
   vi.stubGlobal(
@@ -95,7 +105,15 @@ async function start(
     }),
   );
   const cache = new QueryClient();
-  render(<App queryClient={cache} />);
+  render(
+    strict ? (
+      <StrictMode>
+        <App queryClient={cache} />
+      </StrictMode>
+    ) : (
+      <App queryClient={cache} />
+    ),
+  );
   signIn();
   await screen.findByText(workflow.summary);
   return { requests, cache };
@@ -131,6 +149,7 @@ describe("alert evidence details", () => {
     });
   });
   afterEach(() => {
+    cleanup();
     Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
     Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
     vi.restoreAllMocks();
@@ -143,7 +162,9 @@ describe("alert evidence details", () => {
     const { dialog, trigger } = await open();
     await within(dialog).findByText("Some evidence is no longer retained.");
     expect(dialog.textContent).toContain("AUTH_BRUTE_FORCE version 77");
-    expect(dialog.textContent).toContain(malicious);
+    expect(dialog.textContent).toContain(
+      JSON.stringify(malicious).slice(1, -1),
+    );
     expect(dialog.textContent).toContain("recorded-" + "x".repeat(1000));
     expect(dialog.querySelector("img")).toBeNull();
     expect(dialog.querySelector("script")).toBeNull();
@@ -154,7 +175,7 @@ describe("alert evidence details", () => {
     expect(document.activeElement).toBe(
       within(dialog).getByRole("button", { name: "Close alert details" }),
     );
-    fireEvent.cancel(dialog);
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(trigger);
     expect(new URLSearchParams(window.location.search).has("alert_id")).toBe(
@@ -178,6 +199,16 @@ describe("alert evidence details", () => {
     await screen.findByRole("dialog");
     act(() => window.history.forward());
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("retains the selected deep-link URL during StrictMode effect replay", async () => {
+    window.history.replaceState(null, "", `/alerts?alert_id=${id}`);
+    await start(undefined, true);
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByText("Some evidence is no longer retained.");
+    expect(new URLSearchParams(window.location.search).get("alert_id")).toBe(
+      id,
+    );
   });
 
   it("announces loading then allows dependency retry and honest empty evidence", async () => {
@@ -222,16 +253,18 @@ describe("alert evidence details", () => {
       within(dialog).getByRole("button", { name: "Refresh alert details" }),
     );
     await within(dialog).findByText("Could not load alert details. Try again.");
-    expect(dialog.textContent).toContain(malicious);
+    expect(dialog.textContent).toContain(
+      JSON.stringify(malicious).slice(1, -1),
+    );
   });
 
   it("aborts detail when closed and discards a body that arrives after sign-out", async () => {
     let release!: (value: unknown) => void;
     const { requests, cache } = await start(async () => {
       const response = Response.json(detail());
-      response.json = () =>
+      response.text = () =>
         new Promise((resolve) => {
-          release = resolve;
+          release = (value) => resolve(JSON.stringify(value));
         });
       return response;
     });
@@ -250,4 +283,66 @@ describe("alert evidence details", () => {
     expect(window.sessionStorage.length).toBe(0);
     expect(window.location.href).not.toContain("detail-test-credential");
   });
+
+  it("revokes the current session on detail401 and rejects invalid deep-link IDs without a detail request", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/alerts?alert_id=" + "x".repeat(4096),
+    );
+    const { requests } = await start(
+      async () => new Response(null, { status: 401 }),
+    );
+    expect(requests).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await open();
+    await screen.findByRole("heading", { name: "Sign in to Sentinel" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(new URLSearchParams(window.location.search).has("alert_id")).toBe(
+      false,
+    );
+  });
+
+  it.each(["caller", "session"])(
+    "guards parsed detail bodies after %s cancellation",
+    async (kind) => {
+      let finish!: (text: string) => void;
+      let parsing = false;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          const response = Response.json(detail());
+          response.text = () => {
+            parsing = true;
+            return new Promise((resolve) => {
+              finish = resolve;
+            });
+          };
+          return response;
+        }),
+      );
+      const lifetime = new AbortController(),
+        caller = new AbortController();
+      let current = true;
+      const unauthorized = vi.fn();
+      const client = createAPIClient(
+        () => "guard-test-credential",
+        lifetime.signal,
+        () => current,
+        unauthorized,
+      );
+      const result = client
+        .alertDetail(id, caller.signal)
+        .catch((failure: unknown) => failure);
+      await waitFor(() => expect(parsing).toBe(true));
+      if (kind === "caller") caller.abort();
+      else {
+        current = false;
+        lifetime.abort();
+      }
+      finish(JSON.stringify(detail()));
+      expect(await result).toMatchObject({ name: "AbortError" });
+      expect(unauthorized).not.toHaveBeenCalled();
+    },
+  );
 });

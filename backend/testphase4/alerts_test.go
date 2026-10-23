@@ -119,7 +119,7 @@ func TestPhase4Alerts(t *testing.T) {
 	}
 	token := tokenFor(tenant)
 	t.Run("detail_canonical_evidence_and_tenant_boundaries", func(t *testing.T) {
-		testAlertDetails(t, ctx, cfg, base, binary, root, secret, token, tokenFor(foreign), tenant, foreign, ids)
+		testAlertDetails(ctx, t, cfg, base, binary, root, secret, token, tokenFor(foreign), tenant, foreign, ids)
 	})
 	getPage := func(t *testing.T, q url.Values, credential string) alertListPage {
 		t.Helper()
@@ -249,7 +249,7 @@ func TestPhase4Alerts(t *testing.T) {
 	}
 }
 
-func testAlertDetails(t *testing.T, ctx context.Context, cfg *config.Config,
+func testAlertDetails(ctx context.Context, t *testing.T, cfg *config.Config,
 	base, binary, root, secret, token, foreignToken, tenant, foreign string, ids map[int]string,
 ) {
 	t.Helper()
@@ -283,8 +283,10 @@ func testAlertDetails(t *testing.T, ctx context.Context, cfg *config.Config,
 	orphan.AlertID = strings.ReplaceAll(uuid.NewString(), "-", "") + strings.Repeat("0", 32)
 	foreignDetection := *detection
 	foreignDetection.AlertID, foreignDetection.TenantID = ids[25], foreign
+	repeated := *detection
+	repeated.AlertID, repeated.SampleEventIDs = ids[3], []string{samples[2], samples[2], missing, missing}
 	require.NoError(t, storageclickhouse.NewAlertStore(conn).InsertBatch(ctx,
-		[]*contracts.Alert{detection, detection, &orphan, &foreignDetection}))
+		[]*contracts.Alert{detection, detection, &orphan, &foreignDetection, &repeated}))
 	read := func(t *testing.T, address, id, credential string, expected int) []byte {
 		t.Helper()
 		status, body := getJSON(t, address+"/api/v1/alerts/"+id, credential, "")
@@ -319,6 +321,16 @@ func testAlertDetails(t *testing.T, ctx context.Context, cfg *config.Config,
 		require.Contains(t, detail.Explanation, "AUTH_BRUTE_FORCE")
 		require.Contains(t, detail.Explanation, "77")
 		require.NotContains(t, detail.Explanation, "threshold", "current config cannot stand in for version77")
+	})
+	t.Run("repeated_sample_ids_are_unique_and_missing_detection_is_not_fabricated", func(t *testing.T) {
+		var detail struct {
+			Evidence []contracts.Event `json:"evidence"`
+			Missing  []string          `json:"missing_evidence_ids"`
+		}
+		require.NoError(t, json.Unmarshal(read(t, base, ids[3], token, 200), &detail))
+		require.Len(t, detail.Evidence, 1)
+		require.Equal(t, []string{missing}, detail.Missing)
+		read(t, base, ids[5], token, 404)
 	})
 	t.Run("foreign_orphan_unknown_and_invalid", func(t *testing.T) {
 		read(t, base, ids[25], token, 404)
