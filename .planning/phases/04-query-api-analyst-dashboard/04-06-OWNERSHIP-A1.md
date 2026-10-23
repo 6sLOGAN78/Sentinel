@@ -1,6 +1,8 @@
 # 04-06 ownership amendment A1 — guarded typed event search
 
-Status: PROPOSED; independent approval required before implementation.
+Status: APPROVED by independent04-06-OWNERSHIP-A1-CHECK, PASS/zeroissues.
+Root incorporates the exact one-path addition and constraints into PLAN before
+execution. This is planning approval, not runtime/source acceptance.
 
 At accepted baseline74578e9, the executor stopped before any source/test edit:
 the current APIClient returns only session, alerts and alertDetail. Session
