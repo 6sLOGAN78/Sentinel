@@ -12,3 +12,6 @@
 778d3dbb5b6a373604e26b0f9193c6d01008142f:.planning/phases/04-query-api-analyst-dashboard/04-07-PLAN.md:generic-api-key:58
 5d11ca2d72cdc303a27e75900eb4d4afd4434108:.planning/phases/04-query-api-analyst-dashboard/04-17-PLAN.md:generic-api-key:70
 5d11ca2d72cdc303a27e75900eb4d4afd4434108:.planning/phases/04-query-api-analyst-dashboard/04-17-PLAN.md:generic-api-key:101
+# Historical event-detail test-policy prose, independently classified in
+# 04-07-SCAN-A2-CHECK.md. This exact historical fingerprint only.
+5c0454cab0d0eca0ba6541e8a98082275a971571:.planning/phases/04-query-api-analyst-dashboard/04-07-PLAN.md:generic-api-key:63
