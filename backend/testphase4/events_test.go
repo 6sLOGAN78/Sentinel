@@ -161,6 +161,10 @@ func TestPhase4Events(t *testing.T) {
 		q.Set("limit", "200")
 		ipv6 := getPage(t, q, token)
 		require.Len(t, ipv6.Items, 15, "IPv6 filter is canonicalized")
+		for _, spelling := range []string{"2001:db8::44", "2001:DB8::44"} {
+			q.Set("source_ip", spelling)
+			require.Equal(t, ipv6.Items, getPage(t, q, token).Items, "equivalent IPv6 query preserves identities and order")
+		}
 		q = filters()
 		q.Del("source_ip")
 		q.Set("event_type", "policy.decision")
@@ -283,12 +287,13 @@ func nativeEventFixtureRows(
 	makeEvent func(int, string, time.Time) *contracts.Event, tenant, foreign string, from, now time.Time,
 ) []*contracts.Event {
 	str := func(s string) *string { return &s }
+	ipv6Spellings := []string{"2001:db8::44", "2001:0db8:0:0:0:0:0:44", "2001:DB8::44"}
 	events := make([]*contracts.Event, 0, 65)
 	for n := 1; n <= 60; n++ {
 		event := makeEvent(n, tenant, from.Add(time.Duration((n-1)/5)*time.Millisecond))
 		switch n % 4 {
 		case 2:
-			event.SourceIP, event.EventType, event.Outcome = str("2001:db8::44"), "net.request", str("success")
+			event.SourceIP, event.EventType, event.Outcome = str(ipv6Spellings[(n/4)%3]), "net.request", str("success")
 		case 3:
 			event.SourceIP, event.EventType, event.Outcome = str("198.51.100.1"), "policy.decision", nil
 		case 0:

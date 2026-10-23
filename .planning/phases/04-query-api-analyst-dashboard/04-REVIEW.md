@@ -1,83 +1,102 @@
 ---
 phase: 04-query-api-analyst-dashboard
-reviewed: 2026-10-23T04:06:43Z
+reviewed: 2026-10-23T04:58:12Z
 depth: standard
-review_slice: 04-05
+review_slice: 04-06
 review_round: R0
-review_sha: 1b033661baab712f38c0ff6e517733c50a84f04a
-source_sha: 01ca62a52523869d1abd8fdd0e2609a671f911a8
-diff_base: fdd3938
-files_reviewed: 12
+review_sha: bc27d83abcbeba290a2e9d08f044c606b07d60d9
+source_sha: 2436464
+diff_base: 74578e9
+files_reviewed: 11
 files_reviewed_list:
-  - api/openapi.yaml
+  - backend/internal/query/events.go
+  - backend/internal/storage/clickhouse/query_events.go
+  - backend/internal/query/cursor_test.go
+  - backend/testphase4/events_test.go
   - backend/cmd/query-api/main.go
-  - backend/internal/query/alerts.go
-  - backend/internal/query/types.go
-  - backend/internal/storage/clickhouse/query_alerts.go
-  - backend/internal/storage/postgres/query_alerts.go
-  - backend/testphase4/alerts_test.go
-  - web/src/api/client.ts
+  - api/openapi.yaml
   - web/src/api/schema.d.ts
-  - web/src/components/AlertDetails.test.tsx
-  - web/src/components/AlertDetails.tsx
-  - web/src/pages/Alerts.tsx
-generated_schema_sha256: 8b49a4adf11528b42ddce1b0eb40bd52f5667132652ae9be0b3ad24efabe21aa
+  - web/src/pages/Events.tsx
+  - web/src/pages/Events.test.tsx
+  - web/src/App.tsx
+  - web/src/api/client.ts
+generated_schema_sha256: 24c84112b5e3cd4abbd7bc7648b1fcd40ac5ad2a0e27999282800f350d83632e
 findings:
-  critical: 0
-  warning: 0
+  critical: 1
+  warning: 1
   info: 0
-  total: 0
-status: clean
+  total: 2
+status: issues_found
 ---
 
-# Phase 4 Plan 05: Code Review Report
+# Phase 4 Plan 06: Code Review Report
 
-**Reviewed:** 2026-10-23T04:06:43Z
+**Reviewed:** 2026-10-23T04:58:12Z
 
-**Depth:** standard, full explicit twelve-path scope.
+**Depth:** standard; all eleven explicitly declared paths read in full.
 
-**Status:** clean — no actionable BLOCKER or WARNING established in this slice.
+**Status:** issues_found — one BLOCKER and one WARNING.
 
 ## Narrative Findings (AI reviewer)
 
 ### Summary and scope
 
-Read all twelve submitted files in full, including the explicitly authorized ignored generated declaration, and inspected their diff from accepted 04-04 baseline fdd3938. This is independent adversarial source review at frozen HEAD 1b033661baab712f38c0ff6e517733c50a84f04a of implementation source 01ca62a52523869d1abd8fdd0e2609a671f911a8. No reportable bug, security vulnerability or robustness defect was established. This conclusion applies to the delivered detail slice, not whole-Phase-4 acceptance or a security certification.
+The event-search increment has a reproducible IPv6 false-negative bug and an invalid-deep-link state defect. Review covers source candidate 2436464 at frozen HEAD bc27d83abcbeba290a2e9d08f044c606b07d60d9 against accepted baseline 74578e9. Read the complete 04-06 PLAN, OWNERSHIP-A1, OWNERSHIP-A1-CHECK, CONTRACT, UI-SPEC and SUMMARY; the SUMMARY was context rather than correctness authority. Read each declared source/test file and its tracked diff. The expressly declared ignored generated schema was inspected and its hash verified without regeneration or staging.
 
-Read the complete 04-05 PLAN, approved OWNERSHIP-A1 and A1-CHECK, shared CONTRACT, approved UI-SPEC and SUMMARY. The SUMMARY supplied intended behavior, not evidence of source correctness. No root AGENTS.md, .codexignore, project .codex/skills or .agents/skills directory was present. Applied the available GSD code-review and Karpathy instructions. No structural/fallow pre-pass was supplied or performed.
+No root AGENTS.md, .codexignore, project .codex/skills or .agents/skills directory was present. Applied the GSD code-review skill. No structural/fallow findings were supplied. Dependencies traced include event validation and ingestion normalization, Kafka serialization, native event insertion/Get and table schema, shared cursor/time/page primitives, bearer verification and legacy lookup, SessionProvider, existing Alerts navigation behavior, and React Query disabled-query state semantics.
 
-Relevant actual dependencies inspected include CH canonical AlertStore.Get and EventStore.Get, CH query settings, PG workflow storage and migrations 003/004/005, detector manifest binding/adoption, detection Rules/Fingerprint, canonical Alert/Event decoding and validation, writer validation, existing event handler, SessionProvider and App mounting. Earlier mapping/stack descriptions were not treated as current facts.
+### Critical Issues
 
-### Boundary analysis
+#### CR-01: Canonicalizing only the query makes valid stored IPv6 events unsearchable
 
-- **Ownership and SQL:** query/alerts.go:115–144 obtains the verified principal and validates the path before storage. PG query_alerts.go:67–85 directly binds both tenant and alert ID under the inherited timeout. CH follows successful ownership; unknown/foreign/orphan workflows gain no authority from CH. Queries use bound parameters. Dependency errors map to public 503; missing ownership/detection maps to 404. The existing PG list remains independent of CH and preserves its fifteen-field DTO, filtering, millisecond ordering and cursor handling.
-- **Canonical detection and evidence:** CH query_alerts.go:20–33 composes the tenant-scoped immutable read, fingerprint/conflict checks and canonical validation. Evidence at :39–65 caps recorded IDs at twenty, deduplicates before reading and shares one deadline. Each composed EventStore.Get has its own tenant-and-ID predicate and LIMIT 1; duplicate physical rows cannot consume another ID's result slot. Missing IDs remain explicit and unique in recorded order. Storage failures propagate instead of producing successful empty evidence. Existing event writer validation remains the write boundary.
-- **Recorded rules:** PG query_alerts.go:90–137 binds tenant, alert, rule and exact recorded version to the immutable decision's group/configuration fingerprint. It never substitutes startup parameters. The query returns at most thirty-three rows, using the last as an overflow sentinel; decoded manifests are bounded to 8192 bytes with schema/count/fingerprint checks and exact candidate agreement. Missing/null/invalid/overflowing/conflicting data yields explicit unavailability. Mutable fence binding/adoption and fingerprint semantics were checked: a retained matching definition supports the explanation without implying an immutable historical archive. SQL/transport errors still fail detail.
-- **DTO and generated types:** OpenAPI detail and Go JSON fields agree: workflow, canonical detection, evidence, missing_evidence_ids, rule_explanation and history. Canonical Event/Alert remain separate. Evidence/missing IDs are capped at twenty and future forward history at two. Empty current history is the approved 08/09 refinement, not an invented audit record or a defect in 05. Future PATCH/rules/events/stream contracts are not treated as delivered 05 behavior.
-- **Client lifetime:** client.ts:72–87 uses the existing generated authenticated client. It checks caller cancellation before dispatch and after parsing and checks generation/lifetime after parsing. Shared fetch combines caller/session signals, checks authority before credentials and after headers, and retains current-session 401 revocation. SessionProvider invalidates generation before abort/cache clearing; App keys the subtree by generation. Detail cache keys include verified subject, tenant, role, generation and selected ID. No credential enters public context, URLs, persistent storage or logs.
-- **Dialog, history and privacy:** AlertDetails uses native showModal, explicit initial close focus, cancellation, cleanup and connected-trigger restoration/fallback. JSON and identifiers render as escaped React text with wrapping. Alerts adds selection to its filter URL without forwarding alert_id to the list API. Selection state/ref, popstate handling and owner markers preserve StrictMode replay, Back/Forward and session isolation; cleanup removes the current cursor/selection. Existing UTC minute conversion, filter keys, previous-page bounds and draft/session behavior remain intact. The jsdom open/close shim does not prove native browser focus containment; no native-dialog defect was inferred from that shim.
-- **Test reliability:** native additions exercise actual binary wiring and PG/CH fixtures for evidence, tenant/orphan, outages and retained rules. Component assertions cover actual App/provider/client behavior through fetch-only responses, malicious text escaping, retention, loading/error/retry, deep links, StrictMode, focus restoration, cancellation and stale parsed bodies. No new reliability defect was established. Passing tests did not substitute for tracing the source.
+**Classification:** BLOCKER
+
+**File:** `/home/logan78/Desktop/Sentinel/backend/internal/storage/clickhouse/query_events.go:55-59`
+
+**Related:** `/home/logan78/Desktop/Sentinel/backend/internal/query/events.go:216-221`
+
+**Issue:** The handler converts every IPv6 filter to `netip.Addr.String()`, but the adapter compares it directly to the retained `source_ip` String. The accepted Event contract permits expanded, zero-padded and uppercase IPv6 spellings: `contracts/event.go:328-343` validates without rewriting them, ingestion and Kafka preserve their original bytes, and `storage/clickhouse/events.go:70-74` inserts those bytes into Nullable(String). An event ingested with `2001:0db8:0:0:0:0:0:44` or `2001:DB8::44` appears in unfiltered results but disappears when searched by its own IP. Supplying the exact displayed spelling does not help because the handler always rewrites it to `2001:db8::44`. This violates the delivered IPv6 search behavior and can hide relevant retained events from investigations.
+
+**Reproduction/evidence:** A reviewer-run read-only SELECT on the existing native ClickHouse server used `values('source_ip Nullable(String)', ('2001:0db8:0:0:0:0:0:44'), ('2001:DB8::44'), ('2001:db8::44'))`. Evaluating the adapter's comparison `source_ip = '2001:db8::44'` returned 0, 0 and 1 respectively, while `IPv6NumToString(IPv6StringToNum(source_ip))` returned `2001:db8::44` for all three rows. The native fixture stores only the already-compressed spelling (`events_test.go:291`); expanding the query at :158 does not exercise the stored-spelling case.
+
+**Fix:** After selecting the whole retained identity, compare IP addresses in a normalized/native address representation on both sides, preserving tenant selection, dedupe-before-filter semantics, nullable handling and bound parameters. Handle existing stored rows; normalizing only future writes is insufficient. Add native regression rows with expanded and uppercase IPv6 values and prove canonical and alternate query spellings return the same identities without duplicates or changed page order.
+
+### Warnings
+
+#### WR-01: Invalid Events deep links display a permanent loading state
+
+**Classification:** WARNING
+
+**File:** `/home/logan78/Desktop/Sentinel/web/src/pages/Events.tsx:211`
+
+**Related:** `/home/logan78/Desktop/Sentinel/web/src/pages/Events.tsx:133-142`, `/home/logan78/Desktop/Sentinel/web/src/pages/Events.tsx:350`
+
+**Issue:** Initial URL filters and popstate filters enter component state without setting validation. When an IP, limit or time range is invalid, `enabled` disables the query; a disabled query without data still has `isPending === true`, so the page displays “Loading events…” indefinitely although no request is running. IP debounce does not repair initial IP errors because draft and applied IP already match. Users following an invalid or stale filter link receive neither a field error nor an explanation until they manually submit or clear the form.
+
+**Reproduction/evidence:** Start at `/events?source_ip=bad`, `/events?limit=201`, or `/events?from=2026-10-23T00:00:00Z&to=2026-10-22T00:00:00Z`, then authenticate. A read-only diagnostic evaluated the actual extracted/transpiled filter helpers and the installed React Query QueryObserver. All three yielded `enabled:false`, `requests:0`, `isPending:true`, `isFetching:false`, `status:"pending"`. Source initializes validation to an empty string and renders loading from `isPending` alone. Existing invalid-filter tests submit the form after a valid initial load, missing URL initialization and Back/Forward.
+
+**Fix:** Validate restored filters at initialization and on popstate, show the appropriate existing validation message, and render loading only for an enabled fetch state (for example `isLoading`, with explicit invalid-filter handling). Add component cases for invalid initial URLs and history navigation, asserting a visible actionable error and no permanent loading indicator or request.
+
+### Other boundaries examined
+
+Traced verified tenant selection before storage, Named SQL parameters, whole nullable tuple selection before event filters/order/limit, earliest received_at and deterministic tie selection, millisecond UUID tuple pagination, half-open range/limit bounds, five-second caller-derived query deadlines, strict query fields, and disjoint event/alert AEAD AAD and payload binding. Examined single list registration, unchanged legacy lookup/non-downgrade, guarded client cancellation and post-body authority checks, current-session 401 handling, finite page envelopes, escaped event rendering, debounce, bounded previous history, owner markers, and App navigation/focus. No additional actionable finding was established at this depth. Future event details, triage, SSE, metrics and Phase 5 are outside this slice.
 
 ### Independent diagnostics and limits
 
-Reviewer-run checks on the frozen source:
+- `go test -race ./internal/query -timeout=60s` from backend: exit 0, cached.
+- Direct `./node_modules/.bin/vitest run src/pages/Events.test.tsx` from web: exit 0, 20/20 tests, 1.83 seconds. No npm pretest or generated-file rewrite.
+- Read-only native ClickHouse SELECT over inline values: exit 0; IPv6 mismatch demonstrated above. No data/schema changes.
+- Actual filter-helper/installed QueryObserver diagnostic: exit 0; disabled permanent-pending states demonstrated above.
+- `git diff --check 74578e9..2436464` over the ten tracked declared paths: exit 0.
 
-| Command | Actual result |
-|---|---|
-| `go test -race -timeout=60s ./internal/query/...` from backend | Exit 0, cached; no claim of fresh uncached execution. |
-| `npm test -- --run src/components/AlertDetails.test.tsx` from web | Exit 0, 9/9 focused component cases. Existing pretest regenerated schema.d.ts; before/after SHA-256 is exactly the declared 8b49a4ad…21aa. This was an idempotent generated-file rewrite, not a source-content change. |
-| `git diff --check` | Exit 0 before writing this report. |
-
-Executor native Auth/Alerts, full web/default/static/OpenAPI/browser and scanner results are recorded in SUMMARY and private evidence. They were not rerun or independently re-certified here. Earlier failed runs remain historical failures; no passing result is assigned retroactively. No native fixture, server, browser, migration, scanner, external service or remote operation was started by this reviewer. No new screenshot inspection or whole-suite acceptance is claimed.
-
-Standard-depth source analysis and these focused checks do not establish cross-browser/accessibility certification, screen-reader or 200%-zoom behavior, future triage/audit/SSE integration, whole-Phase-4 tenant matrix, complete Phase-3 aggregate acceptance, production deployment readiness or performance. Root owns remaining acceptance and tracking.
+Prior native, full web, OpenAPI, browser and other gate results were not independently rerun or recertified here. Focused passing tests do not negate the counterexamples. This is standard source review, not whole-phase acceptance, accessibility certification or a production security guarantee. No service, migration, remote action or native write fixture was started by this reviewer.
 
 ### Preservation
 
-The prior report remains byte-identical as 04-REVIEW-04-R1.md, SHA-256 16c8b5b5565c4b9adcb1b90a213ffe104dd0766e8b058c49ca37ca0ad3364099. Only this designated report has new content. No production/test content, Git index, HEAD, commit, STATE, SDK tracking, user .planning/config.json or .serena change was made. The explicitly included generated declaration remains ignored and byte-identical; it was not force-added. No later slice or Phase 5 advancement is authorized by this report.
+Only this designated report was written. The parent preserved the previous report as 04-REVIEW-05-R0.md. No source/test file, generated declaration, Git index, commit, root tracking, user configuration or .serena content was changed. No dependency was installed.
 
 ---
 
 _Reviewer: gsd-code-reviewer_
 
-_Depth: standard; all twelve explicit source paths read in full_
+_Depth: standard_

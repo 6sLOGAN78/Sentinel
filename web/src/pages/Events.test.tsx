@@ -35,8 +35,9 @@ function page(source = "Native event", next: string | null = null): EventPage {
 async function start(
   list: (r: Request) => Promise<Response> = async () => Response.json(page()),
   strict = false,
+  initialURL = "/events?limit=1",
 ) {
-  window.history.replaceState(null, "", "/events?limit=1");
+  window.history.replaceState(null, "", initialURL);
   const requests: Request[] = [];
   vi.stubGlobal(
     "fetch",
@@ -68,6 +69,44 @@ describe("event investigation through the actual App", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     window.history.replaceState(null, "", "/alerts");
+  });
+  it.each([
+    ["source_ip=bad", "Enter a valid IP address."],
+    ["limit=201", "Choose a valid UTC time range of at most 7 days."],
+    [
+      "from=2026-10-23T00:00:00Z&to=2026-10-22T00:00:00Z",
+      "Choose a valid UTC time range of at most 7 days.",
+    ],
+  ])(
+    "validates initial deep link %s without permanent loading",
+    async (q, error) => {
+      const { requests } = await start(undefined, false, `/events?${q}`);
+      expect(screen.getByRole("alert").textContent).toBe(error);
+      expect(screen.queryByText("Loading events…")).toBeNull();
+      expect(requests).toHaveLength(0);
+      fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+      await screen.findByText("Native event");
+      expect(screen.queryByRole("alert")).toBeNull();
+    },
+  );
+  it.each([
+    ["source_ip=bad", "Enter a valid IP address."],
+    ["limit=201", "Choose a valid UTC time range of at most 7 days."],
+    [
+      "from=2026-10-23T00:00:00Z&to=2026-10-22T00:00:00Z",
+      "Choose a valid UTC time range of at most 7 days.",
+    ],
+  ])("validates history deep link %s without a request", async (q, error) => {
+    const { requests } = await start();
+    await screen.findByText("Native event");
+    act(() => {
+      window.history.pushState(null, "", `/events?${q}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(screen.getByRole("alert").textContent).toBe(error);
+    expect(screen.queryByText("Loading events…")).toBeNull();
+    expect(requests).toHaveLength(1);
+    expect(screen.queryByText("Native event")).toBeNull();
   });
   it("loads real event rows through the guarded client and safe text", async () => {
     const payload = "<img src=x onerror=alert(1)>";
