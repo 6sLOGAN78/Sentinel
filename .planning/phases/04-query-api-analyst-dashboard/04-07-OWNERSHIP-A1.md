@@ -1,14 +1,17 @@
 # 04-07 ownership amendment A1 — actual event detail wiring
 
-Status: PROPOSED; independent approval required before source/test edits.
+Status: REVISED PROPOSAL after independentR0found one required contract-test
+path. IndependentR1approval required before source/test edits; R0preserved.
 
 Read-only inspection at accepted06baselineea2529e establishes two unavoidable
-omissions from the original nine-path event-detail plan:
+runtime/client omissions from the original nine-path event-detail plan; the
+independent checker additionally established the contract-test omission:
 
 | Additional path | Exact bounded responsibility |
 |---|---|
 | backend/cmd/query-api/main.go | Inject the existing JWT verifier into the actual single-event auth dispatcher, and replace/remove the blanket middleware rejection that currently returns401 for every Authorization header on this path. Preserve all unrelated startup/routes and ensure one single-event route registration. |
 | web/src/api/client.ts | Add generated typed eventDetail(id,signal) through the existing authenticated transport and its generation/lifetime/caller/session cancellation, parsed-body checks and401 handling. |
+| backend/test/openapi_test.go | Update only the GetEvent-specific assertions in TestOpenAPISecurity that currently pin exactly one ApiKeyAuth alternative and API-key-only text, to require exactly separate ApiKeyAuth and BearerAuth alternatives. Retain scheme definitions, nonempty auth and all other dashboard bearer-only assertions. |
 
 main.go currently installs preventBearerDowngrade before the legacy lookup;
 that middleware rejects even a valid JWT. Editing only the planned lookup
@@ -19,11 +22,20 @@ The typed APIClient exposes session/alerts/alertDetail/events but no single
 event method or public generic transport. The detail UI must not expose token
 context or invent a standalone fetch path to avoid declaring this addition.
 
-The exact envelope becomes eleven paths: originalnine plus these two (ten
+The exact envelope becomes twelve paths: originalnine plus these three (eleven
 tracked plus the existing ignored generated schema). Retain two original
 feature tasks and <=45% implementation-context target. No dependency/framework,
 migration/index, new feature or additional source path. No source edits, tests
 or RED/GREEN were performed for07 before this proposal.
+
+R0found backend/test/openapi_test.go:146-151 necessarily fails the new required
+dual-auth contract regardless of dispatcher implementation. This narrow owned
+fixture correction preserves the gate, rather than skipping or relaxing it.
+Existing eventquery/handler_test.go does not inherently require changes: its
+legacy key-handler constructor can remain the key branch while a distinct
+production dispatcher selects that branch only when Authorization is absent.
+Native and owned runtime tests must use that exact production dispatcher.
+No alternate weak handler may stand in for the real binary's authority boundary.
 
 ## Binding boundaries and unchanged gates
 
@@ -53,11 +65,11 @@ or RED/GREEN were performed for07 before this proposal.
   API-key/missing/invalid/invalid-bearer+key assertions. Real current-binary
   tenant/dual-auth/browser evidence, OpenAPI/drift, local/static/review gates
   remain required. No test, selector or deadline relaxation.
-- Any twelfth source path requires a causal ownership checkpoint before edit;
+- Any thirteenth source path requires a causal ownership checkpoint before edit;
   no hidden shared changes. Root owns shared tracking; userconfig/.serena
   remain untouched/unstaged. No remote/push/hostedCI before04-16human-action
   authority, no destructive/datareset/OPTIMIZE/goldenregen or Phase5 action.
 
-Independent checker must assess the exact eleven-path exception and causal
+Independent checker must assess the exact twelve-path exception and causal
 necessity. Approval is planning only; RED/GREEN, native/browser/local gates,
 independent source review and root acceptance remain required.
