@@ -23,8 +23,8 @@ Current focus: Phase4 plans01/17/02/03/04/05accepted; execute04-06 unique event 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-05 accepted;04-06 A1independentPASS/zeroissues adds guardedclient.ts,eleven-pathenvelopeapproved; executeTask1causalREDthenTask2.
-Status: Source01ca62a,RED942256b/ab98360; nativePG+CHAlerts/Auth/OpenAPI11/web64/static/browser1440+375/normalmake test/preservedstackPASS. IndependentR0cleanat1b033661;rootpostwaveEXIT0/12.571s at04:09:03Z(cachedGo/web64/generator121). Earlier defaulttimeouts/browserfailuresretained;exact60srepeatPASSwithoutsource/capchanges. NoPhase4remoteauthoritybefore04-16.
+Plan: 04-06 candidate2436464 reviewedR0CR01/WR01; repairedRED4619571/GREEN2c6720e,pendingindependentR1/rootgate.04-05accepted.
+Status: ActualmixedIPv6native5vs15and6invaliddeep-linkREDcasespreserved; normalizedpostdedupeIPcomparison+derivedrestoredvalidationrepairPASSnativeEvents/Alerts/Auth,web90,OpenAPI11,three-modestatic,realChromium1440+375,normalmake testcachedGo/web90/generator121. See04-06-REPAIR/R0/private06logs. NoPhase4remoteauthoritybefore04-16.
 Progress: 62/73 accepted numberedplans; Phase4 6/17accepted,11remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
@@ -214,7 +214,7 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 ## Session Continuity
 
 Last session:2026-10-23T04:09:03Z, Phase4 plan05 accepted after cleanindependentreview/rootgate.
-Resume: Execute04-06approved11-pathA1unique-event-searchplan;onlyextraweb/src/api/client.tsindependentlyapproved,backendcursor/registrarcohesiveinownedevents.go/main.go;anyfurtherpathrequirescheckpointBEFOREedit.04-05complete,norestart. Maintain6/17accepteduntil06independentreview+rootgate. Preserveusercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority;noPhase5transition. Rootowns tracking. Private05/root-postwave.log actualEXIT0/END04:09:03Z; earlier failures remain historical.
+Resume: Finish04-06independentR1ofrepairedsource2c6720e,thenrootpostwaveandacceptancebefore07. DoNOTrestartcandidate;committedRED6ffd056/aea966f/4619571,GREEN2436464/2c6720e. Only4originallyownedfileschangedinrepair;11-pathA1scopeunchanged. Maintain6/17accepteduntilcleanR1/rootgate. Preserveusercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority;noPhase5transition. Rootowns tracking. Priorfailures/reviewR0retained.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.

@@ -41,7 +41,11 @@ completed: 2026-10-23
 # Phase 4 Plan 06: Unique event search
 
 **Pending independent source review and root acceptance.** Source candidate
-`2436464` implements both tasks. Phase4 remains6/17 accepted. Requirement IDs
+`2436464` implements both tasks; reviewed counterexamples then required repair
+RED4619571/GREEN2c6720e. R0 found CR01IPv6 string false negatives and WR01invalid
+URL loading, preserved in04-REVIEW-06-R0. Both are now repaired and locally
+verified, pending independentR1/rootacceptance; see04-06-REPAIR for exact gates.
+Phase4 remains6/17 accepted. Requirement IDs
 above represent incremental coverage, not whole-phase acceptance. No07,
 Phase5, remote push or hosted CI was performed.
 
@@ -167,3 +171,17 @@ ignored schema; RED commits precede corresponding source GREEN. Source whitespac
 checks passed, staged source/generated scan reports are[], user dirt unstaged.
 Full-history/metadata scan follows this committed SUMMARY. This self-check does
 not substitute for independent review/root acceptance.
+
+## Review repair addendum
+
+Original scoped passing evidence did not cover stored expanded/uppercase IPv6
+or initial/history invalid links. Causal nativeRED returned5vs15; sixcomponent
+REDcases lacked validation.2c6720e compares normalized nativeIP representations
+after dedupe, retaining all stored bytes and tenant/boundparameter semantics;
+allthreequeryspellings nowreturntheexact15orderedIDsacrossfivepages. Restored
+appliedfilters derive visible validation and disabled queries no longer show
+loading. Clearfilters recovers.90webtests andquality/nativeEvents+Alerts+Auth/
+OpenAPI11/actualChromium1440+375/defaultmake test nowPASS. Full details, failed
+static-loopstyle attempt and actualtimestamps/durations are in04-06-REPAIR.
+Only four originallyowned source/test files changed from2436464; generated
+schema and otherreviewedpaths unchanged. This is not yet accepted.
