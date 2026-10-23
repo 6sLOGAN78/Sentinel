@@ -28,3 +28,38 @@ static/default/scanner gates; retain previous failures/diagnosticlimits. No
 unownedsource,session.tsx/Appchange,dependency,fixtureweakening/deadlinechange,
 remote/destructive action, broadscannerignore orPhase5 authority. Independent
 R1 and rootpostwave required before accepting07/starting08. Rootowns tracking.
+
+## Executor results — 2026-10-23, pending independent R1
+
+Tests-onlyRED3260ab6 at rootdocumentationbaseline738f8f5, minimalGREENec14c34.
+Only Events.tsx/Events.test.tsx changed. Actual StrictMode failed401->success->
+open->save actualURL/history->fresh modules/provider restoration lost event_id
+before repair: review-reload-red EXIT1/1.971s,12:19:22–24Z; four negative identity/
+samepage cases passed. Structured stable verifiedidentity, documentUUID and
+per-document first-generation ownership now restore newpage sameidentity while
+rejecting differentidentity and samepage stale generations, including olddocument
+history after restored-session sign-out. Request/cache/client authority unchanged;
+no App/session/dependency/focus/ignore edit. Six new regression cases,112totalweb.
+
+Final actual gates: focusedGREEN/type/lint0/7.115s; fullweb112/type/lint/build/
+format0/14.067s; normalmake test0/8.812s(Go race/web112/gen121); quickrace+
+three-modevet/build/lint0/16.129s; exactcontract/runtime60s0/2.333s,0/2.418s;
+OpenAPI11/race60s0/5.506s; nativeEvents/Auth/Alerts6m0/8.177s,0/13.334s,0/8.271s.
+Actual currentrace-built queryAPI+devCLI/helper/nativePGCH/Chromium1440+375
+review-browser-ready0/9.156s ends12:24:50Z; actualfailedlogin->retry->selected
+page.reload->sameverifiedidentity generation4→2 preservesURLandcanonicalJSON.
+Priorfocus/Escape/history/longJSON/expandedIPv6/missing/privacychecks retained.
+All exactcommands/SHA/start/end/exits private04-07review-*logs; summarytablelinks
+their meaning. Source/generatedpinned8.30.1reports[]; fullhistoryatec14c34
+EXIT0/562commits/0.871s ends12:27:27Z, existingexactrootexceptionunchanged.
+
+Initialnative3familiesEXIT1werePG15432connection-refused SETUP afterserverrestart;
+browserpreflightEXIT1missingpassingfixture. Preserved,notbehaviorRED/PASS.
+Normalstartofexisting4infracontainerswithpreservedvolumesEXIT0/7.417s/all4healthy
+before independentnative/browserreruns. No recreate/pull/reset/teardown/datachange.
+Eightstackserviceshealthyatboundedread-onlycloseout; detectorstillrestarting,
+exit1/OOMfalse/33restarts. Capturedprivate25-line readonlylog; no unownedfix or
+all-nine/full-pipelinePASSclaim. Rootassessesstackreadinessafterhandoff.
+
+Sourceandmetadata self-check passed; review/rootpostwave remains pending.
+OriginalR0findings and all failed/successful attempts remain distinct evidence.

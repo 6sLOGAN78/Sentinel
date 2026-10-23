@@ -49,6 +49,15 @@ END2026-10-23T05:35:55Z,private root-disposition-history-scan.log. Original
 failed scan remains unchanged. Phase4 stays7/17 accepted. Requirement IDs above describe incremental
 coverage, not whole-phase acceptance or permission to advance.
 
+Independent R0 subsequently found CR-01: a persisted detail owner embedded a
+generation that resets on hard reload. Its failed-login/retry reproduction was
+missing from the original passing gates. Repair RED`3260ab6`/GREEN`ec14c34`
+addresses that finding in the two already-owned Events files only; current
+source is pending independent R1 and root postwave. A separate detector restart
+condition after the host/server interruption leaves preserved-stack readiness
+for root assessment. Neither the original passes nor these scoped repair passes
+constitute whole-stack or whole-phase acceptance.
+
 ## Task commits and ownership
 
 1. Task1, causal tests-only RED: `c40b1e5`.
@@ -193,3 +202,84 @@ tracked file deletion or unexpected source/untracked artifact remains. Only user
 configuration and `.serena/` are dirty. This checks artifact claims, not acceptance:
 the independent/root gates remain pending. Scanner closure afterward is recorded
 above, with explicit independentlyapprovedrootmetadataexception.
+
+## CR-01 repair evidence — pending R1
+
+Tests-only`3260ab6a8d0fb91559deb9afe73e50428f6a4a53` precedes minimal
+GREEN`ec14c34ffaf62eebdfa49059287bc3a46b1a3a17`. Repair baseline is root's
+documentation-only`738f8f5`; feature242b162 was not restarted. Only
+`web/src/pages/Events.tsx` and `Events.test.tsx` changed. Existing R0 report and
+all historical failures remain preserved; tracking/reviews/ignore configuration
+were not edited by this executor.
+
+History now stores an unambiguous JSON tuple of verified subject/tenant/role,
+a per-document random marker and the transient session generation. A fresh
+document may restore its first verified identity despite a reset generation;
+an effect remembers that document's first verified Events generation. Later
+sessions in the same document cannot resurrect old-document history, while
+same-document entries continue requiring the exact current generation. Accepted
+popstate entries are adopted into the current owner. Different subject, tenant
+or role is rejected. Explicit logout cleanup compares structured owner fields.
+Existing client/request/cache generations and lifetime/caller cancellation are
+unchanged. No colon-string identity parsing, auth fallback, persistent token,
+App/session source edit, dependency or focus workaround was introduced.
+
+Regression tests use actual StrictMode App/session/client/components. They first
+fail login with401, successfully retry, open a real component detail, save the
+actual URL/history before unmount, restore it after cleanup, reset modules and
+bootstrap a fresh provider. This models hard reload without falsely applying
+React unmount URL cleanup. The causal RED loses the literal event UUID. Six
+new cases cover recovery, each changed identity field, same-page stale generation,
+and old-document history after restored-session sign-out; the last guard also
+checks cache clearing. All original106 tests remain, final total112.
+
+Actual2026-10-23UTC repair logs in the same private07directory:
+
+| Log | Start–end UTC | Exit / elapsed | Evidence |
+|---|---|---|---|
+| review-reload-red | 12:19:22–12:19:24 | 1 /1.971s | Same-identity hard-reload UUID disappears; four negative guards pass |
+| review-reload-green | 12:20:35–12:20:42 | 0 /7.115s | Focused five cases plus typecheck/lint after minimal owner repair |
+| review-web-final | 12:24:51–12:25:05 | 0 /14.067s | All112 tests, typecheck/lint/build/format |
+| review-default-final | 12:24:51–12:25:00 | 0 /8.812s | Normal make test300s outer, Go race/web112/generator121 |
+| review-quality | 12:21:29–12:21:46 | 0 /16.129s | Quick auth/eventquery/query race60s; default/phase4/integration vet/build/lint |
+| review-contract | 12:21:30–12:21:32 | 0 /2.333s | Exact nonempty TestOpenAPISecurity,60s |
+| review-runtime | 12:21:29–12:21:32 | 0 /2.418s | Exact nonempty signed production-dispatch runtime selector,60s |
+| review-openapi | 12:21:30–12:21:35 | 0 /5.506s | All11 OpenAPI/race/60s cases |
+| review-native-ready | 12:24:02–12:24:10 | 0 /8.177s | Exact Events/race/6m; physical duplicates, mixedIPv6, search/cursor/detail authority retained |
+| review-auth-ready | 12:24:02–12:24:15 | 0 /13.334s | Exact Auth/race/6m and CLI cases |
+| review-alerts-ready | 12:24:02–12:24:10 | 0 /8.271s | Exact Alerts/race/6m |
+| review-browser-ready | 12:24:41–12:24:50 | 0 /9.156s | Actual current race-built API+CLI/helper/native PG+CH, Chromium1440/375, real failed-login/retry/hard-reload recovery |
+| review-source-scan | 12:26:40–12:26:41 | 0 | Pinned8.30.1 staged repair/generated reports[]; exact timestamps retained in log |
+| review-history | 12:27:26–12:27:27 | 0 /0.871s | At ec14c34,562commits, report[], existing exact root-approved exception unchanged |
+
+Each log retains its full command, HEAD/working state and precise timestamps.
+Browser uses actual `page.reload()` on the open selected URL/history, authenticates
+the same identity after prior failed401/success, observes generation4→2 and a new
+page marker, and verifies restored canonical JSON and event_id. Both widths also
+retain native-modal/browser-chrome focus proof, exact Escape trigger, Back/Forward,
+expanded stored IPv6, long safe JSON, missing404 and logout/privacy checks. No route
+or network mock is used; expected401/404 console network messages are distinguished
+from unexpected browser errors. Private results/screenshots are in
+`review-reload-ready/`. Generated schema hash is unchanged.
+
+Initial repair native Events/Auth/Alerts attempts exited1 during setup because
+PostgreSQL15432 was refused after the host/server restart; the browser then
+correctly exited1 before execution because it had no passing native fixture.
+These are **setup failures**, not causal RED or behavioral results. The executor
+started only the four existing Kafka/CH/PG/Redis containers with preserved volumes
+using normal Compose `start --wait`; all four became healthy, exit0/7.417s ending
+12:23:30Z. No recreate/pull/teardown/reset/config/data edit occurred. The separate
+exact native reruns above then passed.
+
+At bounded read-only closeout, eight stack services were healthy but detector was
+still restarting (exit1, OOMfalse,33restarts). Private
+`review-detector-readonly.log` captures the last25 log lines; no raw error, secret,
+header, credential or resolved Compose configuration was printed. No unowned
+detector investigation or repair followed. Root will assess preserved-stack
+readiness separately; **no all-nine-healthy or full-pipeline PASS is claimed**.
+
+Repair self-check: both owned files, all declared artifacts and generated schema
+exist; RED3260ab6 and GREENec14c34 exist in order; source whitespace passes and no
+tracked file deletion occurred. No stub or new security surface was introduced.
+Only user config/.serena remain dirty outside the intentionally updated summary
+and repair evidence. Independent R1/root postwave and stack readiness remain open.
