@@ -10,6 +10,11 @@ export type AlertFilters = NonNullable<
 >;
 export type AlertDetail =
   paths["/api/v1/alerts/{alert_id}"]["get"]["responses"][200]["content"]["application/json"];
+export type EventPage =
+  paths["/api/v1/events"]["get"]["responses"][200]["content"]["application/json"];
+export type EventFilters = NonNullable<
+  paths["/api/v1/events"]["get"]["parameters"]["query"]
+>;
 
 export class APIError extends Error {
   constructor(readonly status: number) {
@@ -51,6 +56,31 @@ export function createAPIClient(
     },
   });
   return {
+    async events(filters: EventFilters = {}, signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const result = await client.GET("/api/v1/events", {
+        params: { query: filters },
+        signal,
+      });
+      assertCurrent();
+      signal?.throwIfAborted();
+      const page = result.data;
+      const limit = filters.limit ?? 50;
+      if (
+        !page ||
+        !Array.isArray(page.items) ||
+        page.items.length > limit ||
+        typeof page.has_more !== "boolean" ||
+        (page.has_more
+          ? typeof page.next_cursor !== "string" ||
+            !page.next_cursor ||
+            page.next_cursor.length > 2048 ||
+            page.items.length !== limit
+          : page.next_cursor !== null)
+      )
+        throw new APIError(503);
+      return page;
+    },
     async session() {
       const result = await client.GET("/api/v1/session");
       // Parsing may finish after logout even when fetch has returned headers.

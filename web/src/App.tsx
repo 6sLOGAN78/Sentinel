@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider, useSession } from "./auth/session";
 import Alerts from "./pages/Alerts";
+import Events from "./pages/Events";
 import "./styles.css";
 
 function SignInPanel() {
@@ -62,8 +63,21 @@ function SignInPanel() {
   );
 }
 
+function subscribeNavigation(notify: () => void) {
+  window.addEventListener("popstate", notify);
+  window.addEventListener("sentinel:navigate", notify);
+  return () => {
+    window.removeEventListener("popstate", notify);
+    window.removeEventListener("sentinel:navigate", notify);
+  };
+}
+
 function AnalystShell() {
   const { session, error, signOut } = useSession();
+  const path = useSyncExternalStore(
+    subscribeNavigation,
+    () => window.location.pathname,
+  );
   return (
     <div className={session ? "app-shell authenticated" : "app-shell"}>
       <a className="skip-link" href="#main-content">
@@ -84,30 +98,53 @@ function AnalystShell() {
       </header>
       {session && (
         <nav className="app-nav" aria-label="Main navigation">
-          <a
-            href="/alerts"
-            aria-current="page"
-            onClick={(event) => {
-              if (
-                event.button !== 0 ||
-                event.metaKey ||
-                event.ctrlKey ||
-                event.shiftKey ||
-                event.altKey
-              )
-                return;
-              event.preventDefault();
-              if (window.location.pathname !== "/alerts")
-                window.history.pushState(null, "", "/alerts");
-              document.getElementById("main-content")?.focus();
-            }}
-          >
-            Alerts
-          </a>
+          {["alerts", "events"].map((page) => (
+            <a
+              key={page}
+              href={`/${page}`}
+              style={
+                (path === "/events" ? page === "events" : page === "alerts")
+                  ? undefined
+                  : {
+                      background: "transparent",
+                      borderLeftColor: "transparent",
+                    }
+              }
+              aria-current={
+                (path === "/events" ? page === "events" : page === "alerts")
+                  ? "page"
+                  : undefined
+              }
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                if (window.location.pathname !== `/${page}`) {
+                  window.history.pushState(null, "", `/${page}`);
+                  window.dispatchEvent(new Event("sentinel:navigate"));
+                }
+                document.getElementById("main-content")?.focus();
+              }}
+            >
+              {page === "alerts" ? "Alerts" : "Events"}
+            </a>
+          ))}
         </nav>
       )}
       <main id="main-content" tabIndex={-1}>
-        {!session ? <SignInPanel /> : <Alerts key={session.generation} />}
+        {!session ? (
+          <SignInPanel />
+        ) : path === "/events" ? (
+          <Events key={session.generation} />
+        ) : (
+          <Alerts key={session.generation} />
+        )}
         {error && (
           <p className="error-state" role="alert">
             {error}

@@ -83,9 +83,9 @@ describe("event investigation through the actual App", () => {
     expect(
       screen.getByRole("link", { name: "Events" }).getAttribute("aria-current"),
     ).toBe("page");
-    expect(
-      screen.getByRole("link", { name: "Alerts" }).style.background,
-    ).toBe("transparent");
+    expect(screen.getByRole("link", { name: "Alerts" }).style.background).toBe(
+      "transparent",
+    );
     expect(
       screen.getByRole("link", { name: "Events" }).style.background,
     ).not.toBe("transparent");

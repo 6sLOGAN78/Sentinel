@@ -119,6 +119,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	alerts := storagepostgres.NewAlertStore(db.Pool, alertQueryTimeout)
 	query.NewHandler(query.Dependencies{Alerts: alerts, Workflows: alerts,
 		Details: storageclickhouse.NewQueryAlertStore(clickhouseConn), Auth: jwtVerifier, Cursors: cursors}).Register(e)
+	query.NewEventHandler(storageclickhouse.NewQueryEventStore(clickhouseConn), jwtVerifier, cursors).Register(e)
 
 	server := httpx.New(cfg.Server, e)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)

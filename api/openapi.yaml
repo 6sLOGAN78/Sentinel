@@ -90,7 +90,16 @@ paths:
       tags: [events]
       operationId: listEvents
       summary: Search event history
-      description: Cursor pagination ordered by (occurred_at, event_id). Scoped to the caller tenant.
+      description: |
+        Native ClickHouse reads deduplicate verified tenant plus event_id before
+        filtering, ordering or limiting. The earliest received_at representation
+        wins; ties use ascending canonical row fields for deterministic selection.
+        Stable descending (occurred_at, event_id), at millisecond precision.
+        UTC half-open range defaults to the last 24 hours, at most 7 days; times
+        require Z and at most 3 fractional digits. Opaque authenticated event
+        cursors bind tenant, normalized filters, frozen range, limit and position.
+        Unknown, repeated, empty or malformed query fields return 400.
+        The whole event query is bounded to five seconds. No merge wait is needed.
       security:
         - BearerAuth: []
       parameters:
@@ -424,8 +433,10 @@ components:
       name: source_ip
       in: query
       required: false
+      description: IPv4 or IPv6 address, normalized before matching. Zones and IPv4-mapped IPv6 are invalid.
       schema:
         type: string
+        minLength: 1
         maxLength: 45
     EventType:
       name: event_type
@@ -438,7 +449,8 @@ components:
       in: query
       required: false
       schema:
-        $ref: "#/components/schemas/Outcome"
+        type: string
+        enum: [success, failure]
     Severity:
       name: severity
       in: query
