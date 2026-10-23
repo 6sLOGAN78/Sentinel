@@ -25,6 +25,7 @@ var ErrInvalidQuery = errors.New("invalid dashboard query")
 const (
 	defaultPageLimit = 50
 	maxCursorBytes   = 2048
+	detailTimeout    = 5 * time.Second
 )
 
 var (
@@ -90,9 +91,11 @@ type AlertLister interface {
 
 // Dependencies are real adapters; query does not import stores.
 type Dependencies struct {
-	Alerts  AlertLister
-	Auth    *auth.Verifier
-	Cursors *CursorCodec
+	Alerts    AlertLister
+	Workflows WorkflowReader
+	Details   AlertDetailReader
+	Auth      *auth.Verifier
+	Cursors   *CursorCodec
 }
 
 // Handler owns dashboard route dependencies.
@@ -104,6 +107,48 @@ func NewHandler(deps Dependencies) *Handler { return &Handler{deps: deps} }
 // Register registers each delivered route once.
 func (h *Handler) Register(e *echo.Echo) {
 	e.GET("/api/v1/alerts", h.ListAlerts, h.deps.Auth.Middleware)
+	e.GET("/api/v1/alerts/:alert_id", h.GetAlert, h.deps.Auth.Middleware)
+}
+
+// GetAlert establishes PG ownership before any CH read; neither orphans nor
+// URL parameters can grant authority. One deadline bounds the whole detail.
+func (h *Handler) GetAlert(c echo.Context) error {
+	p, err := auth.RequirePrincipal(c)
+	if err != nil {
+		return err
+	}
+	id := c.Param("alert_id")
+	if !alertID.MatchString(id) || c.Request().URL.RawQuery != "" {
+		return invalidQuery()
+	}
+	ctx, cancel := context.WithTimeout(c.Request().Context(), detailTimeout)
+	defer cancel()
+	workflow, err := h.deps.Workflows.GetWorkflow(ctx, p.TenantID, id)
+	if err != nil {
+		return detailError(err)
+	}
+	detection, err := h.deps.Details.Detection(ctx, p.TenantID, id)
+	if err != nil {
+		return detailError(err)
+	}
+	evidence, missing, err := h.deps.Details.Evidence(ctx, p.TenantID, detection.SampleEventIDs)
+	if err != nil {
+		return detailError(err)
+	}
+	explanation, err := h.deps.Workflows.RuleExplanation(ctx, p.TenantID, id, detection.RuleID, detection.RuleVersion)
+	if err != nil {
+		return detailError(err)
+	}
+	return c.JSON(http.StatusOK, AlertDetail{Workflow: *workflow, Detection: *detection,
+		Evidence: evidence, MissingEvidenceIDs: missing, RuleExplanation: explanation,
+		History: []StatusChange{}})
+}
+
+func detailError(err error) error {
+	if errors.Is(err, ErrNotFound) {
+		return errs.NewNotFoundError("Alert not found", false, nil)
+	}
+	return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
 }
 
 // ListAlerts verifies identity before parsing and querying its tenant.

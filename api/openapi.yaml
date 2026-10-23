@@ -236,6 +236,15 @@ paths:
       tags: [alerts]
       operationId: getAlert
       summary: Alert details, evidence and history
+      description: |
+        Verified-tenant PostgreSQL workflow lookup precedes tenant-scoped immutable
+        ClickHouse detection and at most 20 unique sample-event reads. Unknown or
+        foreign workflow IDs return 404, including orphan detections. Dependency
+        failures return 503. Missing retained sample IDs are explicit; rule
+        parameters are explained only from available unambiguous recorded-version
+        retained configuration, otherwise explicitly unavailable. No query fields
+        are accepted. History is empty until audit delivery and never exceeds two
+        forward lifecycle transitions.
       security:
         - BearerAuth: []
       parameters:
@@ -875,24 +884,38 @@ components:
     AlertDetail:
       type: object
       additionalProperties: false
-      required: [alert, version, evidence, rule_explanation, history]
+      required:
+        [
+          workflow,
+          detection,
+          evidence,
+          missing_evidence_ids,
+          rule_explanation,
+          history,
+        ]
       properties:
-        alert:
+        workflow:
+          $ref: "#/components/schemas/WorkflowAlert"
+        detection:
           $ref: "#/components/schemas/Alert"
-        version:
-          type: integer
-          minimum: 1
-          description: Optimistic concurrency version used by PATCH.
         evidence:
           type: array
           maxItems: 20
           description: Sample events backing the alert.
           items:
             $ref: "#/components/schemas/Event"
+        missing_evidence_ids:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          description: Unique recorded sample IDs no longer retained for this tenant; never replaced with other tenants' events.
+          items:
+            $ref: "#/components/schemas/UUID"
         rule_explanation:
           type: string
         history:
           type: array
+          maxItems: 2
           items:
             $ref: "#/components/schemas/AlertStatusChange"
 

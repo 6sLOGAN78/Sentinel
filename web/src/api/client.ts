@@ -8,6 +8,8 @@ export type AlertPage =
 export type AlertFilters = NonNullable<
   paths["/api/v1/alerts"]["get"]["parameters"]["query"]
 >;
+export type AlertDetail =
+  paths["/api/v1/alerts/{alert_id}"]["get"]["responses"][200]["content"]["application/json"];
 
 export class APIError extends Error {
   constructor(readonly status: number) {
@@ -64,6 +66,23 @@ export function createAPIClient(
       assertCurrent();
       signal?.throwIfAborted();
       if (!result.data || !Array.isArray(result.data.items))
+        throw new APIError(503);
+      return result.data;
+    },
+    async alertDetail(id: string, signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const result = await client.GET("/api/v1/alerts/{alert_id}", {
+        params: { path: { alert_id: id } },
+        signal,
+      });
+      assertCurrent();
+      signal?.throwIfAborted();
+      if (
+        !result.data ||
+        !Array.isArray(result.data.evidence) ||
+        !Array.isArray(result.data.missing_evidence_ids) ||
+        !Array.isArray(result.data.history)
+      )
         throw new APIError(503);
       return result.data;
     },

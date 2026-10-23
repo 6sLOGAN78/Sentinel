@@ -3,6 +3,18 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { APIError } from "../api/client";
 import type { AlertFilters } from "../api/client";
 import { useSession } from "../auth/session";
+import AlertDetails from "../components/AlertDetails";
+
+function readSelected(owner?: string) {
+  if (
+    owner &&
+    window.history.state?.sentinelAlertsOwner &&
+    window.history.state.sentinelAlertsOwner !== owner
+  )
+    return "";
+  const id = new URLSearchParams(window.location.search).get("alert_id") ?? "";
+  return /^[0-9a-f]{64}$/.test(id) ? id : "";
+}
 
 function isNarrow() {
   return window.matchMedia?.("(max-width: 767px)").matches ?? false;
@@ -72,10 +84,16 @@ function queryFilters(filters: Filters): AlertFilters {
   };
 }
 
-function writeLocation(filters: Filters, owner: string, replace = false) {
+function writeLocation(
+  filters: Filters,
+  owner: string,
+  replace = false,
+  selected = readSelected(owner),
+) {
   const q = new URLSearchParams();
   for (const [key, value] of Object.entries(queryFilters(filters)))
     q.set(key, String(value));
+  if (selected) q.set("alert_id", selected);
   const url = new URL(window.location.href);
   url.search = q.toString();
   window.history[replace ? "replaceState" : "pushState"](
@@ -146,6 +164,8 @@ export default function Alerts() {
   );
   const [draft, setDraft] = useState(filters);
   const [validation, setValidation] = useState("");
+  const [selected, setSelected] = useState(() => readSelected(owner));
+  const selectedRef = useRef(selected);
   const [previous, setPrevious] = useState<Filters[]>([]);
   const filtersRef = useRef(filters);
   const query = queryFilters(filters);
@@ -159,8 +179,17 @@ export default function Alerts() {
     writeLocation(next, owner, replace);
   }
 
+  function selectAlert(id: string) {
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("alert_id", id);
+    else url.searchParams.delete("alert_id");
+    window.history.pushState({ sentinelAlertsOwner: owner }, "", url);
+    selectedRef.current = id;
+    setSelected(id);
+  }
+
   useEffect(() => {
-    writeLocation(filtersRef.current, owner, true);
+    writeLocation(filtersRef.current, owner, true, selectedRef.current);
     const onPopState = () => {
       const ownEntry =
         !window.history.state?.sentinelAlertsOwner ||
@@ -172,6 +201,8 @@ export default function Alerts() {
       setDraft(next);
       setPrevious([]);
       setValidation("");
+      selectedRef.current = readSelected(owner);
+      setSelected(selectedRef.current);
     };
     window.addEventListener("popstate", onPopState);
     return () => {
@@ -182,6 +213,7 @@ export default function Alerts() {
       if (window.history.state?.sentinelAlertsOwner === owner) {
         const url = new URL(window.location.href);
         url.searchParams.delete("cursor");
+        url.searchParams.delete("alert_id");
         window.history.replaceState({ sentinelAlertsOwner: owner }, "", url);
       }
     };
@@ -227,7 +259,9 @@ export default function Alerts() {
   const page = alerts.data;
   return (
     <section aria-labelledby="alerts-title">
-      <h2 id="alerts-title">Alerts</h2>
+      <h2 id="alerts-title" tabIndex={-1}>
+        Alerts
+      </h2>
       <p className="page-description">Investigate your tenant’s detections.</p>
       <form
         onSubmit={(event) => {
@@ -396,6 +430,12 @@ export default function Alerts() {
                   <dt>Status</dt>
                   <dd>{alert.status}</dd>
                 </dl>
+                <button
+                  className="secondary"
+                  onClick={() => selectAlert(alert.alert_id)}
+                >
+                  Open alert details
+                </button>
               </li>
             ))}
           </ul>
@@ -415,6 +455,7 @@ export default function Alerts() {
                   <th scope="col">Rule</th>
                   <th scope="col">Summary</th>
                   <th scope="col">Status</th>
+                  <th scope="col">Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -433,6 +474,14 @@ export default function Alerts() {
                     <td className="identifier">{alert.rule_id}</td>
                     <td>{alert.summary}</td>
                     <td>{alert.status}</td>
+                    <td>
+                      <button
+                        className="secondary"
+                        onClick={() => selectAlert(alert.alert_id)}
+                      >
+                        Open alert details
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -478,6 +527,13 @@ export default function Alerts() {
         </button>
       </div>
       {page && <p role="status">{page.items.length} alerts on this page</p>}
+      {selected && (
+        <AlertDetails
+          key={selected}
+          id={selected}
+          onClose={() => selectAlert("")}
+        />
+      )}
     </section>
   );
 }

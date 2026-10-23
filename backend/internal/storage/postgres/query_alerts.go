@@ -2,9 +2,15 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/query"
 )
 
@@ -55,4 +61,92 @@ func (s *AlertStore) ListAlerts(
 		return nil, rowsErr
 	}
 	return items, nil
+}
+
+// GetWorkflow is a direct tenant-and-ID lookup, independent of list time ranges.
+func (s *AlertStore) GetWorkflow(ctx context.Context, tenant, id string) (*query.WorkflowAlert, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	var a query.WorkflowAlert
+	err := s.pool.QueryRow(queryCtx, `SELECT alert_id,tenant_id,created_at,updated_at,rule_id,rule_version,
+		severity,entity_key,summary,event_count,window_start,window_end,status,assignee,version
+		FROM alert_workflows WHERE tenant_id=$1 AND alert_id=$2`, tenant, id).Scan(
+		&a.AlertID, &a.TenantID, &a.CreatedAt, &a.UpdatedAt, &a.RuleID, &a.RuleVersion,
+		&a.Severity, &a.EntityKey, &a.Summary, &a.EventCount, &a.WindowStart, &a.WindowEnd,
+		&a.Status, &a.Assignee, &a.Version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, query.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	a.CreatedAt, a.UpdatedAt = a.CreatedAt.UTC(), a.UpdatedAt.UTC()
+	a.WindowStart, a.WindowEnd = a.WindowStart.UTC(), a.WindowEnd.UTC()
+	return &a, nil
+}
+
+// RuleExplanation uses only a decision-bound retained manifest, not today's
+// startup settings. Mutable fence manifests are not a historical archive.
+func (s *AlertStore) RuleExplanation(ctx context.Context, tenant, id, rule string, version int) (string, error) {
+	unavailable := fmt.Sprintf("This rule version is unavailable. "+
+		"The detection retains its recorded rule ID and version. %s version %d.", rule, version)
+	queryCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	rows, err := s.pool.Query(queryCtx, `SELECT f.rules_manifest,d.config_fingerprint
+		FROM detection_decisions d LEFT JOIN detection_partition_fences f
+		ON f.group_id=d.group_id AND f.config_fingerprint=d.config_fingerprint
+		WHERE d.tenant_id=$1 AND d.alert_id=$2 AND d.rule_id=$3 AND d.rule_version=$4 LIMIT 33`,
+		tenant, id, rule, version)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var found *detection.Rule
+	count := 0
+	for rows.Next() {
+		count++
+		var raw []byte
+		var fingerprint string
+		if err = rows.Scan(&raw, &fingerprint); err != nil {
+			return "", err
+		}
+		// One overflow sentinel proves the bounded sample is incomplete. Never
+		// assert uniqueness from truncated candidates or missing/invalid payloads.
+		if count > 32 || len(raw) == 0 || len(raw) > 8192 {
+			return unavailable, nil
+		}
+		var rules detection.Rules
+		if json.Unmarshal(raw, &rules) != nil || rules.SchemaVersion != 1 ||
+			len(rules.Rules) != 4 || rules.Fingerprint() != fingerprint {
+			return unavailable, nil
+		}
+		candidate := retainedRule(rules, rule, version)
+		if candidate == nil || (found != nil && *found != *candidate) {
+			return unavailable, nil
+		}
+		found = candidate
+	}
+	if err = rows.Err(); err != nil {
+		return "", err
+	}
+	if found == nil {
+		return unavailable, nil
+	}
+	return fmt.Sprintf("%s version %d: recorded threshold %d; event-time window %s; cooldown %s; severity %s. "+
+		"Definition from retained decision configuration.",
+		found.ID, found.Version, found.Threshold, found.Window, found.Cooldown, found.Severity), nil
+}
+
+func retainedRule(rules detection.Rules, id string, version int) *detection.Rule {
+	var found *detection.Rule
+	for _, rule := range rules.Rules {
+		if rule.ID == id && rule.Version == version {
+			if found != nil || rule.Threshold < 1 || rule.Window < time.Second || rule.Cooldown < time.Millisecond {
+				return nil
+			}
+			candidate := rule
+			found = &candidate
+		}
+	}
+	return found
 }
