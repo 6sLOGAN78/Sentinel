@@ -249,7 +249,7 @@ Actual2026-10-23UTC repair logs in the same private07directory:
 | review-auth-ready | 12:24:02–12:24:15 | 0 /13.334s | Exact Auth/race/6m and CLI cases |
 | review-alerts-ready | 12:24:02–12:24:10 | 0 /8.271s | Exact Alerts/race/6m |
 | review-browser-ready | 12:24:41–12:24:50 | 0 /9.156s | Actual current race-built API+CLI/helper/native PG+CH, Chromium1440/375, real failed-login/retry/hard-reload recovery |
-| review-source-scan | 12:26:40–12:26:41 | 0 | Pinned8.30.1 staged repair/generated reports[]; exact timestamps retained in log |
+| review-source-scan | 12:27:09–12:27:10 | 0 /0.855s | Pinned8.30.1 staged repair/generated reports[] |
 | review-history | 12:27:26–12:27:27 | 0 /0.871s | At ec14c34,562commits, report[], existing exact root-approved exception unchanged |
 
 Each log retains its full command, HEAD/working state and precise timestamps.
