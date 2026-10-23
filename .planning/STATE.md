@@ -23,8 +23,8 @@ Current focus: Phase4 plans01/17/02/03/04accepted; execute04-05 alert evidence d
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-05 readytoexecute (wave6/17), A1dependencywiringindependentlyapproved; previous5plansaccepted.
-Status: A1PASSzeroissuesaddsONLYmain.go/PGqueryadapter/client.ts,explicit12-pathenvelope(two tasks<=45%context). RootincorporatedexactboundsintoPLAN/Task2. Nosource/testchangesorREDyet;resumegenuineRED-firstexecution. No04-06beforefullgates/review/rootacceptance.
+Plan: 04-05 Task1RED942256b committed; Task2workingimplementation preserved, default-suite timeout checkpoint; previous5plansaccepted.
+Status: NativePG+CHdetail/Alerts/Auth/OpenAPI11/web60firstGREEN actual, but latestownedfixturechangesawaitrecheck. DefaultGo-race60s repeatedtimeout in unchangedTestReplayEveryRestartCut; separatemake test120outeralso124beforeweb/Python. BrowserTabassertionfailureunderinvestigation; qualitylastownedargorderfixunverified. NoGREEN/SUMMARYcommit yet. Rootdiagnosingreadonly,notwaivingcapsorrepairingunownedsource.
 Progress: 61/73 accepted numberedplans; Phase4 5/17accepted,12remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
@@ -212,7 +212,7 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 ## Session Continuity
 
 Last session:2026-10-22T22:09:29Z, Phase4 plan04accepted (local2026-10-23).
-Resume: Execute04-05afterindependentA1PASSzeroissues;readamended12-pathPLAN/A1/CHECK,thengenuineRED/minimalGREEN. Noimplementationchangesyet;fdd3938acceptedsourcebaseline. PreservePGfirsttenantID/CHtenantpredicates/typedclientguards/exactruleavailabilityboundedness. Keep5/17accepted;usercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority. Rootowns tracking.
+Resume: Restore04-05working12-pathimplementationatRED942256b,doNOTrestartoroverwrite. Default60sdetectorreplaytimeoutisoutsidechangedsourceandrepeatconfirmed; rootquietrepeatunderwayprivate05/root-default-quiet-repeat.log. Separatemake test120timeoutandbrowserTabfailureNOTPASS. Finishlatestscopednative/web/static/browsergatesonlyafterrootdirection,thenGREEN/SUMMARY/review. Keep5/17accepted;usercfg/.serenauntouched. NoPhase4push/hostedCIbeforeexplicit04-16authority. Rootowns tracking.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.
