@@ -60,6 +60,19 @@ export function createAPIClient(
     },
   });
   return {
+    async rules(signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const result = await client.GET("/api/v1/rules", { signal });
+      assertCurrent();
+      signal?.throwIfAborted();
+      if (
+        !result.data ||
+        !Array.isArray(result.data.rules) ||
+        result.data.rules.length > 4
+      )
+        throw new APIError(503);
+      return result.data;
+    },
     async transitionAlert(id: string, body: AlertPatch, signal?: AbortSignal) {
       signal?.throwIfAborted();
       const result = await client.PATCH("/api/v1/alerts/{alert_id}", {

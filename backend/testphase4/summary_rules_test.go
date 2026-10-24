@@ -38,7 +38,9 @@ func TestPhase4SummaryRules(t *testing.T) {
 	t.Setenv("SENTINEL_ENV_FILE", filepath.Join(root, ".env"))
 	raw, err := os.ReadFile(filepath.Join(root, "config/rules.yaml"))
 	require.NoError(t, err)
-	raw = []byte(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(string(raw), "version: 1\n    enabled:", "version: 12\n    enabled:"), "threshold: 10", "threshold: 17"), "window: 300s", "window: 301.5s"))
+	updated := strings.ReplaceAll(string(raw), "version: 1\n    enabled:", "version: 12\n    enabled:")
+	updated = strings.ReplaceAll(updated, "threshold: 10", "threshold: 17")
+	raw = []byte(strings.ReplaceAll(updated, "window: 300s", "window: 301.5s"))
 	raw = []byte(strings.Replace(string(raw), "enabled: true", "enabled: false", 1))
 	path := filepath.Join(t.TempDir(), "rules.yaml")
 	require.NoError(t, os.WriteFile(path, raw, 0o600))
@@ -55,7 +57,8 @@ func TestPhase4SummaryRules(t *testing.T) {
 	tenant := "p4rules-" + uuid.NewString()
 	tokenFor := func(role string) string {
 		now := time.Now()
-		return signToken(t, map[string]any{"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "rules-operator", "tenant": tenant,
+		return signToken(t, map[string]any{
+			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "rules-operator", "tenant": tenant,
 			"role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
 	}
 	read := func(t *testing.T, url, token string) []byte {
@@ -101,7 +104,8 @@ func TestPhase4SummaryRules(t *testing.T) {
 		status, _ := getJSON(t, base+"/api/v1/rules", "", "")
 		require.Equal(t, 401, status)
 		for _, method := range []string{"POST", "PUT", "PATCH", "DELETE"} {
-			req, requestErr := http.NewRequestWithContext(ctx, method, base+"/api/v1/rules", strings.NewReader(`{"enabled":true}`))
+			req, requestErr := http.NewRequestWithContext(ctx, method,
+				base+"/api/v1/rules", strings.NewReader(`{"enabled":true}`))
 			require.NoError(t, requestErr)
 			req.Header.Set("Authorization", "Bearer "+tokenFor("admin"))
 			response, requestErr := (&http.Client{Timeout: 5 * time.Second}).Do(req)
@@ -137,23 +141,34 @@ func TestPhase4SummaryRules(t *testing.T) {
 		group, id := "p4rules-"+uuid.NewString(), strings.ReplaceAll(uuid.NewString()+uuid.NewString(), "-", "")
 		fingerprint := history.Fingerprint()
 		_, insertErr := db.Pool.Exec(ctx, `INSERT INTO detection_partition_fences
-		(group_id,topic,partition_id,incarnation,member_id,generation,assignment_token,config_fingerprint,rules_manifest)
+		(group_id,topic,partition_id,incarnation,member_id,generation,assignment_token,
+		config_fingerprint,rules_manifest)
 		VALUES ($1,'phase4-rules',0,$2,'fixture',1,1,$3,$4)`, group, strings.Repeat("1", 64), fingerprint, manifest)
 		require.NoError(t, insertErr)
 		_, insertErr = db.Pool.Exec(ctx, `INSERT INTO detection_decisions
-		(alert_id,group_id,tenant_id,rule_id,rule_version,entity_components,config_fingerprint,allowed,trigger_occurred_at,
-		effective_clock,topic,partition_id,source_offset,rule_ordinal,canonical_payload,immutable_fingerprint,decision_generation)
-		VALUES ($1,$2,$3,'AUTH_BRUTE_FORCE',77,'[]',$4,true,now(),now(),'phase4-rules',0,0,0,'{}',$1,1)`, id, group, tenant, fingerprint)
+		(alert_id,group_id,tenant_id,rule_id,rule_version,entity_components,config_fingerprint,
+		allowed,trigger_occurred_at,effective_clock,topic,partition_id,source_offset,rule_ordinal,
+		canonical_payload,immutable_fingerprint,decision_generation)
+		VALUES ($1,$2,$3,'AUTH_BRUTE_FORCE',77,'[]',$4,true,now(),now(),
+		'phase4-rules',0,0,0,'{}',$1,1)`, id, group, tenant, fingerprint)
 		require.NoError(t, insertErr)
-		explanation, explanationErr := storagepostgres.NewAlertStore(db.Pool, 5*time.Second).RuleExplanation(ctx, tenant, id, "AUTH_BRUTE_FORCE", 77)
+		explanation, explanationErr := storagepostgres.NewAlertStore(db.Pool, 5*time.Second).
+			RuleExplanation(ctx, tenant, id, "AUTH_BRUTE_FORCE", 77)
 		require.NoError(t, explanationErr)
 		require.Contains(t, explanation, "threshold 13")
 		body := string(read(t, base, tokenFor("viewer")))
 		require.Contains(t, body, `"version":12`)
 		require.NotContains(t, body, `"version":77`)
 	})
+	verifyRulesFailClosed(ctx, t, binary, root, path, raw)
+}
+
+func verifyRulesFailClosed(ctx context.Context, t *testing.T, binary, root, path string, raw []byte) {
+	t.Helper()
 	for _, fixture := range []struct{ name, body string }{
-		{"malformed", "rules: ["}, {"invalid_settings", strings.Replace(string(raw), "threshold: 17", "threshold: 0", 1)}, {"missing", ""},
+		{"malformed", "rules: ["},
+		{"invalid_settings", strings.Replace(string(raw), "threshold: 17", "threshold: 0", 1)},
+		{"missing", ""},
 	} {
 		t.Run("fail_closed_startup_"+fixture.name, func(t *testing.T) {
 			if fixture.body != "" {

@@ -10,6 +10,7 @@ import {
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
+import { createAPIClient } from "../api/client";
 
 const rules = {
   rules: [true, false].map((enabled, i) => ({
@@ -62,6 +63,46 @@ async function start(
   return { cache, requests };
 }
 describe("read-only startup Rules through the real App/session/client", () => {
+  it.each(["caller", "session"])(
+    "rejects late Rules bodies after %s cancellation",
+    async (which) => {
+      let release!: (value: string) => void;
+      const response = Response.json(rules);
+      response.text = () =>
+        new Promise((resolve) => {
+          release = resolve;
+        });
+      const fetch = vi.fn(async () => response);
+      vi.stubGlobal("fetch", fetch);
+      const lifetime = new AbortController(),
+        caller = new AbortController();
+      let current = true;
+      const credential = vi.fn(() => "rules-test-credential");
+      const api = createAPIClient(
+        credential,
+        lifetime.signal,
+        () => current,
+        vi.fn(),
+      );
+      const pending = api.rules(caller.signal);
+      const rejected = expect(pending).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      await waitFor(() => expect(release).toBeTypeOf("function"));
+      if (which === "caller") caller.abort();
+      else {
+        current = false;
+        lifetime.abort();
+      }
+      release(JSON.stringify(rules));
+      await rejected;
+      current = false;
+      const calls = credential.mock.calls.length;
+      await expect(api.rules()).rejects.toMatchObject({ name: "AbortError" });
+      expect(credential).toHaveBeenCalledTimes(calls);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
   it.each(["viewer", "analyst", "admin"])(
     "renders exact definitions for %s with keyboard navigation",
     async (role) => {
@@ -123,10 +164,10 @@ describe("read-only startup Rules through the real App/session/client", () => {
     ).toBeTruthy();
   });
   it("aborts and clears private results on logout, including a late parsed body", async () => {
-    let release!: (value: unknown) => void;
+    let release!: (value: string) => void;
     const { cache, requests } = await start(async () => {
       const response = Response.json(rules);
-      response.json = () =>
+      response.text = () =>
         new Promise((resolve) => {
           release = resolve;
         });
@@ -136,7 +177,7 @@ describe("read-only startup Rules through the real App/session/client", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { name: "Sign in to Sentinel" });
     expect(requests[0].signal.aborted).toBe(true);
-    await act(async () => release(rules));
+    await act(async () => release(JSON.stringify(rules)));
     expect(cache.getQueryCache().getAll()).toHaveLength(0);
     expect(screen.queryByText("Authentication brute force")).toBeNull();
   });
@@ -145,7 +186,9 @@ describe("read-only startup Rules through the real App/session/client", () => {
       async () => new Response("", { status: 401 }),
     );
     await screen.findByText("Your session expired. Sign in again to continue.");
-    expect(requests).toHaveLength(1);
+    // StrictMode remount can start a cancelled first request; no retry follows.
+    expect(requests.length).toBeLessThanOrEqual(2);
+    expect(requests.every((request) => request.signal.aborted)).toBe(true);
     expect(cache.getQueryCache().getAll()).toHaveLength(0);
   });
 });

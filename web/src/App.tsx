@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider, useSession } from "./auth/session";
 import Alerts from "./pages/Alerts";
 import Events from "./pages/Events";
+import Rules from "./pages/Rules";
 import "./styles.css";
 
 function SignInPanel() {
@@ -98,12 +99,16 @@ function AnalystShell() {
       </header>
       {session && (
         <nav className="app-nav" aria-label="Main navigation">
-          {["alerts", "events"].map((page) => (
+          {["alerts", "events", "rules"].map((page) => (
             <a
               key={page}
               href={`/${page}`}
               style={
-                (path === "/events" ? page === "events" : page === "alerts")
+                (
+                  path === "/events" || path === "/rules"
+                    ? path === `/${page}`
+                    : page === "alerts"
+                )
                   ? undefined
                   : {
                       background: "transparent",
@@ -111,7 +116,11 @@ function AnalystShell() {
                     }
               }
               aria-current={
-                (path === "/events" ? page === "events" : page === "alerts")
+                (
+                  path === "/events" || path === "/rules"
+                    ? path === `/${page}`
+                    : page === "alerts"
+                )
                   ? "page"
                   : undefined
               }
@@ -132,7 +141,11 @@ function AnalystShell() {
                 document.getElementById("main-content")?.focus();
               }}
             >
-              {page === "alerts" ? "Alerts" : "Events"}
+              {page === "alerts"
+                ? "Alerts"
+                : page === "events"
+                  ? "Events"
+                  : "Rules"}
             </a>
           ))}
         </nav>
@@ -142,6 +155,8 @@ function AnalystShell() {
           <SignInPanel />
         ) : path === "/events" ? (
           <Events key={session.generation} />
+        ) : path === "/rules" ? (
+          <Rules key={session.generation} />
         ) : (
           <Alerts key={session.generation} />
         )}

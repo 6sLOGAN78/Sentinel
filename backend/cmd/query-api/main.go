@@ -18,6 +18,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/auth"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/database"
+	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/eventquery"
 	"github.com/6sLOGAN78/sentinel/internal/httpx"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
@@ -41,6 +42,16 @@ const (
 )
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
+	rules, err := loadStartupRules(cfg.Detector.RulesPath)
+	if err != nil {
+		return err
+	}
+	return setupWithRules(ctx, cfg, log, lc, rules)
+}
+
+func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
+	lc *app.Lifecycle, rules *detection.Rules,
+) error {
 	jwtVerifier, err := auth.NewVerifier([]byte(cfg.Auth.JWTSecret), cfg.Auth.Issuer, cfg.Auth.Audience)
 	if err != nil {
 		return err
@@ -117,6 +128,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	query.NewHandler(query.Dependencies{Alerts: alerts, Workflows: alerts, Triage: alerts,
 		Details: storageclickhouse.NewQueryAlertStore(clickhouseConn), Auth: jwtVerifier, Cursors: cursors}).Register(e)
 	query.NewEventHandler(storageclickhouse.NewQueryEventStore(clickhouseConn), jwtVerifier, cursors).Register(e)
+	query.NewRulesHandler(rules, jwtVerifier).Register(e)
 
 	server := httpx.New(cfg.Server, e)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)
@@ -138,6 +150,22 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
+}
+
+func loadStartupRules(path string) (*detection.Rules, error) {
+	file, err := os.Open(path) //nolint:gosec // G304: trusted startup config path, never request input; bounded loader.
+	if err != nil {
+		return nil, fmt.Errorf("open startup rules: %w", err)
+	}
+	rules, loadErr := detection.LoadRules(file)
+	closeErr := file.Close()
+	if loadErr != nil {
+		return nil, fmt.Errorf("load startup rules: %w", loadErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close startup rules: %w", closeErr)
+	}
+	return rules, nil
 }
 
 func getSession(c echo.Context) error {
