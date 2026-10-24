@@ -95,37 +95,13 @@ func TestPhase4Auth(t *testing.T) {
 		viewer := signToken(t, viewerClaims, secretText, "HS256")
 		body := `{"status":"resolved","version":1,"private":"` + uuid.NewString() + `"}`
 		requestID := "role-" + uuid.NewString()
-		status := postSecurityRequest(t, ctx, base+"/api/v1/alerts/"+ids[0], http.MethodPatch, viewer, key, body, requestID)
+		status := postSecurityRequest(ctx, t, base+"/api/v1/alerts/"+ids[0], http.MethodPatch, viewer, key, body, requestID)
 		require.Equal(t, 403, status)
 		requireSecurityEvent(t, processLog.Name(), requestID, "alert_transition", "denied", "role_forbidden",
 			"operator", "viewer", viewer, "Bearer "+viewer, key, secretText, body)
 	})
 	t.Run("producer_denials_are_structured_and_secret_free", func(t *testing.T) {
-		ingestBinary := filepath.Join(t.TempDir(), "ingest")
-		build := exec.CommandContext(ctx, "go", "build", "-race", "-o", ingestBinary, "./cmd/ingest")
-		build.Dir, build.Stdout, build.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
-		require.NoError(t, build.Run(), "actual ingest compilation is setup, never behavioral RED")
-		log, createErr := os.CreateTemp(t.TempDir(), "ingest-log")
-		require.NoError(t, createErr)
-		t.Cleanup(func() { _ = log.Close() })
-		ingestBase, _ := startQueryAPI(t, ingestBinary, root, secretText, "", log)
-		keyID, _, parseErr := apikeys.Parse(key)
-		require.NoError(t, parseErr)
-		body := `{"events":[],"private":"` + uuid.NewString() + `"}`
-		invalidKey := key[:len(key)-1] + "!"
-		for _, tc := range []struct {
-			credential, actor, reason string
-			code                      int
-		}{
-			{invalidKey, "", "invalid_credential", 401},
-			{key, keyID, "scope_forbidden", 403},
-		} {
-			requestID := "producer-" + uuid.NewString()
-			status := postSecurityRequest(t, ctx, ingestBase+"/api/v1/events:batch", http.MethodPost, token, tc.credential, body, requestID)
-			require.Equal(t, tc.code, status)
-			requireSecurityEvent(t, log.Name(), requestID, "producer_auth", "denied", tc.reason, tc.actor, "",
-				token, "Bearer "+token, key, invalidKey, secretText, body)
-		}
+		testProducerSecurity(ctx, t, root, secretText, token, key)
 	})
 	t.Run("hs384_fixture_has_valid_independent_signature", func(t *testing.T) {
 		raw := signToken(t, claims(tenantA), secretText, "HS384")
@@ -257,7 +233,9 @@ func rejectedCredential(t *testing.T, name string, claims map[string]any, secret
 	case "wrong_audience":
 		claims["aud"] = "other-audience"
 	case "future_iat":
-		claims["iat"] = now.Add(time.Minute).Unix()
+		// Real binary builds above may outlast the 30s leeway. The negative
+		// credential must remain future-issued at submission, not fixture setup.
+		claims["iat"] = time.Now().UTC().Add(time.Minute).Unix()
 	case "long_lifetime":
 		claims["exp"] = now.Add(15*time.Minute + time.Second).Unix()
 	case "expired":
@@ -353,7 +331,7 @@ func startQueryAPI(t *testing.T, binary, root, secret, chAddress string, logs ..
 	return "", ""
 }
 
-func postSecurityRequest(t *testing.T, ctx context.Context, url, method, bearer, key, body, requestID string) int {
+func postSecurityRequest(ctx context.Context, t *testing.T, url, method, bearer, key, body, requestID string) int {
 	t.Helper()
 	req, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
 	require.NoError(t, err)
@@ -370,7 +348,9 @@ func postSecurityRequest(t *testing.T, ctx context.Context, url, method, bearer,
 }
 
 // Inspect actual child output without printing log data or credentials on failure.
-func requireSecurityEvent(t *testing.T, path, requestID, action, outcome, reason, actor, role string, secrets ...string) {
+func requireSecurityEvent(
+	t *testing.T, path, requestID, action, outcome, reason, actor, role string, secrets ...string,
+) {
 	t.Helper()
 	var matched map[string]any
 	require.Eventually(t, func() bool {
@@ -401,6 +381,44 @@ func requireSecurityEvent(t *testing.T, path, requestID, action, outcome, reason
 	}
 	if actor == "" {
 		require.NotContains(t, matched, "actor", "unverified identity must never be logged")
+	}
+}
+
+func testProducerSecurity(ctx context.Context, t *testing.T, root, secret, token, key string) {
+	t.Helper()
+	ingestBinary := filepath.Join(t.TempDir(), "ingest")
+	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", ingestBinary, "./cmd/ingest")
+	build.Dir, build.Stdout, build.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
+	require.NoError(t, build.Run(), "actual ingest compilation is setup, never behavioral RED")
+	log, createErr := os.CreateTemp(t.TempDir(), "ingest-log")
+	require.NoError(t, createErr)
+	t.Cleanup(func() { _ = log.Close() })
+	ingestBase, _ := startQueryAPI(t, ingestBinary, root, secret, "", log)
+	keyID, _, parseErr := apikeys.Parse(key)
+	require.NoError(t, parseErr)
+	marker := uuid.NewString()
+	body := `{"events":[],"private":"` + marker + `"}`
+	_, keySecret, parseErr := apikeys.Parse(key)
+	require.NoError(t, parseErr)
+	// Keep syntax valid so the actual verifier rejects the wrong secret.
+	wrong := "A"
+	if keySecret[:1] == wrong {
+		wrong = "B"
+	}
+	invalidKey := strings.Replace(key, keySecret, wrong+keySecret[1:], 1)
+	for _, tc := range []struct {
+		credential, actor, reason string
+		code                      int
+	}{
+		{invalidKey, "", "invalid_credential", 401},
+		{key, keyID, "scope_forbidden", 403},
+	} {
+		requestID := "producer-" + uuid.NewString()
+		status := postSecurityRequest(ctx, t, ingestBase+"/api/v1/events:batch", http.MethodPost,
+			token, tc.credential, body, requestID)
+		require.Equal(t, tc.code, status)
+		requireSecurityEvent(t, log.Name(), requestID, "producer_auth", "denied", tc.reason, tc.actor, "",
+			token, "Bearer "+token, key, keySecret, invalidKey, secret, body, marker)
 	}
 }
 

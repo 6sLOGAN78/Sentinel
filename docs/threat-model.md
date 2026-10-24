@@ -100,3 +100,33 @@ late lower-sequence commits before claiming lossless SSE. JWT/session login,
 complete query/triage APIs, UI, SSE, Kubernetes deployment and broad hardening are
 later scope. This document does not certify those features, and contains no
 unmeasured performance claim.
+
+## Phase 4 triage and service security events
+
+Only verified analyst/admin identities can advance open → acknowledged → resolved.
+Tenant/ID/status/version CAS, version increment and the audit INSERT share one
+PostgreSQL transaction. Skip, reopen, no-op and stale requests cannot add audit
+rows. History reads are tenant scoped, version ordered and limited to two changes.
+An audit-write failure rolls back the workflow change; five-second query and
+independent one-second rollback deadlines bound the operation. A positive commit
+returns PG metadata independently of ClickHouse detail availability. The browser
+requires resolve confirmation and a fresh action after a conflict.
+
+`auth.Audit` emits structured `security_audit` service events through the existing
+request logger. Request ID is supplied by the request middleware; action, outcome
+and reason use an allowlist. Actor/tenant/role come only from verified dashboard
+identity, or verified producer key metadata after successful authentication. A
+producer401 contains no asserted actor. Producer invalid/unavailable credentials,
+scope/tenant denials, and authorized triage outcomes are covered. Credentials,
+Authorization, request bodies, unverified claims and arbitrary error strings are
+never passed to this logger. Actual child-process log capture in native Auth and
+Triage tests checks submitted secrets/bodies are absent and fixed fields present.
+
+Service logging is best effort: output loss or a configured level above INFO can
+suppress these events. It is not a durable PostgreSQL receipt or a guarantee of
+delivery to an external sink. Invalid producer requests are not persisted to PG.
+Only successful triage transitions have the same-transaction durable PG audit.
+Loss of a response after COMMIT does not undo that audit; retrying its old version
+returns409 without adding a second row. Existing generic HTTP logs are distinct
+from this security-event contract. This increment does not audit every endpoint
+or certify production log retention, transport or access policy.

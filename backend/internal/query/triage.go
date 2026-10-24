@@ -32,30 +32,42 @@ func (h *Handler) PatchAlert(c echo.Context) error {
 		return err
 	}
 	if auth.RequireTriage(p) != nil {
+		auth.Audit(c, "alert_transition", "denied", "role_forbidden", p)
 		return errs.NewForbiddenError(http.StatusText(http.StatusForbidden), false)
 	}
 	id := c.Param("alert_id")
 	if !alertID.MatchString(id) || c.Request().URL.RawQuery != "" {
+		auth.Audit(c, "alert_transition", "denied", "invalid_request", p)
 		return invalidQuery()
 	}
 	raw, err := io.ReadAll(io.LimitReader(c.Request().Body, maxTransitionBytes+1))
 	if len(raw) > maxTransitionBytes {
+		auth.Audit(c, "alert_transition", "denied", "invalid_request", p)
 		return errs.NewPayloadTooLargeError("Alert update is too large", false)
 	}
 	if err != nil {
+		auth.Audit(c, "alert_transition", "denied", "invalid_request", p)
 		return invalidQuery()
 	}
 	status, version, err := decodeTransition(raw)
 	if err != nil {
+		auth.Audit(c, "alert_transition", "denied", "invalid_request", p)
 		return invalidQuery()
 	}
 	workflow, err := h.deps.Triage.Transition(c.Request().Context(), p.TenantID, id, p.Subject, version, status)
 	if errors.Is(err, ErrConflict) {
+		auth.Audit(c, "alert_transition", "denied", "conflict", p)
 		return errs.NewConflictError("Alert changed or transition is not allowed", false, nil)
 	}
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			auth.Audit(c, "alert_transition", "denied", "not_found", p)
+		} else {
+			auth.Audit(c, "alert_transition", "unavailable", "store_unavailable", p)
+		}
 		return detailError(err)
 	}
+	auth.Audit(c, "alert_transition", "allowed", "committed", p)
 	return c.JSON(http.StatusOK, workflow)
 }
 

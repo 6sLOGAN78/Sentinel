@@ -314,12 +314,11 @@ describe("alert evidence details", () => {
     const { dialog } = await open();
     const resolve = await within(dialog).findByRole("button", {
       name: "Resolve alert",
-      exact: true,
     });
+    resolve.focus();
     fireEvent.click(resolve);
     let confirmation = await screen.findByRole("dialog", {
       name: "Resolve alert?",
-      exact: true,
     });
     expect(
       within(confirmation).getByText(
@@ -346,7 +345,6 @@ describe("alert evidence details", () => {
     });
     const submit = within(confirmation).getByRole("button", {
       name: "Resolve alert",
-      exact: true,
     });
     fireEvent.click(submit);
     await waitFor(() =>
@@ -386,13 +384,12 @@ describe("alert evidence details", () => {
     fireEvent.click(
       await within(dialog).findByRole("button", {
         name: "Resolve alert",
-        exact: true,
       }),
     );
     fireEvent.click(
       within(
         await screen.findByRole("dialog", { name: "Resolve alert?" }),
-      ).getByRole("button", { name: "Resolve alert", exact: true }),
+      ).getByRole("button", { name: "Resolve alert" }),
     );
     await within(dialog).findByText(
       "This alert changed. Review the latest details before acting again.",
@@ -403,14 +400,13 @@ describe("alert evidence details", () => {
     fireEvent.click(
       within(dialog).getByRole("button", {
         name: "Resolve alert",
-        exact: true,
       }),
     );
     expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(1);
     fireEvent.click(
       within(
         await screen.findByRole("dialog", { name: "Resolve alert?" }),
-      ).getByRole("button", { name: "Resolve alert", exact: true }),
+      ).getByRole("button", { name: "Resolve alert" }),
     );
     await waitFor(() =>
       expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(2),
@@ -442,7 +438,6 @@ describe("alert evidence details", () => {
     fireEvent.click(
       await within(opened.dialog).findByRole("button", {
         name: "Resolve alert",
-        exact: true,
       }),
     );
     await screen.findByRole("dialog", { name: "Resolve alert?" });
@@ -474,13 +469,12 @@ describe("alert evidence details", () => {
     fireEvent.click(
       await within(dialog).findByRole("button", {
         name: "Resolve alert",
-        exact: true,
       }),
     );
     fireEvent.click(
       within(
         await screen.findByRole("dialog", { name: "Resolve alert?" }),
-      ).getByRole("button", { name: "Resolve alert", exact: true }),
+      ).getByRole("button", { name: "Resolve alert" }),
     );
     await waitFor(() => expect(finish).toBeTypeOf("function"));
     act(() => window.history.back());

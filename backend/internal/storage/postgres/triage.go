@@ -33,15 +33,19 @@ func (s *AlertStore) Transition(
 	if !exists {
 		return a, query.ErrNotFound
 	}
-	if target != "acknowledged" {
+	from := "open"
+	if target == "resolved" {
+		from = "acknowledged"
+	} else if target != "acknowledged" {
 		return a, query.ErrConflict
 	}
 	// Server time is shared by workflow and audit; caller cannot supply it.
 	changed := time.Now().UTC()
-	err = tx.QueryRow(queryCtx, `UPDATE alert_workflows SET status='acknowledged',version=version+1,updated_at=$4
-		WHERE tenant_id=$1 AND alert_id=$2 AND version=$3 AND status='open'
+	err = tx.QueryRow(queryCtx, `UPDATE alert_workflows SET status=$5,version=version+1,updated_at=$4
+		WHERE tenant_id=$1 AND alert_id=$2 AND version=$3 AND status=$6
 		RETURNING alert_id,tenant_id,created_at,updated_at,rule_id,rule_version,severity,entity_key,summary,
-		event_count,window_start,window_end,status,assignee,version`, tenant, id, expectedVersion, changed).Scan(
+		event_count,window_start,window_end,status,assignee,version`,
+		tenant, id, expectedVersion, changed, target, from).Scan(
 		&a.AlertID, &a.TenantID, &a.CreatedAt, &a.UpdatedAt, &a.RuleID, &a.RuleVersion, &a.Severity, &a.EntityKey, &a.Summary,
 		&a.EventCount, &a.WindowStart, &a.WindowEnd, &a.Status, &a.Assignee, &a.Version)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -52,7 +56,7 @@ func (s *AlertStore) Transition(
 	}
 	_, err = tx.Exec(queryCtx, `INSERT INTO alert_status_audit
 		(tenant_id,alert_id,version,actor,changed_at,from_status,to_status)
-		VALUES ($1,$2,$3,$4,$5,'open','acknowledged')`, tenant, id, a.Version, actor, changed)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`, tenant, id, a.Version, actor, changed, from, target)
 	if err != nil {
 		return query.WorkflowAlert{}, err
 	}

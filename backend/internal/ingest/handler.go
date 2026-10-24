@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
+	"github.com/6sLOGAN78/sentinel/internal/auth"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/errs"
@@ -81,12 +82,15 @@ func (h *Handler) PostBatch(c echo.Context) error {
 	principal, err := h.verifier.Authenticate(c.Request().Context(), c.Request().Header.Get(apiKeyHeader))
 	if err != nil {
 		if errors.Is(err, apikeys.ErrUnavailable) {
+			auth.Audit(c, "producer_auth", "unavailable", "auth_unavailable", auth.Principal{})
 			return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
 		}
-
+		auth.Audit(c, "producer_auth", "denied", "invalid_credential", auth.Principal{})
 		return errs.NewUnauthorizedError(http.StatusText(http.StatusUnauthorized), false)
 	}
+	identity := auth.Principal{Subject: principal.KeyID, TenantID: principal.TenantID}
 	if !principal.HasScope(apikeys.ScopeWrite) {
+		auth.Audit(c, "producer_auth", "denied", "scope_forbidden", identity)
 		return errs.NewForbiddenError(http.StatusText(http.StatusForbidden), false)
 	}
 
@@ -106,6 +110,7 @@ func (h *Handler) PostBatch(c echo.Context) error {
 
 	normalized, details, tenantMismatch := normalizeBatch(envelope.Events, principal.TenantID)
 	if tenantMismatch {
+		auth.Audit(c, "producer_auth", "denied", "tenant_forbidden", identity)
 		return errs.NewForbiddenError(http.StatusText(http.StatusForbidden), false)
 	}
 

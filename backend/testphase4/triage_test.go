@@ -138,14 +138,17 @@ func TestPhase4Triage(t *testing.T) {
 		require.Equal(t, int64(3), version)
 		require.Equal(t, seq, replaySeq)
 		var count int
-		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit WHERE alert_id=$1`, a.AlertID).Scan(&count))
+		require.NoError(t, db.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM alert_status_audit WHERE alert_id=$1`, a.AlertID).Scan(&count))
 		require.Equal(t, 2, count)
 	})
 	t.Run("triage_security_event_uses_verified_actor_and_no_body", func(t *testing.T) {
 		a := newAlert(tenant)
 		body := `{"status":"acknowledged","version":1}`
 		requestID := "triage-" + uuid.NewString()
-		require.Equal(t, 200, postSecurityRequest(t, ctx, base+"/api/v1/alerts/"+a.AlertID, http.MethodPatch, analyst, "", body, requestID))
+		code := postSecurityRequest(ctx, t, base+"/api/v1/alerts/"+a.AlertID,
+			http.MethodPatch, analyst, "", body, requestID)
+		require.Equal(t, 200, code)
 		requireSecurityEvent(t, processLog.Name(), requestID, "alert_transition", "allowed", "committed",
 			"triage-analyst", "analyst", analyst, "Bearer "+analyst, secret, body)
 	})
@@ -158,7 +161,8 @@ func TestPhase4Triage(t *testing.T) {
 			CHECK (alert_id <> '%s' OR to_status <> 'resolved') NOT VALID`, constraint, a.AlertID))
 		require.NoError(t, addErr)
 		defer func() {
-			_, dropErr := db.Pool.Exec(context.Background(), "ALTER TABLE alert_status_audit DROP CONSTRAINT IF EXISTS "+constraint)
+			_, dropErr := db.Pool.Exec(context.Background(),
+				"ALTER TABLE alert_status_audit DROP CONSTRAINT IF EXISTS "+constraint)
 			require.NoError(t, dropErr)
 		}()
 		code, _ = patch(base, a.AlertID, analyst, `{"status":"resolved","version":2}`)
@@ -187,7 +191,8 @@ func TestPhase4Triage(t *testing.T) {
 		require.NoError(t, readErr)
 		require.Len(t, history, 2)
 		var count int
-		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit WHERE alert_id=$1`, a.AlertID).Scan(&count))
+		require.NoError(t, db.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM alert_status_audit WHERE alert_id=$1`, a.AlertID).Scan(&count))
 		require.Equal(t, 2, count)
 	})
 	t.Run("race_one_winner_one_conflict_and_atomic_audit", func(t *testing.T) {

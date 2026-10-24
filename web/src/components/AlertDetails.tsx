@@ -3,6 +3,66 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { APIError } from "../api/client";
 import { useSession } from "../auth/session";
 
+function ResolveConfirmation({
+  pending,
+  onReturn,
+  onResolve,
+}: {
+  pending: boolean;
+  onReturn: () => void;
+  onResolve: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const node = dialog.current!;
+    const trigger = document.activeElement;
+    node.showModal();
+    cancelButton.current?.focus();
+    return () => {
+      node.close();
+      if (trigger instanceof HTMLElement && trigger.isConnected)
+        trigger.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      aria-labelledby="resolve-alert-title"
+      aria-describedby="resolve-alert-description"
+      onCancel={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!pending) onReturn();
+      }}
+      style={{
+        width: "min(calc(100% - 32px), 28rem)",
+        padding: "24px",
+        border: "1px solid var(--border)",
+        color: "var(--text)",
+        background: "var(--surface)",
+      }}
+    >
+      <h2 id="resolve-alert-title">Resolve alert?</h2>
+      <p id="resolve-alert-description">
+        This closes the alert. Reopening is not supported in v1.
+      </p>
+      <button
+        ref={cancelButton}
+        className="secondary"
+        disabled={pending}
+        onClick={onReturn}
+      >
+        Return to alert
+      </button>{" "}
+      <button disabled={pending} onClick={onResolve}>
+        Resolve alert
+      </button>
+      {pending && <p role="status">Resolving alert…</p>}
+    </dialog>
+  );
+}
+
 export default function AlertDetails({
   id,
   onClose,
@@ -16,6 +76,7 @@ export default function AlertDetails({
   const mutation = useRef<AbortController | null>(null);
   const cache = useQueryClient();
   const [pending, setPending] = useState(false);
+  const [confirmResolve, setConfirmResolve] = useState(false);
   const [message, setMessage] = useState("");
   useEffect(() => {
     const node = dialog.current!;
@@ -49,7 +110,7 @@ export default function AlertDetails({
     refetchOnWindowFocus: false,
   });
   const data = detail.data;
-  async function acknowledge() {
+  async function transition(status: "acknowledged" | "resolved") {
     if (!client || !data || pending || mutation.current) return;
     const operation = new AbortController();
     mutation.current = operation;
@@ -59,7 +120,7 @@ export default function AlertDetails({
       const workflow = await client.transitionAlert(
         id,
         {
-          status: "acknowledged",
+          status,
           version: data.workflow.version,
         },
         operation.signal,
@@ -77,7 +138,10 @@ export default function AlertDetails({
         ],
         { ...data, workflow },
       );
-      setMessage("Alert acknowledged.");
+      setConfirmResolve(false);
+      setMessage(
+        status === "resolved" ? "Alert resolved." : "Alert acknowledged.",
+      );
       await Promise.all([
         detail.refetch(),
         cache.invalidateQueries({
@@ -88,6 +152,7 @@ export default function AlertDetails({
       ]);
     } catch (failure) {
       if (operation.signal.aborted) return;
+      setConfirmResolve(false);
       if (failure instanceof APIError && failure.status === 409) {
         setMessage(
           "This alert changed. Review the latest details before acting again.",
@@ -95,7 +160,9 @@ export default function AlertDetails({
         await detail.refetch();
       } else {
         setMessage(
-          "Could not acknowledge this alert. Refresh details before trying again.",
+          status === "resolved"
+            ? "Could not resolve this alert. Refresh details before trying again."
+            : "Could not acknowledge this alert. Refresh details before trying again.",
         );
       }
     } finally {
@@ -161,12 +228,30 @@ export default function AlertDetails({
             data.workflow.status === "open" && (
               <button
                 disabled={pending || detail.isFetching || detail.isError}
-                onClick={() => void acknowledge()}
+                onClick={() => void transition("acknowledged")}
               >
                 Acknowledge alert
               </button>
             )}
-          {pending && <p role="status">Acknowledging alert…</p>}
+          {(session?.role === "analyst" || session?.role === "admin") &&
+            data.workflow.status === "acknowledged" && (
+              <button
+                disabled={pending || detail.isFetching || detail.isError}
+                onClick={() => setConfirmResolve(true)}
+              >
+                Resolve alert
+              </button>
+            )}
+          {confirmResolve && (
+            <ResolveConfirmation
+              pending={pending}
+              onReturn={() => setConfirmResolve(false)}
+              onResolve={() => void transition("resolved")}
+            />
+          )}
+          {pending && !confirmResolve && (
+            <p role="status">Acknowledging alert…</p>
+          )}
           {message && <p role="status">{message}</p>}
           <pre style={jsonStyle}>{JSON.stringify(data.workflow, null, 2)}</pre>
           <h3>Immutable detection</h3>
