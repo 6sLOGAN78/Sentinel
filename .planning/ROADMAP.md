@@ -256,7 +256,7 @@ Plans:
   4. A new alert appears in the Alerts page over SSE (no token in the URL) without refresh. After a dropped connection or killed LISTEN link, the client reconnects and backfills via `seq` with no permanent gaps, and every query-api replica delivers every alert, including through a real proxy
   5. Overview, Alerts, Events and Rules pages work with loading, empty, error and reconnecting states, a typed OpenAPI client, safe event JSON rendering, and keyboard-operable controls (viewers see mutation controls hidden or disabled)
 
-**Plans**: 17 plans in 17 ordered waves. Original16 approvedR2; source-reviewrepair04-17insertedafter04-01before04-02. Plans01/17/02/03/04accepted after actual scoped gates, clean independent reviews and root post-wave checks; 12plans remain.
+**Plans**: 17 plans in 17 ordered waves. Original16 approvedR2; source-reviewrepair04-17insertedafter04-01before04-02. Plans01/17/02/03/04/05/06/07accepted after actual scoped gates, clean independent reviews and root post-wave checks; 9plans remain.
 
 - [x] 04-01: Sign in and read real tenant alerts
 - [x] 04-17: Repair private JWT launch wiring, Vite API reachability and security negative controls (unblocks04-02)
@@ -265,7 +265,7 @@ Plans:
 - [x] 04-04: Full filtered alert pages and stable cursors
 - [x] 04-05: Alert evidence details and honest retention — accepted2026-10-23 after clean12-pathreview androotpostwavePASS
 - [x] 04-06: Unique event search — accepted2026-10-23 after IPv6/deep-linkrepair,cleanR1/rootpostwavePASS
-- [ ] 04-07: Safe event JSON and legacy lookup compatibility — local review/gates passed; operator Kafka-history recovery hold
+- [x] 04-07: Safe event JSON and legacy lookup compatibility — accepted2026-10-24 after authorized isolated demo recovery and independent root checks; old history remains held
 - [ ] 04-08: Acknowledge with atomic optimistic audit
 - [ ] 04-09: Resolve/history and redacted security logging
 - [ ] 04-10: Read-only active Rules page
@@ -323,7 +323,7 @@ Plans:
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
 | 3. Detection & Alert Pipeline | 21/21 | Complete    | 2026-10-21 |
-| 4. Query API & Analyst Dashboard | 7/17 accepted | 04-07 operator recovery choice | - |
+| 4. Query API & Analyst Dashboard | 8/17 accepted | 04-08 atomic acknowledge/audit | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
 

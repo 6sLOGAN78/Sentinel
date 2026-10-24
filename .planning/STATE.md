@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-23T23:12:59Z"
+last_updated: "2026-10-24T00:36:47Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 73
-  completed_plans: 63
+  completed_plans: 64
   percent: 50
 ---
 
@@ -18,17 +18,31 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05/06accepted;04-07localgatespassed,userchoice1approvedfreshSEPARATEdemo;separateapprovedcachecleanupdone,7.72GBfree,repeatadmissionandbuildnewstack. Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03/04/05/06/07accepted. Authorized separate demo recovery and independent root checks passed; continue04-08 atomic acknowledge/audit using NEW private context. Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-07sourceR2/rootgatePASS;freshdemoC1preflightPASS;historicaldiskEXIT2clearedbyseparatelyapprovedcachecleanupEXIT0,0/6runtimegates,nofreshresourcescreatedyet.07notaccepted.
-Status: Actualweb114/native/browserreload+filteredBackForward/default/static/scan568zeroPASS. All6detectorcheckpointsbelowKafkaearliestretained,earliest=end/noactivegroupmembers;guardcorrectlyfailclosed. Noreset/offset/group/datachange. LocalgatecachedGo/web114/gen121PASSdoesnotrestoremissinghistory. See04-07-STACK-HOLD;noall9/pipelinePASS. NoPhase4remoteauthoritybefore04-16.
-Progress: 63/73 accepted numberedplans; Phase4 7/17accepted,10remaining. Overallphaseprogress3/6=50%.
+Plan: 04-08 next;04-07 accepted after cleanR2/sourcecc22566 and fresh isolated runtime proof atbb8fa1e.
+Status: NEW project sentinel-p4-demo-20261024 has ninehealthy, real exact1000-ID seed and controlled CH/PG/API detection plus actualbrowser PASS. Rootdata/nativeEvents/health/preservation/build+normalmake test PASS. OldKafka history remains missing/failclosed, unchanged; noreset/guardwaiver. NoPhase4remoteauthoritybefore04-16.
+Progress: 64/73 accepted numberedplans; Phase4 8/17accepted,9remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
 ## Latest Verified Evidence
+
+- 04-07 accepted2026-10-24: separate authorized demo recovery reportbb8fa1e;
+  root verify-only seed/detection EXIT0/1.923s, native Events EXIT0/8.379s,
+  nine-health/topic/native/ops EXIT0/15.128s, builds+make test EXIT0/15.082s
+  (web114/gen121/cachedGo), preservation EXIT0/0.926s. Exact five new image
+  anonymous volumes proven exclusively owned; old identities/settings/protected
+  files unchanged. First root preservation harness short/full-ID mismatch EXIT1
+  preserved, corrected by actual inspect resolution, no runtime mutation.
+  NEW launcher: .local/phase4-acceptance/04-07/fresh-stack/run-c2ba399-01/context.py
+  --cwd backend --timeout N -- COMMAND. PG25432/CH28123+29000/Redis26379,
+  Kafka39092/API18081/Vite15173; supplies private PG and JWT child environment.
+  Do not use default Make/runtime/seed scripts targeting old stack. Apply08 actual
+  migration explicitly through NEW context. Source/scan policy unchanged from
+  cleanR2; generated schema SHA retained. Old STACK-HOLD remains unresolved history.
 
 - Phase4 slice06acceptedafterR1cleanatc1079a2/source2c6720e androotpostwaveEXIT0at2026-10-23T05:06:58Z. ActualmixedIPv6ordereduniquepages,strictcursor/session/privacyandinvalidinitial/historylinksverified;web90/native/browser/defaultgatespassed. Preserved04-REVIEW-06-R0/R1; continue04-07.
 
@@ -92,7 +106,7 @@ ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readines
 ## Current Work / Next Action
 
 Phase3 is complete; final documentation repeat39621468170 at358114c passedall10jobs.
-User explicitly requested Phase4 `--auto`. Original16plansindependentR2PASS,repair17independentlyapproved;17numberedplans/all20IDscovered/UI6/6PASS. Rootaccepted01/17/02/03/04/05/06aftercleanindependentreviewsandactualgates; execute04-07next. Validationfixturesforlaterslicesstillpending. Research/plannerfailurespreviouslyrecoveredinline; reviewerusagelimitretriedsuccessfullyafteruserresume, no purchase/upgrade. NoPhase5transition; explicitPhase4remoteapprovalcheckpoint04-16.
+User explicitly requested Phase4 `--auto`. Original16plansindependentR2PASS,repair17independentlyapproved;17numberedplans/all20IDscovered/UI6/6PASS. Rootaccepted01/17/02/03/04/05/06/07aftercleanindependentreviewsandactualgates; execute04-08next using NEW isolated runtime. Validationfixturesforlaterslicesstillpending. Research/plannerfailurespreviouslyrecoveredinline; reviewerusagelimitretriedsuccessfullyafteruserresume, no purchase/upgrade. NoPhase5transition; explicitPhase4remoteapprovalcheckpoint04-16.
 SDKstatecommands repeated knowntrackingmiscounts: supplementals03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md isn'tanumberedexecutedplan; parsedhistoricalstatusprose doesn'treopenpassedPhase3. Rootreconciledactual13+22+21+17=73numberedplans,63accepted,3/6phases; no gatewaived.
 Finalclosuretracking is documentation-only relative to tested7a72028.
 Preserve userdirty.planning/config.json/.serena unstaged. No liveproducer remains.
@@ -215,8 +229,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-23T13:08:56Z,07localrepairsR2/rootgatepassed;awaitoperatorKafka-historyrecoverychoice.
-Resume: Userchoice1freshSEPARATEdemoapproved;independentC1PASS. UserseparatelyapprovedunusedDEFAULTbuildcacheONLY;rootexactprune(no--all)EXIT0/3.717GBreclaimed/free7,720,230,912bytesat23:12:59Z;allimages/containers/volumes/networks/Gitstatusunchanged. SeeCACHE-CLEANUP. Resumeexistingphase4_recover_stackafterfreshdisk/port/project/isolationchecks;prioradmissionEXIT2preserved,NOnewruntimeyet. No furtherprune/sourcechangeauthorized. Actualnew9healthy/1000IDs/controlleddetection/oldpreservationgatesbefore07accept/08usingNEWcontext.7/17accepted,olddata/.env/usercfg/.serenapreserved,noPhase5/remotebefore16.
+Last session:2026-10-24T00:36:47Z;07accepted after separate demo recovery and root verification.
+Resume: Execute04-08 next after checking ownership. Use NEW context above for native fixtures, explicit actual007migration and browser API; never default old ports/Make/runtime/seed commands. New project9healthy/exact1000IDs/controlleddetection/browser/oldpreservation PASS; oldmissinghistory NOTrestored. 8/17accepted,64/73overall. Sourcecc22566/R2clean; no furtherprune/datareset/guardchange/Phase5/push/hostedCI authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.

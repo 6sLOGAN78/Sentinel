@@ -1,11 +1,37 @@
 # Separate demo recovery — actual isolated runtime evidence
 
-Current status: **bounded recovery runtime checks PASS; independent root
-verification and07acceptance pending**. The original disk hold below remains
+Current status: **bounded recovery runtime checks and independent root
+verification PASS;07accepted on2026-10-24**. The original disk hold below remains
 historical. The separate stack is running; the missing old Kafka history has
 not been restored. No fullPhase4, performance, Phase5 or publication claim.
 
 ## Current source, isolation and resources
+
+Root independently verified sourcebb8fa1e on2026-10-24. Private04-07 logs:
+`root-fresh-data-verification` EXIT0/1.923s ending00:31:48Z verifies the existing
+exact1000-ID manifest and controlled canonical detections without resending;
+`root-fresh-native-events` EXIT0/8.379s ending00:31:55Z executes the nonempty
+Events family with phase4/race/6m against NEW ports. `root-fresh-health-verification`
+EXIT0/15.128s ending00:36:00Z repeats all-nine health, actual bindings, topic
+settings/absence, init/migration exits, five readiness and native probes.
+`root-fresh-postwave` EXIT0/15.082s ending00:36:00Z runs backend/web builds and
+normal make test (cached Go,114web,121generator). Source files remain unchanged
+from reviewedcc22566; the generated schema retains its recorded SHA256.
+
+`root-fresh-preservation-v2` EXIT0/0.926s ending00:36:47Z independently compares
+old container IDs/images/mounts/ports/networks/environment hashes, old volumes,
+non-new networks and protected file hashes against before.json. It inspects
+ALL containers and the pinned image declaration to prove the exact five new
+anonymous volumes are mounted exclusively by owned new Kafka/init containers.
+The first root preservation harness attempt EXIT1 used full inspect IDs against
+the manifest's12-character IDs. No preservation comparison failed; the harness
+was corrected to resolve the recorded IDs through Docker inspect, then rerun.
+The failed attempt remains preserved. No runtime repair or data change followed.
+
+Acceptance authorizes continuing04-08 using the private NEW context below;
+default runtime commands still point at the old held stack and must not be used
+for new native/migration acceptance. No old-history restoration, wholePhase4
+completion or remote authority is inferred.
 
 Execution base `c2ba3993af424ac8f10727d27b1f8dd330cbb8b3`; unchanged backend source
 commit `242b162abdb0f16708743bfbde016439954807fa`. No source/test/build/default
