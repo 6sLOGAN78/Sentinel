@@ -25,6 +25,16 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 ## Test Infrastructure
 
+04-09 accepted2026-10-24: RED08ee9fd/GREEN68c10c1/summarybcdfd18; independent
+STANDARD R0 clean10declared/9changedpaths. ActualforwardresolveCAS/audit/fault/
+race/replay/twohistoryrows/nativeTriage9/Authproducerandrolelogcapture/component20/
+realcurrentAPIbrowser1440+375/defaultweb125+gen121/affectedAlertsEvents/OpenAPI/
+three-modequality/scans PASS. Reviewer independentlyTriage9/Auth/component20 PASS;
+rootbuilds+normalmake test EXIT0/20.228s END17:56:54Z. Best-effortstructuredINFO
+serviceevents are not durablePGreceipts; only committedtriagehasPGaudit.
+Historicalclock/quality/browser/setupfailures retained; no budget/policywaiver.
+Tenof17accepted; read-onlyRules/Overview/SSE/fullmatrix/finalphase remainpending.
+
 04-08 accepted2026-10-24 after A1independent11-pathscope approval, RED49d10c4/
 GREEN360100e and clean STANDARD R0at832d840. Actual007migration/schema7,
 onewinner/oneconflict/oneaudit, faultrollback/replay/history/5slock/tenant/viewer/
