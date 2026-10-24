@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "10"
-status: pending-quality
+status: implemented-pending-review
 subsystem: rules
 tags: [startup-config, jwt, react-query, native-browser]
 requires:
@@ -9,7 +9,7 @@ requires:
     provides: Verified session, guarded transport, preserved NEW runtime
 provides:
   - Committed causal native and component RED tests
-  - Uncommitted startup Rules endpoint and browser implementation with passing behavioral proof
+  - Committed startup Rules endpoint and browser implementation with passing behavioral proof
 affects: [04-10-continuation, 04-11, 04-15, 04-16]
 tech-stack:
   added: []
@@ -20,15 +20,37 @@ key-files:
 key-decisions:
   - Use existing bounded detection.LoadRules before query listeners and copy its validated definitions
   - Keep retained decision/fingerprint historical explanations separate from current definitions
-  - Hand off after the executor fix-attempt cap; do not claim quality or task2 completion
-requirements-completed: []
+  - Preserve executor attempt-cap handoff; root completes bounded native-test cleanup
+requirements-completed: [API-06, UI-04, UI-06, AUTH-03]
 duration: 8 min to handoff
 completed: null
 ---
 
-# Phase 4 Plan 10: Startup Rules — incomplete execution handoff
+# Phase 4 Plan 10: Startup Rules — implementation and preserved handoff
 
-**Causal RED is committed; current-source native and browser behavior passes, with the implementation awaiting native-test lint cleanup and a GREEN commit.**
+**Validated read-only startup Rules and guarded browser page; root completed the bounded quality continuation after the executor handoff. Independent review remains pending.**
+
+## Root continuation — supersedes pending-quality handoff below
+
+Tests-only REDa55d82f precedes source GREENdbc7ae2. Root extracted the existing
+fail-closed startup assertions into an owned test helper and wrapped long lines;
+no assertion, source ownership, runtime or lint policy changed. First root
+quality continuation failed solely because the new helper placed Context after
+testing.T; parameter ordering was corrected. That failed attempt remains private.
+Final `root-quality-final` EXIT0/20.802s END2026-10-24T18:11:21.173584Z executes
+all three vet/lint/build configurations, each lint reporting0issues. Native
+`root-native-continuation` EXIT0/8.320s passes all9cases after extraction.
+Pinned unchanged-policy `root-scans-precommit` passes staged/generated/harness/
+full-history. Generated schema SHA256:
+`a590e36b43fcf289ee50a15af9a4a831610c85c65f8b82a2830abf5f78a2280a`.
+Eight tracked source paths plus ignored generated schema remain the approved9.
+Original RED tests and incomplete handoff5cf9df5 stay preserved in history.
+At committeddbc7ae2, `root-source-head-native` EXIT0/8.290s ending18:11:36Z
+passes all9SummaryRules cases; `root-source-head-browser` EXIT0/12.961s ending
+18:11:41Z passes all3roles at1440/375 with actual current API and NEW data.
+No producer remains after the joined browser children; no07traffic was resent.
+The historical pending-quality statements below describe that handoff, not the
+current source. Root independent review and postwave acceptance remain required.
 
 ## Status and commits
 
