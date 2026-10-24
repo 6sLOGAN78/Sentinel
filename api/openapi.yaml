@@ -257,8 +257,8 @@ paths:
         failures return 503. Missing retained sample IDs are explicit; rule
         parameters are explained only from available unambiguous recorded-version
         retained configuration, otherwise explicitly unavailable. No query fields
-        are accepted. History is empty until audit delivery and never exceeds two
-        forward lifecycle transitions.
+        are accepted. History is tenant scoped, ordered by workflow version and
+        contains at most two forward lifecycle transitions.
       security:
         - BearerAuth: []
       parameters:
@@ -284,7 +284,14 @@ paths:
       tags: [alerts]
       operationId: updateAlertStatus
       summary: Change alert status with an optimistic version check
-      description: Requires the analyst or admin role. A stale version returns 409.
+      description: |
+        Requires the analyst or admin role. The verified tenant, ID, expected version
+        and open status guard one atomic PostgreSQL workflow update and audit insert.
+        Only open to acknowledged is currently delivered; resolved returns 409.
+        Stale versions and illegal transitions return 409. Body is at most 4096 bytes;
+        unknown or duplicate fields are rejected. Actor and time are server controlled.
+        A successful commit returns PostgreSQL workflow metadata independently of
+        ClickHouse. A subsequent detail GET may independently fail.
       security:
         - BearerAuth: []
       parameters:
@@ -297,11 +304,11 @@ paths:
               $ref: "#/components/schemas/AlertPatchRequest"
       responses:
         "200":
-          description: The updated alert.
+          description: The committed PostgreSQL workflow.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AlertDetail"
+                $ref: "#/components/schemas/WorkflowAlert"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -312,6 +319,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 

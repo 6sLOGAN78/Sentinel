@@ -94,6 +94,7 @@ type Dependencies struct {
 	Alerts    AlertLister
 	Workflows WorkflowReader
 	Details   AlertDetailReader
+	Triage    TriageStore
 	Auth      *auth.Verifier
 	Cursors   *CursorCodec
 }
@@ -108,6 +109,7 @@ func NewHandler(deps Dependencies) *Handler { return &Handler{deps: deps} }
 func (h *Handler) Register(e *echo.Echo) {
 	e.GET("/api/v1/alerts", h.ListAlerts, h.deps.Auth.Middleware)
 	e.GET("/api/v1/alerts/:alert_id", h.GetAlert, h.deps.Auth.Middleware)
+	e.PATCH("/api/v1/alerts/:alert_id", h.PatchAlert, h.deps.Auth.Middleware)
 }
 
 // GetAlert establishes PG ownership before any CH read; neither orphans nor
@@ -139,9 +141,13 @@ func (h *Handler) GetAlert(c echo.Context) error {
 	if err != nil {
 		return detailError(err)
 	}
+	history, err := h.deps.Triage.History(ctx, p.TenantID, id)
+	if err != nil {
+		return detailError(err)
+	}
 	return c.JSON(http.StatusOK, AlertDetail{Workflow: *workflow, Detection: *detection,
 		Evidence: evidence, MissingEvidenceIDs: missing, RuleExplanation: explanation,
-		History: []StatusChange{}})
+		History: history})
 }
 
 func detailError(err error) error {

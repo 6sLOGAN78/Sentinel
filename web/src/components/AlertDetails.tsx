@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { APIError } from "../api/client";
 import { useSession } from "../auth/session";
 
@@ -13,12 +13,17 @@ export default function AlertDetails({
   const { session, client } = useSession();
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const mutation = useRef<AbortController | null>(null);
+  const cache = useQueryClient();
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
   useEffect(() => {
     const node = dialog.current!;
     const trigger = document.activeElement;
     node.showModal();
     closeButton.current?.focus();
     return () => {
+      mutation.current?.abort();
       node.close();
       if (trigger instanceof HTMLElement && trigger.isConnected)
         trigger.focus();
@@ -44,6 +49,62 @@ export default function AlertDetails({
     refetchOnWindowFocus: false,
   });
   const data = detail.data;
+  async function acknowledge() {
+    if (!client || !data || pending || mutation.current) return;
+    const operation = new AbortController();
+    mutation.current = operation;
+    setPending(true);
+    setMessage("");
+    try {
+      const workflow = await client.transitionAlert(
+        id,
+        {
+          status: "acknowledged",
+          version: data.workflow.version,
+        },
+        operation.signal,
+      );
+      // Retain committed PG state if the independent detail refresh fails.
+      cache.setQueryData(
+        [
+          "session",
+          session?.subject,
+          session?.tenant_id,
+          session?.role,
+          session?.generation,
+          "alert-detail",
+          id,
+        ],
+        { ...data, workflow },
+      );
+      setMessage("Alert acknowledged.");
+      await Promise.all([
+        detail.refetch(),
+        cache.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey[0] === "session" &&
+            query.queryKey.includes("alerts"),
+        }),
+      ]);
+    } catch (failure) {
+      if (operation.signal.aborted) return;
+      if (failure instanceof APIError && failure.status === 409) {
+        setMessage(
+          "This alert changed. Review the latest details before acting again.",
+        );
+        await detail.refetch();
+      } else {
+        setMessage(
+          "Could not acknowledge this alert. Refresh details before trying again.",
+        );
+      }
+    } finally {
+      if (!operation.signal.aborted) {
+        mutation.current = null;
+        setPending(false);
+      }
+    }
+  }
   const jsonStyle = {
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
@@ -96,6 +157,17 @@ export default function AlertDetails({
           <p>
             Status: {data.workflow.status} · Version: {data.workflow.version}
           </p>
+          {(session?.role === "analyst" || session?.role === "admin") &&
+            data.workflow.status === "open" && (
+              <button
+                disabled={pending || detail.isFetching || detail.isError}
+                onClick={() => void acknowledge()}
+              >
+                Acknowledge alert
+              </button>
+            )}
+          {pending && <p role="status">Acknowledging alert…</p>}
+          {message && <p role="status">{message}</p>}
           <pre style={jsonStyle}>{JSON.stringify(data.workflow, null, 2)}</pre>
           <h3>Immutable detection</h3>
           <pre style={jsonStyle}>{JSON.stringify(data.detection, null, 2)}</pre>
@@ -139,7 +211,7 @@ export default function AlertDetails({
           )}
           <button
             className="secondary"
-            disabled={detail.isFetching}
+            disabled={detail.isFetching || pending}
             onClick={() => void detail.refetch()}
           >
             Refresh alert details

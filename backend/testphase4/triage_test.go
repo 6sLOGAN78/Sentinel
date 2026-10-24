@@ -53,12 +53,14 @@ func TestPhase4Triage(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	token := func(owner, actor, role string) string {
 		return signToken(t, map[string]any{"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": actor,
-			"tenant": owner, "role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
+			"tenant": owner, "role": role, "iat": now.Unix(), "nbf": now.Unix(),
+			"exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
 	}
 	analyst := token(tenant, "triage-analyst", "analyst")
 	newAlert := func(owner string) *contracts.Alert {
 		t.Helper()
-		a := &contracts.Alert{SchemaVersion: 1, AlertID: strings.ReplaceAll(uuid.NewString(), "-", "") + strings.Repeat("1", 32),
+		a := &contracts.Alert{SchemaVersion: 1,
+			AlertID:  strings.ReplaceAll(uuid.NewString(), "-", "") + strings.Repeat("1", 32),
 			TenantID: owner, CreatedAt: contracts.NewTimestamp(now), RuleID: "AUTH_BRUTE_FORCE", RuleVersion: 1,
 			Severity: "high", Status: "open", EntityKey: "192.0.2.44", Summary: "Triage native fixture", EventCount: 2,
 			WindowStart: contracts.NewTimestamp(now.Add(-time.Minute)), WindowEnd: contracts.NewTimestamp(now),
@@ -76,7 +78,8 @@ func TestPhase4Triage(t *testing.T) {
 	require.NoError(t, build.Run(), "binary compilation is setup, never behavioral RED")
 	base, _ := startQueryAPI(t, binary, root, secret, "")
 	patch := func(address, id, credential, body string) (int, []byte) {
-		req, requestErr := http.NewRequestWithContext(ctx, http.MethodPatch, address+"/api/v1/alerts/"+id, strings.NewReader(body))
+		req, requestErr := http.NewRequestWithContext(ctx, http.MethodPatch,
+			address+"/api/v1/alerts/"+id, strings.NewReader(body))
 		require.NoError(t, requestErr)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+credential)
@@ -91,7 +94,8 @@ func TestPhase4Triage(t *testing.T) {
 		t.Helper()
 		var status string
 		var version, seq int64
-		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT status,version,seq FROM alert_workflows WHERE tenant_id=$1 AND alert_id=$2`, tenant, id).Scan(&status, &version, &seq))
+		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT status,version,seq FROM alert_workflows
+			WHERE tenant_id=$1 AND alert_id=$2`, tenant, id).Scan(&status, &version, &seq))
 		return status, version, seq
 	}
 	t.Run("race_one_winner_one_conflict_and_atomic_audit", func(t *testing.T) {
@@ -106,7 +110,8 @@ func TestPhase4Triage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				codes[i], bodies[i] = patch(base, a.AlertID, token(tenant, fmt.Sprintf("analyst-%d", i), "analyst"), `{"status":"acknowledged","version":1}`)
+				credential := token(tenant, fmt.Sprintf("analyst-%d", i), "analyst")
+				codes[i], bodies[i] = patch(base, a.AlertID, credential, `{"status":"acknowledged","version":1}`)
 			}()
 		}
 		close(start)
@@ -128,9 +133,11 @@ func TestPhase4Triage(t *testing.T) {
 		var actor, from, to string
 		var changed time.Time
 		var count int
-		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit WHERE tenant_id=$1 AND alert_id=$2`, tenant, a.AlertID).Scan(&count))
+		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit
+			WHERE tenant_id=$1 AND alert_id=$2`, tenant, a.AlertID).Scan(&count))
 		require.Equal(t, 1, count)
-		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT actor,from_status,to_status,changed_at FROM alert_status_audit WHERE tenant_id=$1 AND alert_id=$2 AND version=2`, tenant, a.AlertID).Scan(&actor, &from, &to, &changed))
+		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT actor,from_status,to_status,changed_at FROM alert_status_audit
+			WHERE tenant_id=$1 AND alert_id=$2 AND version=2`, tenant, a.AlertID).Scan(&actor, &from, &to, &changed))
 		require.Equal(t, fmt.Sprintf("analyst-%d", winner), actor)
 		require.Equal(t, "open", from)
 		require.Equal(t, "acknowledged", to)
@@ -147,7 +154,8 @@ func TestPhase4Triage(t *testing.T) {
 		require.Equal(t, status, s2)
 		require.Equal(t, version, v2)
 		require.Equal(t, seq, q2)
-		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit WHERE tenant_id=$1 AND alert_id=$2`, tenant, a.AlertID).Scan(&count))
+		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit
+			WHERE tenant_id=$1 AND alert_id=$2`, tenant, a.AlertID).Scan(&count))
 		require.Equal(t, 1, count)
 		conn, openErr := storageclickhouse.Open(ctx, cfg.ClickHouse)
 		require.NoError(t, openErr)
@@ -168,7 +176,8 @@ func TestPhase4Triage(t *testing.T) {
 		// A fixture-specific CHECK rejects just this random ID. No shared table
 		// privileges, global trigger or unrelated writer behavior is changed.
 		constraint := "p4fault_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-		_, err = db.Pool.Exec(ctx, fmt.Sprintf(`ALTER TABLE alert_status_audit ADD CONSTRAINT %s CHECK (alert_id <> '%s') NOT VALID`, constraint, a.AlertID))
+		_, err = db.Pool.Exec(ctx, fmt.Sprintf(`ALTER TABLE alert_status_audit
+			ADD CONSTRAINT %s CHECK (alert_id <> '%s') NOT VALID`, constraint, a.AlertID))
 		require.NoError(t, err, "audit schema existence is setup; missing migration is not causal RED")
 		defer func() {
 			_, dropErr := db.Pool.Exec(context.Background(), "ALTER TABLE alert_status_audit DROP CONSTRAINT "+constraint)
@@ -180,7 +189,8 @@ func TestPhase4Triage(t *testing.T) {
 		require.Equal(t, "open", status)
 		require.Equal(t, int64(1), version)
 		var count int
-		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit WHERE alert_id=$1`, a.AlertID).Scan(&count))
+		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit
+			WHERE alert_id=$1`, a.AlertID).Scan(&count))
 		require.Zero(t, count)
 	})
 	t.Run("authorization_tenant_and_strict_body", func(t *testing.T) {
@@ -225,7 +235,50 @@ func TestPhase4Triage(t *testing.T) {
 		code, _ = getJSON(t, unavailable+"/api/v1/alerts/"+a.AlertID, analyst, "")
 		require.Equal(t, 503, code, "independent GET detail may fail")
 		var count int
-		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit WHERE alert_id=$1`, a.AlertID).Scan(&count))
+		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit
+			WHERE alert_id=$1`, a.AlertID).Scan(&count))
 		require.Equal(t, 1, count)
+	})
+	t.Run("history_is_tenant_scoped_version_ordered_and_bounded", func(t *testing.T) {
+		a := newAlert(tenant)
+		// Synthetic history tests the reader's bound and ordering separately
+		// from the lifecycle mutation: resolve is still unavailable in plan08.
+		for _, version := range []int{4, 3, 2} {
+			_, insertErr := db.Pool.Exec(ctx, `INSERT INTO alert_status_audit
+			(alert_id,tenant_id,version,actor,changed_at,from_status,to_status)
+			VALUES ($1,$2,$3,$4,$5,'open','acknowledged')`, a.AlertID, tenant, version, fmt.Sprintf("history-%d", version), now)
+			require.NoError(t, insertErr)
+		}
+		history, readErr := store.History(ctx, tenant, a.AlertID)
+		require.NoError(t, readErr)
+		require.Len(t, history, 2)
+		require.Equal(t, []string{"history-2", "history-3"}, []string{history[0].Actor, history[1].Actor})
+		foreignHistory, readErr := store.History(ctx, foreign, a.AlertID)
+		require.NoError(t, readErr)
+		require.Empty(t, foreignHistory)
+		canceled, stop := context.WithCancel(ctx)
+		stop()
+		_, readErr = store.Transition(canceled, tenant, a.AlertID, "canceled", 1, "acknowledged")
+		require.ErrorIs(t, readErr, context.Canceled)
+		status, version, _ := state(a.AlertID)
+		require.Equal(t, "open", status)
+		require.Equal(t, int64(1), version)
+	})
+
+	t.Run("locked_row_is_bounded_and_rolls_back", func(t *testing.T) {
+		a := newAlert(tenant)
+		tx, beginErr := db.Pool.Begin(ctx)
+		require.NoError(t, beginErr)
+		defer func() { _ = tx.Rollback(context.Background()) }()
+		_, lockErr := tx.Exec(ctx, `SELECT alert_id FROM alert_workflows WHERE alert_id=$1 FOR UPDATE`, a.AlertID)
+		require.NoError(t, lockErr)
+		start := time.Now()
+		code, _ := patch(base, a.AlertID, analyst, `{"status":"acknowledged","version":1}`)
+		require.Equal(t, 503, code)
+		require.Less(t, time.Since(start), 7*time.Second)
+		require.NoError(t, tx.Rollback(ctx))
+		status, version, _ := state(a.AlertID)
+		require.Equal(t, "open", status)
+		require.Equal(t, int64(1), version)
 	})
 }

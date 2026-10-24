@@ -189,52 +189,211 @@ describe("alert evidence details", () => {
     let acknowledged = false;
     const { requests } = await start(async (request) => {
       if (request.method === "PATCH") {
-        return new Promise<Response>((resolve) => { finish = resolve; });
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
       }
-      return Response.json(acknowledged ? {
-        ...detail(), workflow: { ...workflow, status: "acknowledged", version: 2 },
-        history: [{ from_status: "open", to_status: "acknowledged", actor: "detail-operator", changed_at: "2026-10-24T01:00:00Z" }],
-      } : detail());
+      return Response.json(
+        acknowledged
+          ? {
+              ...detail(),
+              workflow: { ...workflow, status: "acknowledged", version: 2 },
+              history: [
+                {
+                  from_status: "open",
+                  to_status: "acknowledged",
+                  actor: "detail-operator",
+                  changed_at: "2026-10-24T01:00:00Z",
+                },
+              ],
+            }
+          : detail(),
+      );
     });
     const { dialog } = await open();
-    const button = await within(dialog).findByRole("button", { name: "Acknowledge alert" });
+    const button = await within(dialog).findByRole("button", {
+      name: "Acknowledge alert",
+    });
     fireEvent.click(button);
-    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(true));
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(true),
+    );
     const patches = requests.filter((request) => request.method === "PATCH");
     expect(patches).toHaveLength(1);
-    expect(await patches[0].clone().json()).toEqual({ status: "acknowledged", version: 1 });
+    expect(await patches[0].clone().json()).toEqual({
+      status: "acknowledged",
+      version: 1,
+    });
     expect(patches[0].credentials).toBe("omit");
     acknowledged = true;
-    await act(async () => finish(Response.json({ ...workflow, status: "acknowledged", version: 2 })));
+    await act(async () =>
+      finish(
+        Response.json({ ...workflow, status: "acknowledged", version: 2 }),
+      ),
+    );
     await within(dialog).findByText("Status: acknowledged · Version: 2");
     await within(dialog).findByText(/open → acknowledged · detail-operator/);
-    expect(within(dialog).queryByRole("button", { name: "Acknowledge alert" })).toBeNull();
+    expect(
+      within(dialog).queryByRole("button", { name: "Acknowledge alert" }),
+    ).toBeNull();
   });
 
   it("refetches conflict and requires an explicit new action without automatic PATCH retry", async () => {
     let reads = 0;
     const { requests } = await start(async (request) => {
-      if (request.method === "PATCH") return new Response(null, { status: 409 });
+      if (request.method === "PATCH")
+        return new Response(null, { status: 409 });
       reads++;
-      return Response.json({ ...detail(), workflow: { ...workflow, version: reads } });
+      return Response.json({
+        ...detail(),
+        workflow: { ...workflow, version: reads },
+      });
     });
     const { dialog } = await open();
-    fireEvent.click(await within(dialog).findByRole("button", { name: "Acknowledge alert" }));
-    await within(dialog).findByText("This alert changed. Review the latest details before acting again.");
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Acknowledge alert" }),
+    );
+    await within(dialog).findByText(
+      "This alert changed. Review the latest details before acting again.",
+    );
     await within(dialog).findByText("Status: open · Version: 2");
-    expect(requests.filter((request) => request.method === "PATCH")).toHaveLength(1);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Acknowledge alert" }));
-    await waitFor(() => expect(requests.filter((request) => request.method === "PATCH")).toHaveLength(2));
-    expect(await requests.filter((request) => request.method === "PATCH")[1].clone().json()).toEqual({ status: "acknowledged", version: 2 });
+    expect(
+      requests.filter((request) => request.method === "PATCH"),
+    ).toHaveLength(1);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Acknowledge alert" }),
+    );
+    await waitFor(() =>
+      expect(
+        requests.filter((request) => request.method === "PATCH"),
+      ).toHaveLength(2),
+    );
+    expect(
+      await requests
+        .filter((request) => request.method === "PATCH")[1]
+        .clone()
+        .json(),
+    ).toEqual({ status: "acknowledged", version: 2 });
   });
 
   it("hides mutation for verified viewers", async () => {
     const { requests } = await start(undefined, false, "viewer");
     const { dialog } = await open();
     await within(dialog).findByText("No status changes recorded.");
-    expect(within(dialog).queryByRole("button", { name: "Acknowledge alert" })).toBeNull();
-    expect(requests.filter((request) => request.method === "PATCH")).toHaveLength(0);
+    expect(
+      within(dialog).queryByRole("button", { name: "Acknowledge alert" }),
+    ).toBeNull();
+    expect(
+      requests.filter((request) => request.method === "PATCH"),
+    ).toHaveLength(0);
   });
+
+  it("aborts pending PATCH on close and discards a parsed mutation body after sign-out", async () => {
+    let finish!: (text: string) => void;
+    const { requests, cache } = await start(async (request) => {
+      const response = Response.json(
+        request.method === "PATCH"
+          ? { ...workflow, status: "acknowledged", version: 2 }
+          : detail(),
+      );
+      if (request.method === "PATCH")
+        response.text = () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          });
+      return response;
+    });
+    const { dialog } = await open();
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Acknowledge alert" }),
+    );
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Close alert details" }),
+    );
+    await waitFor(() =>
+      expect(
+        requests.find((request) => request.method === "PATCH")?.signal.aborted,
+      ).toBe(true),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await act(async () =>
+      finish(
+        JSON.stringify({ ...workflow, status: "acknowledged", version: 2 }),
+      ),
+    );
+    expect(cache.getQueryCache().getAll()).toHaveLength(0);
+    expect(document.body.textContent).not.toContain("Alert acknowledged.");
+    expect(window.localStorage.length + window.sessionStorage.length).toBe(0);
+    expect(window.location.href).not.toContain("detail-test-credential");
+  });
+
+  it("revokes the actual session on PATCH401 without retry", async () => {
+    const { requests } = await start(async (request) =>
+      request.method === "PATCH"
+        ? new Response(null, { status: 401 })
+        : Response.json(detail()),
+    );
+    const { dialog } = await open();
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Acknowledge alert" }),
+    );
+    await screen.findByRole("heading", { name: "Sign in to Sentinel" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      requests.filter((request) => request.method === "PATCH"),
+    ).toHaveLength(1);
+  });
+
+  it.each(["caller", "session"])(
+    "guards parsed PATCH bodies after %s cancellation",
+    async (kind) => {
+      let finish!: (text: string) => void;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          const response = Response.json({
+            ...workflow,
+            status: "acknowledged",
+            version: 2,
+          });
+          response.text = () =>
+            new Promise((resolve) => {
+              finish = resolve;
+            });
+          return response;
+        }),
+      );
+      const lifetime = new AbortController(),
+        caller = new AbortController();
+      let current = true;
+      const unauthorized = vi.fn();
+      const client = createAPIClient(
+        () => "guard-test-credential",
+        lifetime.signal,
+        () => current,
+        unauthorized,
+      );
+      const result = client
+        .transitionAlert(
+          id,
+          { status: "acknowledged", version: 1 },
+          caller.signal,
+        )
+        .catch((failure: unknown) => failure);
+      await waitFor(() => expect(finish).toBeTypeOf("function"));
+      if (kind === "caller") caller.abort();
+      else {
+        current = false;
+        lifetime.abort();
+      }
+      finish(
+        JSON.stringify({ ...workflow, status: "acknowledged", version: 2 }),
+      );
+      expect(await result).toMatchObject({ name: "AbortError" });
+      expect(unauthorized).not.toHaveBeenCalled();
+    },
+  );
 
   it("supports deep links, Back and Forward without replacing the active filter range", async () => {
     window.history.replaceState(null, "", `/alerts?alert_id=${id}&status=open`);

@@ -10,6 +10,8 @@ export type AlertFilters = NonNullable<
 >;
 export type AlertDetail =
   paths["/api/v1/alerts/{alert_id}"]["get"]["responses"][200]["content"]["application/json"];
+export type AlertPatch =
+  paths["/api/v1/alerts/{alert_id}"]["patch"]["requestBody"]["content"]["application/json"];
 export type EventPage =
   paths["/api/v1/events"]["get"]["responses"][200]["content"]["application/json"];
 export type EventFilters = NonNullable<
@@ -58,6 +60,25 @@ export function createAPIClient(
     },
   });
   return {
+    async transitionAlert(id: string, body: AlertPatch, signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const result = await client.PATCH("/api/v1/alerts/{alert_id}", {
+        params: { path: { alert_id: id } },
+        body,
+        signal,
+      });
+      assertCurrent();
+      signal?.throwIfAborted();
+      const workflow = result.data;
+      if (
+        !workflow ||
+        workflow.alert_id !== id ||
+        workflow.status !== body.status ||
+        workflow.version !== body.version + 1
+      )
+        throw new APIError(503);
+      return workflow;
+    },
     async eventDetail(id: string, signal?: AbortSignal) {
       signal?.throwIfAborted();
       const result = await client.GET("/api/v1/events/{event_id}", {
