@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-24T16:25:39Z"
+last_updated: "2026-10-24T16:55:11Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 73
-  completed_plans: 64
+  completed_plans: 65
   percent: 50
 ---
 
@@ -18,17 +18,27 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05/06/07accepted. Authorized separate demo recovery and independent root checks passed; continue04-08 atomic acknowledge/audit using NEW private context. Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03/04/05/06/07/08accepted. Continue04-09 resolve and redacted security audit events using NEW private context. Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-08 executing after A1independentPASS0at0dea674 and PLANsynchronization;04-07 accepted after cleanR2/sourcecc22566 and fresh isolated runtime proof atbb8fa1e.
+Plan: 04-09 next;04-08 accepted after clean11-pathR0at832d840/source360100e and rootpostwavePASS.
 Status: NEW project sentinel-p4-demo-20261024 has ninehealthy, real exact1000-ID seed and controlled CH/PG/API detection plus actualbrowser PASS. Rootdata/nativeEvents/health/preservation/build+normalmake test PASS. OldKafka history remains missing/failclosed, unchanged; noreset/guardwaiver. NoPhase4remoteauthoritybefore04-16.
-Progress: 64/73 accepted numberedplans; Phase4 8/17accepted,9remaining. Overallphaseprogress3/6=50%.
+Progress: 65/73 accepted numberedplans; Phase4 9/17accepted,8remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
 ## Latest Verified Evidence
+
+- 04-08 accepted after RED49d10c4/GREEN360100e, summary832d840 and clean
+  independent11-pathR0. Actual007/schema7/nativeTriage6/affectedAuth+Alerts+
+  Events/web121/defaultgen121/OpenAPI11/static/currentAPIbrowser1440+375/scans
+  PASS; reviewer independently16component+6native PASS. Root builds+make test
+  EXIT0/19.265s END16:55:11ZOct24. Source/generatedschema unchanged fromreview.
+  Preserve historical setup/quality/unit-env/browserfixture/focus failures.
+  NEW9healthy, no owned producer. SharedAPI18081 stillprior07image; laterbrowser
+  mustuse current-source ephemeralAPI or separatelybuiltNEWservice, not assume
+  hotreload. Continue09withinits10paths; resolve/securitylog pending untilthen.
 
 - 04-07 accepted2026-10-24: separate authorized demo recovery reportbb8fa1e;
   root verify-only seed/detection EXIT0/1.923s, native Events EXIT0/8.379s,
@@ -106,7 +116,7 @@ ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readines
 ## Current Work / Next Action
 
 Phase3 is complete; final documentation repeat39621468170 at358114c passedall10jobs.
-User explicitly requested Phase4 `--auto`. Original16plansindependentR2PASS,repair17independentlyapproved;17numberedplans/all20IDscovered/UI6/6PASS. Rootaccepted01/17/02/03/04/05/06/07aftercleanindependentreviewsandactualgates; execute04-08next using NEW isolated runtime. Validationfixturesforlaterslicesstillpending. Research/plannerfailurespreviouslyrecoveredinline; reviewerusagelimitretriedsuccessfullyafteruserresume, no purchase/upgrade. NoPhase5transition; explicitPhase4remoteapprovalcheckpoint04-16.
+User explicitly requested Phase4 `--auto`. Original16plansindependentR2PASS,repair17independentlyapproved;17numberedplans/all20IDscovered/UI6/6PASS. Rootaccepted01/17/02/03/04/05/06/07/08aftercleanindependentreviewsandactualgates; execute04-09next using NEW isolated runtime. Validationfixturesforlaterslicesstillpending. Research/plannerfailurespreviouslyrecoveredinline; reviewerusagelimitretriedsuccessfullyafteruserresume, no purchase/upgrade. NoPhase5transition; explicitPhase4remoteapprovalcheckpoint04-16.
 SDKstatecommands repeated knowntrackingmiscounts: supplementals03-ALERT-RESERVATION-IMPLEMENTATION-PLAN.md isn'tanumberedexecutedplan; parsedhistoricalstatusprose doesn'treopenpassedPhase3. Rootreconciledactual13+22+21+17=73numberedplans,63accepted,3/6phases; no gatewaived.
 Finalclosuretracking is documentation-only relative to tested7a72028.
 Preserve userdirty.planning/config.json/.serena unstaged. No liveproducer remains.
@@ -229,8 +239,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-24T16:25:39Z;scopecheck resumed after interrupted agent returned no artifact; A1PASS0 committed0dea674. PLAN synchronized, dispatch08executor using NEW context after currenthealthchecks.
-Resume: Execute04-08 next after checking ownership. Use NEW context above for native fixtures, explicit actual007migration and browser API; never default old ports/Make/runtime/seed commands. New project9healthy/exact1000IDs/controlleddetection/browser/oldpreservation PASS; oldmissinghistory NOTrestored. 8/17accepted,64/73overall. Sourcecc22566/R2clean; no furtherprune/datareset/guardchange/Phase5/push/hostedCI authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
+Last session:2026-10-24T16:55:11Z;08accepted after clean11-pathR0 and rootpostwave. Continue09automatically.
+Resume: Execute04-09 next;10declaredpaths, resolveforwardlifecycle and structuredsecret-freeproducer/roleaudit. NEWcontext above for native/currentbrowser, PG25432/schema7/CH28123+29000. Neverdefaultoldstackcommands; sharedAPI18081priorimage notcurrent08. 9/17accepted,65/73overall; source360100e/R0clean. No furtherprune/reset/guardchange/Phase5/push/hostedCI authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.

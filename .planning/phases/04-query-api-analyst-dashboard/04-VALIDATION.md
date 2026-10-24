@@ -25,6 +25,17 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 ## Test Infrastructure
 
+04-08 accepted2026-10-24 after A1independent11-pathscope approval, RED49d10c4/
+GREEN360100e and clean STANDARD R0at832d840. Actual007migration/schema7,
+onewinner/oneconflict/oneaudit, faultrollback/replay/history/5slock/tenant/viewer/
+strictbody/CH-independentPATCH, affectedAuth/Alerts/Events, OpenAPI11/schema,
+web121/defaultGo+gen121/three-modequality/currentAPIrealbrowser1440+375 PASS.
+Reviewer independently passed6native+16component; rootpostwave builds+normal
+make test EXIT0/19.265s ending16:55:11Z. GeneratedSHAa491e335 retained.
+Setup/quality/unit-env/browserfixture/focus failures preserved, no gate relaxed.
+NEW stackninehealthy; shared18081priorimage, browser used ownedcurrentAPI.
+Resolve/securitylog remain09; fullphase later. Nineof17accepted.
+
 Go testing/race in `backend/`; Vitest/Testing Library in `web/`; native integration `backend/test/`; proposed pinned Playwright against a real preserved stack and same-origin proxy. Exact new version pins resolved before installation. No new global tools or external accounts.
 
 Quick Go feedback once packages exist: `cd backend && go test -race -timeout 60s ./internal/auth/... ./internal/query/... ./internal/alertstream/...`. Component feedback: `cd web && npm test` (outer120s). Existing full unit gate `make test`; lint/build/schema gates remain.
@@ -61,7 +72,8 @@ Runner: `scripts/check-phase4-tests.sh` must check each exactselector independen
 - [x] 04-01-1 owns phase4-tagged native fixture embeddedin auth_test.go; tests use actualbuiltquery-api process overHTTP sincecmd/main notimportable. No empty stubs counted as coverage. Laterfamilies own focusedtestfiles.
 - [x] 04-03-1 owns browser session/componentfixtures; delivered36testsandactualbrowserpathproof.
 - [ ] 04-15-1/2 pinnedfullPlaywright/Chromium/privateJWTacceptanceharnessremainpending.
-- [ ] 04-08-2 applies007auditmigration;04-12-2 applies008deliverymigration withpreexisting/concurrentcutoverproof;noSQL-onlyverification.
+- [x] 04-08-2 actual007auditmigration appliedtoNEWPG/schema7 withnativeatomicrollback/race/historyproof.
+- [ ] 04-12-2 applies008deliverymigration withpreexisting/concurrentcutoverproof;noSQL-onlyverification.
 - [ ] 04-15-1/2 own pinnedproxyimage/config/composeoverlay andcausalbufferingnegativecontrol.
 - [ ] 04-16-1/2 ownclosed8familyrunner,negativeMODELguards andpreservedlegacyCIunion/caps.
 
