@@ -1,6 +1,6 @@
-# Plan08 ownership amendment — proposed, execution pending independent check
+# Plan08 ownership amendment — approved, execution authorized after PLAN synchronization
 
-Root proposes two additional source paths for the already approved acknowledge
+Independent check0dea674 PASS0 approves two additional source paths for the already approved acknowledge
 increment. Original nine owned paths and behavior remain; no new feature or
 dependency is introduced. Execution must wait for an independent PASS and an
 updated PLAN before editing these additions.
