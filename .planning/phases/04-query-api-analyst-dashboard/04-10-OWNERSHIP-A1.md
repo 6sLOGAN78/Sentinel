@@ -1,4 +1,4 @@
-# Plan10 guarded client ownership — proposed for independent check
+# Plan10 guarded client ownership — approved by independent e4da451 PASS0
 
 The approved read-only startup Rules increment needs one additional source
 path: `web/src/api/client.ts`. Its generated transport is private to the factory;
