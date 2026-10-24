@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -76,7 +77,10 @@ func TestPhase4Triage(t *testing.T) {
 	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/query-api")
 	build.Dir, build.Stdout, build.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
 	require.NoError(t, build.Run(), "binary compilation is setup, never behavioral RED")
-	base, _ := startQueryAPI(t, binary, root, secret, "")
+	processLog, err := os.CreateTemp(t.TempDir(), "triage-log")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = processLog.Close() })
+	base, _ := startQueryAPI(t, binary, root, secret, "", processLog)
 	patch := func(address, id, credential, body string) (int, []byte) {
 		req, requestErr := http.NewRequestWithContext(ctx, http.MethodPatch,
 			address+"/api/v1/alerts/"+id, strings.NewReader(body))
@@ -98,6 +102,94 @@ func TestPhase4Triage(t *testing.T) {
 			WHERE tenant_id=$1 AND alert_id=$2`, tenant, id).Scan(&status, &version, &seq))
 		return status, version, seq
 	}
+	t.Run("resolve_forward_only_with_two_audits_and_replay", func(t *testing.T) {
+		a := newAlert(tenant)
+		code, _ := patch(base, a.AlertID, analyst, `{"status":"resolved","version":1}`)
+		require.Equal(t, 409, code, "no skip")
+		code, _ = patch(base, a.AlertID, analyst, `{"status":"acknowledged","version":1}`)
+		require.Equal(t, 200, code)
+		before := time.Now().UTC().Add(-time.Second)
+		code, raw := patch(base, a.AlertID, analyst, `{"status":"resolved","version":2}`)
+		require.Equal(t, 200, code, "acknowledged must resolve via actual production PATCH")
+		var resolved query.WorkflowAlert
+		require.NoError(t, json.Unmarshal(raw, &resolved))
+		require.Equal(t, "resolved", resolved.Status)
+		require.Equal(t, int64(3), resolved.Version)
+		for _, body := range []string{`{"status":"resolved","version":2}`, `{"status":"resolved","version":3}`,
+			`{"status":"acknowledged","version":3}`} {
+			code, _ = patch(base, a.AlertID, analyst, body)
+			require.Equal(t, 409, code, "stale, noop and reopen must not mutate")
+		}
+		history, readErr := store.History(ctx, tenant, a.AlertID)
+		require.NoError(t, readErr)
+		require.Len(t, history, 2)
+		require.Equal(t, []string{"open", "acknowledged"}, []string{history[0].FromStatus, history[1].FromStatus})
+		require.Equal(t, []string{"acknowledged", "resolved"}, []string{history[0].ToStatus, history[1].ToStatus})
+		require.Equal(t, "triage-analyst", history[1].Actor)
+		require.WithinRange(t, history[1].ChangedAt, before, time.Now().UTC().Add(time.Second))
+		require.WithinDuration(t, resolved.UpdatedAt, history[1].ChangedAt, time.Microsecond)
+		_, _, seq := state(a.AlertID)
+		tx, beginErr := store.BeginLocked(ctx, a.AlertID)
+		require.NoError(t, beginErr)
+		require.NoError(t, store.Ensure(ctx, tx, a, a.AlertID))
+		require.NoError(t, tx.Commit(ctx))
+		status, version, replaySeq := state(a.AlertID)
+		require.Equal(t, "resolved", status)
+		require.Equal(t, int64(3), version)
+		require.Equal(t, seq, replaySeq)
+		var count int
+		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit WHERE alert_id=$1`, a.AlertID).Scan(&count))
+		require.Equal(t, 2, count)
+	})
+	t.Run("triage_security_event_uses_verified_actor_and_no_body", func(t *testing.T) {
+		a := newAlert(tenant)
+		body := `{"status":"acknowledged","version":1}`
+		requestID := "triage-" + uuid.NewString()
+		require.Equal(t, 200, postSecurityRequest(t, ctx, base+"/api/v1/alerts/"+a.AlertID, http.MethodPatch, analyst, "", body, requestID))
+		requireSecurityEvent(t, processLog.Name(), requestID, "alert_transition", "allowed", "committed",
+			"triage-analyst", "analyst", analyst, "Bearer "+analyst, secret, body)
+	})
+	t.Run("resolve_race_and_audit_fault_are_atomic", func(t *testing.T) {
+		a := newAlert(tenant)
+		code, _ := patch(base, a.AlertID, analyst, `{"status":"acknowledged","version":1}`)
+		require.Equal(t, 200, code)
+		constraint := "p4resolvefault_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+		_, addErr := db.Pool.Exec(ctx, fmt.Sprintf(`ALTER TABLE alert_status_audit ADD CONSTRAINT %s
+			CHECK (alert_id <> '%s' OR to_status <> 'resolved') NOT VALID`, constraint, a.AlertID))
+		require.NoError(t, addErr)
+		defer func() {
+			_, dropErr := db.Pool.Exec(context.Background(), "ALTER TABLE alert_status_audit DROP CONSTRAINT IF EXISTS "+constraint)
+			require.NoError(t, dropErr)
+		}()
+		code, _ = patch(base, a.AlertID, analyst, `{"status":"resolved","version":2}`)
+		require.Equal(t, 503, code, "actual audit failure must roll back resolution")
+		status, version, _ := state(a.AlertID)
+		require.Equal(t, "acknowledged", status)
+		require.Equal(t, int64(2), version)
+		_, dropErr := db.Pool.Exec(ctx, "ALTER TABLE alert_status_audit DROP CONSTRAINT "+constraint)
+		require.NoError(t, dropErr)
+		var wg sync.WaitGroup
+		codes := make([]int, 2)
+		start := make(chan struct{})
+		for i := range 2 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				codes[i], _ = patch(base, a.AlertID, analyst, `{"status":"resolved","version":2}`)
+			}()
+		}
+		close(start)
+		wg.Wait()
+		sort.Ints(codes)
+		require.Equal(t, []int{200, 409}, codes)
+		history, readErr := store.History(ctx, tenant, a.AlertID)
+		require.NoError(t, readErr)
+		require.Len(t, history, 2)
+		var count int
+		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit WHERE alert_id=$1`, a.AlertID).Scan(&count))
+		require.Equal(t, 2, count)
+	})
 	t.Run("race_one_winner_one_conflict_and_atomic_audit", func(t *testing.T) {
 		a := newAlert(tenant)
 		var wg sync.WaitGroup
@@ -232,12 +324,16 @@ func TestPhase4Triage(t *testing.T) {
 		require.Equal(t, 409, code)
 		code, _ = patch(unavailable, a.AlertID, analyst, `{"status":"acknowledged","version":2}`)
 		require.Equal(t, 409, code)
+		code, raw = patch(unavailable, a.AlertID, analyst, `{"status":"resolved","version":2}`)
+		require.Equal(t, 200, code, "resolution commit must also be independent of CH")
+		require.NoError(t, json.Unmarshal(raw, &workflow))
+		require.Equal(t, int64(3), workflow.Version)
 		code, _ = getJSON(t, unavailable+"/api/v1/alerts/"+a.AlertID, analyst, "")
 		require.Equal(t, 503, code, "independent GET detail may fail")
 		var count int
 		require.NoError(t, db.Pool.QueryRow(ctx, `SELECT count(*) FROM alert_status_audit
 			WHERE alert_id=$1`, a.AlertID).Scan(&count))
-		require.Equal(t, 1, count)
+		require.Equal(t, 2, count)
 	})
 	t.Run("history_is_tenant_scoped_version_ordered_and_bounded", func(t *testing.T) {
 		a := newAlert(tenant)

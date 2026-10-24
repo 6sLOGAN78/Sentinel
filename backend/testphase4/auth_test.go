@@ -78,7 +78,10 @@ func TestPhase4Auth(t *testing.T) {
 	build.Dir = filepath.Join(root, "backend")
 	build.Stdout, build.Stderr = io.Discard, io.Discard
 	require.NoError(t, build.Run(), "build actual query-api before behavioral assertions")
-	base, _ := startQueryAPI(t, binary, root, secretText, "")
+	processLog, err := os.CreateTemp(t.TempDir(), "query-log")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = processLog.Close() })
+	base, _ := startQueryAPI(t, binary, root, secretText, "", processLog)
 	claims := func(tenant string) map[string]any {
 		return map[string]any{
 			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "operator", "tenant": tenant,
@@ -86,6 +89,44 @@ func TestPhase4Auth(t *testing.T) {
 		}
 	}
 	token := signToken(t, claims(tenantA), secretText, "HS256")
+	t.Run("role_security_event_is_structured_and_secret_free", func(t *testing.T) {
+		viewerClaims := claims(tenantA)
+		viewerClaims["role"] = "viewer"
+		viewer := signToken(t, viewerClaims, secretText, "HS256")
+		body := `{"status":"resolved","version":1,"private":"` + uuid.NewString() + `"}`
+		requestID := "role-" + uuid.NewString()
+		status := postSecurityRequest(t, ctx, base+"/api/v1/alerts/"+ids[0], http.MethodPatch, viewer, key, body, requestID)
+		require.Equal(t, 403, status)
+		requireSecurityEvent(t, processLog.Name(), requestID, "alert_transition", "denied", "role_forbidden",
+			"operator", "viewer", viewer, "Bearer "+viewer, key, secretText, body)
+	})
+	t.Run("producer_denials_are_structured_and_secret_free", func(t *testing.T) {
+		ingestBinary := filepath.Join(t.TempDir(), "ingest")
+		build := exec.CommandContext(ctx, "go", "build", "-race", "-o", ingestBinary, "./cmd/ingest")
+		build.Dir, build.Stdout, build.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
+		require.NoError(t, build.Run(), "actual ingest compilation is setup, never behavioral RED")
+		log, createErr := os.CreateTemp(t.TempDir(), "ingest-log")
+		require.NoError(t, createErr)
+		t.Cleanup(func() { _ = log.Close() })
+		ingestBase, _ := startQueryAPI(t, ingestBinary, root, secretText, "", log)
+		keyID, _, parseErr := apikeys.Parse(key)
+		require.NoError(t, parseErr)
+		body := `{"events":[],"private":"` + uuid.NewString() + `"}`
+		invalidKey := key[:len(key)-1] + "!"
+		for _, tc := range []struct {
+			credential, actor, reason string
+			code                      int
+		}{
+			{invalidKey, "", "invalid_credential", 401},
+			{key, keyID, "scope_forbidden", 403},
+		} {
+			requestID := "producer-" + uuid.NewString()
+			status := postSecurityRequest(t, ctx, ingestBase+"/api/v1/events:batch", http.MethodPost, token, tc.credential, body, requestID)
+			require.Equal(t, tc.code, status)
+			requireSecurityEvent(t, log.Name(), requestID, "producer_auth", "denied", tc.reason, tc.actor, "",
+				token, "Bearer "+token, key, invalidKey, secretText, body)
+		}
+	})
 	t.Run("hs384_fixture_has_valid_independent_signature", func(t *testing.T) {
 		raw := signToken(t, claims(tenantA), secretText, "HS384")
 		parsed, parseErr := jwt.Parse(raw, func(*jwt.Token) (any, error) { return []byte(secretText), nil },
@@ -254,7 +295,7 @@ func freeAddress(t *testing.T) string {
 	return address
 }
 
-func startQueryAPI(t *testing.T, binary, root, secret, chAddress string) (string, string) {
+func startQueryAPI(t *testing.T, binary, root, secret, chAddress string, logs ...io.Writer) (string, string) {
 	t.Helper()
 	httpAddress, opsAddress := freeAddress(t), freeAddress(t)
 	_, httpPort, _ := net.SplitHostPort(httpAddress)
@@ -262,7 +303,8 @@ func startQueryAPI(t *testing.T, binary, root, secret, chAddress string) (string
 	cmd := exec.Command(binary)
 	cmd.Dir = filepath.Join(root, "backend")
 	env := map[string]string{"SENTINEL_SERVER.BIND_ADDRESS": "127.0.0.1", "SENTINEL_SERVER.PORT": httpPort,
-		"SENTINEL_OPS.BIND_ADDRESS": "127.0.0.1", "SENTINEL_OPS.PORT": opsPort, "SENTINEL_AUTH.JWT_SECRET": secret}
+		"SENTINEL_OPS.BIND_ADDRESS": "127.0.0.1", "SENTINEL_OPS.PORT": opsPort, "SENTINEL_AUTH.JWT_SECRET": secret,
+		"SENTINEL_PRIMARY.ENV": "test"}
 	if chAddress != "" {
 		env["SENTINEL_CLICKHOUSE.NATIVE_ADDRESS"] = chAddress
 	}
@@ -276,6 +318,9 @@ func startQueryAPI(t *testing.T, binary, root, secret, chAddress string) (string
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	if len(logs) > 0 {
+		cmd.Stdout, cmd.Stderr = logs[0], logs[0]
+	}
 	require.NoError(t, cmd.Start())
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -306,6 +351,57 @@ func startQueryAPI(t *testing.T, binary, root, secret, chAddress string) (string
 	}
 	t.Fatal("production query-api did not become live within 15s")
 	return "", ""
+}
+
+func postSecurityRequest(t *testing.T, ctx context.Context, url, method, bearer, key, body, requestID string) int {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	req.Header.Set("X-Api-Key", key)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", requestID)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	_, err = io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode
+}
+
+// Inspect actual child output without printing log data or credentials on failure.
+func requireSecurityEvent(t *testing.T, path, requestID, action, outcome, reason, actor, role string, secrets ...string) {
+	t.Helper()
+	var matched map[string]any
+	require.Eventually(t, func() bool {
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return false
+		}
+		if !credentialsAbsent(raw, secrets...) {
+			t.Fatal("actual process log disclosed submitted secret material")
+		}
+		for _, line := range bytes.Split(raw, []byte("\n")) {
+			var event map[string]any
+			if json.Unmarshal(line, &event) == nil && event["event"] == "security_audit" && event["request_id"] == requestID {
+				matched = event
+				return true
+			}
+		}
+		return false
+	}, time.Second, 10*time.Millisecond, "missing actual structured security_audit event")
+	require.Equal(t, action, matched["action"])
+	require.Equal(t, outcome, matched["outcome"])
+	require.Equal(t, reason, matched["reason"])
+	if actor != "" {
+		require.Equal(t, actor, matched["actor"])
+	}
+	if role != "" {
+		require.Equal(t, role, matched["role"])
+	}
+	if actor == "" {
+		require.NotContains(t, matched, "actor", "unverified identity must never be logged")
+	}
 }
 
 func signToken(t *testing.T, claims map[string]any, secret, algorithm string) string {

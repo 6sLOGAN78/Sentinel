@@ -276,6 +276,227 @@ describe("alert evidence details", () => {
     ).toEqual({ status: "acknowledged", version: 2 });
   });
 
+  it("confirms resolve with exact copy, cancels and escapes without PATCH, then commits once", async () => {
+    let finish!: (response: Response) => void;
+    let resolved = false;
+    const { requests } = await start(async (request) => {
+      if (request.method === "PATCH")
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      return Response.json({
+        ...detail(),
+        workflow: {
+          ...workflow,
+          status: resolved ? "resolved" : "acknowledged",
+          version: resolved ? 3 : 2,
+        },
+        history: [
+          {
+            from_status: "open",
+            to_status: "acknowledged",
+            actor: "detail-operator",
+            changed_at: workflow.updated_at,
+          },
+          ...(resolved
+            ? [
+                {
+                  from_status: "acknowledged",
+                  to_status: "resolved",
+                  actor: malicious,
+                  changed_at: workflow.updated_at,
+                },
+              ]
+            : []),
+        ],
+      });
+    });
+    const { dialog } = await open();
+    const resolve = await within(dialog).findByRole("button", {
+      name: "Resolve alert",
+      exact: true,
+    });
+    fireEvent.click(resolve);
+    let confirmation = await screen.findByRole("dialog", {
+      name: "Resolve alert?",
+      exact: true,
+    });
+    expect(
+      within(confirmation).getByText(
+        "This closes the alert. Reopening is not supported in v1.",
+      ),
+    ).toBeTruthy();
+    const cancel = within(confirmation).getByRole("button", {
+      name: "Return to alert",
+    });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.click(cancel);
+    expect(screen.queryByRole("dialog", { name: "Resolve alert?" })).toBeNull();
+    expect(document.activeElement).toBe(resolve);
+    fireEvent.click(resolve);
+    confirmation = await screen.findByRole("dialog", {
+      name: "Resolve alert?",
+    });
+    fireEvent(confirmation, new Event("cancel", { cancelable: true }));
+    expect(screen.queryByRole("dialog", { name: "Resolve alert?" })).toBeNull();
+    expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+    fireEvent.click(resolve);
+    confirmation = await screen.findByRole("dialog", {
+      name: "Resolve alert?",
+    });
+    const submit = within(confirmation).getByRole("button", {
+      name: "Resolve alert",
+      exact: true,
+    });
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect((submit as HTMLButtonElement).disabled).toBe(true),
+    );
+    fireEvent.click(submit);
+    const patches = requests.filter((r) => r.method === "PATCH");
+    expect(patches).toHaveLength(1);
+    expect(await patches[0].clone().json()).toEqual({
+      status: "resolved",
+      version: 2,
+    });
+    resolved = true;
+    await act(async () =>
+      finish(Response.json({ ...workflow, status: "resolved", version: 3 })),
+    );
+    await within(dialog).findByText("Status: resolved · Version: 3");
+    await within(dialog).findByText(/acknowledged → resolved/);
+    expect(dialog.querySelector("img")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Resolve alert?" })).toBeNull();
+    expect(
+      within(dialog).queryByRole("button", { name: "Resolve alert" }),
+    ).toBeNull();
+  });
+
+  it("refetches resolve conflict and requires a new confirmation with the latest version", async () => {
+    let reads = 0;
+    const { requests } = await start(async (request) => {
+      if (request.method === "PATCH")
+        return new Response(null, { status: 409 });
+      return Response.json({
+        ...detail(),
+        workflow: { ...workflow, status: "acknowledged", version: ++reads + 1 },
+      });
+    });
+    const { dialog } = await open();
+    fireEvent.click(
+      await within(dialog).findByRole("button", {
+        name: "Resolve alert",
+        exact: true,
+      }),
+    );
+    fireEvent.click(
+      within(
+        await screen.findByRole("dialog", { name: "Resolve alert?" }),
+      ).getByRole("button", { name: "Resolve alert", exact: true }),
+    );
+    await within(dialog).findByText(
+      "This alert changed. Review the latest details before acting again.",
+    );
+    await within(dialog).findByText("Status: acknowledged · Version: 3");
+    expect(screen.queryByRole("dialog", { name: "Resolve alert?" })).toBeNull();
+    expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(1);
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Resolve alert",
+        exact: true,
+      }),
+    );
+    expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(1);
+    fireEvent.click(
+      within(
+        await screen.findByRole("dialog", { name: "Resolve alert?" }),
+      ).getByRole("button", { name: "Resolve alert", exact: true }),
+    );
+    await waitFor(() =>
+      expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(2),
+    );
+    expect(
+      await requests
+        .filter((r) => r.method === "PATCH")[1]
+        .clone()
+        .json(),
+    ).toEqual({ status: "resolved", version: 3 });
+  });
+
+  it("hides resolve from verified viewers and closes confirmation on navigation without PATCH", async () => {
+    const read = async () =>
+      Response.json({
+        ...detail(),
+        workflow: { ...workflow, status: "acknowledged", version: 2 },
+      });
+    let run = await start(read, false, "viewer");
+    let opened = await open();
+    await within(opened.dialog).findByText("Status: acknowledged · Version: 2");
+    expect(
+      within(opened.dialog).queryByRole("button", { name: "Resolve alert" }),
+    ).toBeNull();
+    expect(run.requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+    cleanup();
+    run = await start(read);
+    opened = await open();
+    fireEvent.click(
+      await within(opened.dialog).findByRole("button", {
+        name: "Resolve alert",
+        exact: true,
+      }),
+    );
+    await screen.findByRole("dialog", { name: "Resolve alert?" });
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(run.requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("aborts resolve on navigation and rejects late resolved bodies after session disposal", async () => {
+    let finish!: (text: string) => void;
+    const { requests, cache } = await start(async (request) => {
+      if (request.method !== "PATCH")
+        return Response.json({
+          ...detail(),
+          workflow: { ...workflow, status: "acknowledged", version: 2 },
+        });
+      const response = Response.json({
+        ...workflow,
+        status: "resolved",
+        version: 3,
+      });
+      response.text = () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        });
+      return response;
+    });
+    const { dialog } = await open();
+    fireEvent.click(
+      await within(dialog).findByRole("button", {
+        name: "Resolve alert",
+        exact: true,
+      }),
+    );
+    fireEvent.click(
+      within(
+        await screen.findByRole("dialog", { name: "Resolve alert?" }),
+      ).getByRole("button", { name: "Resolve alert", exact: true }),
+    );
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(requests.find((r) => r.method === "PATCH")?.signal.aborted).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await act(async () =>
+      finish(JSON.stringify({ ...workflow, status: "resolved", version: 3 })),
+    );
+    expect(cache.getQueryCache().getAll()).toHaveLength(0);
+    expect(document.body.textContent).not.toContain("resolved");
+    expect(localStorage.length + sessionStorage.length).toBe(0);
+  });
+
   it("hides mutation for verified viewers", async () => {
     const { requests } = await start(undefined, false, "viewer");
     const { dialog } = await open();
