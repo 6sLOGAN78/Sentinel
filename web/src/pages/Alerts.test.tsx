@@ -203,11 +203,93 @@ describe("filtered alert pages", () => {
       new URL(requests[0].url).search,
     );
     expect(backfills).toHaveLength(2);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Refresh alerts" }),
+      ).toHaveProperty("disabled", false),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Refresh alerts" }));
     await screen.findByText("Later commit");
     expect(screen.queryByText("New alerts available")).toBeNull();
     expect(requests).toHaveLength(3);
     expect(screen.getAllByRole("row")).toHaveLength(3);
+  });
+
+  it.each(["signout", "navigation"])(
+    "bounds transient retry backoff and stops its driver on %s",
+    async (stop) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const attempted: number[] = [];
+      const { backfills } = await start(undefined, 600000, async () => {
+        attempted.push(Date.now());
+        return new Response("unavailable", { status: 503 });
+      });
+      await screen.findByText("Reconnecting… Missed alerts will be recovered.");
+      for (const delay of [250, 500, 1000, 2000, 4000, 5000, 5000]) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(delay);
+        });
+      }
+      expect(attempted).toHaveLength(8);
+      expect(
+        attempted.slice(1).map((at, index) => at - attempted[index]),
+      ).toEqual([250, 500, 1000, 2000, 4000, 5000, 5000]);
+      expect(
+        backfills.every(
+          (request) =>
+            new URL(request.url).searchParams.get("after_seq") === "0",
+        ),
+      ).toBe(true);
+      if (stop === "signout")
+        fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+      else fireEvent.click(screen.getByRole("link", { name: "Rules" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(backfills).toHaveLength(8);
+      expect(backfills.every((request) => request.signal.aborted)).toBe(true);
+      expect(localStorage.length + sessionStorage.length).toBe(0);
+    },
+  );
+
+  it("reports permanent backfill errors honestly without retrying them", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { backfills } = await start(
+      undefined,
+      600000,
+      async () => new Response("invalid cursor", { status: 400 }),
+    );
+    await screen.findByText(
+      "Could not recover alerts. Reload this page to try again.",
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(backfills).toHaveLength(1);
+    expect(
+      screen.queryByText("Reconnecting… Missed alerts will be recovered."),
+    ).toBeNull();
+  });
+
+  it("disposes the session on a backfill 401 and never schedules a retry", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let fail: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      fail = resolve;
+    });
+    const { backfills, cache } = await start(
+      undefined,
+      600000,
+      async () => pending,
+    );
+    await act(async () => fail(new Response("unauthorized", { status: 401 })));
+    await screen.findByRole("heading", { name: "Sign in to Sentinel" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(backfills).toHaveLength(1);
+    expect(backfills[0].signal.aborted).toBe(true);
+    expect(cache.getQueryCache().getAll()).toHaveLength(0);
   });
 
   it("catches up exact decimal delivery pages above 2^53 before advancing and keeps visible rows bounded", async () => {

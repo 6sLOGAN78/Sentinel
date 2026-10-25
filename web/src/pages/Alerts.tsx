@@ -9,6 +9,21 @@ import AlertDetails from "../components/AlertDetails";
 // on logout. Navigation can resume without a disk cursor or a retained ID set.
 const deliveryCursors = new WeakMap<APIClient, string>();
 
+// A single catch-up driver waits here between failures; abort releases both
+// the timer and listener so an old session cannot restart requests.
+function waitToRetry(signal: AbortSignal, delay: number) {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) return resolve();
+    const finish = () => {
+      window.clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = window.setTimeout(finish, delay);
+    signal.addEventListener("abort", finish, { once: true });
+  });
+}
+
 function readSelected(owner?: string) {
   if (
     owner &&
@@ -175,7 +190,10 @@ export default function Alerts() {
   const filtersRef = useRef(filters);
   const query = queryFilters(filters);
   const [arrivals, setArrivals] = useState(false);
-  const [catchupError, setCatchupError] = useState(false);
+  const latestArrival = useRef("0");
+  const [catchupError, setCatchupError] = useState<
+    "retrying" | "stopped" | null
+  >(null);
 
   useEffect(() => {
     if (!client || !session) return;
@@ -189,9 +207,9 @@ export default function Alerts() {
     ];
     async function catchUp() {
       if (!client || !session) return;
-      try {
-        let more = true;
-        while (more) {
+      let backoff = 250;
+      while (!controller.signal.aborted) {
+        try {
           const after = deliveryCursors.get(client) ?? "0";
           const page = await client.backfill(after, controller.signal);
           controller.signal.throwIfAborted();
@@ -207,15 +225,34 @@ export default function Alerts() {
               refetchType: "none",
             });
             controller.signal.throwIfAborted();
+            latestArrival.current = page.next_seq;
             setArrivals(true);
           }
           // Processing must finish before this cursor can be used by a later
           // page or a remount. Failed/aborted processing replays at least once.
           deliveryCursors.set(client, page.next_seq);
-          more = page.has_more;
+          setCatchupError(null);
+          backoff = 250;
+          if (!page.has_more) return;
+        } catch (error) {
+          if (
+            controller.signal.aborted ||
+            (error instanceof DOMException && error.name === "AbortError") ||
+            (error instanceof APIError && error.status === 401)
+          )
+            return;
+          if (
+            error instanceof APIError &&
+            error.status < 500 &&
+            error.status !== 429
+          ) {
+            setCatchupError("stopped");
+            return;
+          }
+          setCatchupError("retrying");
+          await waitToRetry(controller.signal, backoff);
+          backoff = Math.min(backoff * 2, 5000);
         }
-      } catch {
-        if (!controller.signal.aborted) setCatchupError(true);
       }
     }
     void catchUp();
@@ -290,16 +327,17 @@ export default function Alerts() {
     return () => window.clearTimeout(timer);
   }, [draft.search, filters, owner]);
 
+  const alertQueryKey = [
+    "session",
+    session?.subject,
+    session?.tenant_id,
+    session?.role,
+    session?.generation,
+    "alerts",
+    query,
+  ];
   const alerts = useQuery({
-    queryKey: [
-      "session",
-      session?.subject,
-      session?.tenant_id,
-      session?.role,
-      session?.generation,
-      "alerts",
-      query,
-    ],
+    queryKey: alertQueryKey,
     queryFn: ({ signal }) => {
       if (!client) throw new Error("Sign in is required.");
       return client.alerts(query, signal);
@@ -315,7 +353,14 @@ export default function Alerts() {
         Alerts
       </h2>
       <p className="page-description">Investigate your tenant’s detections.</p>
-      {catchupError && <p>Reconnecting… Missed alerts will be recovered.</p>}
+      {catchupError === "retrying" && (
+        <p>Reconnecting… Missed alerts will be recovered.</p>
+      )}
+      {catchupError === "stopped" && (
+        <p role="alert">
+          Could not recover alerts. Reload this page to try again.
+        </p>
+      )}
       {arrivals && (
         <div>
           <p role="status">New alerts available</p>
@@ -323,8 +368,19 @@ export default function Alerts() {
             type="button"
             disabled={alerts.isFetching}
             onClick={() => {
+              const through = latestArrival.current;
               void alerts.refetch().then((result) => {
-                if (result.isSuccess) setArrivals(false);
+                if (!result.isSuccess) return;
+                if (latestArrival.current === through) setArrivals(false);
+                else {
+                  // This response may predate a later delivery. Retain its
+                  // notice and restore staleness cleared by the old snapshot.
+                  void cache.invalidateQueries({
+                    queryKey: alertQueryKey,
+                    exact: true,
+                    refetchType: "none",
+                  });
+                }
               });
             }}
           >
