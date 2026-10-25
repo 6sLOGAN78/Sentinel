@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-25T10:29:14Z"
+last_updated: "2026-10-25T11:31:33Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 73
-  completed_plans: 68
+  completed_plans: 69
   percent: 50
 ---
 
@@ -18,17 +18,26 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09/10/11accepted. Continue04-12 gap-safe delivery catch-up using NEW private context. Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09/10/11/12accepted. Continue04-13 header-authenticated SSE using NEWPG-onlycontext;detectorhistoryholdseparate. Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-12 implementation921dbb2 and strictfixturebab2fbd have native/browser/OpenAPI passes; independentR0 finds2UIblockers, notaccepted. Repairnext.
+Plan: 04-13 next;04-12 scopedPG-onlyaccepted afterrepair1e9725e/clean13-pathR1/rootpostwavePASS. SeparateNEWdetectorhistoryholdunresolved.
 Status: NEW detector nowalsoholdscheckpoint-historylost;8serviceshealthy,PG-onlydeliveryproofpasses. No offsets/groups/fences/reset changed. Originaloldstackholdpreserved. Userexplicitlyrequested GitHubpush on2026-10-25, overriding earlierPhase4remotehold forcurrentcommittedwork; normalorigin/mainpush afterscans, noacceptancewaiver.
-Progress: 68/73 accepted numberedplans; Phase4 12/17accepted,5remaining. Overallphaseprogress3/6=50%.
+Progress: 69/73 accepted numberedplans; Phase4 13/17accepted,4remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
 ## Latest Verified Evidence
+
+- 04-12 acceptedPG-onlyscopeOct25: real008/nativeDelivery9/reversecommit/cutover/
+  lostCOMMITACK/currentbrowserPASS. UIreviewCR01/02RED3de6a95/GREEN1e9725e,
+  cleanfull13-pathR1at7aa711e;reviewer2countercases/80components/9nativePASS.
+  Rootbuild+make test EXIT0/14.875s END11:31:33Z(web151/gen121). OpenAPI11/
+  quality/scansPASSaftercheckedA3fixture. AllhistoryfailuresR0/R1preserved.
+  SeparateNEWdetectorcheckpoint-historylost persists,8healthy/noreset; must
+  closefullpipelineholdbefore15/16acceptance. Userpush6cef65d succeeded;
+  repairandclosurelaterlocalcommitsnotyetpushed. Continue13 afterscopecheck.
 
 - 04-12 RED e44f217/GREEN921dbb2;actual008NEWPG/schema8/nativeDelivery9/
   currentbrowser1440+375/cleanweb144+gen121/affectednative/3modequality/scansPASS.
@@ -272,8 +281,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-25T10:29:14Z;11accepted after clean13-pathR1 and freshrootpostwave. Continue12automatically.
-Resume: Execute04-12 after clientownershipcheck; durabledeliveryprojection/actual008migration. NEWPG25432/schema7/CH28123+29000. Neverdefaultoldstackcommands; sharedAPI18081/ingest18080prior07images,stale006migratorEXIT1. Currenthostmigrations/directownedIDsnormalrecoveryonly. 12/17accepted,68/73overall;sourceef19971/R1clean. No furtherprune/reset/guardchange/Phase5/push/hostedCI authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
+Last session:2026-10-25T11:31:33Z;12PG-onlyaccepted after clean13-pathR1 and rootpostwave. Continue13automatically.
+Resume: Execute04-13 after guardedstream/client/fixtureownershipcheck. NEWPG25432/schema8/CH28123+29000;NEWdetectorhistorylost8healthyseparateholdnoreset/recoverywaiver. Neverdefaultoldstackcommands/sharedold07images/stale006migrator.13/17accepted,69/73overall;source1e9725e/R1clean. Userpush6cef65ddone;repair/closurelatercommitslocal. No furtherprune/reset/guardchange/Phase5authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.

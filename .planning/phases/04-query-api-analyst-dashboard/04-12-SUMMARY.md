@@ -36,10 +36,21 @@ requirements-completed: []
 requirements-targeted: [LIVE-02, LIVE-03, AUTH-03, UI-02, UI-06]
 duration: 20min
 completed: 2026-10-25
-status: implemented-pending-review
+status: complete
 ---
 
 # Phase 4 Plan 12: Gap-safe alert delivery Summary
+
+Root accepted the scoped PG-only delivery increment on2026-10-25 after clean
+full13-path R1at7aa711e/source1e9725e closesCR01/CR02, zero findings. Reviewer
+independently passes originalcounterexamples2/2/components80/nativeDelivery9;
+R0 unchanged. Rootbackend/webbuilds+normalmake test EXIT0/14.875s ending
+11:31:33.903361Z(cachedGo/web151/gen121), private07/root-12-postwave.log.
+Source/generated matchreviewed. Phase4 now13/17accepted, notcomplete.
+NEWdetectorhistorylost remains a separate root-ownedfullpipelinehold,8healthy;
+this acceptance covers actualPGdelivery/currentephemeralAPI/browser, notfresh
+detection/ninehealthy. Userrequestedpushcompleted6cef65d; laterrepair/closure
+commits remainlocal until nextauthorizedpublication. Preserveallfailedattempts.
 
 **Gap-safe PostgreSQL replay now retries transient REST failures and preserves arrivals newer than a refresh snapshot; independent R1 review and root acceptance remain pending.**
 

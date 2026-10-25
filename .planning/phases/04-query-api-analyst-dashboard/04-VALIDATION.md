@@ -25,6 +25,15 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 ## Test Infrastructure
 
+04-12 PG-onlysliceaccepted2026-10-25: REDe44f217/GREEN921dbb2; actual008/schema8/
+reversecommit/cutover/realCOMMITACKloss/twoprojectors/overflow/tenant/CHdown/native9
+andbrowserdecimal>2^53/203rows/boundedUI PASS. OpenAPI10/11failure correctedonly
+afterA3checkedstrictfixturebab2fbd,now11/11. R0twoUIblockersRED3de6a95/GREEN
+1e9725e closedbyclean13-pathR1at7aa711e; native9/component80/originalcountercases2/
+realproxy503+stalerefreshbrowser1440+375/defaultweb151+gen121/quality/scansPASS.
+Rootbuild+make test EXIT0/14.875s END11:31:33Z. NEWdetectorcheckpoint-historylost
+remainsseparatehold/8healthy/noreset;nofullpipelineclaim.13/17accepted.
+
 04-11 accepted2026-10-25: initialRED6e2ab68/source2f0bc7a; precisePGboundary
 CR01RED58525e2/GREENef19971, clean13-pathR1ata885410. Native22RUNrecords/
 browser6role-width/API-table-SVGexact/nativefaults/tenant/dedupe/status/clock/
@@ -99,7 +108,7 @@ Runner: `scripts/check-phase4-tests.sh` must check each exactselector independen
 - [x] 04-03-1 owns browser session/componentfixtures; delivered36testsandactualbrowserpathproof.
 - [ ] 04-15-1/2 pinnedfullPlaywright/Chromium/privateJWTacceptanceharnessremainpending.
 - [x] 04-08-2 actual007auditmigration appliedtoNEWPG/schema7 withnativeatomicrollback/race/historyproof.
-- [ ] 04-12-2 applies008deliverymigration withpreexisting/concurrentcutoverproof;noSQL-onlyverification.
+- [x] 04-12-2 actual008/schema8 withpreexisting/concurrentcutover/reversecommit/rollback/ACKloss nativeproof;noSQL-onlyverification.
 - [ ] 04-15-1/2 own pinnedproxyimage/config/composeoverlay andcausalbufferingnegativecontrol.
 - [ ] 04-16-1/2 ownclosed8familyrunner,negativeMODELguards andpreservedlegacyCIunion/caps.
 
