@@ -29,7 +29,8 @@ func (s *AlertStore) SummarizeAlerts(ctx context.Context, tenant string, now tim
 	 SELECT 'trend','',date_bin('5 minutes',created_at,'2000-01-01'::timestamptz),count(*)
 	 FROM scoped WHERE created_at >= $2 AND created_at < $5 GROUP BY 3
 	) SELECT kind,key,bucket,n FROM aggregates ORDER BY kind,n DESC,key ASC`,
-		tenant, end.Add(-24*time.Hour), now.Add(-24*time.Hour), now, end)
+		tenant, end.Add(-24*time.Hour), ceilSummaryMicrosecond(now.Add(-24*time.Hour)),
+		ceilSummaryMicrosecond(now), end)
 	if err != nil {
 		return query.AlertSummary{}, fmt.Errorf("workflow summary: %w", err)
 	}
@@ -55,4 +56,15 @@ func (s *AlertStore) SummarizeAlerts(ctx context.Context, tenant string, now tim
 		return query.AlertSummary{}, fmt.Errorf("read workflow summary: %w", err)
 	}
 	return result, nil
+}
+
+// PG timestamps have microsecond resolution. Ceil both rolling bounds so >=
+// lower and < upper preserve the captured nanosecond window after pgx encoding.
+// Already aligned timestamps, including completed trend bounds, stay unchanged.
+func ceilSummaryMicrosecond(at time.Time) time.Time {
+	floor := at.Truncate(time.Microsecond)
+	if floor.Before(at) {
+		return floor.Add(time.Microsecond)
+	}
+	return floor
 }
