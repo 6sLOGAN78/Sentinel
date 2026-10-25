@@ -68,6 +68,7 @@ func TestOpenAPIRoutes(t *testing.T) {
 		"GET /api/v1/events",
 		"GET /api/v1/events/{event_id}",
 		"GET /api/v1/alerts",
+		"GET /api/v1/alerts/backfill",
 		"GET /api/v1/alerts/{alert_id}",
 		"PATCH /api/v1/alerts/{alert_id}",
 		"GET /api/v1/alerts/stream",
