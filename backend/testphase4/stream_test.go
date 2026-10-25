@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
@@ -97,8 +98,8 @@ func TestPhase4Stream(t *testing.T) {
 	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/query-api")
 	build.Dir, build.Stdout, build.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
 	require.NoError(t, build.Run(), "production binary build is setup, not RED")
-	a, _ := startQueryAPI(t, binary, root, secret, freeAddress(t))
-	b, _ := startQueryAPI(t, binary, root, secret, freeAddress(t))
+	a, opsA := startQueryAPI(t, binary, root, secret, cfg.ClickHouse.NativeAddress)
+	b, opsB := startQueryAPI(t, binary, root, secret, cfg.ClickHouse.NativeAddress)
 	tenant := "p4stream-" + uuid.NewString()
 	token := func(expiry time.Time) string {
 		return signToken(t, map[string]any{"iss": "sentinel-dev", "aud": "sentinel-dashboard",
@@ -112,6 +113,92 @@ func TestPhase4Stream(t *testing.T) {
 	_ = probe.Body.Close()
 	require.Equal(t, http.StatusOK, status,
 		"existing production API must implement authenticated SSE, not dispatch stream as alert ID")
+	t.Run("dedicated_listener_per_replica_and_real_readiness", func(t *testing.T) {
+		require.Eventually(t, func() bool { return len(streamListenerPIDs(ctx, t, db)) == 2 },
+			3*time.Second, 20*time.Millisecond, "actual current replicas must each own one LISTEN backend")
+		for _, ops := range []string{opsA, opsB} {
+			require.Equal(t, "ok", streamListenerState(t, ops))
+		}
+	})
+	t.Run("projector_emits_transactional_constant_hint", func(t *testing.T) {
+		observer, e := pgx.Connect(ctx, database.ConnString(owned))
+		require.NoError(t, e)
+		defer func() { _ = observer.Close(context.Background()) }()
+		_, e = observer.Exec(ctx, "LISTEN sentinel_alert_delivery")
+		require.NoError(t, e)
+		deliveryInsert(ctx, t, db.Pool, tenant)
+		wait, stop := context.WithTimeout(ctx, 3*time.Second)
+		defer stop()
+		hint, e := observer.WaitForNotification(wait)
+		require.NoError(t, e, "nonempty projection must publish a real committed PostgreSQL hint")
+		require.Equal(t, "changed", hint.Payload)
+	})
+	t.Run("owned_listener_loss_readiness_relisten_and_both_replicas_replay", func(t *testing.T) {
+		pids := streamListenerPIDs(ctx, t, db)
+		require.Len(t, pids, 2, "fault only actual owned listener backends")
+		var after string
+		require.NoError(t, db.Pool.QueryRow(ctx,
+			"SELECT next_seq::text FROM alert_delivery_counter WHERE singleton").Scan(&after))
+		responses := []*http.Response{streamRequest(ctx, t, a, credential, after, ""),
+			streamRequest(ctx, t, b, credential, after, "")}
+		defer func() {
+			for _, response := range responses {
+				_ = response.Body.Close()
+			}
+		}()
+		for _, pid := range pids {
+			var killed bool
+			require.NoError(t, db.Pool.QueryRow(ctx,
+				"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid=$1 AND datname=current_database() AND application_name='sentinel-alert-listener'", pid).Scan(&killed))
+			require.True(t, killed)
+		}
+		// Commit while the dedicated connections are absent; polling remains authoritative.
+		id := deliveryInsert(ctx, t, db.Pool, tenant)
+		degraded := false
+		for _, ops := range []string{opsA, opsB} {
+			degraded = streamListenerState(t, ops) == "unavailable" || degraded
+		}
+		require.True(t, degraded, "readiness must expose the actual disconnected listener")
+		require.Eventually(t, func() bool {
+			next := streamListenerPIDs(ctx, t, db)
+			return len(next) == 2 && next[0] != pids[0] && next[1] != pids[1] &&
+				streamListenerState(t, opsA) == "ok" && streamListenerState(t, opsB) == "ok"
+		}, 8*time.Second, 20*time.Millisecond)
+		for _, response := range responses {
+			require.Equal(t, id, streamRead(t, response, 1)[0].Alert.AlertID)
+		}
+		// A new committed notification after reconnect proves re-LISTEN, not just a new socket.
+		id = deliveryInsert(ctx, t, db.Pool, tenant)
+		for _, response := range responses {
+			require.Equal(t, id, streamRead(t, response, 1)[0].Alert.AlertID)
+		}
+	})
+	t.Run("durable_poll_delivers_without_any_notification", func(t *testing.T) {
+		var after string
+		require.NoError(t, db.Pool.QueryRow(ctx,
+			"SELECT next_seq::text FROM alert_delivery_counter WHERE singleton").Scan(&after))
+		response := streamRequest(ctx, t, a, credential, after, "")
+		defer response.Body.Close()
+		// Controlled owned-DB fixture publishes the durable row without invoking
+		// the notification producer. No production SQL rewriting or test flag.
+		tx, e := db.Pool.Begin(ctx)
+		require.NoError(t, e)
+		defer func() { _ = tx.Rollback(context.Background()) }()
+		_, e = tx.Exec(ctx, "SELECT next_seq FROM alert_delivery_counter WHERE singleton FOR UPDATE")
+		require.NoError(t, e)
+		id := deliveryInsert(ctx, t, tx, tenant)
+		_, e = tx.Exec(ctx, `INSERT INTO alert_deliveries(delivery_seq,alert_id,tenant_id)
+		 SELECT next_seq+1,$1,$2 FROM alert_delivery_counter WHERE singleton`, id, tenant)
+		require.NoError(t, e)
+		_, e = tx.Exec(ctx, "UPDATE alert_delivery_counter SET next_seq=next_seq+1 WHERE singleton")
+		require.NoError(t, e)
+		_, e = tx.Exec(ctx, "DELETE FROM alert_delivery_pending WHERE alert_id=$1", id)
+		require.NoError(t, e)
+		started := time.Now()
+		require.NoError(t, tx.Commit(ctx))
+		require.Equal(t, id, streamRead(t, response, 1)[0].Alert.AlertID)
+		require.Less(t, time.Since(started), 3*time.Second)
+	})
 	t.Run("auth_query_and_cursor_fail_before_stream_headers", func(t *testing.T) {
 		for _, tc := range []struct {
 			token, after, suffix string
@@ -130,7 +217,10 @@ func TestPhase4Stream(t *testing.T) {
 	t.Run("two_actual_replicas_poll_every_own_commit_and_reconnect", func(t *testing.T) {
 		// The REST response is a real barrier. This held transaction commits
 		// strictly AFTER that response and BEFORE either stream attaches.
-		code, raw := getJSON(t, a+"/api/v1/alerts/backfill?after_seq=0&limit=1", credential, "")
+		var initial string
+		require.NoError(t, db.Pool.QueryRow(ctx,
+			"SELECT next_seq::text FROM alert_delivery_counter WHERE singleton").Scan(&initial))
+		code, raw := getJSON(t, a+"/api/v1/alerts/backfill?after_seq="+initial+"&limit=1", credential, "")
 		require.Equal(t, 200, code)
 		var page deliveryPage
 		require.NoError(t, json.Unmarshal(raw, &page))
@@ -214,6 +304,34 @@ func TestPhase4Stream(t *testing.T) {
 	})
 }
 
+func streamListenerPIDs(ctx context.Context, t *testing.T, db *database.Database) []int {
+	t.Helper()
+	rows, err := db.Pool.Query(ctx, `SELECT pid FROM pg_stat_activity WHERE datname=current_database()
+	 AND application_name='sentinel-alert-listener' AND query='LISTEN sentinel_alert_delivery' ORDER BY pid`)
+	require.NoError(t, err)
+	defer rows.Close()
+	var pids []int
+	for rows.Next() {
+		var pid int
+		require.NoError(t, rows.Scan(&pid))
+		pids = append(pids, pid)
+	}
+	require.NoError(t, rows.Err())
+	return pids
+}
+
+func streamListenerState(t *testing.T, ops string) string {
+	t.Helper()
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Get(ops + "/readyz")
+	require.NoError(t, err)
+	defer response.Body.Close()
+	var body struct {
+		Dependencies map[string]string `json:"dependencies"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
+	return body.Dependencies["alert-listener"]
+}
+
 func streamAssertIDs(t *testing.T, seen []streamDelivery, expected []string, tenant, foreign string) {
 	t.Helper()
 	ids := make([]string, 0, len(seen))
@@ -267,6 +385,12 @@ func streamSlowClient(ctx context.Context, t *testing.T, base, credential, tenan
 	 FROM generate_series(1,100)n`, uuid.NewString(), tenant)
 	require.NoError(t, err)
 	// Projection polls <=1s. Allow that plus the actual 5s write deadline.
+	// Distinct transactions prevent PostgreSQL's within-transaction coalescing.
+	// The unread handler's pending hint queue must disconnect on the 33rd hint.
+	for range 40 {
+		_, err = db.Pool.Exec(ctx, "SELECT pg_notify('sentinel_alert_delivery','changed')")
+		require.NoError(t, err)
+	}
 	timer := time.NewTimer(8 * time.Second)
 	defer timer.Stop()
 	select {

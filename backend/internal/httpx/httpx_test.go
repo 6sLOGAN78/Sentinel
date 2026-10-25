@@ -144,6 +144,30 @@ func TestHTTPXTimeouts(t *testing.T) {
 	assert.Equal(t, 13*time.Second, hs.IdleTimeout)
 }
 
+func TestOrdinaryHTTPWriteDeadlineRemainsEffective(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	done := make(chan struct{})
+	s := httpx.New(config.ServerConfig{WriteTimeout: 1}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		defer close(done)
+		time.Sleep(1200 * time.Millisecond)
+		_, _ = w.Write([]byte("late"))
+		_ = http.NewResponseController(w).Flush()
+	}))
+	served := make(chan error, 1)
+	go func() { served <- s.Serve(l) }()
+	response, requestErr := (&http.Client{Timeout: 3 * time.Second}).Get("http://" + l.Addr().String())
+	if response != nil {
+		_ = response.Body.Close()
+	}
+	require.Error(t, requestErr, "ordinary HTTP response must still expire at its configured write deadline")
+	<-done
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, s.Shutdown(ctx))
+	require.NoError(t, <-served)
+}
+
 func TestHTTPXImportsNothingHeavy(t *testing.T) {
 	t.Parallel()
 
