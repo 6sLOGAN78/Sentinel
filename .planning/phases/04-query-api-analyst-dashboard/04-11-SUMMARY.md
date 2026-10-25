@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "11"
-status: implemented-pending-review
+status: implemented-pending-re-review
 subsystem: api-ui
 tags: [clickhouse, postgres, overview, react-query, native]
 requires:
@@ -16,7 +16,7 @@ tech-stack:
   patterns: [complete canonical identity before aggregate filters, shared UTC snapshot, PG workflow authority]
 key-files:
   created: [backend/internal/query/summary.go, backend/internal/storage/clickhouse/summary.go, backend/internal/storage/postgres/summary.go, web/src/pages/Overview.tsx, web/src/pages/Overview.test.tsx]
-  modified: [backend/testphase4/summary_rules_test.go, api/openapi.yaml, web/src/App.tsx, backend/cmd/query-api/main.go, web/src/api/client.ts, web/src/App.test.tsx]
+  modified: [backend/testphase4/summary_rules_test.go, api/openapi.yaml, web/src/App.tsx, backend/cmd/query-api/main.go, web/src/api/client.ts, web/src/App.test.tsx, web/src/pages/Alerts.test.tsx]
 key-decisions:
   - Preserve the approved root Overview route; an additional existing Alerts fixture requires explicit ownership before repair.
   - No production clock override; focused handler accepts a clock and main uses the real clock.
@@ -28,6 +28,85 @@ completed: 2026-10-25
 # Phase 4 Plan 11: Tenant Overview — implementation and preserved handoff
 
 **Native canonical-event and authoritative-workflow aggregates power the actual Overview; root completed the explicitly approved fixture continuation after the preserved handoff.**
+
+## CR-01 precision repair — supersedes the reviewed source below
+
+Independent R0 `fe60b38` found a concrete rolling PG boundary defect at source
+`2f0bc7a`: pgx truncates sub-microsecond timestamptz parameters, incorrectly
+including lower-floor rows and excluding upper-floor rows when the single
+captured now has a nanosecond remainder. The original review is unchanged.
+
+Bounded repair owns only `backend/testphase4/summary_rules_test.go` and
+`backend/internal/storage/postgres/summary.go`, this summary and private11
+evidence. The overall approved source union remains thirteen paths (twelve
+tracked plus ignored generated schema). No additional source path was edited.
+
+Tests-only **RED `58525e2`** precedes minimal **GREEN `ef19971`**. The actual
+focused production handler, verified principal and native CH/PG adapters read
+valid millisecond workflows around both rolling boundaries. At 1ns and 999ns,
+RED returned `[LOWER_FLOOR:2,MIDDLE:2,LOWER_NEXT:1]` instead of required
+`[UPPER_FLOOR:3,MIDDLE:2,LOWER_NEXT:1]`. The aligned millisecond, exact1us and
+next aligned millisecond controls passed. All five cases assert unchanged
+all-time open9, current severity, exactly288 aligned trend buckets and native
+tenant separation. The failure was behavioral, not compile/setup failure.
+
+GREEN derives the microsecond ceiling of **both** PG rolling bounds, retaining
+already aligned values, and binds those values only to top-rules predicates
+`created_at >= lower` and `created_at < upper`. This preserves comparisons
+against representable PG timestamps without changing the one captured clock,
+CH nanosecond bounds, completed five-minute trend bounds or open counts. A
+small private helper is confined to the existing PG summary file. No new
+dependency, schema, auth/network surface or stubs were introduced.
+
+Private evidence under `.local/phase4-acceptance/04-11/` records exact argv,
+UTC times, actual exits, source SHA, working state, elapsed duration and disk
+samples. The native command is:
+`bash ../scripts/go-test-nonempty.sh './testphase4/...' '^TestPhase4SummaryRules$' -tags=phase4 -race -timeout=6m -p=1`,
+cwd backend through the approved NEW context.
+
+| Repair gate | UTC start–end, 2026-10-25 | Elapsed | Result |
+|---|---|---:|---|
+| Native causal RED, source fe60b38 with tests-only working change | 09:49:08.317683–09:49:20.265475 | 11.947805s | Exit1; only 1ns and999ns leaf cases fail; complete failure retained |
+| Native GREEN working tree at tests commit58525e2 | 09:49:36.597338–09:49:57.255212 | 20.657898s | Exit0; package12.431s, all new and existing cases pass |
+| Default/phase4/integration vet, build and pinned golangci-lint | 09:49:37.775677–09:50:17.460206 | 39.684544s | Exit0; all nine constituent gates pass, all lint modes0issues |
+| Clean ordinary make test, outer300s, no runtime/SSL overrides | 09:49:37.837263–09:50:04.882098 | 27.044848s | Exit0; ordinary Go race/unit, web139 and generator121 |
+| Nonempty OpenAPI family,60s cap | 09:49:37.798815–09:49:46.457268 | 8.658492s | Exit0; eleven tests |
+| Committed source ef199718148df3cda545c6166ccae487f796a893 native repeat | 09:50:34.469718–09:50:46.052936 | 11.583235s | Exit0;22 RUN records including root and21named subtests, package9.503s |
+| Same committed source, real API/Vite/browser regression | 09:50:34.433240–09:50:51.172565 | 16.739333s | Exit0; six actual role/width flows, all three roles at1440/375 |
+
+The existing corrected private browser harness uses cached full Chromium1248,
+the primary populated native fixture and a tenant-scoped PG open-count read.
+No fetch interception/mocks or old07 service image supplies browser data.
+`browser-1792921834542660277/results.json` records exact open2/rate0 and
+eventTotal6/alertTotal26,288API/table/SVG values and top-rule rows, refresh,
+keyboard/history, logout privacy, no page errors and no horizontal overflow
+for each of the six flows. The375px screenshot was visually inspected.
+Current-source API/Vite children were terminated and joined in the harness's
+finally block. Every gate producer returned; none remains running.
+
+Read-only preflight observed all nine NEW services healthy and9GiB available
+disk, above the2GiB floor. All native/runtime proof uses only PG25432/schema7,
+CH28123/29000, Redis26379/Kafka39092 through approved private07 context. No
+Compose start/migration rerun, shared service stop, old-stack operation, seed
+resend, reset/prune, remote action or Phase5 work occurred. Unit gates ran with
+ordinary clean runtime environment. Evidence directories/files remain0700/
+0600 and binaries0700; child umask022. User config/.serena remain untouched
+and unstaged; shared tracking and all review reports remain root-owned.
+
+Generated schema is unchanged after normal npm pretest regeneration:
+`49cbb870db693360b4d424681a0b08b536078f52ecc1c766d1179055f432ff38`.
+It remains ignored and was not force-added. Pinned8.30.1 staged RED and
+staged GREEN/generated/private-harness/full-history scans all returned0 under
+unchanged policy; no exception or allowlist was added. There were no failed
+GREEN attempts in this repair, no deviations, and no gate/cap changes.
+
+**Repair self-check: PASSED.** Both owned files and generated schema exist;
+RED58525e2 and GREENef19971 exist in order; exact committed-source native and
+browser evidence returned0. Independent R1 review of the full approved
+thirteen-path union and root postwave acceptance remain pending. This repair
+does not itself close review, mark requirements complete or claim whole-phase
+acceptance. The earlier R0 and all prior failed/limited evidence remain below
+and in their original reports.
 
 ## Root continuation — supersedes incomplete handoff below
 
