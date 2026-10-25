@@ -36,12 +36,25 @@ requirements-completed: []
 requirements-targeted: [LIVE-02, LIVE-03, AUTH-03, UI-02, UI-06]
 duration: 20min
 completed: 2026-10-25
-status: incomplete
+status: implemented-pending-review
 ---
 
 # Phase 4 Plan 12: Gap-safe alert delivery Summary
 
 **Transactional PostgreSQL delivery projection recovers late lower-workflow-sequence alerts; the OpenAPI exact-route fixture still blocks acceptance.**
+
+## Root A3 continuation — supersedes fixture blocker below
+
+Independent A3 PASS0atab66e7a approved backend/test/openapi_test.go as thirteenth
+path. Root synchronized PLAN inaaf64d3 before adding only GET backfill to its
+strict expected route set. Exact equality and all other route/security/schema
+assertions remain. Root isolatedOpenAPI nowEXIT0/all11; private
+root-openapi-continuation records actualSHA/UTC/elapsed. Pinnedstaged/generated/
+harness/history scansPASS. The original10/11failure and prematureclaimcorrection
+below remain preserved; no retroactivepassingclaim. Fullsourceenvelope now12
+tracked plus ignored generated schema=13approvedpaths. Source review/rootgate
+remainpending. ActualPG-onlyfeaturepasses and separateNEWdetectorhistorylost
+hold remain distinct; no fullpipeline/ninehealthy/Phase4completionclaim.
 
 ## Status and commits
 
