@@ -25,6 +25,15 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 ## Test Infrastructure
 
+04-13 acceptedOct25UTC: REDbc5acbe/GREEN2c88d18, nativeStream6/tworeplicas206IDs/
+auth/heartbeat/expiry/slowwrite/100cap,web170/affectednative/OpenAPI11/3modequality
+PASS. SeparateUTCREDac7882d/GREEN1a3529e/2-pathreview closesStore.Read wireoffset
+defect;schemaZvalidationpreserved. Independentfeature14+UTC2bothclean;component99/
+Delivery10/Stream6/browser1440+375PASS. Dropfailureprovenprivateproxy/Vitehalfopen;
+separatereviewproxyEOFfixpassesUNCHANGEDassertions,oldfailurespreserved.
+Rootbuild+make test EXIT0/14.632s END23:18:33Z(web170/gen121).14/17accepted,
+NEWdetectorhistorylost/8healthyseparatehold/noreset/fullpipelineclaim.
+
 04-12 PG-onlysliceaccepted2026-10-25: REDe44f217/GREEN921dbb2; actual008/schema8/
 reversecommit/cutover/realCOMMITACKloss/twoprojectors/overflow/tenant/CHdown/native9
 andbrowserdecimal>2^53/203rows/boundedUI PASS. OpenAPI10/11failure correctedonly
