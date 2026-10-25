@@ -3,8 +3,8 @@
 Status: proposed, independent check required before source edits.
 
 Actual committed13source2c88d18 passes nativeStream6 but browser loops on200
-backfill before SSE attach. Private13/browser-1792968078977373286 evidence
-(latest delivery-shape.json records exact data) shows all four WorkflowAlert
+backfill before SSE attach. Private13/browser-*/delivery-shape.json evidence
+(latest record contains exact data) shows all four WorkflowAlert
 timestamps serialized with +05:30, while OpenAPI WorkflowAlert references
 UTCTimestamp requiring Z. Strict new live validator rejects the invalid wire.
 Retain all failed browser attempts, do not weaken validator/schema or alterTZ.
