@@ -5,6 +5,16 @@ export type Session =
   paths["/api/v1/session"]["get"]["responses"][200]["content"]["application/json"];
 export type AlertPage =
   paths["/api/v1/alerts"]["get"]["responses"][200]["content"]["application/json"];
+export type BackfillPage =
+  paths["/api/v1/alerts/backfill"]["get"]["responses"][200]["content"]["application/json"];
+
+function isDeliverySeq(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^(0|[1-9][0-9]{0,18})$/.test(value) &&
+    BigInt(value) <= 9223372036854775807n
+  );
+}
 export type AlertFilters = NonNullable<
   paths["/api/v1/alerts"]["get"]["parameters"]["query"]
 >;
@@ -60,6 +70,43 @@ export function createAPIClient(
     },
   });
   return {
+    async backfill(after = "0", signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      if (!isDeliverySeq(after)) throw new APIError(400);
+      const result = await client.GET("/api/v1/alerts/backfill", {
+        params: { query: { after_seq: after, limit: 200 } },
+        signal,
+      });
+      assertCurrent();
+      signal?.throwIfAborted();
+      const page = result.data;
+      if (
+        !page ||
+        !Array.isArray(page.items) ||
+        page.items.length > 200 ||
+        typeof page.has_more !== "boolean" ||
+        !isDeliverySeq(page.next_seq) ||
+        BigInt(page.next_seq) < BigInt(after)
+      )
+        throw new APIError(503);
+      let previous = after;
+      for (const item of page.items) {
+        if (
+          !item ||
+          !isDeliverySeq(item.seq) ||
+          BigInt(item.seq) <= BigInt(previous) ||
+          BigInt(item.seq) > BigInt(page.next_seq) ||
+          !item.alert ||
+          !/^[0-9a-f]{64}$/.test(item.alert.alert_id) ||
+          typeof item.alert.tenant_id !== "string"
+        )
+          throw new APIError(503);
+        previous = item.seq;
+      }
+      if (page.has_more && (!page.items.length || previous !== page.next_seq))
+        throw new APIError(503);
+      return page;
+    },
     async summary(signal?: AbortSignal) {
       signal?.throwIfAborted();
       const result = await client.GET("/api/v1/metrics/summary", { signal });

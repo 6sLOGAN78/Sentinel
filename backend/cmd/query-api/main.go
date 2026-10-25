@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 
+	"github.com/6sLOGAN78/sentinel/internal/alertstream"
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
 	"github.com/6sLOGAN78/sentinel/internal/app"
 	"github.com/6sLOGAN78/sentinel/internal/auth"
@@ -122,6 +123,8 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	verifier := apikeys.NewVerifier(apikeys.NewStore(db.Pool), 0, 0, nil)
 	e := echo.New()
 	middleware.Apply(e, &log, cfg.Server.CORSAllowedOrigins)
+	deliveries := alertstream.NewStore(db.Pool)
+	deliveries.Register(e, jwtVerifier)
 	eventquery.NewAuthenticatedHandler(verifier, jwtVerifier, storageclickhouse.NewEventStore(clickhouseConn)).Register(e)
 	e.GET("/api/v1/session", getSession, jwtVerifier.Middleware)
 	alerts := storagepostgres.NewAlertStore(db.Pool, alertQueryTimeout)
@@ -131,7 +134,17 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	query.NewRulesHandler(rules, jwtVerifier).Register(e)
 	query.NewSummaryHandler(storageclickhouse.NewQueryEventStore(clickhouseConn), alerts, jwtVerifier, nil).Register(e)
 
-	server := httpx.New(cfg.Server, e)
+	if err = startQueryHTTP(ctx, cfg.Server, e, lc); err != nil {
+		return err
+	}
+	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
+	startDeliveryProjector(ctx, deliveries, draining, lc)
+
+	return nil
+}
+
+func startQueryHTTP(ctx context.Context, cfg config.ServerConfig, e *echo.Echo, lc *app.Lifecycle) error {
+	server := httpx.New(cfg, e)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)
 	if err != nil {
 		return fmt.Errorf("http listen: %w", err)
@@ -148,9 +161,30 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 		}
 	})
 	lc.Add("http", server.Shutdown)
-	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
-
 	return nil
+}
+
+func startDeliveryProjector(ctx context.Context, deliveries *alertstream.Store,
+	draining *opshttp.Draining, lc *app.Lifecycle,
+) {
+	projectCtx, stopProjector := context.WithCancel(ctx)
+	projectDone := make(chan struct{})
+	go func() {
+		defer close(projectDone)
+		if projectErr := deliveries.Run(projectCtx); projectErr != nil && projectCtx.Err() == nil {
+			draining.Begin()
+			lc.Fail(fmt.Errorf("alert delivery: %w", projectErr))
+		}
+	}()
+	lc.Add("alert-delivery", func(closeCtx context.Context) error {
+		stopProjector()
+		select {
+		case <-projectDone:
+			return nil
+		case <-closeCtx.Done():
+			return closeCtx.Err()
+		}
+	})
 }
 
 func loadStartupRules(path string) (*detection.Rules, error) {

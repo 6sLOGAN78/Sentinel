@@ -50,7 +50,8 @@ async function start(
   list: (request: Request) => Promise<Response> = async () =>
     Response.json(page()),
   lifetime = 600000,
-  backfill: (request: Request) => Promise<Response> = async () => Response.json({ items: [], next_seq: "0", has_more: false }),
+  backfill: (request: Request) => Promise<Response> = async () =>
+    Response.json({ items: [], next_seq: "0", has_more: false }),
 ) {
   if (window.location.pathname !== "/alerts")
     window.history.replaceState(null, "", "/alerts");
@@ -104,8 +105,17 @@ describe("filtered alert pages", () => {
       async (request) => {
         const after = new URL(request.url).searchParams.get("after_seq")!;
         order.push(after);
-        if (after === "0") return Response.json({ items: [{seq: "9007199254740993", alert: page().items[0]}], next_seq: "9007199254740993", has_more: true });
-        return Response.json({ items: [{seq: "9007199254740994", alert: page().items[0]}], next_seq: "9007199254740994", has_more: false });
+        if (after === "0")
+          return Response.json({
+            items: [{ seq: "9007199254740993", alert: page().items[0] }],
+            next_seq: "9007199254740993",
+            has_more: true,
+          });
+        return Response.json({
+          items: [{ seq: "9007199254740994", alert: page().items[0] }],
+          next_seq: "9007199254740994",
+          has_more: false,
+        });
       },
     );
     await waitFor(() => expect(backfills).toHaveLength(2));
@@ -117,26 +127,45 @@ describe("filtered alert pages", () => {
     expect(screen.getAllByRole("row")).toHaveLength(2);
     expect(window.location.href).not.toContain("9007199254740993");
     expect(localStorage.length + sessionStorage.length).toBe(0);
-    fireEvent.click(screen.getByRole("button", {name: "Refresh alerts"}));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh alerts" }));
     await waitFor(() => expect(requests).toHaveLength(2));
-    await waitFor(() => expect(screen.queryByText("New alerts available")).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByText("New alerts available")).toBeNull(),
+    );
   });
 
   it("does not request the next delivery page until invalidation processing completes", async () => {
     let release: () => void = () => {};
-    const processing = new Promise<void>((resolve) => { release = resolve; });
-    let send: (response: Response) => void = () => {};
-    const pending = new Promise<Response>((resolve) => {send = resolve;});
-    const {cache, backfills} = await start(undefined, 600000, async (request) => {
-      if (new URL(request.url).searchParams.get("after_seq") === "0") return pending;
-      return Response.json({items: [], next_seq: "7", has_more: false});
+    const processing = new Promise<void>((resolve) => {
+      release = resolve;
     });
+    let send: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      send = resolve;
+    });
+    const { cache, backfills } = await start(
+      undefined,
+      600000,
+      async (request) => {
+        if (new URL(request.url).searchParams.get("after_seq") === "0")
+          return pending;
+        return Response.json({ items: [], next_seq: "7", has_more: false });
+      },
+    );
     const realInvalidate = cache.invalidateQueries.bind(cache);
     vi.spyOn(cache, "invalidateQueries").mockImplementation(async (...args) => {
       await processing;
       await realInvalidate(...args);
     });
-    await act(async () => send(Response.json({items: [{seq: "7", alert: page().items[0]}], next_seq: "7", has_more: true})));
+    await act(async () =>
+      send(
+        Response.json({
+          items: [{ seq: "7", alert: page().items[0] }],
+          next_seq: "7",
+          has_more: true,
+        }),
+      ),
+    );
     expect(backfills).toHaveLength(1);
     await act(async () => release());
     await waitFor(() => expect(backfills).toHaveLength(2));
@@ -144,7 +173,13 @@ describe("filtered alert pages", () => {
   });
 
   it("rejects duplicate non-progress pages without an unbounded request loop or appended rows", async () => {
-    const {backfills, requests} = await start(undefined,600000,async () => Response.json({items:[{seq:"3",alert:page().items[0]}],next_seq:"3",has_more:true}));
+    const { backfills, requests } = await start(undefined, 600000, async () =>
+      Response.json({
+        items: [{ seq: "3", alert: page().items[0] }],
+        next_seq: "3",
+        has_more: true,
+      }),
+    );
     await waitFor(() => expect(backfills).toHaveLength(2));
     await screen.findByText("Reconnecting… Missed alerts will be recovered.");
     expect(requests).toHaveLength(1);
@@ -154,18 +189,38 @@ describe("filtered alert pages", () => {
 
   it("aborts catch-up and discards a late body before a separate session starts at zero", async () => {
     let finish: (response: Response) => void = () => {};
-    const pending = new Promise<Response>((resolve) => {finish=resolve;});
-    const {backfills,cache,switchTenant}=await start(undefined,600000,async () => pending);
+    const pending = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    const { backfills, cache, switchTenant } = await start(
+      undefined,
+      600000,
+      async () => pending,
+    );
     await waitFor(() => expect(backfills).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", {name:"Sign out"}));
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(backfills[0].signal.aborted).toBe(true);
-    switchTenant();signIn();
+    switchTenant();
+    signIn();
     await waitFor(() => expect(backfills).toHaveLength(2));
     expect(new URL(backfills[1].url).searchParams.get("after_seq")).toBe("0");
-    await act(async () => finish(Response.json({items:[{seq:"9007199254740993",alert:page().items[0]}],next_seq:"9007199254740993",has_more:false})));
-    expect(cache.getQueryCache().getAll().every((q)=>q.queryKey[2]==="second-tenant")).toBe(true);
+    await act(async () =>
+      finish(
+        Response.json({
+          items: [{ seq: "9007199254740993", alert: page().items[0] }],
+          next_seq: "9007199254740993",
+          has_more: false,
+        }),
+      ),
+    );
+    expect(
+      cache
+        .getQueryCache()
+        .getAll()
+        .every((q) => q.queryKey[2] === "second-tenant"),
+    ).toBe(true);
     expect(screen.queryByText("New alerts available")).toBeNull();
-    expect(localStorage.length+sessionStorage.length).toBe(0);
+    expect(localStorage.length + sessionStorage.length).toBe(0);
   });
 
   it.each([
@@ -596,7 +651,12 @@ describe("filtered alert pages", () => {
     await screen.findByText("Choose a valid UTC time range of at most 7 days.");
     fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
     expect(screen.getByRole("heading", { name: "Alerts" })).toBeTruthy();
-    expect(fetchSpy.mock.calls.filter(([request]) => new URL(request.url).pathname !== "/api/v1/alerts/backfill")).toHaveLength(1);
+    expect(
+      fetchSpy.mock.calls.filter(
+        ([request]) =>
+          new URL(request.url).pathname !== "/api/v1/alerts/backfill",
+      ),
+    ).toHaveLength(1);
     await waitFor(() => expect(backfills).toHaveLength(1));
   });
 });

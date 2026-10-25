@@ -209,6 +209,47 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /api/v1/alerts/backfill:
+    get:
+      tags: [alerts]
+      operationId: backfillAlerts
+      summary: Recover committed alerts from the durable delivery log
+      description: |
+        Bearer-only PostgreSQL read; independent of ClickHouse. Delivery seq is
+        projection commit order, not workflow allocation seq. Read the committed
+        global counter before selecting tenant rows bounded by that counter.
+        Future cursors return 400. Process each page before retaining next_seq;
+        global IDs are sparse per tenant. No retention/GC bound is promised.
+        Unknown, duplicate and noncanonical query fields return 400.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: after_seq
+          in: query
+          description: Canonical decimal delivery cursor, zero through MaxInt64. Never a JSON number.
+          schema:
+            $ref: "#/components/schemas/DeliverySeq"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Finite tenant delivery page; exhausted interval advances to its captured committed global bound.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertBackfillPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /api/v1/alerts/stream:
     get:
       tags: [alerts]
@@ -217,7 +258,7 @@ paths:
       description: |
         Authenticates with the bearer header. Tokens are never accepted in URL query
         parameters. Supports reconnection with the Last-Event-ID header; clients may also
-        backfill through GET /api/v1/alerts. The server sends keep-alive comments, uses a
+        backfill through GET /api/v1/alerts/backfill. The server sends keep-alive comments, uses a
         bounded per-client buffer, and drops slow clients so they reconnect.
       security:
         - BearerAuth: []
@@ -885,6 +926,38 @@ components:
             $ref: "#/components/schemas/Event"
         next_cursor:
           type: [string, "null"]
+        has_more:
+          type: boolean
+
+    DeliverySeq:
+      description: Canonical decimal string in [0, 9223372036854775807]; never workflow seq or a JavaScript number.
+      type: string
+      pattern: "^(0|[1-9][0-9]{0,18})$"
+      maxLength: 19
+      default: "0"
+
+    AlertDelivery:
+      type: object
+      additionalProperties: false
+      required: [seq, alert]
+      properties:
+        seq:
+          $ref: "#/components/schemas/DeliverySeq"
+        alert:
+          $ref: "#/components/schemas/WorkflowAlert"
+
+    AlertBackfillPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_seq, has_more]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/AlertDelivery"
+        next_seq:
+          $ref: "#/components/schemas/DeliverySeq"
         has_more:
           type: boolean
 

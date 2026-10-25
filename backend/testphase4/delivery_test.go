@@ -47,18 +47,21 @@ type deliveryPage struct {
 
 // Each synthetic counter/fault/cutover uses this newly owned database, never
 // changes the NEW demo's durable counter, history, workflows or reservations.
-func deliveryDatabase(t *testing.T, ctx context.Context, cfg config.DatabaseConfig, version int32) config.DatabaseConfig {
+func deliveryDatabase(ctx context.Context, t *testing.T,
+	cfg config.DatabaseConfig, version int32,
+) config.DatabaseConfig {
 	t.Helper()
 	admin, err := pgx.Connect(ctx, database.ConnString(cfg))
 	require.NoError(t, err)
 	defer func() { _ = admin.Close(context.Background()) }()
+	adminConfig := cfg
 	cfg.Name = "p4delivery_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{cfg.Name}.Sanitize())
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		conn, connectErr := pgx.Connect(cleanup, database.ConnString(func() config.DatabaseConfig { c := cfg; c.Name = "sentinel"; return c }()))
+		conn, connectErr := pgx.Connect(cleanup, database.ConnString(adminConfig))
 		if connectErr != nil {
 			t.Error("owned database cleanup connection failed")
 			return
@@ -77,7 +80,7 @@ func deliveryDatabase(t *testing.T, ctx context.Context, cfg config.DatabaseConf
 	return cfg
 }
 
-func deliveryInsert(t *testing.T, ctx context.Context, tx interface {
+func deliveryInsert(ctx context.Context, t *testing.T, tx interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }, tenant string) string {
 	t.Helper()
@@ -109,7 +112,7 @@ func TestPhase4Delivery(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(root, "backend/migrations/postgres/008_alert_delivery.sql")); statErr == nil {
 		version = 8
 	}
-	owned := deliveryDatabase(t, ctx, cfg.Database, version)
+	owned := deliveryDatabase(ctx, t, cfg.Database, version)
 	t.Setenv("SENTINEL_DATABASE.NAME", owned.Name)
 	db, err := database.New(ctx, owned, zerolog.Nop())
 	require.NoError(t, err)
@@ -122,20 +125,23 @@ func TestPhase4Delivery(t *testing.T) {
 	tenant, foreign := "p4delivery-"+uuid.NewString(), "p4foreign-"+uuid.NewString()
 	now := time.Now()
 	token := func(owner string) string {
-		return signToken(t, map[string]any{"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "delivery-reader", "tenant": owner, "role": "viewer", "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
+		return signToken(t, map[string]any{"iss": "sentinel-dev", "aud": "sentinel-dashboard",
+			"sub": "delivery-reader", "tenant": owner, "role": "viewer", "iat": now.Unix(),
+			"nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
 	}
 	credential := token(tenant)
 	t.Run("native_workflow_max_counterexample", func(t *testing.T) {
 		a, e := db.Pool.Begin(ctx)
 		require.NoError(t, e)
 		defer func() { _ = a.Rollback(context.Background()) }()
-		idA := deliveryInsert(t, ctx, a, "counterexample")
-		idB := deliveryInsert(t, ctx, db.Pool, "counterexample")
+		idA := deliveryInsert(ctx, t, a, "counterexample")
+		idB := deliveryInsert(ctx, t, db.Pool, "counterexample")
 		var seqB int64
 		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT seq FROM alert_workflows WHERE alert_id=$1", idB).Scan(&seqB))
 		require.NoError(t, a.Commit(ctx))
 		var missed int
-		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT count(*) FROM alert_workflows WHERE alert_id=$1 AND seq>$2", idA, seqB).Scan(&missed))
+		naiveSQL := "SELECT count(*) FROM alert_workflows WHERE alert_id=$1 AND seq>$2"
+		require.NoError(t, db.Pool.QueryRow(ctx, naiveSQL, idA, seqB).Scan(&missed))
 		require.Zero(t, missed, "actual late committed A is absent from max-workflow-seq backfill")
 		t.Log("NATIVE counterexample: committed earlier-allocation A is permanently absent after B workflow cursor")
 	})
@@ -150,32 +156,22 @@ func TestPhase4Delivery(t *testing.T) {
 	}
 	read := func(t *testing.T, after string, limit int) deliveryPage {
 		t.Helper()
-		status, raw := getJSON(t, base+"/api/v1/alerts/backfill?after_seq="+after+"&limit="+strconv.Itoa(limit), credential, "")
+		url := base + "/api/v1/alerts/backfill?after_seq=" + after + "&limit=" + strconv.Itoa(limit)
+		status, raw := getJSON(t, url, credential, "")
 		require.Equal(t, 200, status)
 		var page deliveryPage
 		require.NoError(t, json.Unmarshal(raw, &page))
 		return page
 	}
 	waitForID := func(t *testing.T, id, after string) deliveryPage {
-		t.Helper()
-		var page deliveryPage
-		require.Eventually(t, func() bool {
-			page = read(t, after, 200)
-			for _, item := range page.Items {
-				if item.Alert.AlertID == id {
-					return true
-				}
-			}
-			return false
-		}, 8*time.Second, 25*time.Millisecond, "real projector must persist the committed alert")
-		return page
+		return deliveryWait(t, id, after, read)
 	}
 	t.Run("reverse_commit_workflow_max_is_not_delivery_cursor", func(t *testing.T) {
 		a, beginErr := db.Pool.Begin(ctx)
 		require.NoError(t, beginErr)
 		defer func() { _ = a.Rollback(context.Background()) }()
-		idA := deliveryInsert(t, ctx, a, tenant)
-		idB := deliveryInsert(t, ctx, db.Pool, tenant)
+		idA := deliveryInsert(ctx, t, a, tenant)
+		idB := deliveryInsert(ctx, t, db.Pool, tenant)
 		var seqA, seqB int64
 		require.NoError(t, a.QueryRow(ctx, "SELECT seq FROM alert_workflows WHERE alert_id=$1", idA).Scan(&seqA))
 		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT seq FROM alert_workflows WHERE alert_id=$1", idB).Scan(&seqB))
@@ -184,7 +180,8 @@ func TestPhase4Delivery(t *testing.T) {
 		require.Len(t, first.Items, 1)
 		require.NoError(t, a.Commit(ctx))
 		var naive int
-		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT count(*) FROM alert_workflows WHERE tenant_id=$1 AND seq>$2", tenant, seqB).Scan(&naive))
+		naiveSQL := "SELECT count(*) FROM alert_workflows WHERE tenant_id=$1 AND seq>$2"
+		require.NoError(t, db.Pool.QueryRow(ctx, naiveSQL, tenant, seqB).Scan(&naive))
 		require.Zero(t, naive, "actual max-workflow-seq algorithm permanently misses late A")
 		second := waitForID(t, idA, first.Next)
 		require.Len(t, second.Items, 1)
@@ -200,7 +197,11 @@ func TestPhase4Delivery(t *testing.T) {
 		require.NoError(t, e)
 		workflow, e := store.GetWorkflow(ctx, tenant, idA)
 		require.NoError(t, e)
-		replay := &contracts.Alert{AlertID: idA, TenantID: tenant, CreatedAt: contracts.NewTimestamp(workflow.CreatedAt), RuleID: workflow.RuleID, RuleVersion: int(workflow.RuleVersion), Severity: workflow.Severity, EntityKey: workflow.EntityKey, Summary: workflow.Summary, EventCount: int(workflow.EventCount), WindowStart: contracts.NewTimestamp(workflow.WindowStart), WindowEnd: contracts.NewTimestamp(workflow.WindowEnd)}
+		replay := &contracts.Alert{AlertID: idA, TenantID: tenant,
+			CreatedAt: contracts.NewTimestamp(workflow.CreatedAt), RuleID: workflow.RuleID,
+			RuleVersion: int(workflow.RuleVersion), Severity: workflow.Severity,
+			EntityKey: workflow.EntityKey, Summary: workflow.Summary, EventCount: int(workflow.EventCount),
+			WindowStart: contracts.NewTimestamp(workflow.WindowStart), WindowEnd: contracts.NewTimestamp(workflow.WindowEnd)}
 		tx, e := store.BeginLocked(ctx, idA)
 		require.NoError(t, e)
 		require.NoError(t, store.Ensure(ctx, tx, replay, idA))
@@ -210,7 +211,8 @@ func TestPhase4Delivery(t *testing.T) {
 		require.Equal(t, 1, count)
 		var status string
 		var seq, version int64
-		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT status,seq,version FROM alert_workflows WHERE alert_id=$1", idA).Scan(&status, &seq, &version))
+		stateSQL := "SELECT status,seq,version FROM alert_workflows WHERE alert_id=$1"
+		require.NoError(t, db.Pool.QueryRow(ctx, stateSQL, idA).Scan(&status, &seq, &version))
 		require.Equal(t, "acknowledged", status)
 		require.Equal(t, seqA, seq)
 		require.Equal(t, int64(2), version)
@@ -219,9 +221,9 @@ func TestPhase4Delivery(t *testing.T) {
 		require.Len(t, history, 1)
 	})
 	t.Run("tenant_auth_strict_cursor_and_bounded_pages", func(t *testing.T) {
-		foreignID := deliveryInsert(t, ctx, db.Pool, foreign)
+		foreignID := deliveryInsert(ctx, t, db.Pool, foreign)
 		for range 202 {
-			deliveryInsert(t, ctx, db.Pool, tenant)
+			deliveryInsert(ctx, t, db.Pool, tenant)
 		}
 		require.Eventually(t, func() bool {
 			var n int
@@ -248,7 +250,9 @@ func TestPhase4Delivery(t *testing.T) {
 		for _, item := range next.Items {
 			require.False(t, seen[item.Alert.AlertID])
 		}
-		for _, q := range []string{"after_seq=-1", "after_seq=+1", "after_seq=01", "after_seq=1.0", "after_seq=9223372036854775808", "after_seq=9223372036854775807", "after_seq=0&after_seq=1", "after_seq=", "limit=0", "limit=201", "limit=1&limit=2", "tenant_id=forged"} {
+		for _, q := range []string{"after_seq=-1", "after_seq=+1", "after_seq=01", "after_seq=1.0",
+			"after_seq=9223372036854775808", "after_seq=9223372036854775807", "after_seq=0&after_seq=1",
+			"after_seq=", "limit=0", "limit=201", "limit=1&limit=2", "tenant_id=forged"} {
 			status, _ := getJSON(t, base+"/api/v1/alerts/backfill?"+q, credential, "")
 			require.Equal(t, 400, status, q)
 		}
@@ -268,7 +272,7 @@ func TestPhase4Delivery(t *testing.T) {
 		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT next_seq FROM alert_delivery_counter WHERE singleton").Scan(&before))
 		_, e := db.Pool.Exec(ctx, `ALTER TABLE alert_deliveries ADD CONSTRAINT owned_delivery_fault CHECK (false) NOT VALID`)
 		require.NoError(t, e)
-		id := deliveryInsert(t, ctx, db.Pool, tenant)
+		id := deliveryInsert(ctx, t, db.Pool, tenant)
 		// Both production replicas retry actual transaction failure; no CH traffic.
 		startQueryAPI(t, binary, root, secret, freeAddress(t))
 		time.Sleep(1300 * time.Millisecond)
@@ -276,7 +280,8 @@ func TestPhase4Delivery(t *testing.T) {
 		var pending int
 		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT next_seq FROM alert_delivery_counter WHERE singleton").Scan(&after))
 		require.Equal(t, before, after)
-		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT count(*) FROM alert_delivery_pending WHERE alert_id=$1", id).Scan(&pending))
+		pendingSQL := "SELECT count(*) FROM alert_delivery_pending WHERE alert_id=$1"
+		require.NoError(t, db.Pool.QueryRow(ctx, pendingSQL, id).Scan(&pending))
 		require.Equal(t, 1, pending)
 		_, e = db.Pool.Exec(ctx, "ALTER TABLE alert_deliveries DROP CONSTRAINT owned_delivery_fault")
 		require.NoError(t, e)
@@ -285,15 +290,16 @@ func TestPhase4Delivery(t *testing.T) {
 		// Replay a page after losing its HTTP acknowledgement: stable identity/seq.
 		require.Equal(t, page, read(t, strconv.FormatInt(before, 10), 200))
 		for range 110 {
-			deliveryInsert(t, ctx, db.Pool, tenant)
+			deliveryInsert(ctx, t, db.Pool, tenant)
 		}
 		require.Eventually(t, func() bool {
 			var n int
-			e := db.Pool.QueryRow(ctx, "SELECT count(*) FROM alert_delivery_pending").Scan(&n)
-			return e == nil && n == 0
+			readErr := db.Pool.QueryRow(ctx, "SELECT count(*) FROM alert_delivery_pending").Scan(&n)
+			return readErr == nil && n == 0
 		}, 8*time.Second, 25*time.Millisecond)
 		var count, distinct int64
-		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT count(*),count(DISTINCT delivery_seq) FROM alert_deliveries WHERE delivery_seq>$1", before).Scan(&count, &distinct))
+		countsSQL := "SELECT count(*),count(DISTINCT delivery_seq) FROM alert_deliveries WHERE delivery_seq>$1"
+		require.NoError(t, db.Pool.QueryRow(ctx, countsSQL, before).Scan(&count, &distinct))
 		require.Equal(t, int64(111), count)
 		require.Equal(t, count, distinct)
 		require.NoError(t, db.Pool.QueryRow(ctx, "SELECT next_seq FROM alert_delivery_counter WHERE singleton").Scan(&after))
@@ -302,30 +308,32 @@ func TestPhase4Delivery(t *testing.T) {
 	t.Run("large_decimal_cursor_is_exact", func(t *testing.T) {
 		_, e := db.Pool.Exec(ctx, "UPDATE alert_delivery_counter SET next_seq=9007199254740992 WHERE singleton")
 		require.NoError(t, e)
-		id := deliveryInsert(t, ctx, db.Pool, tenant)
+		id := deliveryInsert(ctx, t, db.Pool, tenant)
 		page := waitForID(t, id, "9007199254740992")
 		require.Equal(t, "9007199254740993", page.Next)
 		require.Equal(t, page.Next, page.Items[0].Seq)
 	})
 	t.Run("preexisting_and_concurrent_trigger_cutover", func(t *testing.T) { deliveryCutover(ctx, t, cfg.Database) })
 	t.Run("projector_uncertain_commit_ack_retries_without_duplicate", func(t *testing.T) {
-		isolated := deliveryDatabase(t, ctx, cfg.Database, 8)
+		isolated := deliveryDatabase(ctx, t, cfg.Database, 8)
 		conn, e := pgx.Connect(ctx, database.ConnString(isolated))
 		require.NoError(t, e)
 		defer func() { _ = conn.Close(context.Background()) }()
-		first := deliveryInsert(t, ctx, conn, tenant)
+		first := deliveryInsert(ctx, t, conn, tenant)
 		address, lost := deliveryAckProxy(t, net.JoinHostPort(isolated.Host, strconv.Itoa(isolated.Port)))
 		_, port, e := net.SplitHostPort(address)
 		require.NoError(t, e)
 		t.Setenv("SENTINEL_DATABASE.PORT", port)
 		t.Setenv("SENTINEL_DATABASE.NAME", isolated.Name)
 		api, _ := startQueryAPI(t, binary, root, secret, freeAddress(t))
-		require.Eventually(t, lost.Load, 5*time.Second, 10*time.Millisecond, "real PostgreSQL COMMIT acknowledgement was dropped after server success")
-		second := deliveryInsert(t, ctx, conn, tenant)
+		require.Eventually(t, lost.Load, 5*time.Second, 10*time.Millisecond,
+			"real PostgreSQL COMMIT acknowledgement was dropped after server success")
+		second := deliveryInsert(ctx, t, conn, tenant)
 		require.Eventually(t, func() bool {
 			var n int
-			e := conn.QueryRow(ctx, "SELECT count(*) FROM alert_deliveries WHERE alert_id=ANY($1)", []string{first, second}).Scan(&n)
-			return e == nil && n == 2
+			readSQL := "SELECT count(*) FROM alert_deliveries WHERE alert_id=ANY($1)"
+			readErr := conn.QueryRow(ctx, readSQL, []string{first, second}).Scan(&n)
+			return readErr == nil && n == 2
 		}, 8*time.Second, 25*time.Millisecond)
 		status, raw := getJSON(t, api+"/api/v1/alerts/backfill?after_seq=0", credential, "")
 		require.Equal(t, 200, status)
@@ -337,13 +345,13 @@ func TestPhase4Delivery(t *testing.T) {
 	})
 	t.Run("counter_overflow_fails_managed_process", func(t *testing.T) {
 		// Another fresh DB confines synthetic overflow and terminal lifecycle proof.
-		overflow := deliveryDatabase(t, ctx, cfg.Database, 8)
+		overflow := deliveryDatabase(ctx, t, cfg.Database, 8)
 		conn, e := pgx.Connect(ctx, database.ConnString(overflow))
 		require.NoError(t, e)
 		defer func() { _ = conn.Close(context.Background()) }()
 		_, e = conn.Exec(ctx, "UPDATE alert_delivery_counter SET next_seq=$1 WHERE singleton", int64(math.MaxInt64))
 		require.NoError(t, e)
-		deliveryInsert(t, ctx, conn, tenant)
+		deliveryInsert(ctx, t, conn, tenant)
 		t.Setenv("SENTINEL_DATABASE.NAME", overflow.Name)
 		t.Setenv("SENTINEL_SERVER.PORT", strings.Split(freeAddress(t), ":")[1])
 		t.Setenv("SENTINEL_OPS.PORT", strings.Split(freeAddress(t), ":")[1])
@@ -369,8 +377,8 @@ func TestPhase4Delivery(t *testing.T) {
 // Startup/auth and all other messages pass through, without being logged.
 func deliveryAckProxy(t *testing.T, target string) (string, *atomic.Bool) {
 	t.Helper()
-	listener, e := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, e)
+	listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, listenErr)
 	lost := &atomic.Bool{}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -400,26 +408,7 @@ func deliveryAckProxy(t *testing.T, target string) (string, *atomic.Bool) {
 			go func() {
 				defer wg.Done()
 				defer func() { _ = client.Close(); _ = server.Close() }()
-				for {
-					header := make([]byte, 5)
-					if _, e := io.ReadFull(server, header); e != nil {
-						return
-					}
-					length := binary.BigEndian.Uint32(header[1:])
-					if length < 4 || length > 1<<20 {
-						return
-					}
-					body := make([]byte, int(length)-4)
-					if _, e := io.ReadFull(server, body); e != nil {
-						return
-					}
-					if header[0] == 'C' && string(body) == "COMMIT\x00" && lost.CompareAndSwap(false, true) {
-						return
-					}
-					if _, e := client.Write(append(header, body...)); e != nil {
-						return
-					}
-				}
+				deliveryProxyResponses(client, server, lost)
 			}()
 		}
 	}()
@@ -437,15 +426,15 @@ func deliveryAckProxy(t *testing.T, target string) (string, *atomic.Bool) {
 
 func deliveryCutover(ctx context.Context, t *testing.T, cfg config.DatabaseConfig) {
 	t.Helper()
-	owned := deliveryDatabase(t, ctx, cfg, 7)
+	owned := deliveryDatabase(ctx, t, cfg, 7)
 	conn, e := pgx.Connect(ctx, database.ConnString(owned))
 	require.NoError(t, e)
 	defer func() { _ = conn.Close(context.Background()) }()
-	old := deliveryInsert(t, ctx, conn, "cutover")
+	old := deliveryInsert(ctx, t, conn, "cutover")
 	a, e := conn.Begin(ctx)
 	require.NoError(t, e)
 	defer func() { _ = a.Rollback(context.Background()) }()
-	held := deliveryInsert(t, ctx, a, "cutover")
+	held := deliveryInsert(ctx, t, a, "cutover")
 	done := make(chan error, 1)
 	go func() { done <- database.Migrate(ctx, owned, zerolog.Nop()) }()
 	// Observe the real migration's conflicting relation lock before releasing A.
@@ -454,14 +443,19 @@ func deliveryCutover(ctx context.Context, t *testing.T, cfg config.DatabaseConfi
 	defer func() { _ = observer.Close(context.Background()) }()
 	require.Eventually(t, func() bool {
 		var n int
-		e := observer.QueryRow(ctx, `SELECT count(*) FROM pg_locks WHERE relation='alert_workflows'::regclass AND NOT granted`).Scan(&n)
-		return e == nil && n > 0
+		lockSQL := `SELECT count(*) FROM pg_locks WHERE relation='alert_workflows'::regclass AND NOT granted`
+		readErr := observer.QueryRow(ctx, lockSQL).Scan(&n)
+		return readErr == nil && n > 0
 	}, 3*time.Second, 10*time.Millisecond)
 	writer := make(chan string, 1)
 	go func() {
-		_, e := observer.Exec(ctx, `INSERT INTO alert_workflows (alert_id,tenant_id,created_at,updated_at,rule_id,rule_version,severity,entity_key,summary,event_count,window_start,window_end,immutable_fingerprint) VALUES ($1,'cutover',now(),now(),'PORT_SCAN',1,'high','192.0.2.1','Across cutover',1,now()-interval '1 minute',now(),$1)`, strings.Repeat("c", 64))
-		if e != nil {
-			writer <- e.Error()
+		_, insertErr := observer.Exec(ctx, `INSERT INTO alert_workflows
+        (alert_id,tenant_id,created_at,updated_at,rule_id,rule_version,severity,entity_key,
+         summary,event_count,window_start,window_end,immutable_fingerprint)
+        VALUES ($1,'cutover',now(),now(),'PORT_SCAN',1,'high','192.0.2.1','Across cutover',
+         1,now()-interval '1 minute',now(),$1)`, strings.Repeat("c", 64))
+		if insertErr != nil {
+			writer <- insertErr.Error()
 		} else {
 			writer <- ""
 		}
@@ -475,6 +469,48 @@ func deliveryCutover(ctx context.Context, t *testing.T, cfg config.DatabaseConfi
 	require.NoError(t, <-done)
 	require.Empty(t, <-writer)
 	var n int
-	require.NoError(t, conn.QueryRow(ctx, "SELECT count(*) FROM alert_delivery_pending WHERE alert_id=ANY($1)", []string{old, held, strings.Repeat("c", 64)}).Scan(&n))
+	pendingSQL := "SELECT count(*) FROM alert_delivery_pending WHERE alert_id=ANY($1)"
+	require.NoError(t, conn.QueryRow(ctx, pendingSQL, []string{old, held, strings.Repeat("c", 64)}).Scan(&n))
 	require.Equal(t, 3, n, "seed + held writer + installed trigger cover actual concurrent cutover")
+}
+
+func deliveryWait(t *testing.T, id, after string, read func(*testing.T, string, int) deliveryPage) deliveryPage {
+	t.Helper()
+	var page deliveryPage
+	require.Eventually(t, func() bool {
+		page = read(t, after, 200)
+		for _, item := range page.Items {
+			if item.Alert.AlertID == id {
+				return true
+			}
+		}
+		return false
+	}, 8*time.Second, 25*time.Millisecond, "real projector must persist the committed alert")
+	return page
+}
+
+func deliveryProxyResponses(client, server net.Conn, lost *atomic.Bool) {
+	for {
+		header := make([]byte, 5)
+		if _, err := io.ReadFull(server, header); err != nil {
+			return
+		}
+		length := binary.BigEndian.Uint32(header[1:])
+		if length < 4 || length > 1<<20 {
+			return
+		}
+		body := make([]byte, int(length)-4)
+		if _, err := io.ReadFull(server, body); err != nil {
+			return
+		}
+		if header[0] == 'C' && string(body) == "COMMIT\x00" && lost.CompareAndSwap(false, true) {
+			return
+		}
+		if _, err := client.Write(header); err != nil {
+			return
+		}
+		if _, err := client.Write(body); err != nil {
+			return
+		}
+	}
 }

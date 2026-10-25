@@ -122,7 +122,8 @@ async function start(
   );
   signIn();
   await screen.findByText(workflow.summary);
-  await waitFor(() => expect(backfills).toHaveLength(1));
+  await waitFor(() => expect(backfills).toHaveLength(strict ? 2 : 1));
+  if (strict) expect(backfills[0].signal.aborted).toBe(true);
   expect(new URL(backfills[0].url).searchParams.get("after_seq")).toBe("0");
   return { requests, cache, backfills };
 }

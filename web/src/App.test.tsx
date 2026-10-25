@@ -53,16 +53,27 @@ function signIn(credential = "memory-credential") {
 
 const backfillRequests: Request[] = [];
 function stubFetch(responder: (request: Request) => Promise<Response>) {
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (new URL(request.url).pathname === "/api/v1/alerts/backfill") {
-      backfillRequests.push(request);
-      return Promise.resolve(Response.json({items: [], next_seq: "0", has_more: false}));
-    }
-    return responder(request);
-  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((request: Request) => {
+      if (new URL(request.url).pathname === "/api/v1/alerts/backfill") {
+        backfillRequests.push(request);
+        return Promise.resolve(
+          Response.json({ items: [], next_seq: "0", has_more: false }),
+        );
+      }
+      return responder(request);
+    }),
+  );
 }
 function defaultAlertFilters(requestIndex: number) {
-  const request = vi.mocked(fetch).mock.calls.filter(([request]) => new URL((request as Request).url).pathname !== "/api/v1/alerts/backfill")[requestIndex][0];
+  const request = vi
+    .mocked(fetch)
+    .mock.calls.filter(
+      ([request]) =>
+        new URL((request as Request).url).pathname !==
+        "/api/v1/alerts/backfill",
+    )[requestIndex][0];
   expect(request).toBeInstanceOf(Request);
   const url = new URL((request as Request).url);
   expect(url.pathname).toBe("/api/v1/alerts");
@@ -80,7 +91,10 @@ function defaultAlertFilters(requestIndex: number) {
 }
 
 describe("App shell", () => {
-  beforeEach(() => { backfillRequests.length = 0; window.history.replaceState(null, "", "/alerts"); });
+  beforeEach(() => {
+    backfillRequests.length = 0;
+    window.history.replaceState(null, "", "/alerts");
+  });
   afterEach(() => {
     window.history.replaceState(null, "", "/");
     vi.unstubAllGlobals();
@@ -88,16 +102,23 @@ describe("App shell", () => {
   });
 
   it("dispatches authenticated catch-up separately from list fixtures", async () => {
-    const fetchSpy = vi.fn().mockResolvedValueOnce(Response.json(identity())).mockResolvedValueOnce(Response.json(workflowPage()));
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(identity()))
+      .mockResolvedValueOnce(Response.json(workflowPage()));
     stubFetch(fetchSpy);
     render(<App />);
     signIn();
     await screen.findByText("Cached tenant alert");
     await waitFor(() => expect(backfillRequests).toHaveLength(1));
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(new URL(backfillRequests[0].url).searchParams.get("after_seq")).toBe("0");
-    expect(backfillRequests[0].headers.get("Authorization")).toBe("Bearer memory-credential");
-    fireEvent.click(screen.getByRole("button", {name: "Sign out"}));
+    expect(new URL(backfillRequests[0].url).searchParams.get("after_seq")).toBe(
+      "0",
+    );
+    expect(backfillRequests[0].headers.get("Authorization")).toBe(
+      "Bearer memory-credential",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(backfillRequests[0].signal.aborted).toBe(true);
   });
 
@@ -334,9 +355,7 @@ describe("App shell", () => {
   it("discards retry credentials at token expiry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-22T01:00:00Z"));
-    stubFetch(
-      vi.fn().mockResolvedValue(new Response("{}", { status: 503 })),
-    );
+    stubFetch(vi.fn().mockResolvedValue(new Response("{}", { status: 503 })));
     render(<App />);
     const payload = btoa(JSON.stringify({ exp: Date.now() / 1000 + 2 }));
     fireEvent.change(screen.getByLabelText("Development access token"), {

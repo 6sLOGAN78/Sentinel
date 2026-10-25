@@ -1,9 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { APIError } from "../api/client";
-import type { AlertFilters } from "../api/client";
+import type { AlertFilters, APIClient } from "../api/client";
 import { useSession } from "../auth/session";
 import AlertDetails from "../components/AlertDetails";
+
+// Per guarded client (and therefore verified generation), private and collectible
+// on logout. Navigation can resume without a disk cursor or a retained ID set.
+const deliveryCursors = new WeakMap<APIClient, string>();
 
 function readSelected(owner?: string) {
   if (
@@ -148,6 +152,7 @@ function newFilterRange(filters: Filters): Filters {
 }
 
 export default function Alerts() {
+  const cache = useQueryClient();
   const narrow = useSyncExternalStore(subscribeToWidth, isNarrow, () => false);
   const { session, client } = useSession();
   const owner = JSON.stringify([
@@ -169,6 +174,53 @@ export default function Alerts() {
   const [previous, setPrevious] = useState<Filters[]>([]);
   const filtersRef = useRef(filters);
   const query = queryFilters(filters);
+  const [arrivals, setArrivals] = useState(false);
+  const [catchupError, setCatchupError] = useState(false);
+
+  useEffect(() => {
+    if (!client || !session) return;
+    const controller = new AbortController();
+    const prefix = [
+      "session",
+      session.subject,
+      session.tenant_id,
+      session.role,
+      session.generation,
+    ];
+    async function catchUp() {
+      if (!client || !session) return;
+      try {
+        let more = true;
+        while (more) {
+          const after = deliveryCursors.get(client) ?? "0";
+          const page = await client.backfill(after, controller.signal);
+          controller.signal.throwIfAborted();
+          if (
+            page.items.some(
+              (item) => item.alert.tenant_id !== session.tenant_id,
+            )
+          )
+            throw new APIError(503);
+          if (page.items.length) {
+            await cache.invalidateQueries({
+              queryKey: prefix,
+              refetchType: "none",
+            });
+            controller.signal.throwIfAborted();
+            setArrivals(true);
+          }
+          // Processing must finish before this cursor can be used by a later
+          // page or a remount. Failed/aborted processing replays at least once.
+          deliveryCursors.set(client, page.next_seq);
+          more = page.has_more;
+        }
+      } catch {
+        if (!controller.signal.aborted) setCatchupError(true);
+      }
+    }
+    void catchUp();
+    return () => controller.abort();
+  }, [cache, client, session]);
 
   function navigate(next: Filters, trail: Filters[], replace = false) {
     setFilters(next);
@@ -263,6 +315,23 @@ export default function Alerts() {
         Alerts
       </h2>
       <p className="page-description">Investigate your tenant’s detections.</p>
+      {catchupError && <p>Reconnecting… Missed alerts will be recovered.</p>}
+      {arrivals && (
+        <div>
+          <p role="status">New alerts available</p>
+          <button
+            type="button"
+            disabled={alerts.isFetching}
+            onClick={() => {
+              void alerts.refetch().then((result) => {
+                if (result.isSuccess) setArrivals(false);
+              });
+            }}
+          >
+            Refresh alerts
+          </button>
+        </div>
+      )}
       <form
         onSubmit={(event) => {
           event.preventDefault();
