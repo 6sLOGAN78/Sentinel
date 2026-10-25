@@ -192,9 +192,8 @@ func TestPhase4Delivery(t *testing.T) {
 			parsed, parseErr := time.Parse(time.RFC3339Nano, value)
 			require.NoError(t, parseErr, field)
 			require.True(t, parsed.Equal(instants[field]), "%s must preserve its inserted instant", field)
-			if !strings.HasSuffix(value, "Z") {
-				t.Errorf("%s must end in Z for explicit child TZ=Asia/Kolkata; actual wire %q", field, value)
-			}
+			require.True(t, strings.HasSuffix(value, "Z"),
+				"%s must end in Z for explicit child TZ=Asia/Kolkata; actual wire %q", field, value)
 		}
 		require.Equal(t, page, readUTC(t, "0", 200), "replay preserves tenant cursor and workflow metadata")
 	})

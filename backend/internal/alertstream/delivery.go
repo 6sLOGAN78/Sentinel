@@ -200,6 +200,10 @@ func (s *Store) Read(parent context.Context, tenant string, after int64, limit i
 		if err != nil {
 			return page, err
 		}
+		w.CreatedAt = w.CreatedAt.UTC()
+		w.UpdatedAt = w.UpdatedAt.UTC()
+		w.WindowStart = w.WindowStart.UTC()
+		w.WindowEnd = w.WindowEnd.UTC()
 		if len(page.Items) == limit {
 			page.HasMore = true
 			break
