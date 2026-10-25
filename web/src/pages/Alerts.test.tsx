@@ -97,6 +97,119 @@ describe("filtered alert pages", () => {
     window.history.replaceState(null, "", "/alerts");
   });
 
+  it.each([false, true])(
+    "recovers transient backfill 503 in the mounted session, after a processed page: %s",
+    async (processedFirst) => {
+      let failed = false;
+      const { backfills, requests } = await start(
+        async () => Response.json(page("Prior snapshot", null)),
+        600000,
+        async (request) => {
+          const after = new URL(request.url).searchParams.get("after_seq");
+          if (processedFirst && after === "0")
+            return Response.json({
+              items: [{ seq: "9007199254740993", alert: page().items[0] }],
+              next_seq: "9007199254740993",
+              has_more: true,
+            });
+          if (!failed) {
+            failed = true;
+            return new Response("dependency unavailable", { status: 503 });
+          }
+          return Response.json({
+            items: [{ seq: "9007199254740994", alert: page().items[0] }],
+            next_seq: "9007199254740994",
+            has_more: false,
+          });
+        },
+      );
+      await screen.findByText("Reconnecting… Missed alerts will be recovered.");
+      await waitFor(() =>
+        expect(backfills).toHaveLength(processedFirst ? 3 : 2),
+      );
+      expect(
+        backfills.map((request) =>
+          new URL(request.url).searchParams.get("after_seq"),
+        ),
+      ).toEqual(
+        processedFirst
+          ? ["0", "9007199254740993", "9007199254740993"]
+          : ["0", "0"],
+      );
+      await screen.findByText("New alerts available");
+      expect(
+        screen.queryByText("Reconnecting… Missed alerts will be recovered."),
+      ).toBeNull();
+      expect(requests).toHaveLength(1);
+      expect(screen.getAllByRole("row")).toHaveLength(2);
+      expect(window.location.pathname).toBe("/alerts");
+      expect(localStorage.length + sessionStorage.length).toBe(0);
+    },
+  );
+
+  it("retains a later arrival and stale query when an older refresh snapshot finishes", async () => {
+    let finishPage: (response: Response) => void = () => {};
+    let finishRefresh: (response: Response) => void = () => {};
+    const pendingPage = new Promise<Response>((resolve) => {
+      finishPage = resolve;
+    });
+    const pendingRefresh = new Promise<Response>((resolve) => {
+      finishRefresh = resolve;
+    });
+    const later = {
+      ...page().items[0],
+      alert_id: "b".repeat(64),
+      summary: "Later commit",
+    };
+    let listReads = 0;
+    const { cache, requests, backfills } = await start(
+      async () => {
+        listReads++;
+        if (listReads === 2) return pendingRefresh;
+        const current = page("Prior snapshot", null);
+        if (listReads > 2) current.items.push(later);
+        return Response.json(current);
+      },
+      600000,
+      async (request) =>
+        new URL(request.url).searchParams.get("after_seq") === "0"
+          ? Response.json({
+              items: [{ seq: "1", alert: page().items[0] }],
+              next_seq: "1",
+              has_more: true,
+            })
+          : pendingPage,
+    );
+    await screen.findByText("New alerts available");
+    await screen.findByText("Prior snapshot");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh alerts" }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    await act(async () =>
+      finishPage(
+        Response.json({
+          items: [{ seq: "2", alert: later }],
+          next_seq: "2",
+          has_more: false,
+        }),
+      ),
+    );
+    await act(async () =>
+      finishRefresh(Response.json(page("Prior snapshot", null))),
+    );
+    expect(screen.queryByText("Later commit")).toBeNull();
+    expect(screen.queryByText("New alerts available")).not.toBeNull();
+    expect(cache.getQueryCache().getAll()[0].state.isInvalidated).toBe(true);
+    expect(new URL(requests[1].url).search).toBe(
+      new URL(requests[0].url).search,
+    );
+    expect(backfills).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh alerts" }));
+    await screen.findByText("Later commit");
+    expect(screen.queryByText("New alerts available")).toBeNull();
+    expect(requests).toHaveLength(3);
+    expect(screen.getAllByRole("row")).toHaveLength(3);
+  });
+
   it("catches up exact decimal delivery pages above 2^53 before advancing and keeps visible rows bounded", async () => {
     const order: string[] = [];
     const { cache, requests, backfills } = await start(
