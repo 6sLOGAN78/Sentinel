@@ -130,6 +130,74 @@ func TestPhase4Delivery(t *testing.T) {
 			"nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
 	}
 	credential := token(tenant)
+	t.Run("utc_wire_preserves_instants_in_non_utc_child", func(t *testing.T) {
+		isolated := deliveryDatabase(ctx, t, cfg.Database, 8)
+		conn, e := pgx.Connect(ctx, database.ConnString(isolated))
+		require.NoError(t, e)
+		defer func() { _ = conn.Close(context.Background()) }()
+		instants := map[string]time.Time{
+			"created_at":   time.Date(2026, 10, 25, 1, 2, 3, 123456000, time.UTC),
+			"updated_at":   time.Date(2026, 10, 25, 2, 3, 4, 234567000, time.UTC),
+			"window_start": time.Date(2026, 10, 25, 0, 1, 2, 345678000, time.UTC),
+			"window_end":   time.Date(2026, 10, 25, 1, 1, 2, 456789000, time.UTC),
+		}
+		id := strings.ReplaceAll(uuid.NewString(), "-", "") + strings.Repeat("e", 32)
+		_, e = conn.Exec(ctx, `INSERT INTO alert_workflows
+		 (alert_id,tenant_id,created_at,updated_at,rule_id,rule_version,severity,entity_key,
+		 summary,event_count,window_start,window_end,immutable_fingerprint)
+		 VALUES ($1,$2,$3,$4,'AUTH_BRUTE_FORCE',1,'high','192.0.2.44',
+		 'UTC delivery fixture',2,$5,$6,$1)`, id, tenant, instants["created_at"],
+			instants["updated_at"], instants["window_start"], instants["window_end"])
+		require.NoError(t, e)
+		foreignID := deliveryInsert(ctx, t, conn, foreign)
+		t.Setenv("SENTINEL_DATABASE.NAME", isolated.Name)
+		t.Setenv("TZ", "Asia/Kolkata") // Inherited by the real child; never replace Go's global time.Local.
+		api, _ := startQueryAPI(t, binary, root, secret, freeAddress(t))
+		var raw []byte
+		readUTC := func(t *testing.T, after string, limit int) deliveryPage {
+			t.Helper()
+			var status int
+			url := api + "/api/v1/alerts/backfill?after_seq=" + after + "&limit=" + strconv.Itoa(limit)
+			status, raw = getJSON(t, url, credential, "")
+			require.Equal(t, 200, status)
+			var page deliveryPage
+			require.NoError(t, json.Unmarshal(raw, &page))
+			return page
+		}
+		page := deliveryWait(t, id, "0", readUTC)
+		require.Eventually(t, func() bool {
+			page = readUTC(t, "0", 200)
+			return page.Next == "2"
+		}, 5*time.Second, 25*time.Millisecond)
+		require.Len(t, page.Items, 1)
+		require.False(t, page.More)
+		require.Equal(t, id, page.Items[0].Alert.AlertID)
+		require.Equal(t, tenant, page.Items[0].Alert.TenantID)
+		require.Equal(t, "open", page.Items[0].Alert.Status)
+		require.EqualValues(t, 1, page.Items[0].Alert.Version)
+		require.NotContains(t, string(raw), foreignID)
+		var sequence int64
+		require.NoError(t, conn.QueryRow(ctx,
+			"SELECT delivery_seq FROM alert_deliveries WHERE alert_id=$1", id).Scan(&sequence))
+		require.Equal(t, strconv.FormatInt(sequence, 10), page.Items[0].Seq)
+		var wire struct {
+			Items []struct {
+				Alert map[string]json.RawMessage `json:"alert"`
+			} `json:"items"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &wire))
+		for _, field := range []string{"created_at", "updated_at", "window_start", "window_end"} {
+			var value string
+			require.NoError(t, json.Unmarshal(wire.Items[0].Alert[field], &value))
+			parsed, parseErr := time.Parse(time.RFC3339Nano, value)
+			require.NoError(t, parseErr, field)
+			require.True(t, parsed.Equal(instants[field]), "%s must preserve its inserted instant", field)
+			if !strings.HasSuffix(value, "Z") {
+				t.Errorf("%s must end in Z for explicit child TZ=Asia/Kolkata; actual wire %q", field, value)
+			}
+		}
+		require.Equal(t, page, readUTC(t, "0", 200), "replay preserves tenant cursor and workflow metadata")
+	})
 	t.Run("native_workflow_max_counterexample", func(t *testing.T) {
 		a, e := db.Pool.Begin(ctx)
 		require.NoError(t, e)
