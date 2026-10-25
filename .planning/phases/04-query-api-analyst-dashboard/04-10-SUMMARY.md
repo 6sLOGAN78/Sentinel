@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "10"
-status: implemented-pending-review
+status: complete
 subsystem: rules
 tags: [startup-config, jwt, react-query, native-browser]
 requires:
@@ -50,7 +50,21 @@ passes all9SummaryRules cases; `root-source-head-browser` EXIT0/12.961s ending
 18:11:41Z passes all3roles at1440/375 with actual current API and NEW data.
 No producer remains after the joined browser children; no07traffic was resent.
 The historical pending-quality statements below describe that handoff, not the
-current source. Root independent review and postwave acceptance remain required.
+current source. Root acceptance below closes independent review and postwave.
+
+Root accepted10 on2026-10-25 after clean9-path R0at8fdcdae/sourcedbc7ae2 and
+independentcomponent8PASS. Reviewer withheld native when NEWinfra was stopped.
+Root normalinfra start0 preservedIDs; Composeappstart1 because stale006migration
+image refused schema7 (current version7 outside0..6). Current host tern against
+NEWPG25432 exited0; direct start of recorded owned NEWappIDs yielded9healthy,
+EXIT0/0.606s END00:25:26Z. No downgrade/recreation/reset/oldstackoperation.
+StalecontainerEXIT1 remains historical, not a passing migration-container claim.
+FreshrootSummaryRules9 EXIT0/11.401s END00:25:04Z. Rootbackend/webbuilds+normal
+make test EXIT0/23.246s END00:25:17Z (cachedGo/web133/gen121), private
+07/root-10-postwave.log. Source/generatedSHA matchrevieweddbc7ae2.
+Private10 root-runtime-recovery/v2 and root-native-after-recovery retain actual
+commands/UTC/exits. Phase4 now11/17accepted; continue11. Later runtime must use
+current host migrations or separately reviewed NEWimage refresh, not stale006.
 
 ## Status and commits
 

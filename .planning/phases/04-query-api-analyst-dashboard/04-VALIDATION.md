@@ -25,6 +25,14 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 ## Test Infrastructure
 
+04-10 accepted2026-10-25: REDa55d82f/GREENdbc7ae2/clean9-pathR0at8fdcdae.
+Native9/currentbrowser6role-widthcases/web133/OpenAPI/affected4native/default/
+three-modequality/scansPASS. Rootcompletedboundedtestlintcleanup; priorfailures
+retained. Reviewercomponent8PASS,nativererunwithheldwhenNEWstopped. Rootinfra0/
+sameIDs;stale006migratorEXIT1againstschema7,currenthosttern0+directownedappIDs
+start0/ninehealthy. Freshrootnative9 EXIT0/11.401s;builds+normalmake test EXIT0/
+23.246s END00:25:17Z(web133/gen121). No downgrade/reset/oldstackchange.11/17accepted.
+
 04-09 accepted2026-10-24: RED08ee9fd/GREEN68c10c1/summarybcdfd18; independent
 STANDARD R0 clean10declared/9changedpaths. ActualforwardresolveCAS/audit/fault/
 race/replay/twohistoryrows/nativeTriage9/Authproducerandrolelogcapture/component20/

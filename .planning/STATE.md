@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-24T17:56:54Z"
+last_updated: "2026-10-25T00:25:26Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 73
-  completed_plans: 66
+  completed_plans: 67
   percent: 50
 ---
 
@@ -18,17 +18,25 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09accepted. Continue04-10 read-only startup Rules using NEW private context. Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09/10accepted. Continue04-11 tenant Overview using NEW private context. Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-10 executing after independent9-pathA1PASS0ate4da451 and PLAN synchronization;04-09 accepted after cleanR0/rootpostwavePASS.
+Plan: 04-11 next;04-10 accepted after clean9-pathR0/sourcedbc7ae2 and rootnative/runtime/postwavePASS.
 Status: NEW project sentinel-p4-demo-20261024 has ninehealthy, real exact1000-ID seed and controlled CH/PG/API detection plus actualbrowser PASS. Rootdata/nativeEvents/health/preservation/build+normalmake test PASS. OldKafka history remains missing/failclosed, unchanged; noreset/guardwaiver. NoPhase4remoteauthoritybefore04-16.
-Progress: 66/73 accepted numberedplans; Phase4 10/17accepted,7remaining. Overallphaseprogress3/6=50%.
+Progress: 67/73 accepted numberedplans; Phase4 11/17accepted,6remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
 ## Latest Verified Evidence
+
+- 04-10 acceptedOct25: REDa55d82f/GREENdbc7ae2/clean9-pathR0at8fdcdae,
+  reviewercomponent8PASS/rootnative9 EXIT0/11.401s;builds+make test EXIT0/23.246s
+  END00:25:17Z(web133/gen121). Currentbrowser6role-widthcases retained. Source/
+  generatedSHAunchanged. Rootquality0all3configs. NEWinfra recoveredsameIDs0;
+  Composeappstart1 because stale006migrationimage refusedschema7. Currenthost
+  tern0+directrecordedNEWappIDsstart0/ninehealthy00:25:26Z. Preservefailedstart;
+  no downgrade/recreation/reset/oldstackchange. Avoidimplicitstalemigratorrerun.
 
 - 04-09 accepted: RED08ee9fd/GREEN68c10c1/summarybcdfd18, clean10-pathR0;
   actualnativeTriage9/Authsecret-freeprocesslogs/component20/browser1440+375/
@@ -247,8 +255,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-24T17:56:54Z;09accepted after clean10-pathR0 and rootpostwave. Continue10automatically.
-Resume: Execute04-10 after explicitclient.tsownershipamendment/check; startupRulesreadonly. NEWcontext above for native/currentbrowser, PG25432/schema7/CH28123+29000. Neverdefaultoldstackcommands; sharedAPI18081/ingest18080prior07images notcurrent09. 10/17accepted,66/73overall; source68c10c1/R0clean. No furtherprune/reset/guardchange/Phase5/push/hostedCI authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
+Last session:2026-10-25T00:25:26Z;10accepted after clean9-pathR0 and rootnative/runtime/postwave. Continue11automatically.
+Resume: Execute04-11 after main/clientownershipamendment/check; tenantOverview. NEWPG25432/schema7/CH28123+29000. Neverdefaultoldstackcommands; sharedAPI18081/ingest18080prior07imagesnotcurrent10,stale006migratorEXIT1. Currenthostmigrator+directownedIDsrecoveryPASS/ninehealthy. 11/17accepted,67/73overall;sourcedbc7ae2/R0clean. No furtherprune/reset/guardchange/Phase5/push/hostedCI authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.

@@ -1,154 +1,183 @@
 ---
 phase: 04-query-api-analyst-dashboard
-plan: "09"
-reviewed: 2026-10-24T17:53:15Z
+plan: "10"
+reviewed: 2026-10-25T00:18:10Z
 depth: standard
-reviewed_head: bcdfd18974e6e1ccd4f5f3eff98bd13e5f8290eb
-source_commit: 68c10c1d9e318b9e6675bcf757bab586cdc811d9
-tests_red_commit: 08ee9fd0190dac02618c30ba491c7cb32285cd39
-diff_base: ed3d83e6bb4b5cd6bba8f689c252dfdfeae79135
-files_reviewed: 10
+reviewed_head: 8fdcdaedac631b2239dbd122683e53700a663566
+source_commit: dbc7ae226fa9045055edfccd49e21092dad4ac70
+tests_red_commit: a55d82f20a0b3667f798a540f12e04a761fd9c51
+diff_base: 73dddfbc2b87d06b04bade01d2545f59d3a3dd88
+files_reviewed: 9
 files_reviewed_list:
-  - backend/internal/storage/postgres/triage.go
-  - backend/internal/query/triage.go
-  - backend/internal/auth/audit.go
-  - backend/internal/apikeys/verifier.go
-  - backend/internal/ingest/handler.go
-  - backend/testphase4/triage_test.go
-  - backend/testphase4/auth_test.go
-  - web/src/components/AlertDetails.tsx
-  - web/src/components/AlertDetails.test.tsx
-  - docs/threat-model.md
+  - backend/internal/query/rules.go
+  - backend/cmd/query-api/main.go
+  - backend/testphase4/summary_rules_test.go
+  - api/openapi.yaml
+  - web/src/api/schema.d.ts
+  - web/src/pages/Rules.tsx
+  - web/src/pages/Rules.test.tsx
+  - web/src/App.tsx
+  - web/src/api/client.ts
 findings:
   critical: 0
   warning: 0
   info: 0
   total: 0
 status: clean
+runtime_verification: withheld_unhealthy_new_stack
 ---
 
-# Phase 4 Plan 09: Code Review Report
+# Phase 4 Plan 10: Code Review Report
 
-**Reviewed:** 2026-10-24T17:53:15Z
+**Reviewed:** 2026-10-25T00:18:10Z
 **Depth:** standard
-**Files reviewed:** 10
-**Status:** clean
+**Files reviewed:** 9
+**Source status:** clean
+**Independent native rerun:** withheld; NEW runtime failed health admission
 
 ## Summary
 
-Independent adversarial review found no concrete BLOCKER or WARNING in the
-ten-file resolve/security-event increment. Every scoped file was read, including
-the unchanged declared API-key verifier; nine paths actually changed between
-the supplied base and GREEN source. Relevant unchanged auth, middleware,
-client/session, route, store/replay and migration dependencies were traced.
-Reviewed HEAD contains source68c10c1 without further source changes.
+Independent adversarial source review found no concrete BLOCKER or WARNING in
+the nine-file startup Rules increment. All scoped files were read, and the
+changed code was traced through the existing loader, configuration, auth,
+lifecycle, retained PG explanation, browser transport and session dependencies.
+The eight tracked source paths at reviewed HEAD match GREEN source dbc7ae2.
+The explicitly assigned ignored generated schema was also read; its SHA256 is
+`a590e36b43fcf289ee50a15af9a4a831610c85c65f8b82a2830abf5f78a2280a`.
+It remains ignored and was not staged or force-added.
+
+Context included the GSD reviewer instructions and code-review skill,
+10 PLAN, ownership A1/CHECK, shared CONTRACT/UI-SPEC, 10 SUMMARY including its
+superseding root continuation, 09 SUMMARY/REVIEW-R0, and 07 STACK-RECOVERY.
+No root AGENTS.md or project .codex/skills/.agents/skills directory exists.
 Fallow was disabled; no structural pre-pass was supplied.
 
-Context includes the GSD reviewer/workflow instructions, approved09 PLAN,
-shared CONTRACT/UI-SPEC,09 SUMMARY,08 SUMMARY/REVIEW-R0 and07 STACK-RECOVERY.
-No root AGENTS.md or project .codex/skills/.agents/skills directory exists.
-No scoped path is ignored. The explicit ten-path envelope was preserved.
+The clean verdict is a source-review result. Independent native and current
+browser runtime acceptance remain open because the required NEW infrastructure
+was stopped at admission. That environmental condition is not classified as a
+source defect or relabelled as a passing native check.
 
 ## Narrative Findings (AI reviewer)
 
 No findings.
 
-Direct inspection covered these failure boundaries:
+The review examined these concrete failure boundaries:
 
-- `backend/internal/storage/postgres/triage.go:19-68`: tenant/ID existence
-  check, target-derived required prior status, version/status CAS, increment,
-  audit INSERT and COMMIT in one transaction. Both accepted transitions are
-  forward only; skip/no-op/reopen/stale requests cannot create another audit.
-  SQL values are parameters. The existing store caps queries at five seconds;
-  deferred rollback uses an independent one-second context.
-- `backend/internal/storage/postgres/triage.go:72-91`: tenant-scoped history,
-  ascending version and LIMIT2. Migration007 permits the two legal transition
-  pairs; the unchanged replay writer remains insert only and preserves
-  workflow version/status/seq and audit history.
-- `backend/internal/query/triage.go:29-114`: verified principal supplies actor
-  and tenant, analyst/admin authorization precedes parsing, strict bounded
-  JSON rejects unknown/duplicate/missing fields and invalid versions/statuses,
-  and errors map to sanitized400/403/404/409/413/503 responses. Successful PATCH
-  returns committed PG metadata without requiring a CH lookup.
-- `backend/internal/auth/audit.go:13-38` and
-  `backend/internal/ingest/handler.go:82-114`: fixed action/outcome/reason
-  allowlists, verified identity only, zero principal before authentication,
-  actual producer credential/scope/tenant outcomes and triage role/outcome
-  events. No request body, credential, Authorization, unverified claims or
-  arbitrary error is passed to Audit. The inherited request logger adds a
-  bounded validated request ID, fixed route/method and direct peer IP.
-- `backend/internal/apikeys/verifier.go:65-137`: secret comparison occurs on
-  cache hits as well as misses; inactive/unknown/wrong-secret outcomes remain
-  fixed unauthorized errors, infrastructure errors remain unavailable, positive
-  metadata is copied and cache expiry does not slide on cache hits.
-- `web/src/components/AlertDetails.tsx:6-63` and `:113-173`: exact resolve
-  title/body/buttons, Return/Escape cancellation, native nested-dialog handling,
-  trigger restoration, synchronous mutation-ref duplicate guard and pending
-  disabling. Successful workflow state is retained before independent history
-  refresh.409 closes confirmation and refetches without automatic PATCH retry;
-  failed refresh keeps mutation controls disabled until a successful retry.
-- `web/src/components/AlertDetails.tsx:81-110` and `:227-250`: cleanup abort,
-  generation-scoped query key, verified role hiding, fresh confirmation after
-  conflict, and unchanged client lifetime/caller-signal/post-body guards.
-  Session disposal revokes generation before cancellation/cache clearing.
-  Workflow, detection, evidence and history render through escaped React text.
-- `docs/threat-model.md:104-132`: durable same-transaction successful triage
-  history is distinguished from best-effort INFO service events. Output loss
-  or a higher configured log level may suppress service events; failed producer
-  requests are not claimed to be persisted in PG.
+- `backend/cmd/query-api/main.go:44-54` and `:155-168`: actual
+  `detection.LoadRules` runs before dependency/listener setup. Open, parse and
+  close errors propagate to failed startup. The existing loader bounds input
+  to 64 KiB, rejects aliases/merges/extra documents/unknown or absent settings,
+  requires all four unique known definitions, and validates version, enabled,
+  threshold, severity and millisecond durations. Invalid input cannot reach
+  public or ops listener creation. The path is trusted operator startup
+  configuration, never request input.
+- `backend/internal/query/rules.go:35-59`: the handler copies only scalar
+  values into its own finite snapshot, including disabled rules. Duration
+  conversion preserves the loader's validated millisecond precision. The
+  request path performs no disk read or mutation. GET uses existing verified
+  JWT middleware and RequirePrincipal for every accepted role; no management
+  or executable-input route is added.
+- `backend/cmd/query-api/main.go:63-150`: loader integration retains the
+  existing managed dependency/listener lifecycle and reverse-order cleanup.
+  Auth verification, existing event compatibility route and query routes
+  remain wired. No detector configuration or retained-store write was added.
+- `backend/internal/query/rules.go:62-74`: fixed explanations match the
+  current detector predicates and grouping: failed authentication by source
+  and principal, distinct destination ports by source and destination,
+  net.request volume by source, and denied policy.decision volume by source.
+- `backend/testphase4/summary_rules_test.go:29-204`: actual query binary
+  fixture, independent random signing material, exact four definitions for
+  all three roles, unauthenticated401, rejected writes, startup file mutation
+  and removal, restart adoption, and malformed/invalid/missing startup cases.
+  The failure helper requires an actual nonzero exit before its deadline;
+  timeout is explicitly rejected as fail-closed proof. Process cleanup uses
+  the unchanged bounded startQueryAPI helper.
+- `backend/testphase4/summary_rules_test.go:127-162` and unchanged
+  `backend/internal/storage/postgres/query_alerts.go:90-137`: the retained
+  version77 fixture is decision/fingerprint-bound and remains distinct from
+  startup version12. Historical lookup requires tenant, alert, rule, exact
+  version and matching manifest fingerprint, with unavailable fallback for
+  missing/conflicting/incomplete candidates. Current Rules does not query
+  this mechanism as a registry.
+- `api/openapi.yaml:327-348` and `:960-1006`, plus generated schema:
+  JWT read contract, explicit integer threshold/window_ms/cooldown_ms and a
+  maximum of four rules match the handler and typed UI. Canonical Event/Alert
+  schemas remain unchanged by this increment.
+- `web/src/api/client.ts:29-74`: Rules uses the existing private generated
+  transport. Generation/lifetime checks precede credential access, fetch
+  combines session and caller signals, and Rules repeats current-generation
+  and caller-abort checks after body parsing. A current401 disposes the
+  session; a revoked client cannot obtain a newer credential. The response
+  envelope is checked for an array and finite maximum.
+- `web/src/pages/Rules.tsx:4-55` and `web/src/App.tsx:67-162`:
+  generation-scoped React Query reads, exact loading/error/retry/empty copy,
+  enabled/disabled text, exact operational values, real Rules link and
+  aria-current state, back/forward subscription and normal anchor keyboard
+  activation. Descriptions and values render through escaped React text.
+  Existing wrapping card styles apply. There are no CRUD controls or extra
+  credential/storage paths.
+- `web/src/pages/Rules.test.tsx:65-193`: the eight component cases exercise
+  the actual App/session/client, all roles, empty/error/retry, history return,
+  escaped text, caller/session post-body cancellation, stale-client
+  credential denial, logout cancellation/cache removal and current401.
+  Existing session disposal revokes generation before abort and cache clear.
 
 ## Independent verification
 
-All checks ran at HEADbcdfd18974e6e1ccd4f5f3eff98bd13e5f8290eb.
-The private launcher imports only the approved NEW context at
-`.local/phase4-acceptance/04-07/fresh-stack/run-c2ba399-01/context.py`.
-Children use umask022; review evidence is in
-`.local/phase4-acceptance/04-09-review/` with directory0700/files0600.
+Checks ran at HEAD8fdcdaedac631b2239dbd122683e53700a663566, with source unchanged
+from dbc7ae2. Private review evidence is in
+`.local/phase4-acceptance/04-10-review/`: directory0700, harness/evidence0600,
+child umask022. Exact argv/cwd/sourceSHA/working changes, UTC timestamps,
+monotonic elapsed time, actual exit and redacted output are retained privately.
 
-| Exact child command / scope | UTC interval, 2026-10-24 | Actual result |
+| Check | UTC interval, 2026-10-25 | Actual result |
 | --- | --- | --- |
-| Explicit NEW `docker compose ... ps -a`, cwd repository | 17:52:19.891368–17:52:20.086903 | Exit0; nine healthy services;11,680,956,416 available bytes |
-| `bash ../scripts/go-test-nonempty.sh ./testphase4/... '^TestPhase4Triage$' -tags=phase4 -race -timeout=6m -p=1`, cwd backend | 17:52:29.035714–17:52:43.310172 | Exit0;14.274465s; all nine subtests, package12.157s |
-| `bash ../scripts/go-test-nonempty.sh ./testphase4/... '^TestPhase4Auth$' -tags=phase4 -race -timeout=6m -p=1`, cwd backend | 17:52:29.061989–17:52:48.106260 | Exit0;19.044274s; full nonempty Auth family, package16.965s |
-| `./node_modules/.bin/vitest run src/components/AlertDetails.test.tsx`, cwd web, runtime SENTINEL_/PG overrides removed | 17:52:29.054631–17:52:32.991622 | Exit0;3.936988s; one file,20/20 tests |
-| `git diff --check ed3d83e..68c10c1 --` followed by the ten exact scoped paths | Review interval | Exit0; no whitespace errors |
-| Explicit NEW `docker compose ... ps -a`, cwd repository | 17:53:15.657720–17:53:15.810476 | Exit0;0.152751s; nine healthy services;11,143,147,520 available bytes |
+| Explicit NEW Compose ps -a --format json | 00:17:29.301381–00:17:29.434282 | Compose exit0; enclosing health admission exit1; 11,054,395,392 available disk bytes |
+| ./node_modules/.bin/vitest run src/pages/Rules.test.tsx, cwd web | 00:17:44.207763–00:17:46.661036 | Exit0; 2.453287s; one file, eight tests passed |
+| git diff --check 73dddfb..dbc7ae2, exact tracked scope | Review interval | Exit0 |
+| git diff dbc7ae2..HEAD, exact tracked scope | Review interval | Empty; no subsequent source changes |
+| Generated schema SHA256 | Review interval | Matches the root continuation's recorded hash |
 
-Exact argv/cwd/sourceSHA/working changes/UTC start/end/monotonic duration/exits
-and redacted outputs are retained in timestamped private JSON. Compose argv
-uses project `sentinel-p4-demo-20261024`, absolute base Compose first, approved
-private overlay second and absolute root .env via --env-file. No resolved
-Compose configuration or credential material was printed.
+The Compose invocation used only project `sentinel-p4-demo-20261024`,
+absolute base Compose followed by the approved private overlay, and absolute
+root .env via --env-file, using the approved07 context environment. No resolved
+Compose configuration, headers, token or credential value was printed.
 
-Native checks build and run actual current query-api/ingest children against
-NEW PG25432/CH28123+29000/Redis26379/Kafka39092. They independently exercise both
-transition races, audit-insert-fault rollback, two-row history/replay preservation,
-tenant/viewer/body guards, bounded locks/cancellation, and positive resolution
-with fixture-specific unreachable CH. Auth captures actual process security
-events for producer401/scope403 and verified-role403, checking submitted
-credentials/body material are absent. No shared service was stopped to model
-a dependency outage.
+Admission observed Kafka exited143 and ClickHouse/PostgreSQL/Redis exited0,
+approximately six hours earlier. Ingest, detector, event-writer, alert-writer
+and query-api were restarting. Disk passed the2GiB floor, but health did not.
+The reviewer did not start, restart or repair services. Therefore the intended
+independent command
+`bash ../scripts/go-test-nonempty.sh ./testphase4/... '^TestPhase4SummaryRules$' -tags=phase4 -race -timeout=6m -p=1`
+was **not run**. No native PASS, current runtime health, schema7 observation,
+real API/browser observation or recovery is claimed by this review.
 
-Passing checks support the inspected paths; they are not proof against every
-possible defect. Browser acceptance was not repeated here: the09 SUMMARY's
-current-source ephemeral API/browser1440/375 proof remains its own evidence.
-Shared query18081/ingest18080 images still predate09. No full Phase3 aggregate,
-full web/scanner/quality gate or whole-phase acceptance is claimed by this
-source review.
+The component command removes runtime SENTINEL_/PG overrides. Its request
+responses are mocked; it proves browser component/transport behavior, not live
+PG/CH/API integration or physical keyboard/layout behavior. No full web suite,
+typecheck/build/lint/scanner gate, expensive Phase3 aggregate or whole-phase
+acceptance was repeated here.
 
-The09 SUMMARY's historical launcher setup, future-iat clock-aging, component
-focus-fixture, quality, browser navigation and psql-harness failures remain
-recorded failures; this clean review does not relabel them. The old stack's
-missing Kafka history and original resource hold remain separate preserved
-history. No old-stack operation was performed.
+## Earlier evidence and remaining limits
 
-Only assigned review reports and ignored private review harness/evidence were
-written. No source, shared tracking, configuration, scanner-policy, runtime
-configuration or user-dirty .planning/config.json/.serena changes were made.
-No shared service stop/rebuild/reset, seed resend, prune, branch switch,
-remote operation or commit occurred. Reports are uncommitted for root review.
-This verdict covers09 source only and makes no implementation or phase-completion
-claim.
+The 10 SUMMARY's superseding root continuation records actual committed-source
+native SummaryRules EXIT0/all nine cases and current-source browser EXIT0/all
+three roles at1440/375 at dbc7ae2. Those remain prior executor/root evidence,
+not independent reviewer reruns. Shared18081/18080 retain earlier07images and
+cannot establish current10source behavior.
+
+Tests-only REDa55d82f precedes GREENdbc7ae2. Historical component harness,
+quality and root helper-ordering failures remain honestly recorded in the
+summary/private evidence; the clean source verdict does not relabel them.
+The summary's superseded incomplete handoff is preserved history. Root still
+owns runtime admission/recovery, independent native/postwave checks, acceptance
+and tracking. Old original missing-history runtime remains held and untouched.
+
+Only the two assigned review reports and ignored private review harness/evidence
+were written. No source/configuration/scanner policy/shared tracking/user dirt
+was edited; no branch change, reset, stash, seed resend, migration, service
+stop/start/rebuild, prune, remote operation or commit occurred. Reports are
+uncommitted for root review. No whole-plan or phase-completion claim is made.
 
 ---
 
