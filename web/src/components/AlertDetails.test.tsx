@@ -84,10 +84,15 @@ async function start(
   role = "analyst",
 ) {
   const requests: Request[] = [];
+  const backfills: Request[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/api/v1/alerts/backfill") {
+        backfills.push(request);
+        return Response.json({ items: [], next_seq: "0", has_more: false });
+      }
       if (path === "/api/v1/session")
         return Response.json({
           subject: "detail-operator",
@@ -117,7 +122,9 @@ async function start(
   );
   signIn();
   await screen.findByText(workflow.summary);
-  return { requests, cache };
+  await waitFor(() => expect(backfills).toHaveLength(1));
+  expect(new URL(backfills[0].url).searchParams.get("after_seq")).toBe("0");
+  return { requests, cache, backfills };
 }
 async function open() {
   const trigger = screen.getByRole("button", { name: "Open alert details" });

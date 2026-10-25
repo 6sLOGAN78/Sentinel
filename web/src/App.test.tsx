@@ -51,8 +51,18 @@ function signIn(credential = "memory-credential") {
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 }
 
+const backfillRequests: Request[] = [];
+function stubFetch(responder: (request: Request) => Promise<Response>) {
+  vi.stubGlobal("fetch", vi.fn((request: Request) => {
+    if (new URL(request.url).pathname === "/api/v1/alerts/backfill") {
+      backfillRequests.push(request);
+      return Promise.resolve(Response.json({items: [], next_seq: "0", has_more: false}));
+    }
+    return responder(request);
+  }));
+}
 function defaultAlertFilters(requestIndex: number) {
-  const request = vi.mocked(fetch).mock.calls[requestIndex][0];
+  const request = vi.mocked(fetch).mock.calls.filter(([request]) => new URL((request as Request).url).pathname !== "/api/v1/alerts/backfill")[requestIndex][0];
   expect(request).toBeInstanceOf(Request);
   const url = new URL((request as Request).url);
   expect(url.pathname).toBe("/api/v1/alerts");
@@ -70,11 +80,25 @@ function defaultAlertFilters(requestIndex: number) {
 }
 
 describe("App shell", () => {
-  beforeEach(() => window.history.replaceState(null, "", "/alerts"));
+  beforeEach(() => { backfillRequests.length = 0; window.history.replaceState(null, "", "/alerts"); });
   afterEach(() => {
     window.history.replaceState(null, "", "/");
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it("dispatches authenticated catch-up separately from list fixtures", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(Response.json(identity())).mockResolvedValueOnce(Response.json(workflowPage()));
+    stubFetch(fetchSpy);
+    render(<App />);
+    signIn();
+    await screen.findByText("Cached tenant alert");
+    await waitFor(() => expect(backfillRequests).toHaveLength(1));
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(new URL(backfillRequests[0].url).searchParams.get("after_seq")).toBe("0");
+    expect(backfillRequests[0].headers.get("Authorization")).toBe("Bearer memory-credential");
+    fireEvent.click(screen.getByRole("button", {name: "Sign out"}));
+    expect(backfillRequests[0].signal.aborted).toBe(true);
   });
 
   it("shows the development sign-in form with a masked token", () => {
@@ -122,7 +146,7 @@ describe("App shell", () => {
           }),
         ),
       );
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App />);
     const input = screen.getByLabelText(
       "Development access token",
@@ -172,7 +196,7 @@ describe("App shell", () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValue(new Response("{}", { status: 401 }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App />);
     fireEvent.change(screen.getByLabelText("Development access token"), {
       target: { value: "invalid-token" },
@@ -217,7 +241,7 @@ describe("App shell", () => {
             }),
           ),
         );
-      vi.stubGlobal("fetch", fetchSpy);
+      stubFetch(fetchSpy);
       render(<App />);
       const credential = "memory-only-retry-credential";
       const input = screen.getByLabelText(
@@ -274,7 +298,7 @@ describe("App shell", () => {
           JSON.stringify({ items: [], next_cursor: null, has_more: false }),
         ),
       );
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App />);
     fireEvent.change(screen.getByLabelText("Development access token"), {
       target: { value: "old-credential" },
@@ -310,8 +334,7 @@ describe("App shell", () => {
   it("discards retry credentials at token expiry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-22T01:00:00Z"));
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi.fn().mockResolvedValue(new Response("{}", { status: 503 })),
     );
     render(<App />);
@@ -340,8 +363,7 @@ describe("App shell", () => {
     const pending = new Promise<Response>((resolve) => {
       finish = resolve;
     });
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi
         .fn()
         .mockResolvedValueOnce(
@@ -387,7 +409,7 @@ describe("App shell", () => {
 
   it("makes no network calls and renders no alert data", () => {
     const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App />);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(screen.queryAllByRole("row")).toHaveLength(0);
@@ -397,8 +419,7 @@ describe("App shell", () => {
 
   it("caches the actual alert response under verified identity and clears it on sign out", async () => {
     const client = new QueryClient();
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi
         .fn()
         .mockResolvedValueOnce(Response.json(identity()))
@@ -438,8 +459,7 @@ describe("App shell", () => {
   it("expires verified authority and its actual cached data without waiting for a 401", async () => {
     vi.useFakeTimers();
     const client = new QueryClient();
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi
         .fn()
         .mockResolvedValueOnce(Response.json(identity("cache-tenant", 2000)))
@@ -478,7 +498,7 @@ describe("App shell", () => {
       .mockResolvedValueOnce(
         Response.json({ items: [], next_cursor: null, has_more: false }),
       );
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App queryClient={client} />);
     signIn("old-credential");
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
@@ -513,7 +533,7 @@ describe("App shell", () => {
       .fn()
       .mockResolvedValueOnce(Response.json(identity()))
       .mockResolvedValueOnce(new Response("unauthorized", { status: 401 }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App queryClient={client} />);
     signIn();
     expect((await screen.findByRole("alert")).textContent).toBe(
@@ -533,7 +553,7 @@ describe("App shell", () => {
         new Response("service internals must not display", { status: 503 }),
       )
       .mockResolvedValueOnce(Response.json(workflowPage("Recovered workflow")));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App />);
     signIn();
     expect((await screen.findByRole("alert")).textContent).toBe(
@@ -558,8 +578,7 @@ describe("App shell", () => {
         exp: Date.now() / 1000 + 1,
       }),
     );
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi
         .fn()
         .mockResolvedValueOnce(Response.json(identity("cache-tenant", 3000)))
@@ -578,8 +597,7 @@ describe("App shell", () => {
 
   it("caps opaque retry credentials at fifteen minutes and does not extend them on retry", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi
         .fn()
         .mockImplementation(() =>
@@ -601,8 +619,7 @@ describe("App shell", () => {
 
   it("drops old data and uses a fresh generation when the same verified identity signs in again", async () => {
     const client = new QueryClient();
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi
         .fn()
         .mockResolvedValueOnce(Response.json(identity()))
@@ -633,8 +650,7 @@ describe("App shell", () => {
       addEventListener: () => {},
       removeEventListener: () => {},
     }));
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi
         .fn()
         .mockResolvedValueOnce(Response.json(identity()))
@@ -665,7 +681,7 @@ describe("App shell", () => {
         .mockReturnValueOnce(verification)
         .mockResolvedValueOnce(Response.json(workflowPage()))
         .mockResolvedValueOnce(new Response("{}", { status: 401 }));
-      vi.stubGlobal("fetch", fetchSpy);
+      stubFetch(fetchSpy);
       render(<App queryClient={client} />);
       signIn("submitted-credential");
       fireEvent.change(screen.getByLabelText("Development access token"), {
@@ -709,7 +725,7 @@ describe("App shell", () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValue(new Response("{}", { status: 503 }));
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App queryClient={client} />);
     await act(async () => signIn("opaque-submitted-credential"));
     expect(screen.getByRole("button", { name: "Retry sign in" })).toBeTruthy();
@@ -740,7 +756,7 @@ describe("App shell", () => {
         .fn()
         .mockResolvedValueOnce(new Response("{}", { status: 503 }))
         .mockImplementation(() => new Promise<Response>(() => {}));
-      vi.stubGlobal("fetch", fetchSpy);
+      stubFetch(fetchSpy);
       render(<App queryClient={client} />);
       signIn("original-submitted-credential");
       expect(await screen.findByRole("alert")).toBeTruthy();
@@ -784,7 +800,7 @@ describe("App shell", () => {
         finish = resolve;
       }),
     );
-    vi.stubGlobal("fetch", fetchSpy);
+    stubFetch(fetchSpy);
     render(<App queryClient={client} />);
     signIn("rejected-credential");
     fireEvent.change(screen.getByLabelText("Development access token"), {
