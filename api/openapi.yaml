@@ -350,11 +350,21 @@ paths:
       tags: [metrics]
       operationId: getMetricsSummary
       summary: Rollup statistics for the dashboard
+      description: |
+        Verified tenant only. One server UTC now bounds every query (5 seconds
+        total). No caller ranges. Event rate is complete canonical event identities
+        in [now-60 seconds,now), divided by 60; earliest received representation
+        and deterministic complete-tuple ties are selected before time filtering.
+        Open counts and severity use current open PG workflows across all time.
+        Top 20 rules count all PG workflows in [now-24 hours,now), independent of
+        status, ordered by count descending then rule_id ascending. Trend end is
+        floor UTC now to five minutes: exactly 288 ordered five-minute buckets
+        cover [end-24 hours,end), with unique canonical events and all PG alerts
+        independent of status. CH orphan detections never become alerts. Known
+        buckets are filled with zero only after every query succeeds; either
+        dependency failure returns 503. Consumer lag is unavailable until Phase 5.
       security:
         - BearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/From"
-        - $ref: "#/components/parameters/To"
       responses:
         "200":
           description: Summary.
@@ -1062,6 +1072,7 @@ components:
             $ref: "#/components/schemas/RuleCount"
         trend_24h:
           type: array
+          minItems: 288
           maxItems: 288
           items:
             $ref: "#/components/schemas/TrendPoint"

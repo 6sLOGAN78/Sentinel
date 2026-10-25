@@ -4,6 +4,7 @@ import { SessionProvider, useSession } from "./auth/session";
 import Alerts from "./pages/Alerts";
 import Events from "./pages/Events";
 import Rules from "./pages/Rules";
+import Overview from "./pages/Overview";
 import "./styles.css";
 
 function SignInPanel() {
@@ -99,15 +100,15 @@ function AnalystShell() {
       </header>
       {session && (
         <nav className="app-nav" aria-label="Main navigation">
-          {["alerts", "events", "rules"].map((page) => (
+          {["overview", "alerts", "events", "rules"].map((page) => (
             <a
               key={page}
-              href={`/${page}`}
+              href={page === "overview" ? "/" : `/${page}`}
               style={
                 (
-                  path === "/events" || path === "/rules"
+                  path === "/events" || path === "/rules" || path === "/alerts"
                     ? path === `/${page}`
-                    : page === "alerts"
+                    : page === "overview"
                 )
                   ? undefined
                   : {
@@ -117,9 +118,9 @@ function AnalystShell() {
               }
               aria-current={
                 (
-                  path === "/events" || path === "/rules"
+                  path === "/events" || path === "/rules" || path === "/alerts"
                     ? path === `/${page}`
-                    : page === "alerts"
+                    : page === "overview"
                 )
                   ? "page"
                   : undefined
@@ -134,18 +135,21 @@ function AnalystShell() {
                 )
                   return;
                 event.preventDefault();
-                if (window.location.pathname !== `/${page}`) {
-                  window.history.pushState(null, "", `/${page}`);
+                const target = page === "overview" ? "/" : `/${page}`;
+                if (window.location.pathname !== target) {
+                  window.history.pushState(null, "", target);
                   window.dispatchEvent(new Event("sentinel:navigate"));
                 }
                 document.getElementById("main-content")?.focus();
               }}
             >
-              {page === "alerts"
-                ? "Alerts"
-                : page === "events"
-                  ? "Events"
-                  : "Rules"}
+              {page === "overview"
+                ? "Overview"
+                : page === "alerts"
+                  ? "Alerts"
+                  : page === "events"
+                    ? "Events"
+                    : "Rules"}
             </a>
           ))}
         </nav>
@@ -157,8 +161,10 @@ function AnalystShell() {
           <Events key={session.generation} />
         ) : path === "/rules" ? (
           <Rules key={session.generation} />
-        ) : (
+        ) : path === "/alerts" ? (
           <Alerts key={session.generation} />
+        ) : (
+          <Overview key={session.generation} />
         )}
         {error && (
           <p className="error-state" role="alert">

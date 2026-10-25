@@ -51,6 +51,8 @@ async function start(
     Response.json(page()),
   lifetime = 600000,
 ) {
+  if (window.location.pathname !== "/alerts")
+    window.history.replaceState(null, "", "/alerts");
   const requests: Request[] = [];
   let tenant = "filters-tenant";
   vi.stubGlobal(

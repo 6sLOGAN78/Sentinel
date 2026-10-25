@@ -60,6 +60,28 @@ export function createAPIClient(
     },
   });
   return {
+    async summary(signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const result = await client.GET("/api/v1/metrics/summary", { signal });
+      assertCurrent();
+      signal?.throwIfAborted();
+      const summary = result.data;
+      if (
+        !summary ||
+        !Number.isFinite(summary.event_rate_per_sec) ||
+        summary.event_rate_per_sec < 0 ||
+        !Number.isSafeInteger(summary.open_alerts) ||
+        summary.open_alerts < 0 ||
+        !Array.isArray(summary.alerts_by_severity) ||
+        summary.alerts_by_severity.length !== 4 ||
+        !Array.isArray(summary.top_rules) ||
+        summary.top_rules.length > 20 ||
+        !Array.isArray(summary.trend_24h) ||
+        summary.trend_24h.length !== 288
+      )
+        throw new APIError(503);
+      return summary;
+    },
     async rules(signal?: AbortSignal) {
       signal?.throwIfAborted();
       const result = await client.GET("/api/v1/rules", { signal });

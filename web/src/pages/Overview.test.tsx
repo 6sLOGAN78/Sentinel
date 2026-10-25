@@ -10,6 +10,7 @@ import {
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
+import { createAPIClient } from "../api/client";
 
 const summary = {
   event_rate_per_sec: 0.05,
@@ -22,9 +23,9 @@ const summary = {
   ],
   top_rules: [{ rule_id: "AUTH_BRUTE_FORCE", count: 5 }],
   trend_24h: Array.from({ length: 288 }, (_, i) => ({
-    timestamp: new Date(Date.UTC(2026, 9, 24, 0, i * 5)).toISOString(),
-    events: i === 0 ? 7 : 0,
-    alerts: i === 0 ? 5 : 0,
+    bucket_start: new Date(Date.UTC(2026, 9, 24, 0, i * 5)).toISOString(),
+    event_count: i === 0 ? 7 : 0,
+    alert_count: i === 0 ? 5 : 0,
   })),
 };
 afterEach(() => {
@@ -59,8 +60,49 @@ async function start(read: (request: Request) => Promise<Response>) {
   return { calls, cache };
 }
 describe("Overview through actual App root, session and guarded transport", () => {
+  it.each(["caller", "session"])(
+    "rejects late summary bodies after %s cancellation",
+    async (which) => {
+      let release!: (value: string) => void;
+      const response = Response.json(summary);
+      response.text = () =>
+        new Promise((resolve) => {
+          release = resolve;
+        });
+      const fetch = vi.fn(async () => response);
+      vi.stubGlobal("fetch", fetch);
+      const lifetime = new AbortController(),
+        caller = new AbortController();
+      let current = true;
+      const credential = vi.fn(() => "private-summary-credential");
+      const api = createAPIClient(
+        credential,
+        lifetime.signal,
+        () => current,
+        vi.fn(),
+      );
+      const pending = api.summary(caller.signal);
+      const rejected = expect(pending).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      await waitFor(() => expect(release).toBeTypeOf("function"));
+      if (which === "caller") caller.abort();
+      else {
+        current = false;
+        lifetime.abort();
+      }
+      release(JSON.stringify(summary));
+      await rejected;
+      current = false;
+      const calls = credential.mock.calls.length;
+      await expect(api.summary()).rejects.toMatchObject({ name: "AbortError" });
+      expect(credential).toHaveBeenCalledTimes(calls);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
   it("renders actual metric values, SVG and equivalent complete table", async () => {
     const { calls, cache } = await start(async () => Response.json(summary));
+    fireEvent.click(await screen.findByText("View all 288 activity buckets"));
     const table = await screen.findByRole("table", {
       name: "24 hour activity",
     });
@@ -120,6 +162,7 @@ describe("Overview through actual App root, session and guarded transport", () =
     fireEvent.click(
       screen.getByRole("button", { name: "Retry loading overview" }),
     );
+    fireEvent.click(await screen.findByText("View all 288 activity buckets"));
     await screen.findByRole("table", { name: "24 hour activity" });
     expect(calls).toHaveLength(2);
   });
@@ -134,8 +177,8 @@ describe("Overview through actual App root, session and guarded transport", () =
             top_rules: [],
             trend_24h: summary.trend_24h.map((p) => ({
               ...p,
-              events: 0,
-              alerts: 0,
+              event_count: 0,
+              alert_count: 0,
             })),
           }),
     );

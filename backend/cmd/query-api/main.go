@@ -129,6 +129,7 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 		Details: storageclickhouse.NewQueryAlertStore(clickhouseConn), Auth: jwtVerifier, Cursors: cursors}).Register(e)
 	query.NewEventHandler(storageclickhouse.NewQueryEventStore(clickhouseConn), jwtVerifier, cursors).Register(e)
 	query.NewRulesHandler(rules, jwtVerifier).Register(e)
+	query.NewSummaryHandler(storageclickhouse.NewQueryEventStore(clickhouseConn), alerts, jwtVerifier, nil).Register(e)
 
 	server := httpx.New(cfg.Server, e)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)
