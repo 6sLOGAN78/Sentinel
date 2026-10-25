@@ -377,6 +377,72 @@ func testNativeSummary(t *testing.T, secret string) {
 		require.Error(t, alertErr)
 		require.Less(t, time.Since(began), time.Second)
 	})
+	t.Run("rolling_pg_nanosecond_bounds", func(t *testing.T) {
+		originalNow := now
+		defer func() { now = originalNow }()
+		testSummaryNanosecondBounds(t, func(t *testing.T, at time.Time, owner string) nativeSummary {
+			now = at
+			return read(t, events, alerts, owner, 200)
+		}, insert)
+	})
+}
+
+func testSummaryNanosecondBounds(t *testing.T,
+	read func(*testing.T, time.Time, string) nativeSummary,
+	insert func(string, string, string, string, time.Time) string,
+) {
+	t.Helper()
+	base := time.Now().UTC().Truncate(5 * time.Minute)
+	tenant, foreign := "p4precision-"+uuid.NewString(), "p4precision-"+uuid.NewString()
+	for _, fixture := range []struct {
+		rule  string
+		at    time.Time
+		count int
+	}{
+		{"LOWER_FLOOR", base.Add(-24 * time.Hour), 2},
+		{"LOWER_NEXT", base.Add(-24*time.Hour + time.Millisecond), 1},
+		{"MIDDLE", base.Add(-time.Hour), 2},
+		{"UPPER_FLOOR", base, 3},
+		{"UPPER_NEXT", base.Add(time.Millisecond), 1},
+	} {
+		for range fixture.count {
+			insert(tenant, fixture.rule, "high", "open", fixture.at)
+		}
+	}
+	insert(foreign, "FOREIGN", "critical", "open", base.Add(-time.Hour))
+	aligned := read(t, base, tenant)
+	for _, fixture := range []struct {
+		name   string
+		offset time.Duration
+	}{
+		{"aligned_millisecond", 0},
+		{"one_nanosecond", time.Nanosecond},
+		{"sub_microsecond", 999 * time.Nanosecond},
+		{"exact_microsecond", time.Microsecond},
+		{"next_aligned_millisecond", time.Millisecond},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			got := read(t, base.Add(fixture.offset), tenant)
+			require.Equal(t, uint64(9), got.Open, "current open count has no rolling time filter")
+			require.Equal(t, aligned.Severity, got.Severity)
+			require.Equal(t, aligned.Trend, got.Trend, "completed trend bounds remain exactly aligned")
+			require.Len(t, got.Trend, 288)
+			require.Equal(t, uint64(3), got.Trend[0].Alerts)
+			require.Equal(t, uint64(2), got.Trend[276].Alerts)
+			require.Zero(t, got.Rate)
+			want := []query.RuleCount{{RuleID: "LOWER_FLOOR", Count: 2},
+				{RuleID: "MIDDLE", Count: 2}, {RuleID: "LOWER_NEXT", Count: 1}}
+			if fixture.offset > 0 {
+				want = []query.RuleCount{{RuleID: "UPPER_FLOOR", Count: 3},
+					{RuleID: "MIDDLE", Count: 2}, {RuleID: "LOWER_NEXT", Count: 1}}
+			}
+			require.Equal(t, want, got.Rules,
+				"valid millisecond rows must follow exact captured nanosecond bounds, including rule ordering")
+		})
+	}
+	other := read(t, base.Add(time.Nanosecond), foreign)
+	require.Equal(t, uint64(1), other.Open)
+	require.Equal(t, []query.RuleCount{{RuleID: "FOREIGN", Count: 1}}, other.Rules)
 }
 
 func verifyRulesFailClosed(ctx context.Context, t *testing.T, binary, root, path string, raw []byte) {
