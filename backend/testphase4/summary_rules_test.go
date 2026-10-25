@@ -61,6 +61,21 @@ func TestPhase4SummaryRules(t *testing.T) {
 			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "rules-operator", "tenant": tenant,
 			"role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix()}, secret, "HS256")
 	}
+	t.Run("summary_actual_binary_authenticated_route", func(t *testing.T) {
+		status, _ := getJSON(t, base+"/api/v1/metrics/summary", "", "")
+		require.Equal(t, 401, status, "summary must require a verified principal")
+		status, body := getJSON(t, base+"/api/v1/metrics/summary", tokenFor("viewer"), "")
+		require.Equal(t, 200, status, "actual binary must register the native summary adapters")
+		var summary struct {
+			Rate  float64                          `json:"event_rate_per_sec"`
+			Open  int64                            `json:"open_alerts"`
+			Trend []struct{ Events, Alerts int64 } `json:"trend_24h"`
+		}
+		require.NoError(t, json.Unmarshal(body, &summary))
+		require.Zero(t, summary.Rate)
+		require.Zero(t, summary.Open)
+		require.Len(t, summary.Trend, 288)
+	})
 	read := func(t *testing.T, url, token string) []byte {
 		t.Helper()
 		status, body := getJSON(t, url+"/api/v1/rules", token, "")

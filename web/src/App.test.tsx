@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import App from "./App";
 
@@ -70,7 +70,9 @@ function defaultAlertFilters(requestIndex: number) {
 }
 
 describe("App shell", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/alerts"));
   afterEach(() => {
+    window.history.replaceState(null, "", "/");
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
