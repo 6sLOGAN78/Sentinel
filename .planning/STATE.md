@@ -23,7 +23,7 @@ Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09/10/11accepted. Continue
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-12 next;04-11 accepted after13-pathA3 scope, precisionrepair ef19971/cleanR1/rootpostwavePASS.
+Plan: 04-12 executing after12-pathA2 PASS0at58da70f and PLANsynchronization;11 accepted sourceef19971/R1clean/rootpostwavePASS.
 Status: NEW project sentinel-p4-demo-20261024 has ninehealthy, real exact1000-ID seed and controlled CH/PG/API detection plus actualbrowser PASS. Rootdata/nativeEvents/health/preservation/build+normalmake test PASS. OldKafka history remains missing/failclosed, unchanged; noreset/guardwaiver. NoPhase4remoteauthoritybefore04-16.
 Progress: 68/73 accepted numberedplans; Phase4 12/17accepted,5remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
