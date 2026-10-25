@@ -52,10 +52,19 @@ function signIn(credential = "memory-credential") {
 }
 
 const backfillRequests: Request[] = [];
+const streamRequests: Request[] = [];
 function stubFetch(responder: (request: Request) => Promise<Response>) {
   vi.stubGlobal(
     "fetch",
     vi.fn((request: Request) => {
+      if (new URL(request.url).pathname === "/api/v1/alerts/stream") {
+        streamRequests.push(request);
+        return Promise.resolve(
+          new Response(new ReadableStream(), {
+            headers: { "Content-Type": "text/event-stream" },
+          }),
+        );
+      }
       if (new URL(request.url).pathname === "/api/v1/alerts/backfill") {
         backfillRequests.push(request);
         return Promise.resolve(
@@ -71,8 +80,9 @@ function defaultAlertFilters(requestIndex: number) {
     .mocked(fetch)
     .mock.calls.filter(
       ([request]) =>
-        new URL((request as Request).url).pathname !==
-        "/api/v1/alerts/backfill",
+        !["/api/v1/alerts/backfill", "/api/v1/alerts/stream"].includes(
+          new URL((request as Request).url).pathname,
+        ),
     )[requestIndex][0];
   expect(request).toBeInstanceOf(Request);
   const url = new URL((request as Request).url);
@@ -93,6 +103,7 @@ function defaultAlertFilters(requestIndex: number) {
 describe("App shell", () => {
   beforeEach(() => {
     backfillRequests.length = 0;
+    streamRequests.length = 0;
     window.history.replaceState(null, "", "/alerts");
   });
   afterEach(() => {
@@ -111,6 +122,7 @@ describe("App shell", () => {
     signIn();
     await screen.findByText("Cached tenant alert");
     await waitFor(() => expect(backfillRequests).toHaveLength(1));
+    await waitFor(() => expect(streamRequests).toHaveLength(1));
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(new URL(backfillRequests[0].url).searchParams.get("after_seq")).toBe(
       "0",
@@ -120,6 +132,7 @@ describe("App shell", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(backfillRequests[0].signal.aborted).toBe(true);
+    expect(streamRequests[0].signal.aborted).toBe(true);
   });
 
   it("shows the development sign-in form with a masked token", () => {

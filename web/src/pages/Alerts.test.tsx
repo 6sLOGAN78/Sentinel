@@ -57,10 +57,17 @@ async function start(
     window.history.replaceState(null, "", "/alerts");
   const requests: Request[] = [];
   const backfills: Request[] = [];
+  const streams: Request[] = [];
   let tenant = "filters-tenant";
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
+      if (new URL(request.url).pathname === "/api/v1/alerts/stream") {
+        streams.push(request);
+        return new Response(new ReadableStream(), {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
       if (new URL(request.url).pathname === "/api/v1/alerts/backfill") {
         backfills.push(request);
         return backfill(request);
@@ -83,6 +90,7 @@ async function start(
   return {
     requests,
     backfills,
+    streams,
     cache,
     switchTenant: () => {
       tenant = "second-tenant";

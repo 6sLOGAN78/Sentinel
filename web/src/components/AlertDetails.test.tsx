@@ -85,10 +85,17 @@ async function start(
 ) {
   const requests: Request[] = [];
   const backfills: Request[] = [];
+  const streams: Request[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/api/v1/alerts/stream") {
+        streams.push(request);
+        return new Response(new ReadableStream(), {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
       if (path === "/api/v1/alerts/backfill") {
         backfills.push(request);
         return Response.json({ items: [], next_seq: "0", has_more: false });
@@ -123,6 +130,10 @@ async function start(
   signIn();
   await screen.findByText(workflow.summary);
   await waitFor(() => expect(backfills).toHaveLength(strict ? 2 : 1));
+  await waitFor(() => expect(streams).toHaveLength(1));
+  expect(streams[0].headers.get("Authorization")).toBe(
+    "Bearer detail-test-credential",
+  );
   if (strict) expect(backfills[0].signal.aborted).toBe(true);
   expect(new URL(backfills[0].url).searchParams.get("after_seq")).toBe("0");
   return { requests, cache, backfills };
