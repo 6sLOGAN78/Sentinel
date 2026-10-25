@@ -38,10 +38,32 @@ requirements-completed: []
 requirements-targeted: [LIVE-01, LIVE-02, LIVE-03, AUTH-03, UI-02, UI-06]
 duration: 12min
 completed: 2026-10-25
-status: incomplete
+status: implemented-pending-browser-review
 ---
 
 # Phase 4 Plan 13: Polling SSE implementation and incomplete verification Summary
+
+## Root continuation — supersedes uncommitted handoff below
+
+Root wrapped the two owned native test lines, then corrected two unsupported
+RTL ByRoleOptions.exact properties (literal names remain exact). Initial root
+web typecheckEXIT2 preserved; finalwebtype/lint/format/buildEXIT0/9.882s,
+END22:37:40Z. Rootthree-modequalityEXIT0/17.841s END22:37:15Z/all9commands.
+PinnedunchangedpolicyscansPASS before sourceGREEN2c88d18. CommittednativeStream
+6subtests EXIT0/35.567s END22:38:36Z. Originalnative/worktree passes remain.
+
+Firstcurrentbrowser failedwaitingLive. Diagnostic actualbackfill200 repeatedly
+emitted+05:30WorkflowAlert fields violating OpenAPIUTCTimestampZ; strictclient
+correctlyrejected. Separatetwo-sourceprerequisiterepair independentlyapproved
+ce39dfb: REDac7882d/GREEN1a3529e/report21e357c. SeeUTC-REPAIR-SUMMARY for exact
+nativeNonUTCchildRED/instants andfour.UTC()normalizations, noSQL/counterchange.
+AfterrepairnativeDelivery10/Stream6/OpenAPI11/quality/defaultweb170+gen121/
+webgates/scansPASS. BrowsernowLive/SSE200andonlinearrival/filteredrefresh1440
+passes, but drop/reconnect step timesoutstillLive; mobile andfullbrowserproof
+remainunproved. Privatebrowser-1792968404824598561/failure-state.json retains
+responses/DOM; no route-mocks or timeoutincrease. This may need proxy-vs-client
+diagnosis; do notcallitpassingorweakenassertions. Full14feature+separate2source
+repair review and rootpostwave remainpending; no13acceptance/pipelineclaim.
 
 **Bearer-authenticated polling SSE and a guarded browser replay driver pass native and component checks; GREEN source remains uncommitted pending two test lint findings and browser/static completion.**
 
