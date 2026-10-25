@@ -1,199 +1,262 @@
 ---
 phase: 04-query-api-analyst-dashboard
-plan: "11"
-reviewed: 2026-10-25T09:53:39Z
+plan: "12"
+reviewed: 2026-10-25T11:11:25Z
 depth: standard
-review_iteration: R1
-reviewed_head: a885410f9b67de2c5bd79165084bfed274ba7e4e
-source_commit: ef199718148df3cda545c6166ccae487f796a893
-tests_red_commit: 58525e24f7c812632e39806d8f8b418f31789b4e
-original_source_commit: 2f0bc7aaede2fbf8c7a76a0d68327f3c3cd4c036
-original_tests_red_commit: 6e2ab68f2416d4dd74e548db00822ee5db4c50b5
-diff_base: 6a33306584e0f68b8ff6a481e5c00180646bb765
+review_iteration: R0
+reviewed_head: f579f6d548a3c26d04625396c5ad301f9e0ad34b
+source_commit: 921dbb2cca621b342599b6ee8cab785e1486538f
+strict_route_fixture_commit: bab2fbdbca65032700b2e023a4988c1be8288d46
+tests_red_commit: e44f21731e5f8ed3c30dcb577559ebef598258d9
+diff_base: c74f703d1683a90a1802a30b50ab8fcbe9800254
 files_reviewed: 13
 files_reviewed_list:
-  - backend/internal/query/summary.go
-  - backend/internal/storage/clickhouse/summary.go
-  - backend/internal/storage/postgres/summary.go
-  - backend/testphase4/summary_rules_test.go
+  - docs/decisions/0009-gap-safe-alert-delivery.md
+  - backend/migrations/postgres/008_alert_delivery.sql
+  - backend/internal/alertstream/delivery.go
+  - backend/testphase4/delivery_test.go
+  - backend/cmd/query-api/main.go
   - api/openapi.yaml
   - web/src/api/schema.d.ts
-  - web/src/pages/Overview.tsx
-  - web/src/pages/Overview.test.tsx
-  - web/src/App.tsx
-  - backend/cmd/query-api/main.go
+  - web/src/pages/Alerts.tsx
+  - web/src/pages/Alerts.test.tsx
   - web/src/api/client.ts
   - web/src/App.test.tsx
-  - web/src/pages/Alerts.test.tsx
+  - web/src/components/AlertDetails.test.tsx
+  - backend/test/openapi_test.go
 findings:
-  critical: 0
+  critical: 2
   warning: 0
   info: 0
-  total: 0
-status: clean
-closed_findings: [CR-01]
-runtime_verification: focused_native_passed
+  total: 2
+status: issues_found
+runtime_verification: focused_native_passed_browser_component_counterexamples_failed
 ---
 
-# Phase 4 Plan 11: Code Review Report — R1
+# Phase 4 Plan 12: Code Review Report — R0
 
-**Reviewed:** 2026-10-25T09:53:39Z
+**Reviewed:** 2026-10-25T11:11:25Z
 **Depth:** standard
 **Files reviewed:** 13
-**Status:** clean — 0 blockers, 0 warnings
+**Status:** issues_found — 2 BLOCKERS, 0 warnings
 
 ## Summary
 
-CR-01 is closed by the bounded PostgreSQL precision repair. Independent
-adversarial re-review found no remaining concrete BLOCKER or WARNING in the
-approved thirteen-path increment. All reviewed files meet quality standards.
-No issues found.
+Two browser correctness defects remain in the approved delivery increment:
+a transient backfill failure permanently stops the mounted catch-up, and a
+refresh can erase a newer arrival notification after its delivery cursor has
+already advanced. Both were independently reproduced against the actual
+App, session provider, generated transport and Alerts component without
+changing submitted source.
 
-R1 retains the original scope from base `6a33306`, rather than narrowing its
-file list to the two repair paths. The preserved R0 supplied the full original
-per-file review. R1 directly inspected the changed PostgreSQL summary and
-native test code and verified the identity of the other eleven paths. The
-current source matches GREEN `ef19971` at reviewed HEAD `a885410`.
+The independent native Delivery family passes all nine subtests. The strict
+OpenAPI family now passes all eleven tests, including the exact fourteen-route
+set. Those passing checks do not cover or negate the two component failures.
 
-Context includes the previously loaded reviewer instructions/code-review skill,
-11 PLAN and A1/A2/A3 ownership decisions, CONTRACT/UI-SPEC, preserved R0,
-10 SUMMARY/REVIEW and 07 STACK-RECOVERY. The current 11 SUMMARY's superseding
-CR-01 section was read; historical incomplete handoffs remain historical.
-No project AGENTS.md or project skills directory exists. Fallow remains
-disabled; no structural pre-pass was supplied.
+Scope is the complete thirteen-path union from base `c74f703`, not merely
+the one-line A3 fixture continuation. Twelve paths are tracked; explicitly
+authorized generated `web/src/api/schema.d.ts` is ignored and was read without
+force-adding it. Its SHA256 is
+`8a26dcc2cc5a8d29ac9cea36963a540d1718d4dcc339f100f000d2d2cce6043a`.
+The only reviewed tracked source difference after GREEN `921dbb2` is the
+authorized strict expected-route addition in `bab2fbd`.
+
+Context read: reviewer instructions and GSD code-review skill; 12 PLAN,
+A1/rejected CHECK, A2/CHECK, A3/CHECK; CONTRACT, RESEARCH, UI-SPEC; ADR0008/0009;
+12 SUMMARY including its superseding root A3 continuation; 11 SUMMARY and
+REVIEW-R1. Historical OpenAPI failure and premature passing-claim correction
+remain historical evidence, not current blockers. No root AGENTS.md or project
+skills directories were present. No structural pre-pass was supplied; fallow
+remains disabled.
 
 ## Narrative Findings (AI reviewer)
 
-No remaining findings.
+## Critical Issues
 
-### Closed CR-01 — prior BLOCKER: PostgreSQL rolling boundary truncation
+### CR-01: Transient backfill failure stops recovery for the mounted session
 
-At `backend/internal/storage/postgres/summary.go:32-33`, both rolling
-top-rules parameters now use `ceilSummaryMicrosecond`. The helper at lines
-64-69 floors to a representable microsecond, adds one microsecond only when
-the original instant is later, and returns an already aligned instant unchanged.
+**Classification:** BLOCKER
+**File:** `/home/logan78/Desktop/Sentinel/web/src/pages/Alerts.tsx:217-223`
+**Related:** `web/src/pages/Alerts.tsx:318`
 
-For any PostgreSQL-representable timestamp `x` and captured bound `b`,
-`x >= b` is equivalent to `x >= ceilMicrosecond(b)`, and `x < b` is
-equivalent to `x < ceilMicrosecond(b)`. The repair therefore preserves the
-required half-open interval; it does not admit a representable timestamp
-outside the original bounds. The encoded values have no remainder for pgx to
-discard. Both ends are repaired, avoiding a one-sided lower-bound leak.
+**Issue:** Any network error, dependency503, malformed response or failed
+processing escapes the page loop. The catch block only sets `catchupError`,
+and `catchUp()` then returns. There is no retry timer, retry action, online
+listener or state dependency that restarts it. Its dependencies are the stable
+query client, guarded client and verified session; ordinary rerenders, filter
+changes and list retries do not restart this effect. The screen indefinitely
+says “Reconnecting… Missed alerts will be recovered.” while issuing no further
+backfill request. A failure on page two likewise strands all remaining pages.
+A route remount or a new login happens to retry, but neither is offered as the
+recovery action.
 
-The helper uses time.Time truncation/comparison, not signed Unix division.
-The same ceiling logic applies before the Unix epoch and across a second
-boundary; no negative-remainder arithmetic is introduced. This is static
-reasoning, not a claim of a historical-epoch native fixture. Production captures
-the real clock; it accepts no caller-controlled clock override.
+**Evidence:** Private `catchup.test.tsx:28-41` mounts actual App, returns one
+backfill503 and configures subsequent requests to succeed with a delivery.
+It observes the reconnect message, applies filters and waits six seconds.
+The assertion fails with `expected 1 to be greater than 1`: the server would
+recover, but the mounted client never asks again. This is independent of SSE
+or later notification work; the initial REST catch-up itself is stranded.
+UI-SPEC requires independent error/retry states and dependency503 recovery.
 
-Only rolling PG parameters $3/$4 changed. The shared captured now, CH nano
-parameters, aligned trend parameters $2/$5, current all-time open/severity
-counts, status-independent rule count/order/limit, verified tenant and error
-propagation are unchanged. No schema, constructor, network or auth surface
-changed.
+**Fix:** Keep catch-up retryable from its last processed private cursor.
+Add an abort-aware bounded backoff or an explicit retry control wired to this
+same catch-up operation; retain the cursor on failed processing, reset the
+error on successful recovery, and cancel retry work on navigation/logout/
+expiry. Do not retry current401 after session disposal or turn malformed-page
+rejection into an immediate unbounded loop. Add a transient503-then-success
+component regression, including failure after a processed first page.
 
-The new production-handler/native-store cases in
-`backend/testphase4/summary_rules_test.go:380-445` use valid millisecond
-workflows and random isolated tenants. The clock update is sequential, restored
-after the subtest and still checked for one capture per request. Cases assert
-the entire ordered rule-count result at 0ns, 1ns, 999ns, exactly1us and the
-next aligned millisecond. They also retain all-time open9/severity, complete
-288-bucket trend equality, expected first/middle buckets and foreign isolation.
-The original tests and assertions were not removed or weakened.
+### CR-02: Refresh completion clears notifications for later deliveries
 
-The actual preserved RED record was read: the 1ns and999ns leaves failed with
-LOWER_FLOOR:2 replacing required UPPER_FLOOR:3; aligned controls passed.
-Tests-only commit `58525e2` precedes GREEN `ef19971`, and the PG adapter was
-unchanged from original GREEN in that tests-only commit. This closes the
-specific causal gap identified in R0.
+**Classification:** BLOCKER
+**File:** `/home/logan78/Desktop/Sentinel/web/src/pages/Alerts.tsx:326-327`
+**Related:** `web/src/pages/Alerts.tsx:204-215`
 
-## Full scope identity and retained analysis
+**Issue:** A successful list refresh unconditionally sets the shared
+`arrivals` boolean false. Catch-up can process another delivery while that
+refresh is in flight, invalidate the query without refetching, set arrivals
+true and advance its durable session cursor. If the older list request then
+finishes successfully, its callback clears the newer notification as well.
+That response can reflect a PostgreSQL snapshot from before the later
+workflow committed, so the row is absent. The arrival notice and its only
+Refresh button disappear, and the processed cursor prevents replaying that
+delivery in the current catch-up. Refetch completion also clears React Query's
+invalidation flag; invalidating before advancing does not prevent this race.
 
-The two changed paths are the PG summary and SummaryRules test. These eleven
-paths are identical to the source independently reviewed in R0:
+**Evidence:** Private `catchup.test.tsx:43-70` processes delivery1 and starts
+Refresh, keeping the list response pending. It then completes delivery2 with a
+different alert ID and finishes the earlier list response containing only the
+old row. The actual component has neither “Later commit” nor “New alerts
+available”; the final notification assertion fails with
+`expected null not to be null`. This is a legal READ COMMITTED/network
+ordering: list selection, later workflow/projection commit, then delayed list
+body completion.
 
-- `backend/internal/query/summary.go`
-- `backend/internal/storage/clickhouse/summary.go`
-- `api/openapi.yaml`
-- `web/src/api/schema.d.ts`
-- `web/src/pages/Overview.tsx`
-- `web/src/pages/Overview.test.tsx`
-- `web/src/App.tsx`
-- `backend/cmd/query-api/main.go`
-- `web/src/api/client.ts`
-- `web/src/App.test.tsx`
-- `web/src/pages/Alerts.test.tsx`
+**Fix:** Track an arrival revision or last processed delivery cursor rather
+than clearing an undifferentiated boolean. Capture that revision before
+starting a refresh and acknowledge only arrivals already covered at that
+point when it succeeds. A delivery processed while the refresh is pending
+must retain the notice/button and stale state for another explicit refresh.
+Preserve filters, pagination and bounded rows. Add the interleaved
+refresh/new-delivery regression; a simple refresh-after-all-pages test cannot
+exercise it.
 
-Ten tracked paths have an empty diff from `2f0bc7a`; the ignored schema's
-SHA256 remains
-`49cbb870db693360b4d424681a0b08b536078f52ecc1c766d1179055f432ff38`.
-Their R0 analysis carries forward: canonical identity selection precedes event
-filters, verified tenant reaches every aggregate, PG owns workflows, request
-cancellation/deadlines and 503 behavior remain intact, and the guarded session
-client/root Overview/accessible series/table/fixture routes remain unchanged.
-The explicit Phase5 consumer-lag unavailability also remains unchanged.
+## Scope analysis and supporting traces
 
-R0 is preserved byte-for-byte with SHA256
-`afade3dc26f3559d7b8e32bdeda23b068a1fed8fb82b51d972ba4d61ad73b6f1`.
-It remains the historical report that discovered the blocker; its findings
-were not edited into a clean result.
+All thirteen files were read, with changed hunks compared to the declared base.
+Additional unchanged code was read only to trace the existing transaction,
+tenant, session and lifecycle boundaries.
 
-## Independent verification
+- Migration008 takes a workflow-write-conflicting table lock before creating
+  the AFTER INSERT trigger and seeding preexisting workflows. The current
+  tern migrator executes migration statements transactionally. Existing
+  insert-only workflow Ensure uses ON CONFLICT DO NOTHING, preserving seq,
+  status/version/audit and the earlier permanent-reservation writer boundary.
+- Project locks the singleton row before selecting at most100 pending rows.
+  New delivery inserts, counter update and selected pending deletion share
+  one READ COMMITTED transaction and its commit. Five-second operation/server
+  bounds, one-second lock acquisition and independent one-second rollback
+  are explicit. It makes no CH/external-network call under that lock.
+  Managed main cancels and joins the projector before closing PG; overflow
+  begins draining and fails the lifecycle.
+- Backfill captures the committed bound first and restricts the tenant page
+  to it. Full pages advance to their last row; exhausted sparse tenant
+  intervals advance to that captured global bound. Limits, strict decimal
+  inputs, future cursors, JWT middleware and verified tenant predicate were
+  traced. Returned alert data contains the fifteen real workflow fields.
+- Client backfill retains generation/lifetime/caller-abort and post-body
+  checks, exact decimal BigInt comparisons, ascending-progress validation and
+  tenant validation in Alerts. Cursor storage is private per guarded client.
+  Query invalidation precedes advancement, but the two findings above still
+  break recovery/visibility.
+- Existing App/Alerts/detail fixtures dispatch only the exact new endpoint
+  separately, preserving list/detail/session/history/focus/privacy assertions.
+  OpenAPI's only fixture change adds the backfill GET to exact equality; it
+  does not weaken route or bearer-security checks.
 
-First read-only NEW health admission at09:52:52Z showed all nine authorized
-services healthy, with PG25432, CH28123/29000, Redis26379 and Kafka39092.
-Available disk was8,939,139,072 bytes initially and8,912,793,600 at native
-completion, above the2GiB floor. No runtime recovery was performed.
+No additional concrete backend BLOCKER or WARNING was established. This is
+not a claim that passing tests prove the entire implementation correct, nor
+a performance audit. The ADR explicitly admits persistent ledger growth and
+does not promise a fixed disk bound, GC or original-workflow commit ordering.
 
-| Check | UTC interval / duration | Actual result |
-| --- | --- | --- |
-| NEW-context nonempty SummaryRules with phase4/race/6m | 2026-10-25T09:53:02.286848Z–09:53:20.326855Z;18.040093s | Exit0;22 RUN records: root plus21 named subtests; all precision controls and prior cases pass |
-| `git diff --check 6a33306..ef19971` | Review interval | Exit0 |
-| Ten unchanged tracked source paths, `2f0bc7a..HEAD` | Review interval | Empty diff |
-| Source paths `ef19971..HEAD` | Review interval | Empty diff |
-| Generated schema and preserved R0 hashes | Review interval | Match the values above |
-| RED ancestor/source separation | Review interval | Tests-only58525e2 precedes GREENef19971; no PG repair in RED |
+## Independent verification and counterexamples
 
-Exact independent native invocation, from repository root:
+All checks ran at reviewed HEAD `f579f6d`, with only preexisting user config
+and .serena dirt. Native execution used only the approved NEW07 context and
+new isolated databases owned by its native fixtures. Ordinary component and
+OpenAPI checks used the launcher clean environment without NEW PG overrides.
+
+| Check | UTC interval on 2026-10-25 | Elapsed | Result |
+| --- | --- | ---: | --- |
+| Exact nonempty native Delivery, phase4/race/10m/p1 | 11:08:02.702667–11:08:17.447289 | 14.744662s | Exit0; root plus nine named subtests |
+| Private mounted catch-up and refresh-interleaving counterexamples | 11:09:54.208452–11:10:01.877827 | 7.669390s | Exit1; two behavioral assertion failures |
+| Existing affected Alerts/App/AlertDetails components | 11:10:43.002443–11:10:47.556016 | 4.553589s | Exit0;73/73 |
+| Nonempty OpenAPI family | 11:10:43.024163–11:10:43.833848 | 0.809689s | Exit0;11/11 |
+| `git diff --check c74f703..HEAD` | Review interval | — | Exit0 |
+
+Native invocation:
 
 ```sh
 python .local/phase4-acceptance/04-07/fresh-stack/run-c2ba399-01/context.py \
-  --cwd backend --timeout 390 -- \
+  --cwd backend --timeout 630 -- \
   bash ../scripts/go-test-nonempty.sh './testphase4/...' \
-  '^TestPhase4SummaryRules$' -tags=phase4 -race -timeout=6m -p=1
+  '^TestPhase4Delivery$' -tags=phase4 -race -timeout=10m -p=1
 ```
 
-The approved launcher captures exact argv/cwd/head/time/exit/resource data in
-`20261025T095302286822Z-operator-770bf5a3.json` under its private07 context.
-A private R1 index is retained under
-`.local/phase4-acceptance/04-11-review-r1/` (directory0700/files0600).
-Children use umask022 and credentials are redacted. Native tests run the actual
-current-source binary and focused handler against real isolated stores.
-Shared API18081/ingest18080 earlier07 images were not current-source proof.
+Native output covers the real workflow-max counterexample, reversed commits,
+CH-unreachable backfill, strict inputs/tenant/pages, rollback/two replicas,
+large decimals, concurrent migration cutover, dropped successful COMMIT
+acknowledgement and terminal managed overflow. These tests do not mutate the
+shared delivery counter: high-counter/cutover/fault cases use owned databases.
+
+The private regression command is:
+
+```sh
+python .local/phase4-acceptance/04-12/run.py --clean --cwd web --timeout 30 \
+  independent-review-counterexamples-final -- npx vitest run \
+  --config ../.local/phase4-acceptance/04-12-review/private.config.ts
+```
+
+Its configuration imports the existing web configuration and tests actual App,
+not a model of the cursor algorithm. Only the HTTP dependency is controlled.
+An initial private run also failed both tests, but its first test hit Vitest's
+default5s timeout before its6s wait assertion. That harness timeout was
+corrected to8s; the final run above fails the actual request-count assertion.
+The second run's refresh test fails its direct notice assertion. The initial
+timeout is retained as harness setup evidence, not causal behavioral RED.
+
+Private evidence index/harness are under
+`.local/phase4-acceptance/04-12-review/` (directory0700/files0600).
+Launcher records retain exact argv, cwd, SHA, UTC, duration, exit and disk:
+native `20261025T110802702646Z-operator-6b2617d9.json` in the NEW07 context;
+component/contract/counterexample records in the existing private04-12 directory.
+Child processes use umask022. Lowest recorded completion disk was
+8,146,018,304 bytes, above the2GiB floor. No credentials, authorization headers,
+resolved Compose configuration or raw sensitive service logs were printed.
 
 ## Limits and preservation
 
-No component rerun was needed for the backend-only repair: unchanged components
-had independently passed54/54 across the three affected files in R0. The current
-SUMMARY records earlier repair-native22, six current-source browser role/width
-flows, ordinary web139/generator121, three-mode backend quality, OpenAPI and
-scans. These remain earlier executor/root evidence, not independent R1 reruns.
-R1 does not claim new browser/layout, full-suite, scanner, migration/topic or
-whole-phase acceptance.
+The NEW detector checkpoint-history-loss hold remains separate and unchanged.
+The parent authorized this PG-only review while eight services were healthy;
+this report asserts neither nine healthy services nor a fresh detection
+pipeline. Shared18081/18080 old07 images were not current-source evidence.
+No runtime recovery, shared migration/seed, reset/offset/group/fence/retention
+change, service stop/start/rebuild, prune, scanner/policy or remote action ran.
 
-The original increment's aggregate tests were added alongside its constructor,
-as preserved in R0/SUMMARY. This repair supplies its own committed causal RED;
-it does not rewrite the older TDD limitation or failed attempts.
+The source RED commit precedes GREEN as recorded in the summary. Earlier
+native/browser/migration/scanner/full ordinary-suite evidence remains earlier
+executor/root evidence, not an independent rerun here. No real-browser layout,
+full Phase3 aggregate, full pipeline, whole-phase acceptance or new security
+certification is claimed. Later SSE/LISTEN work is outside this increment and
+does not resolve the current REST catch-up defects by assumption.
 
-Only R1/designated review reports and ignored private evidence were written.
-R0, source, config, scanner policy, shared tracking, runtime and user dirt were
-preserved. No commit, remote operation, branch switch, reset/stash, seed resend,
-migration rerun, service stop/start/rebuild or prune occurred. User-owned
-.planning/config.json and .serena/ remain untouched and unstaged.
-Root owns the review commit, postwave checks and acceptance.
+Only the designated two review reports and ignored private review artifacts
+were written. There is no source repair or commit. User .planning/config.json,
+.serena, shared tracking and historical reports were preserved. Root owns the
+review commit and the decision to route these findings through a scoped fix.
 
 ---
 
-_Reviewed: 2026-10-25T09:53:39Z_
+_Reviewed: 2026-10-25T11:11:25Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_

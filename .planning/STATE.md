@@ -23,12 +23,21 @@ Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09/10/11accepted. Continue
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-12 executing after12-pathA2 PASS0at58da70f and PLANsynchronization;11 accepted sourceef19971/R1clean/rootpostwavePASS.
-Status: NEW project sentinel-p4-demo-20261024 has ninehealthy, real exact1000-ID seed and controlled CH/PG/API detection plus actualbrowser PASS. Rootdata/nativeEvents/health/preservation/build+normalmake test PASS. OldKafka history remains missing/failclosed, unchanged; noreset/guardwaiver. NoPhase4remoteauthoritybefore04-16.
+Plan: 04-12 implementation921dbb2 and strictfixturebab2fbd have native/browser/OpenAPI passes; independentR0 finds2UIblockers, notaccepted. Repairnext.
+Status: NEW detector nowalsoholdscheckpoint-historylost;8serviceshealthy,PG-onlydeliveryproofpasses. No offsets/groups/fences/reset changed. Originaloldstackholdpreserved. Userexplicitlyrequested GitHubpush on2026-10-25, overriding earlierPhase4remotehold forcurrentcommittedwork; normalorigin/mainpush afterscans, noacceptancewaiver.
 Progress: 68/73 accepted numberedplans; Phase4 12/17accepted,5remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
 ## Latest Verified Evidence
+
+- 04-12 RED e44f217/GREEN921dbb2;actual008NEWPG/schema8/nativeDelivery9/
+  currentbrowser1440+375/cleanweb144+gen121/affectednative/3modequality/scansPASS.
+  OpenAPIinitial10/11failure/prematureclaimcorrected; A3checkedstrictfixture
+  bab2fbd now11/11PASS. Independent13-pathR0finds2BLOCKERS: backfill503never
+  retries,refreshcompletionerasesnewerarrivalnotification. Reportscommitted
+  beforeuser-requestedpush; repairAlerts.tsx/testsnext,12NOTaccepted.
+  NEWdetectorcheckpointlossafterretention isseparateheldruntime,8healthy;
+  nofullpipeline/ninehealthyclaim/reset. Userpushrequestiscurrentremoteauthority.
 
 - 04-11 acceptedOct25: source2f0bc7a thenCR01RED58525e2/GREENef19971;
   cleanfull13-pathR1ata885410 closesPGnano->microbounddefect. Native22RUN/
