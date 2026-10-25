@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "11"
-status: incomplete
+status: implemented-pending-review
 subsystem: api-ui
 tags: [clickhouse, postgres, overview, react-query, native]
 requires:
@@ -9,7 +9,7 @@ requires:
     provides: authenticated startup Rules and guarded session client
 provides:
   - causal committed summary/root Overview RED
-  - uncommitted native-backed tenant Overview implementation with passing focused gates
+  - committed native-backed tenant Overview implementation with passing focused gates
 affects: [04-11-continuation, 04-15, 04-16]
 tech-stack:
   added: []
@@ -25,9 +25,49 @@ duration: 9min evidence window
 completed: 2026-10-25
 ---
 
-# Phase 4 Plan 11: Tenant Overview — incomplete handoff
+# Phase 4 Plan 11: Tenant Overview — implementation and preserved handoff
 
-**Native canonical-event and authoritative-workflow aggregates power the actual Overview implementation; final delivery is blocked by an unowned existing Alerts test fixture.**
+**Native canonical-event and authoritative-workflow aggregates power the actual Overview; root completed the explicitly approved fixture continuation after the preserved handoff.**
+
+## Root continuation — supersedes incomplete handoff below
+
+Independent A3 PASS0 at29acc9e approved the thirteenth path Alerts.test.tsx.
+Root synchronized PLAN in638b456 before adding its conditional route default:
+only non-/alerts paths change; existing deep-link query strings and assertions
+remain. No production workaround or global test setup changed. Source GREEN
+2f0bc7a follows causal RED6e2ab68; source union12tracked plus ignored generated
+schema=13 approved paths. Original A1rejection/A2approval/A3counterexample and
+executor attempt-cap handoff13d2d50 remain preserved.
+
+Clean full `root-default-continuation` EXIT0/10.498s ending2026-10-25T00:40:43Z
+passes cachedGo/web139/generator121. `root-web-continuation` EXIT0/13.313s ending
+00:40:46Z passes typecheck/lint/format/build. Earlier three-mode backend quality,
+affected native families and OpenAPI passes remain unchanged; only fixture
+route setup changed afterward. `root-precommit-scans` passes staged/generated/
+harness/fullhistory with pinned unchanged policy. `root-source-native` executes
+actual committed2f0bc7a SummaryRules, including frozen aggregate boundaries.
+Independent source review and root postwave remain required; fullphase open.
+
+First committed browser run failed before app interaction because the recorded
+Chromium headless-shell executable was absent. Existing cached full Chromium
+with the same1248 revision was located; only private browser.mjs executablePath
+changed. No download, dependency, production source or browser assertion change.
+This setup failure is retained separately from browser behavior evidence.
+
+Committed2f0bc7a `root-source-native` EXIT0/8.143s END00:41:06Z passes all16
+SummaryRules subtests including real stores/frozenclock/fault/cancellation.
+Browserv2 failed its hard-coded open2 because the native fixture had changed
+status; private harness now reads actual tenant-scoped PG open count. Browserv3
+then exposed its selection of the foreign isolation tenant by latestseq; select
+the primary populated SummaryRules tenant by workflow count/latestseq instead.
+No API/UI or assertion was weakened. Both failures remain recorded.
+Browserv4 EXIT0/11.498s END00:42:39Z, source2f0bc7a, runs6real role/width flows:
+all three roles at1440/375, PG open count reconciliation, nonzero event/alert
+trend, exact288API/table/SVG points and top-rule rows, refresh/history/keyboard/
+logout/privacy/nooverflow. Results browser-1792888947660197833/results.json;
+mobile screenshot visually inspected. Current-source API/Vite children joined.
+No sharedruntime change or fixture traffic resend. Generatedschema SHA256:
+`49cbb870db693360b4d424681a0b08b536078f52ecc1c766d1179055f432ff38`.
 
 ## Status and commits
 
