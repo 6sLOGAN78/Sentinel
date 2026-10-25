@@ -256,7 +256,7 @@ Plans:
   4. A new alert appears in the Alerts page over SSE (no token in the URL) without refresh. After a dropped connection or killed LISTEN link, the client reconnects and backfills via `seq` with no permanent gaps, and every query-api replica delivers every alert, including through a real proxy
   5. Overview, Alerts, Events and Rules pages work with loading, empty, error and reconnecting states, a typed OpenAPI client, safe event JSON rendering, and keyboard-operable controls (viewers see mutation controls hidden or disabled)
 
-**Plans**: 17 plans in 17 ordered waves. Original16 approvedR2; source-reviewrepair04-17insertedafter04-01before04-02. Plans01/17/02/03/04/05/06/07/08/09/10accepted after actual scoped gates, clean independent reviews and root post-wave checks; 6plans remain.
+**Plans**: 17 plans in 17 ordered waves. Original16 approvedR2; source-reviewrepair04-17insertedafter04-01before04-02. Plans01/17/02/03/04/05/06/07/08/09/10/11accepted after actual scoped gates, clean independent reviews and root post-wave checks; 5plans remain.
 
 - [x] 04-01: Sign in and read real tenant alerts
 - [x] 04-17: Repair private JWT launch wiring, Vite API reachability and security negative controls (unblocks04-02)
@@ -269,7 +269,7 @@ Plans:
 - [x] 04-08: Acknowledge with atomic optimistic audit — accepted2026-10-24 after actual007/native/browser,clean11-pathR0/rootpostwavePASS
 - [x] 04-09: Resolve/history and redacted security logging — accepted2026-10-24 after clean10-pathR0/native/browser/rootpostwavePASS
 - [x] 04-10: Read-only active Rules page — accepted2026-10-25 after clean9-pathR0/native/browser/rootpostwave and preservedruntime recovery
-- [ ] 04-11: Real tenant Overview aggregates
+- [x] 04-11: Real tenant Overview aggregates — accepted2026-10-25 after precisionrepair/clean13-pathR1/native/browser/rootpostwavePASS
 - [ ] 04-12: Gap-safe durable delivery catch-up
 - [ ] 04-13: Header-authenticated live SSE
 - [ ] 04-14: LISTEN recovery and bounded stream resource proofs
@@ -323,7 +323,7 @@ Plans:
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
 | 3. Detection & Alert Pipeline | 21/21 | Complete    | 2026-10-21 |
-| 4. Query API & Analyst Dashboard | 11/17 accepted | 04-11 tenant Overview aggregates | - |
+| 4. Query API & Analyst Dashboard | 12/17 accepted | 04-12 gap-safe delivery catch-up | - |
 | 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
 

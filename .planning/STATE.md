@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-25T00:25:26Z"
+last_updated: "2026-10-25T10:29:14Z"
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 73
-  completed_plans: 67
+  completed_plans: 68
   percent: 50
 ---
 
@@ -18,17 +18,25 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09/10accepted. Continue04-11 tenant Overview using NEW private context. Phase3 remains complete.
+Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09/10/11accepted. Continue04-12 gap-safe delivery catch-up using NEW private context. Phase3 remains complete.
 
 ## Current Position
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
-Plan: 04-11 executing after12-pathA2 PASS0atac289ba and PLANsynchronization; original11-pathA1blockerpreserved.04-10 accepted sourcedbc7ae2/R0clean/rootgates.
+Plan: 04-12 next;04-11 accepted after13-pathA3 scope, precisionrepair ef19971/cleanR1/rootpostwavePASS.
 Status: NEW project sentinel-p4-demo-20261024 has ninehealthy, real exact1000-ID seed and controlled CH/PG/API detection plus actualbrowser PASS. Rootdata/nativeEvents/health/preservation/build+normalmake test PASS. OldKafka history remains missing/failclosed, unchanged; noreset/guardwaiver. NoPhase4remoteauthoritybefore04-16.
-Progress: 67/73 accepted numberedplans; Phase4 11/17accepted,6remaining. Overallphaseprogress3/6=50%.
+Progress: 68/73 accepted numberedplans; Phase4 12/17accepted,5remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
 ## Latest Verified Evidence
+
+- 04-11 acceptedOct25: source2f0bc7a thenCR01RED58525e2/GREENef19971;
+  cleanfull13-pathR1ata885410 closesPGnano->microbounddefect. Native22RUN/
+  browser6roles-widths/exactSVG-table-toprules/normalweb139+gen121/static/scans
+  PASS. Root09:55interruptedUNKNOWN,no producer; repeatrootpostwaveEXIT0/
+  18.323s END10:29:14Zbuilds+make test. PreserveR0/R1/A1rejected/A2/A3scope/
+  incompletehandoffs/browserfailures/TDDlimits. Continue12durabledeliverylog;
+  workflowseq allocationnotcommitorder; native reversecommitproof required.
 
 - 04-10 acceptedOct25: REDa55d82f/GREENdbc7ae2/clean9-pathR0at8fdcdae,
   reviewercomponent8PASS/rootnative9 EXIT0/11.401s;builds+make test EXIT0/23.246s
@@ -255,8 +263,8 @@ Stale pre-Phase1codebase map produced warn-only drift63elements; no automatic re
 
 ## Session Continuity
 
-Last session:2026-10-25T00:25:26Z;10accepted after clean9-pathR0 and rootnative/runtime/postwave. Continue11automatically.
-Resume: Execute04-11 after main/clientownershipamendment/check; tenantOverview. NEWPG25432/schema7/CH28123+29000. Neverdefaultoldstackcommands; sharedAPI18081/ingest18080prior07imagesnotcurrent10,stale006migratorEXIT1. Currenthostmigrator+directownedIDsrecoveryPASS/ninehealthy. 11/17accepted,67/73overall;sourcedbc7ae2/R0clean. No furtherprune/reset/guardchange/Phase5/push/hostedCI authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
+Last session:2026-10-25T10:29:14Z;11accepted after clean13-pathR1 and freshrootpostwave. Continue12automatically.
+Resume: Execute04-12 after clientownershipcheck; durabledeliveryprojection/actual008migration. NEWPG25432/schema7/CH28123+29000. Neverdefaultoldstackcommands; sharedAPI18081/ingest18080prior07images,stale006migratorEXIT1. Currenthostmigrations/directownedIDsnormalrecoveryonly. 12/17accepted,68/73overall;sourceef19971/R1clean. No furtherprune/reset/guardchange/Phase5/push/hostedCI authority. Olddata/.env/usercfg/.serena preserved. Priorholds/failures remain history.
 Persistent private logs: .local/phase3-acceptance/ (ignored,dir0700/log0600).
 Current producer: none. Closure documentation commit/publication remains root-owned.
 Do not rerun the expensive aggregate before repair and independent review are clean.

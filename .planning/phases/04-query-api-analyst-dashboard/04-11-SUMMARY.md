@@ -1,7 +1,7 @@
 ---
 phase: 04-query-api-analyst-dashboard
 plan: "11"
-status: implemented-pending-re-review
+status: complete
 subsystem: api-ui
 tags: [clickhouse, postgres, overview, react-query, native]
 requires:
@@ -20,7 +20,7 @@ key-files:
 key-decisions:
   - Preserve the approved root Overview route; an additional existing Alerts fixture requires explicit ownership before repair.
   - No production clock override; focused handler accepts a clock and main uses the real clock.
-requirements-completed: []
+requirements-completed: [API-07, API-08, AUTH-03, UI-01, UI-06]
 duration: 9min evidence window
 completed: 2026-10-25
 ---
@@ -30,6 +30,16 @@ completed: 2026-10-25
 **Native canonical-event and authoritative-workflow aggregates power the actual Overview; root completed the explicitly approved fixture continuation after the preserved handoff.**
 
 ## CR-01 precision repair — supersedes the reviewed source below
+
+Root accepted11 on2026-10-25 after independent full13-path R1 at a885410/
+sourceef19971 closesCR01, zero findings. Preserved04-REVIEW-11-R0/R1; reviewer
+independently passed all22nativeRUNrecords. Originalrootpostwave at09:55:07Z
+was interrupted withoutoutput/result/producer; UNKNOWN, notPASS. Fresh
+root-11-postwave-resume EXIT0/18.323s END10:29:14.800099Z runs backend/web
+builds+normalmake test(cachedGo/web139/gen121). Source/generated remain reviewed.
+Private07 retains both logs; private11 retains causalRED/native/browser/quality/
+scan evidence. Phase4 now12/17accepted; continue12, notPhase5. Originalhandovers,
+scopecounterexamples, browserharnessfailures and TDDlimits remain historical.
 
 Independent R0 `fe60b38` found a concrete rolling PG boundary defect at source
 `2f0bc7a`: pgx truncates sub-microsecond timestamptz parameters, incorrectly
