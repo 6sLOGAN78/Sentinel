@@ -41,7 +41,144 @@ status: implemented-pending-review
 
 # Phase 4 Plan 12: Gap-safe alert delivery Summary
 
-**Transactional PostgreSQL delivery projection recovers late lower-workflow-sequence alerts; the OpenAPI exact-route fixture still blocks acceptance.**
+**Gap-safe PostgreSQL replay now retries transient REST failures and preserves arrivals newer than a refresh snapshot; independent R1 review and root acceptance remain pending.**
+
+## CR-01 / CR-02 repair — supersedes reviewed browser defects below
+
+Preserved independent `04-REVIEW-12-R0.md` found two concrete blockers at
+`f579f6d`: failed initial catch-up never restarted, and an older successful
+refresh erased a newer processed arrival notice. Both have scoped fixes and
+actual causal RED/GREEN evidence. This section records implementation proof;
+only root/reviewer may close R0, accept the plan or update shared tracking.
+Original review, A1 rejection, A2/A3 checks, failures and premature OpenAPI
+claim correction remain unchanged below and in their reports.
+
+Repair commits:
+
+- `3de6a95` — tests-only `test(04-12): reproduce stranded catch-up and stale refresh notice races`
+- `1e9725e` — `fix(04-12): retry catch-up and preserve arrivals newer than refresh snapshots`
+
+The repair owns only `web/src/pages/Alerts.tsx`, its test file, this summary
+and ignored private12 evidence. The complete accepted ownership boundary
+remains13 source artifacts after root's A3, including the ignored generated
+schema. No backend/contract/other fixture/tracking/review file was edited.
+User config/.serena remain unstaged. Per root handoff, the user-authorized
+GitHub push already published `6cef65d` with R0 documented; this repair made
+no remote operation and does not claim to have published its new commits.
+
+CR-01 now uses a single sequential catch-up driver. Failed network/5xx/429
+requests or processing retry from the last successfully processed private
+cursor after250ms, doubling to a5s cap. At most one request or wait is active
+per mounted driver. Abort clears the wait timer and listener and prevents
+later requests after navigation, logout or expiry. Current401 disposal is
+left to the guarded transport and is never retried. Permanent other4xx
+failures stop with honest reload/retry guidance. A successfully processed
+page clears the reconnect state; invalidation still finishes before cursor
+advancement. Successful terminal pages stop this initial REST catch-up;
+future live/SSE behavior remains in its separate plan.
+
+CR-02 tracks the latest processed arrival's exact decimal cursor in one ref.
+Refresh captures that watermark before its list request. A successful response
+clears only a still-matching watermark. If another delivery was processed
+while that response was pending, the notice remains and the affected finite
+query is re-invalidated without an automatic fetch. Thus an older snapshot
+cannot consume the only refresh affordance for a later commit. No alert-ID
+set, unbounded list, forced rewind, implicit filter change or direct UI fetch
+was added. Existing filters, pagination, selection/history/focus and verified
+generation/privacy behavior are retained.
+
+### Repair evidence,2026-10-25 UTC
+
+Commands use the existing private12 launcher and unchanged caps. Component,
+ordinary and web/OpenAPI checks use its clean environment. Native/browser
+checks use only NEWPG25432/schema8, CH28123/29000 and Redis26379 through the
+approved07 context; shared18081 is not current-source proof.
+
+| Check | Start–end | Elapsed | Actual result |
+|---|---|---:|---|
+| Three new actual App/session/client RED assertions |11:17:20–11:17:24|4.159s|1; initial503 stalls at1of2 calls, second-page503 stalls at2of3, stale refresh erases notice |
+| Corrected focused Alerts/App/AlertDetails |11:21:57–11:22:02|5.904s|0;80/80 |
+| Web typecheck/lint/format/build |11:21:57–11:22:09|11.517s|0 |
+| OpenAPI exact nonempty family |11:19:31–11:19:32|1.276s|0;11/11 |
+| Clean ordinary `make test` |11:23:20–11:23:30|9.995s|0; default Go, web151, generator121 |
+| **Committed1e9725e focused components** |11:25:03–11:25:09|6.030s|0;80/80 |
+| **Committed1e9725e real fault-proxy Chromium1440/375** |11:25:04–11:25:15|10.570s|0 |
+| **Committed1e9725e native Delivery** |11:25:06–11:25:19|13.930s|0; root plus9subtests, package12.756s |
+
+The unchanged original private R0 counterexamples were also run against
+committed1e9725e with `./node_modules/.bin/vitest run --config
+../.local/phase4-acceptance/04-12-review/private.config.ts`: both pass. This
+is an executor rerun, not independent R1 review. Its existing private config
+produces a future native-config-loader warning; the config was not edited or
+the warning suppressed. Native command remains the exact nonempty Delivery
+selector with phase4/race/10m/p1 documented below. Backend production files
+are unchanged by this repair; earlier three-mode quality evidence is carried
+by source identity, not represented as a fresh broad rerun.
+
+The permanent component regressions retain the original three causal cases
+and add guards for exact250/500/1000/2000/4000/5000/5000ms retry intervals,
+cursor preservation, cancellation on sign-out and route unmount, permanent
+400 reporting, and current401 session/cache disposal. Existing processing-
+before-advance, duplicate page, decimal precision, session and list/detail
+assertions remain. All seven new tests pass in the151-test ordinary web suite.
+
+Committed browser results are under
+`.local/phase4-acceptance/04-12/repair-browser-1792927504906997542/`.
+The private loopback Node proxy returns controlled503 responses and then
+forwards the real API. It holds the real tail-page request and captures a real
+list response before a later workflow is inserted into a new owned PG database.
+That new row is projected by the current API; the real tail response is then
+processed before releasing the older list body. Both viewport runs retain the
+notice after the older snapshot, and the next explicit keyboard refresh shows
+the actual late row and clears the notice. Cursors stay exact above2^53;
+visible rows stay50, navigation resumes, separate sessions start at0, and
+storage/URL privacy/no overflow/pageerror checks pass. The mobile screenshot
+was inspected. There are no browser route mocks and no shared dependency
+outage. Synthetic workflow fixtures are native PG data, not a new detection
+pipeline claim. All API/Vite/proxy/Chromium/native producers joined and the
+newly owned databases were dropped after their children closed.
+
+### Retained repair failures and limits
+
+The first focused GREEN passed75/76: the strengthened final refresh assertion
+clicked its still-disabled button before React Query's completion notification.
+The test now waits for the actual enabled state before the next click, retaining
+all notice/staleness and later-row assertions. Core CR-01/CR-02 assertions had
+already passed. Additional timer guards initially froze `start()`'s wait with
+non-advancing fake timers: four default5s test timeouts and the ordinary-suite
+failure are retained as fixture setup failures. Advancing fake time preserves
+the exact retry-delay assertions and original timeout. Typecheck separately
+caught an invalid test-only `exact` role-query option; it was removed without
+weakening the role/name query. No production workaround or timeout increase
+was used. Final focused/ordinary/type gates pass after those scoped fixture
+corrections; all failed records remain.
+
+The first private browser fault fixture counted raw list requests, so a genuine
+cancelled StrictMode initial read was mistaken for the refresh to hold. It timed
+out waiting for initial data. The proxy now explicitly arms only the upcoming
+user refresh after the initial list succeeds. The failed fixture and subsequent
+worktree/committed passes remain distinct. StrictMode cancellation is preserved;
+no production change was made for the harness.
+
+Pinned8.30.1 staged RED and staged GREEN/generated/private-harness/full-history
+scans pass with unchanged policy and existing exceptions. Final summary staging
+and post-summary history scans run during close-out; actual private records
+retain their exits. No new exception or copied whole-source scan was added.
+Generated schema remains ignored and unchanged at SHA256
+`8a26dcc2cc5a8d29ac9cea36963a540d1718d4dcc339f100f000d2d2cce6043a`.
+No new stub or production trust boundary was introduced.
+
+The separate NEW detector `checkpoint history lost` hold remains untouched;
+there was no stack recovery, service stop/start, shared migration, seed resend,
+checkpoint/offset/group/fence/retention reset or prune. No nine-healthy, fresh
+pipeline or whole-phase acceptance claim is made. Final disk observation7.4GiB
+remains above the2GiB floor. No active owned producer remains. Independent R1
+review of the full13-path union and root postwave acceptance are next.
+
+**Repair self-check: PASSED.** Both owned source files exist, RED3de6a95 precedes
+GREEN1e9725e, and committed-source component/native/browser evidence returned0.
+Source working changes are clean after GREEN, excluding the user's preexisting
+config/.serena dirt. Root tracking/review/remote authority is preserved.
 
 ## Root A3 continuation — supersedes fixture blocker below
 
