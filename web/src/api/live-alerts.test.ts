@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { createElement } from "react";
 import { createAPIClient } from "./client";
+import { QueryClient } from "@tanstack/react-query";
 
 const workflow = {
   alert_id: "a".repeat(64),
@@ -80,13 +81,16 @@ async function mounted(
       });
     }),
   );
-  const view = render(createElement(App));
+  const cache = new QueryClient();
+  const view = render(createElement(App, { queryClient: cache }));
   fireEvent.change(screen.getByLabelText("Development access token"), {
     target: { value: "stream-private-credential" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-  await screen.findByText(workflow.summary);
-  return { streams, backfills, bodies, view };
+  if (streamResponse)
+    await waitFor(() => expect(streams.length).toBeGreaterThan(0));
+  else await screen.findByText(workflow.summary);
+  return { streams, backfills, bodies, view, cache };
 }
 function frame(seq = "9007199254740994", alert: unknown = workflow) {
   return `id: ${seq}\nevent: alert\ndata: ${JSON.stringify({ seq, alert })}\n\n`;
@@ -172,6 +176,47 @@ describe("live delivery through the actual guarded client and App", () => {
     });
     expect(screen.queryByText("New alerts available")).toBeNull();
     expect(backfills).toHaveLength(1);
+  });
+  it("does not advance an SSE cursor when awaited invalidation is aborted during navigation", async () => {
+    const { streams, bodies, backfills, cache } = await mounted();
+    await waitFor(() => expect(streams).toHaveLength(1));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const invalidation = vi
+      .spyOn(cache, "invalidateQueries")
+      .mockReturnValueOnce(held);
+    await act(async () => bodies[0].enqueue(encoder.encode(frame())));
+    await waitFor(() => expect(invalidation).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("link", { name: "Rules" }));
+    expect(streams[0].signal.aborted).toBe(true);
+    await act(async () => release());
+    fireEvent.click(screen.getByRole("link", { name: "Alerts" }));
+    await waitFor(() => expect(backfills).toHaveLength(2));
+    expect(new URL(backfills[1].url).searchParams.get("after_seq")).toBe(
+      "9007199254740993",
+    );
+    expect(screen.queryByText("New alerts available")).toBeNull();
+  });
+  it("keeps the active guarded stream across hidden-tab visibility changes", async () => {
+    const { streams, bodies } = await mounted();
+    await waitFor(() => expect(streams).toHaveLength(1));
+    const prior = Object.getOwnPropertyDescriptor(document, "hidden");
+    try {
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+      await act(async () => bodies[0].enqueue(encoder.encode(frame())));
+      await screen.findByText("New alerts available");
+      expect(streams).toHaveLength(1);
+      expect(streams[0].signal.aborted).toBe(false);
+    } finally {
+      if (prior) Object.defineProperty(document, "hidden", prior);
+      else Reflect.deleteProperty(document, "hidden");
+    }
   });
   it("stops current401 with session disposal and no retry", async () => {
     const { streams } = await mounted(

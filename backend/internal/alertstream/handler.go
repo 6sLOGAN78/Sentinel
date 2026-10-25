@@ -1,0 +1,221 @@
+package alertstream
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/labstack/echo/v4"
+
+	"github.com/6sLOGAN78/sentinel/internal/auth"
+	"github.com/6sLOGAN78/sentinel/internal/errs"
+	"github.com/6sLOGAN78/sentinel/internal/query"
+)
+
+const (
+	streamClients      = 100
+	streamLifetime     = 10 * time.Minute
+	streamWriteTimeout = 5 * time.Second
+	streamHeartbeat    = 15 * time.Second
+)
+
+// Handler independently replays the durable log for each admitted client.
+// Poll-only delivery holds no notification queue or unbounded identity list.
+type Handler struct {
+	store   *Store
+	ctx     context.Context
+	cancel  context.CancelFunc
+	mu      sync.Mutex
+	closed  bool
+	clients chan struct{}
+	active  sync.WaitGroup
+}
+
+// NewHandler binds streams to the service lifetime and existing delivery store.
+func NewHandler(ctx context.Context, store *Store) *Handler {
+	lifetime, cancel := context.WithCancel(ctx)
+	return &Handler{store: store, ctx: lifetime, cancel: cancel, clients: make(chan struct{}, streamClients)}
+}
+
+// Register installs the literal authenticated route before alert-ID routes.
+func (h *Handler) Register(e *echo.Echo, verifier *auth.Verifier) {
+	e.GET("/api/v1/alerts/stream", h.stream, verifier.Middleware)
+}
+
+// Close cancels and joins admitted handlers before HTTP shutdown/pool closure.
+func (h *Handler) Close(ctx context.Context) error {
+	h.mu.Lock()
+	h.closed = true
+	h.cancel()
+	h.mu.Unlock()
+	done := make(chan struct{})
+	go func() { h.active.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (h *Handler) admit() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return false
+	}
+	select {
+	case h.clients <- struct{}{}:
+		h.active.Add(1)
+		return true
+	default:
+		return false
+	}
+}
+
+func streamCursor(c echo.Context) (int64, error) {
+	if c.Request().URL.RawQuery != "" {
+		return 0, query.ErrInvalidQuery
+	}
+	values := c.Request().Header.Values("Last-Event-ID")
+	if len(values) == 0 {
+		return 0, nil
+	}
+	if len(values) != 1 || len(values[0]) > 19 {
+		return 0, query.ErrInvalidQuery
+	}
+	after, err := strconv.ParseInt(values[0], 10, 64)
+	if err != nil || after < 0 || strconv.FormatInt(after, 10) != values[0] {
+		return 0, query.ErrInvalidQuery
+	}
+	return after, nil
+}
+
+func (h *Handler) stream(c echo.Context) error {
+	p, err := auth.RequirePrincipal(c)
+	if err != nil {
+		return err
+	}
+	if !p.ExpiresAt.After(time.Now()) {
+		return errs.NewUnauthorizedError(http.StatusText(http.StatusUnauthorized), false)
+	}
+	after, err := streamCursor(c)
+	if err != nil {
+		return errs.NewBadRequestError("Invalid delivery cursor", false, nil, nil, nil)
+	}
+	if !h.admit() {
+		return errs.NewTooManyRequestsError(http.StatusText(http.StatusTooManyRequests), 1)
+	}
+	defer func() { <-h.clients; h.active.Done() }()
+	deadline := minTime(time.Now().Add(streamLifetime), p.ExpiresAt)
+	ctx, cancel := context.WithDeadline(c.Request().Context(), deadline)
+	defer cancel()
+	stop := context.AfterFunc(h.ctx, cancel)
+	defer stop()
+	page, err := h.store.Read(ctx, p.TenantID, after, maxPageLimit)
+	if errors.Is(err, query.ErrInvalidQuery) {
+		return errs.NewBadRequestError("Invalid delivery cursor", false, nil, nil, nil)
+	}
+	if err != nil {
+		return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
+	}
+	return h.replay(ctx, c, p.TenantID, page)
+}
+
+func (h *Handler) replay(ctx context.Context, c echo.Context, tenant string, page BackfillPage) error {
+	writer := c.Response().Writer
+	controller := http.NewResponseController(writer)
+	// Replace the inherited ordinary HTTP deadline only for this response.
+	if err := controller.SetWriteDeadline(time.Now().Add(streamWriteTimeout)); err != nil {
+		return err
+	}
+	header := c.Response().Header()
+	header.Set("Content-Type", "text/event-stream")
+	header.Set("Cache-Control", "no-cache, no-transform")
+	header.Set("X-Accel-Buffering", "no")
+	if !writeStream(ctx, controller, writer, []byte(": connected\n\n")) {
+		return nil
+	}
+	poll := time.NewTicker(time.Second)
+	heartbeat := time.NewTicker(streamHeartbeat)
+	defer poll.Stop()
+	defer heartbeat.Stop()
+	for {
+		if !writeDeliveries(ctx, controller, writer, page.Items) {
+			return nil
+		}
+		after, err := strconv.ParseInt(page.NextSeq, 10, 64)
+		if err != nil {
+			return nil
+		}
+		if !page.HasMore {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-poll.C:
+			case <-heartbeat.C:
+				if !writeStream(ctx, controller, writer, []byte(": heartbeat\n\n")) {
+					return nil
+				}
+			}
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+		page, err = h.store.Read(ctx, tenant, after, maxPageLimit)
+		if err != nil {
+			return nil
+		}
+	}
+}
+
+func writeDeliveries(ctx context.Context, controller *http.ResponseController,
+	writer http.ResponseWriter, items []Delivery,
+) bool {
+	for _, item := range items {
+		data, err := json.Marshal(item)
+		if err != nil {
+			return false
+		}
+		frame := []byte("id: " + item.Seq + "\nevent: alert\ndata: " + string(data) + "\n\n")
+		if !writeStream(ctx, controller, writer, frame) {
+			return false
+		}
+	}
+	return true
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+func writeStream(ctx context.Context, controller *http.ResponseController,
+	writer http.ResponseWriter, frame []byte,
+) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	deadline := time.Now().Add(streamWriteTimeout)
+	if expires, ok := ctx.Deadline(); ok && expires.Before(deadline) {
+		deadline = expires
+	}
+	if controller.SetWriteDeadline(deadline) != nil {
+		return false
+	}
+	if _, err := writer.Write(frame); err != nil {
+		return false
+	}
+	if controller.Flush() != nil {
+		return false
+	}
+	// Idle periods exceed the finite write budget. Cancellation/expiry and the
+	// heartbeat own idle lifetime; every subsequent write gets a new deadline.
+	return controller.SetWriteDeadline(time.Time{}) == nil
+}

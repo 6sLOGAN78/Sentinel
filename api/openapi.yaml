@@ -258,25 +258,37 @@ paths:
       description: |
         Authenticates with the bearer header. Tokens are never accepted in URL query
         parameters. Supports reconnection with the Last-Event-ID header; clients may also
-        backfill through GET /api/v1/alerts/backfill. The server sends keep-alive comments, uses a
-        bounded per-client buffer, and drops slow clients so they reconnect.
+        backfill through GET /api/v1/alerts/backfill using the same durable delivery
+        cursor, never the workflow sequence or list pagination cursor. Every alert
+        frame has event: alert, id: decimal delivery_seq, and data: AlertDelivery JSON.
+        IDs may be sparse per tenant. Process a frame before advancing its cursor;
+        reconnect replays at least once. Heartbeat comments every 15s never advance it.
+        Each replica independently polls the durable PostgreSQL log every second.
+        At most 100 clients per replica; no more than 32 queued notification hints
+        (poll-only transport currently queues none), 200 rows per read, 5s per write.
+        Streams close at 10 minutes or token expiry, whichever is earlier. All URL
+        query parameters and malformed, duplicate or future Last-Event-ID are rejected
+        before headers flush. Slow clients reconnect and catch up through REST.
       security:
         - BearerAuth: []
       parameters:
         - name: Last-Event-ID
           in: header
           required: false
-          description: Resume after this event id on reconnect.
+          description: Canonical decimal durable delivery cursor, compatible with backfill after_seq, in 0..9223372036854775807. Defaults to 0.
           schema:
             type: string
-            maxLength: 128
+            maxLength: 19
+            pattern: "^(0|[1-9][0-9]{0,18})$"
       responses:
         "200":
-          description: Stream of alert events (text/event-stream), each data field is an Alert JSON document.
+          description: Stream of alert events (text/event-stream), each data field is an AlertDelivery JSON document containing the tenant-scoped WorkflowAlert.
           content:
             text/event-stream:
               schema:
                 type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":

@@ -125,6 +125,8 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	middleware.Apply(e, &log, cfg.Server.CORSAllowedOrigins)
 	deliveries := alertstream.NewStore(db.Pool)
 	deliveries.Register(e, jwtVerifier)
+	streams := alertstream.NewHandler(ctx, deliveries)
+	streams.Register(e, jwtVerifier)
 	eventquery.NewAuthenticatedHandler(verifier, jwtVerifier, storageclickhouse.NewEventStore(clickhouseConn)).Register(e)
 	e.GET("/api/v1/session", getSession, jwtVerifier.Middleware)
 	alerts := storagepostgres.NewAlertStore(db.Pool, alertQueryTimeout)
@@ -139,6 +141,7 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	}
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 	startDeliveryProjector(ctx, deliveries, draining, lc)
+	lc.Add("alert-streams", streams.Close)
 
 	return nil
 }

@@ -857,7 +857,9 @@ describe("filtered alert pages", () => {
     expect(
       fetchSpy.mock.calls.filter(
         ([request]) =>
-          new URL(request.url).pathname !== "/api/v1/alerts/backfill",
+          !["/api/v1/alerts/backfill", "/api/v1/alerts/stream"].includes(
+            new URL(request.url).pathname,
+          ),
       ),
     ).toHaveLength(1);
     await waitFor(() => expect(backfills).toHaveLength(1));

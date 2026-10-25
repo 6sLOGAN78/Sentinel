@@ -1,28 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { APIError } from "../api/client";
-import type { AlertFilters, APIClient } from "../api/client";
+import type { AlertFilters } from "../api/client";
+import { receiveLiveAlerts } from "../api/live-alerts";
+import type { LiveState } from "../api/live-alerts";
 import { useSession } from "../auth/session";
 import AlertDetails from "../components/AlertDetails";
-
-// Per guarded client (and therefore verified generation), private and collectible
-// on logout. Navigation can resume without a disk cursor or a retained ID set.
-const deliveryCursors = new WeakMap<APIClient, string>();
-
-// A single catch-up driver waits here between failures; abort releases both
-// the timer and listener so an old session cannot restart requests.
-function waitToRetry(signal: AbortSignal, delay: number) {
-  return new Promise<void>((resolve) => {
-    if (signal.aborted) return resolve();
-    const finish = () => {
-      window.clearTimeout(timer);
-      signal.removeEventListener("abort", finish);
-      resolve();
-    };
-    const timer = window.setTimeout(finish, delay);
-    signal.addEventListener("abort", finish, { once: true });
-  });
-}
 
 function readSelected(owner?: string) {
   if (
@@ -191,9 +174,7 @@ export default function Alerts() {
   const query = queryFilters(filters);
   const [arrivals, setArrivals] = useState(false);
   const latestArrival = useRef("0");
-  const [catchupError, setCatchupError] = useState<
-    "retrying" | "stopped" | null
-  >(null);
+  const [catchupError, setCatchupError] = useState<LiveState>("connecting");
 
   useEffect(() => {
     if (!client || !session) return;
@@ -205,57 +186,22 @@ export default function Alerts() {
       session.role,
       session.generation,
     ];
-    async function catchUp() {
-      if (!client || !session) return;
-      let backoff = 250;
-      while (!controller.signal.aborted) {
-        try {
-          const after = deliveryCursors.get(client) ?? "0";
-          const page = await client.backfill(after, controller.signal);
-          controller.signal.throwIfAborted();
-          if (
-            page.items.some(
-              (item) => item.alert.tenant_id !== session.tenant_id,
-            )
-          )
-            throw new APIError(503);
-          if (page.items.length) {
-            await cache.invalidateQueries({
-              queryKey: prefix,
-              refetchType: "none",
-            });
-            controller.signal.throwIfAborted();
-            latestArrival.current = page.next_seq;
-            setArrivals(true);
-          }
-          // Processing must finish before this cursor can be used by a later
-          // page or a remount. Failed/aborted processing replays at least once.
-          deliveryCursors.set(client, page.next_seq);
-          setCatchupError(null);
-          backoff = 250;
-          if (!page.has_more) return;
-        } catch (error) {
-          if (
-            controller.signal.aborted ||
-            (error instanceof DOMException && error.name === "AbortError") ||
-            (error instanceof APIError && error.status === 401)
-          )
-            return;
-          if (
-            error instanceof APIError &&
-            error.status < 500 &&
-            error.status !== 429
-          ) {
-            setCatchupError("stopped");
-            return;
-          }
-          setCatchupError("retrying");
-          await waitToRetry(controller.signal, backoff);
-          backoff = Math.min(backoff * 2, 5000);
-        }
-      }
-    }
-    void catchUp();
+    void receiveLiveAlerts(
+      client,
+      session.tenant_id,
+      controller.signal,
+      async (items, through) => {
+        if (!items.length) return;
+        await cache.invalidateQueries({
+          queryKey: prefix,
+          refetchType: "none",
+        });
+        client.assertActive(controller.signal);
+        latestArrival.current = through;
+        setArrivals(true);
+      },
+      setCatchupError,
+    );
     return () => controller.abort();
   }, [cache, client, session]);
 
@@ -353,6 +299,11 @@ export default function Alerts() {
         Alerts
       </h2>
       <p className="page-description">Investigate your tenant’s detections.</p>
+      {(catchupError === "connecting" || catchupError === "live") && (
+        <p aria-label="Alert connection">
+          {catchupError === "live" ? "Live" : "Connecting…"}
+        </p>
+      )}
       {catchupError === "retrying" && (
         <p>Reconnecting… Missed alerts will be recovered.</p>
       )}

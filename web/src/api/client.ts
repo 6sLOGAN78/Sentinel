@@ -70,6 +70,36 @@ export function createAPIClient(
     },
   });
   return {
+    assertActive(signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      assertCurrent();
+    },
+    async stream(after: string, signal: AbortSignal) {
+      signal.throwIfAborted();
+      assertCurrent();
+      if (!isDeliverySeq(after)) throw new APIError(400);
+      const headers = new Headers({
+        Accept: "text/event-stream",
+        "Last-Event-ID": after,
+      });
+      headers.set("Authorization", `Bearer ${credential()}`);
+      const response = await globalThis.fetch(
+        new Request(new URL("/api/v1/alerts/stream", window.location.origin), {
+          headers,
+          signal: AbortSignal.any([lifetime, signal]),
+          cache: "no-store",
+          credentials: "omit",
+          redirect: "error",
+        }),
+      );
+      signal.throwIfAborted();
+      assertCurrent();
+      if (!response.ok) {
+        if (response.status === 401) unauthorized();
+        throw new APIError(response.status);
+      }
+      return response;
+    },
     async backfill(after = "0", signal?: AbortSignal) {
       signal?.throwIfAborted();
       if (!isDeliverySeq(after)) throw new APIError(400);
