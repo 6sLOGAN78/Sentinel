@@ -124,10 +124,21 @@ func (s *Store) Project(parent context.Context) (int, error) {
 			return 0, err
 		}
 	}
-	if err = tx.Commit(ctx); err != nil {
+	if err = commitProjection(ctx, tx, len(ids) > 0); err != nil {
 		return 0, err
 	}
 	return len(selected), nil
+}
+
+func commitProjection(ctx context.Context, tx pgx.Tx, inserted bool) error {
+	if inserted {
+		// Transactional, constant-payload hint: visible only after the durable
+		// rows commit. A lost hint cannot advance or erase a client's cursor.
+		if _, err := tx.Exec(ctx, "SELECT pg_notify('sentinel_alert_delivery','changed')"); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // Run drains finite batches, polls even without notifications, and bounds retry.

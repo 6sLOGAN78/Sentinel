@@ -1,4 +1,4 @@
-package alertstream
+package alertstream //nolint:testpackage // Queue/admission/clock-model checks require private state.
 
 import (
 	"context"
@@ -37,21 +37,76 @@ func TestStreamConfigBoundaries(t *testing.T) {
 			require.Error(t, loadErr, "runtime config must reject unsafe stream bounds")
 		})
 	}
+	for key, value := range map[string]string{"CLIENTS": "2", "QUEUE": "1", "WRITE_TIMEOUT": "100ms", "LIFETIME": "1s"} {
+		t.Setenv("SENTINEL_STREAM."+key, value)
+	}
+	cfg, err := config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	h := NewHandler(t.Context(), nil, cfg.Stream)
+	require.Equal(t, 2, cap(h.clients))
+	hints, detach := h.subscribe(func() {})
+	defer detach()
+	require.Equal(t, 1, cap(hints))
+	require.Equal(t, 100*time.Millisecond, h.settings.WriteTimeout)
+	now := time.Now()
+	require.Equal(t, now.Add(time.Second), h.deadline(now, now.Add(time.Hour)))
+	require.NoError(t, h.Close(t.Context()))
 }
 
 func TestStreamLifetimeMODEL(t *testing.T) {
 	// MODEL: advance the supplied clock; this does not claim ten minutes of
 	// native wall-clock observation. The same deadline operation owns expiry.
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	h := NewHandler(t.Context(), nil)
+	defer func() { require.NoError(t, h.Close(t.Context())) }()
 	for _, token := range []time.Time{now.Add(time.Minute), now.Add(time.Hour)} {
-		deadline := minTime(now.Add(streamLifetime), token)
+		deadline := h.deadline(now, token)
 		require.LessOrEqual(t, deadline.Sub(now), 10*time.Minute)
 		require.False(t, deadline.After(token))
 		require.False(t, now.Add(10*time.Minute).Before(deadline))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	require.False(t, writeStream(ctx, http.NewResponseController(httptest.NewRecorder()), httptest.NewRecorder(), nil))
+	require.False(t, writeStream(ctx, http.NewResponseController(httptest.NewRecorder()),
+		httptest.NewRecorder(), nil, streamWriteTimeout))
+}
+
+func TestStreamDirectConfigCapsAndAdmission(t *testing.T) {
+	h := NewHandler(t.Context(), nil, config.StreamConfig{Clients: 101, Queue: 33,
+		WriteTimeout: time.Duration(1<<63 - 1), Lifetime: time.Duration(1<<63 - 1)})
+	require.Equal(t, 100, cap(h.clients))
+	require.Equal(t, 32, h.settings.Queue)
+	require.Equal(t, 5*time.Second, h.settings.WriteTimeout)
+	require.Equal(t, 10*time.Minute, h.settings.Lifetime)
+	for range 100 {
+		require.True(t, h.admit())
+	}
+	require.False(t, h.admit())
+	for range 100 {
+		<-h.clients
+		h.active.Done()
+	}
+	require.NoError(t, h.Close(t.Context()))
+	require.False(t, h.admit())
+}
+
+func TestListenerUnavailableCancellation(t *testing.T) {
+	h := NewHandler(t.Context(), nil)
+	listener, err := NewListener("postgres://unit@127.0.0.1:1/unit?sslmode=disable", h)
+	require.NoError(t, err)
+	require.Error(t, listener.Ready(t.Context()))
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- listener.Run(ctx) }()
+	cancel()
+	select {
+	case err = <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("listener cancellation did not join")
+	}
+	require.Error(t, listener.Ready(t.Context()))
+	require.NoError(t, h.Close(t.Context()))
 }
 
 func TestStreamHintQueueBoundsAndCancellation(t *testing.T) {

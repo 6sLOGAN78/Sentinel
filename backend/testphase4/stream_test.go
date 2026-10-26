@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -74,6 +75,7 @@ func streamRead(t *testing.T, response *http.Response, count int) []streamDelive
 	return items
 }
 
+//nolint:gocognit // One exact native family retains the complete ordered fault/replay/resource scenarios.
 func TestPhase4Stream(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -148,8 +150,8 @@ func TestPhase4Stream(t *testing.T) {
 		}()
 		for _, pid := range pids {
 			var killed bool
-			require.NoError(t, db.Pool.QueryRow(ctx,
-				"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid=$1 AND datname=current_database() AND application_name='sentinel-alert-listener'", pid).Scan(&killed))
+			require.NoError(t, db.Pool.QueryRow(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+			 WHERE pid=$1 AND datname=current_database() AND application_name='sentinel-alert-listener'`, pid).Scan(&killed))
 			require.True(t, killed)
 		}
 		// Commit while the dedicated connections are absent; polling remains authoritative.
@@ -273,7 +275,7 @@ func TestPhase4Stream(t *testing.T) {
 		require.Less(t, time.Since(started), 4*time.Second)
 	})
 	t.Run("blocked_actual_socket_write_is_bounded", func(t *testing.T) {
-		streamSlowClient(ctx, t, a, credential, tenant, db)
+		streamSlowClient(ctx, t, a, b, credential, tenant, db)
 	})
 	t.Run("hundred_client_admission_and_release", func(t *testing.T) {
 		var after string
@@ -301,6 +303,52 @@ func TestPhase4Stream(t *testing.T) {
 			defer response.Body.Close()
 			return response.StatusCode == http.StatusOK
 		}, 3*time.Second, 25*time.Millisecond)
+	})
+	t.Run("shutdown_joins_active_stream_and_owned_listener", func(t *testing.T) {
+		before := streamListenerPIDs(ctx, t, db)
+		httpAddress, opsAddress := freeAddress(t), freeAddress(t)
+		_, publicPort, _ := net.SplitHostPort(httpAddress)
+		_, opsPort, _ := net.SplitHostPort(opsAddress)
+		child := exec.CommandContext(ctx, binary)
+		child.Dir, child.Stdout, child.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
+		for _, entry := range os.Environ() {
+			key, _, _ := strings.Cut(entry, "=")
+			if key != "SENTINEL_SERVER.PORT" && key != "SENTINEL_OPS.PORT" {
+				child.Env = append(child.Env, entry)
+			}
+		}
+		child.Env = append(child.Env, "SENTINEL_SERVER.PORT="+publicPort, "SENTINEL_OPS.PORT="+opsPort)
+		require.NoError(t, child.Start())
+		done := make(chan error, 1)
+		go func() { done <- child.Wait() }()
+		joined := false
+		defer func() {
+			if !joined {
+				_ = child.Process.Kill()
+				<-done
+			}
+		}()
+		require.Eventually(t, func() bool { return len(streamListenerPIDs(ctx, t, db)) == len(before)+1 },
+			5*time.Second, 20*time.Millisecond)
+		var after string
+		require.NoError(t, db.Pool.QueryRow(ctx,
+			"SELECT next_seq::text FROM alert_delivery_counter WHERE singleton").Scan(&after))
+		response := streamRequest(ctx, t, "http://"+httpAddress, credential, after, "")
+		defer response.Body.Close()
+		require.Equal(t, http.StatusOK, response.StatusCode)
+		started := time.Now()
+		require.NoError(t, child.Process.Signal(os.Interrupt))
+		select {
+		case err = <-done:
+			joined = true
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("owned API did not join active stream/listener on shutdown")
+		}
+		_, readErr := io.Copy(io.Discard, response.Body)
+		require.NoError(t, readErr)
+		require.Less(t, time.Since(started), 5*time.Second)
+		require.Equal(t, before, streamListenerPIDs(ctx, t, db))
 	})
 }
 
@@ -359,7 +407,9 @@ func streamWaitHeartbeat(t *testing.T, response *http.Response) {
 	t.Fatalf("real stream ended before heartbeat beyond ordinary 2s deadline: %v", scanner.Err())
 }
 
-func streamSlowClient(ctx context.Context, t *testing.T, base, credential, tenant string, db *database.Database) {
+func streamSlowClient(ctx context.Context, t *testing.T, base, healthyBase, credential, tenant string,
+	db *database.Database,
+) {
 	t.Helper()
 	// Small receive window and a real unread TCP socket force a blocked write.
 	address := strings.TrimPrefix(base, "http://")
@@ -376,6 +426,11 @@ func streamSlowClient(ctx context.Context, t *testing.T, base, credential, tenan
 	status, err := reader.ReadString('\n')
 	require.NoError(t, err)
 	require.Contains(t, status, "200")
+	var initial string
+	require.NoError(t, db.Pool.QueryRow(ctx,
+		"SELECT next_seq::text FROM alert_delivery_counter WHERE singleton").Scan(&initial))
+	healthy := streamRequest(ctx, t, healthyBase, credential, initial, "")
+	defer healthy.Body.Close()
 	// Insert only newly owned test rows; no shared workflow/counter mutation.
 	_, err = db.Pool.Exec(ctx, `INSERT INTO alert_workflows
 	 (alert_id,tenant_id,created_at,updated_at,rule_id,rule_version,severity,entity_key,
@@ -384,6 +439,9 @@ func streamSlowClient(ctx context.Context, t *testing.T, base, credential, tenan
 	 repeat('x',100000),1,now()-interval '1 minute',now(),md5($1||n::text)||md5(n::text||$1)
 	 FROM generate_series(1,100)n`, uuid.NewString(), tenant)
 	require.NoError(t, err)
+	started := time.Now()
+	seen := streamRead(t, healthy, 100)
+	require.Len(t, seen, 100, "independent healthy replica progresses while the actual socket stays unread")
 	// Projection polls <=1s. Allow that plus the actual 5s write deadline.
 	// Distinct transactions prevent PostgreSQL's within-transaction coalescing.
 	// The unread handler's pending hint queue must disconnect on the 33rd hint.
@@ -391,7 +449,7 @@ func streamSlowClient(ctx context.Context, t *testing.T, base, credential, tenan
 		_, err = db.Pool.Exec(ctx, "SELECT pg_notify('sentinel_alert_delivery','changed')")
 		require.NoError(t, err)
 	}
-	timer := time.NewTimer(8 * time.Second)
+	timer := time.NewTimer(time.Until(started.Add(8 * time.Second)))
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():

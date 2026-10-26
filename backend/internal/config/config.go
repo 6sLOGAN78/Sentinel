@@ -90,6 +90,14 @@ const (
 	defaultPGStatement = 2 * time.Second
 )
 
+const (
+	sectionStream         = "stream"
+	defaultStreamClients  = 100
+	defaultStreamQueue    = 32
+	defaultStreamWrite    = 5 * time.Second
+	defaultStreamLifetime = 10 * time.Minute
+)
+
 // Service names accepted by Load.
 const (
 	ServiceIngest      = "ingest"
@@ -116,6 +124,15 @@ type Config struct {
 	Writer        WriterConfig         `koanf:"writer"`
 	Detector      DetectorConfig       `koanf:"detector"`
 	Auth          AuthConfig           `koanf:"auth"`
+	Stream        StreamConfig         `koanf:"stream"`
+}
+
+// StreamConfig may lower resource budgets but cannot exceed the v1 limits.
+type StreamConfig struct {
+	Clients      int           `koanf:"clients" validate:"min=1,max=100"`
+	Queue        int           `koanf:"queue" validate:"min=1,max=32"`
+	WriteTimeout time.Duration `koanf:"write_timeout" validate:"gt=0,lte=5s"`
+	Lifetime     time.Duration `koanf:"lifetime" validate:"gt=0,lte=10m"`
 }
 
 // AuthConfig has no default signing key. Issuer/audience are fixed by the v1 contract.
@@ -388,7 +405,7 @@ func requiredSections() map[string][]string {
 		ServiceDetector:    {sectionKafka, sectionDatabase, sectionDetector},
 		ServiceEventWriter: {sectionKafka, sectionClickHouse, sectionWriter},
 		ServiceAlertWriter: {sectionKafka, sectionDatabase, sectionClickHouse, sectionWriter},
-		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis, sectionAuth},
+		ServiceQueryAPI:    {sectionDatabase, sectionClickHouse, sectionRedis, sectionAuth, sectionStream},
 		ServiceDevJWT:      {sectionAuth},
 	}
 }
@@ -486,6 +503,10 @@ func setDefaults(k *koanf.Koanf) {
 	defaults := map[string]any{
 		"auth.issuer":                                "sentinel-dev",
 		"auth.audience":                              "sentinel-dashboard",
+		"stream.clients":                             defaultStreamClients,
+		"stream.queue":                               defaultStreamQueue,
+		"stream.write_timeout":                       defaultStreamWrite,
+		"stream.lifetime":                            defaultStreamLifetime,
 		"server.bind_address":                        "",
 		"server.read_timeout":                        defaultHTTPSeconds,
 		"server.write_timeout":                       defaultHTTPSeconds,
@@ -612,6 +633,8 @@ func validateFor(cfg *Config, sections []string) error {
 			target = cfg.Writer
 		case sectionDetector:
 			target = cfg.Detector
+		case sectionStream:
+			target = cfg.Stream
 		default:
 			return fmt.Errorf("unknown config section %q", section)
 		}

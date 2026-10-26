@@ -103,12 +103,18 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	}
 
 	lc.Add("redis", app.CloseRedis(client))
+	deliveries := alertstream.NewStore(db.Pool)
+	streams, listener, err := startAlertListener(ctx, cfg, deliveries, lc)
+	if err != nil {
+		return err
+	}
 
 	draining := &opshttp.Draining{}
 	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
 		{Name: "postgres", Fn: db.Pool.Ping},
 		{Name: "redis", Fn: func(checkCtx context.Context) error { return client.Ping(checkCtx).Err() }},
 		{Name: "clickhouse", Fn: clickhouseConn.Ping},
+		{Name: "alert-listener", Fn: listener.Ready},
 	})
 	if err != nil {
 		return fmt.Errorf("ops http: %w", err)
@@ -123,9 +129,7 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	verifier := apikeys.NewVerifier(apikeys.NewStore(db.Pool), 0, 0, nil)
 	e := echo.New()
 	middleware.Apply(e, &log, cfg.Server.CORSAllowedOrigins)
-	deliveries := alertstream.NewStore(db.Pool)
 	deliveries.Register(e, jwtVerifier)
-	streams := alertstream.NewHandler(ctx, deliveries)
 	streams.Register(e, jwtVerifier)
 	eventquery.NewAuthenticatedHandler(verifier, jwtVerifier, storageclickhouse.NewEventStore(clickhouseConn)).Register(e)
 	e.GET("/api/v1/session", getSession, jwtVerifier.Middleware)
@@ -144,6 +148,34 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	lc.Add("alert-streams", streams.Close)
 
 	return nil
+}
+
+func startAlertListener(ctx context.Context, cfg *config.Config, deliveries *alertstream.Store,
+	lc *app.Lifecycle,
+) (*alertstream.Handler, *alertstream.Listener, error) {
+	streams := alertstream.NewHandler(ctx, deliveries, cfg.Stream)
+	listener, err := alertstream.NewListener(database.ConnString(cfg.Database), streams)
+	if err != nil {
+		return nil, nil, err
+	}
+	listenCtx, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if listenErr := listener.Run(listenCtx); listenErr != nil && listenCtx.Err() == nil {
+			lc.Fail(fmt.Errorf("alert listener: %w", listenErr))
+		}
+	}()
+	lc.Add("alert-listener", func(closeCtx context.Context) error {
+		stop()
+		select {
+		case <-done:
+			return nil
+		case <-closeCtx.Done():
+			return closeCtx.Err()
+		}
+	})
+	return streams, listener, nil
 }
 
 func startQueryHTTP(ctx context.Context, cfg config.ServerConfig, e *echo.Echo, lc *app.Lifecycle) error {
