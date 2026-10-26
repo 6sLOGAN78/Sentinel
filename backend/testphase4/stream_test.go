@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"net"
@@ -15,7 +16,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -100,7 +103,17 @@ func TestPhase4Stream(t *testing.T) {
 	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/query-api")
 	build.Dir, build.Stdout, build.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
 	require.NoError(t, build.Run(), "production binary build is setup, not RED")
+	// Only the two owned children use these loopback proxies. The parent pool
+	// and notification observer retain direct access to the isolated NEW DB.
+	gateA, gateB := streamListenerGate(t, owned), streamListenerGate(t, owned)
+	t.Setenv("SENTINEL_DATABASE.HOST", "127.0.0.1")
+	_, port, err := net.SplitHostPort(gateA.listener.Addr().String())
+	require.NoError(t, err)
+	t.Setenv("SENTINEL_DATABASE.PORT", port)
 	a, opsA := startQueryAPI(t, binary, root, secret, cfg.ClickHouse.NativeAddress)
+	_, port, err = net.SplitHostPort(gateB.listener.Addr().String())
+	require.NoError(t, err)
+	t.Setenv("SENTINEL_DATABASE.PORT", port)
 	b, opsB := startQueryAPI(t, binary, root, secret, cfg.ClickHouse.NativeAddress)
 	tenant := "p4stream-" + uuid.NewString()
 	token := func(expiry time.Time) string {
@@ -136,6 +149,12 @@ func TestPhase4Stream(t *testing.T) {
 		require.Equal(t, "changed", hint.Payload)
 	})
 	t.Run("owned_listener_loss_readiness_relisten_and_both_replicas_replay", func(t *testing.T) {
+		require.Eventually(t, func() bool { return len(streamListenerPIDs(ctx, t, db)) == 2 },
+			3*time.Second, 20*time.Millisecond, "both initial listeners must be established before closing startup gates")
+		blockedA, releaseA := gateA.hold()
+		blockedB, releaseB := gateB.hold()
+		defer releaseA()
+		defer releaseB()
 		pids := streamListenerPIDs(ctx, t, db)
 		require.Len(t, pids, 2, "fault only actual owned listener backends")
 		var after string
@@ -154,28 +173,40 @@ func TestPhase4Stream(t *testing.T) {
 			 WHERE pid=$1 AND datname=current_database() AND application_name='sentinel-alert-listener'`, pid).Scan(&killed))
 			require.True(t, killed)
 		}
-		// WR-01 counterexample: this is a permitted schedule, not a service
-		// fault. Let both real children recover before the old single sample.
-		require.Eventually(t, func() bool {
-			next := streamListenerPIDs(ctx, t, db)
-			return len(next) == 2 && next[0] != pids[0] && next[1] != pids[1] &&
-				streamListenerState(t, opsA) == "ok" && streamListenerState(t, opsB) == "ok"
-		}, 8*time.Second, 20*time.Millisecond)
-		// Commit while the dedicated connections are absent; polling remains authoritative.
-		id := deliveryInsert(ctx, t, db.Pool, tenant)
-		degraded := false
-		for _, ops := range []string{opsA, opsB} {
-			degraded = streamListenerState(t, ops) == "unavailable" || degraded
+		// Observe a blocked listener startup from EACH child, not a guessed
+		// reconnect delay. Ordinary pool connections still pass transparently.
+		for _, blocked := range []<-chan struct{}{blockedA, blockedB} {
+			select {
+			case <-blocked:
+			case <-time.After(8 * time.Second):
+				t.Fatal("owned listener did not reach its closed startup gate")
+			case <-ctx.Done():
+				t.Fatal("native context ended before owned reconnect barrier")
+			}
 		}
-		require.True(t, degraded, "readiness must expose the actual disconnected listener")
-		require.Eventually(t, func() bool {
-			next := streamListenerPIDs(ctx, t, db)
-			return len(next) == 2 && next[0] != pids[0] && next[1] != pids[1] &&
-				streamListenerState(t, opsA) == "ok" && streamListenerState(t, opsB) == "ok"
-		}, 8*time.Second, 20*time.Millisecond)
+		require.Empty(t, streamListenerPIDs(ctx, t, db))
+		for _, ops := range []string{opsA, opsB} {
+			require.Equal(t, "unavailable", streamListenerState(t, ops))
+		}
+		t.Log("both owned reconnect startups blocked; both readiness dependencies unavailable; actual PG listener set empty")
+		// The held barrier proves commit AND delivery while both listeners are
+		// absent. Parent control SQL and the real projectors remain available.
+		id := deliveryInsert(ctx, t, db.Pool, tenant)
 		for _, response := range responses {
 			require.Equal(t, id, streamRead(t, response, 1)[0].Alert.AlertID)
 		}
+		require.Empty(t, streamListenerPIDs(ctx, t, db))
+		for _, ops := range []string{opsA, opsB} {
+			require.Equal(t, "unavailable", streamListenerState(t, ops))
+		}
+		t.Log("both real streams received the committed workflow before releasing either listener gate")
+		releaseA()
+		releaseB()
+		require.Eventually(t, func() bool {
+			next := streamListenerPIDs(ctx, t, db)
+			return len(next) == 2 && next[0] != pids[0] && next[1] != pids[1] &&
+				streamListenerState(t, opsA) == "ok" && streamListenerState(t, opsB) == "ok"
+		}, 8*time.Second, 20*time.Millisecond)
 		// A new committed notification after reconnect proves re-LISTEN, not just a new socket.
 		id = deliveryInsert(ctx, t, db.Pool, tenant)
 		for _, response := range responses {
@@ -357,6 +388,190 @@ func TestPhase4Stream(t *testing.T) {
 		require.Less(t, time.Since(started), 5*time.Second)
 		require.Equal(t, before, streamListenerPIDs(ctx, t, db))
 	})
+}
+
+// streamPGGate is a private plaintext PostgreSQL startup proxy for one API
+// child and one owned database. It logs no startup/authentication bytes.
+type streamPGGate struct {
+	listener    net.Listener
+	target      string
+	database    string
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	closed      bool
+	held        chan struct{}
+	blocked     chan struct{}
+	connections map[net.Conn]struct{}
+	workers     sync.WaitGroup
+}
+
+func streamListenerGate(t *testing.T, cfg config.DatabaseConfig) *streamPGGate {
+	t.Helper()
+	require.Equal(t, "disable", cfg.SSLMode, "this owned NEW fixture uses plaintext loopback startup inspection")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	g := &streamPGGate{listener: listener, target: net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
+		database: cfg.Name, ctx: ctx, cancel: cancel, connections: make(map[net.Conn]struct{})}
+	g.workers.Add(1)
+	go func() {
+		defer g.workers.Done()
+		for {
+			client, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			if !g.track(client) {
+				return
+			}
+			g.workers.Add(1)
+			go func() { defer g.workers.Done(); g.forward(client) }()
+		}
+	}()
+	t.Cleanup(func() {
+		g.cancel()
+		_ = listener.Close()
+		g.mu.Lock()
+		g.closed = true
+		if g.held != nil {
+			close(g.held)
+			g.held = nil
+		}
+		for connection := range g.connections {
+			_ = connection.Close()
+		}
+		g.mu.Unlock()
+		done := make(chan struct{})
+		go func() { g.workers.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("owned startup proxy workers did not join")
+		}
+	})
+	return g
+}
+
+func (g *streamPGGate) track(connection net.Conn) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		_ = connection.Close()
+		return false
+	}
+	g.connections[connection] = struct{}{}
+	return true
+}
+
+func (g *streamPGGate) forget(connection net.Conn) {
+	_ = connection.Close()
+	g.mu.Lock()
+	delete(g.connections, connection)
+	g.mu.Unlock()
+}
+
+func (g *streamPGGate) hold() (<-chan struct{}, func()) {
+	g.mu.Lock()
+	held, blocked := make(chan struct{}), make(chan struct{}, 1)
+	g.held, g.blocked = held, blocked
+	g.mu.Unlock()
+	return blocked, func() {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		if g.held == held {
+			close(held)
+			g.held = nil
+		}
+	}
+}
+
+func (g *streamPGGate) awaitStartup(packet []byte) bool {
+	// StartupMessage: length, protocol version, then NUL-terminated key/value
+	// pairs. Inspect only this bounded packet; auth and query bytes pass intact.
+	if binary.BigEndian.Uint32(packet[4:8])>>16 != 3 {
+		return true
+	}
+	parameters := strings.Split(string(packet[8:]), "\x00")
+	var databaseName, application string
+	for i := 0; i+1 < len(parameters); i += 2 {
+		switch parameters[i] {
+		case "database":
+			databaseName = parameters[i+1]
+		case "application_name":
+			application = parameters[i+1]
+		}
+	}
+	if databaseName != g.database {
+		return false
+	}
+	if application != "sentinel-alert-listener" {
+		return true
+	}
+	g.mu.Lock()
+	held, blocked := g.held, g.blocked
+	if held != nil {
+		select {
+		case blocked <- struct{}{}:
+		default:
+		}
+	}
+	g.mu.Unlock()
+	if held == nil {
+		return true
+	}
+	select {
+	case <-held:
+		return g.ctx.Err() == nil
+	case <-g.ctx.Done():
+		return false
+	}
+}
+
+func (g *streamPGGate) forward(client net.Conn) {
+	defer g.forget(client)
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(client, header); err != nil {
+		return
+	}
+	length := binary.BigEndian.Uint32(header)
+	if length < 8 || length > 64*1024 {
+		return
+	}
+	packet := make([]byte, int(length))
+	copy(packet, header)
+	if _, err := io.ReadFull(client, packet[4:]); err != nil {
+		return
+	}
+	_ = client.SetReadDeadline(time.Time{})
+	if !g.awaitStartup(packet) {
+		return
+	}
+	connectCtx, cancel := context.WithTimeout(g.ctx, 5*time.Second)
+	defer cancel()
+	server, err := (&net.Dialer{}).DialContext(connectCtx, "tcp", g.target)
+	if err != nil {
+		return
+	}
+	if !g.track(server) {
+		return
+	}
+	defer g.forget(server)
+	if _, err = server.Write(packet); err != nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(server, client)
+		_ = server.Close()
+		_ = client.Close()
+		close(done)
+	}()
+	_, _ = io.Copy(client, server)
+	_ = server.Close()
+	_ = client.Close()
+	<-done
 }
 
 func streamListenerPIDs(ctx context.Context, t *testing.T, db *database.Database) []int {
