@@ -154,6 +154,13 @@ func TestPhase4Stream(t *testing.T) {
 			 WHERE pid=$1 AND datname=current_database() AND application_name='sentinel-alert-listener'`, pid).Scan(&killed))
 			require.True(t, killed)
 		}
+		// WR-01 counterexample: this is a permitted schedule, not a service
+		// fault. Let both real children recover before the old single sample.
+		require.Eventually(t, func() bool {
+			next := streamListenerPIDs(ctx, t, db)
+			return len(next) == 2 && next[0] != pids[0] && next[1] != pids[1] &&
+				streamListenerState(t, opsA) == "ok" && streamListenerState(t, opsB) == "ok"
+		}, 8*time.Second, 20*time.Millisecond)
 		// Commit while the dedicated connections are absent; polling remains authoritative.
 		id := deliveryInsert(ctx, t, db.Pool, tenant)
 		degraded := false
