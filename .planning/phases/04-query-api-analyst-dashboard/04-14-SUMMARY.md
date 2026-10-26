@@ -29,6 +29,7 @@ key-decisions:
   - Notifications contain only a constant wakeup and never advance a delivery cursor.
   - Report listener connection state separately from database connectivity and keep polling unconditional.
   - Environment settings may lower the fixed resource ceilings; invalid or oversized values fail startup.
+  - Hold each owned listener startup behind a native proxy barrier until both readiness failures and commit/delivery during absence are observed.
 requirements-completed: []
 requirements-targeted: [LIVE-01, LIVE-02, LIVE-03, UI-06]
 duration: "Not inferred across the recorded UTC discontinuity; individual monotonic producer durations retained"
@@ -39,6 +40,100 @@ status: complete
 # Phase 4 Plan 14: LISTEN recovery and bounded stream resources Summary
 
 **Each query replica now owns a reconnecting PostgreSQL listener, while bounded hints accelerate independent durable replay and one-second polling survives lost notifications.**
+
+## WR-01 follow-up — native fixture repair, production unchanged
+
+This section supersedes the original reconnect test's timing/commit-during-loss
+claim below. Independent R0 at `0907adb` found no production defect and one
+fixture reliability warning: a permitted100ms reconnect could finish before
+the old single readiness sample. The warning is reproduced and repaired;
+independent R1/root acceptance remain pending. The original R0 report, passing
+schedules and clock-gap failure remain preserved.
+
+Tests-only RED `62f09a0` deliberately lets both actual API children reconnect
+with fresh PIDs and `ok` readiness before resuming the old insert/sample.
+The exact full native family exits1 only at the old `require.True(degraded)`;
+the other ten cases pass. This is a controlled counterexample to the test's
+reliability, **not a production bug or an expected application outage**.
+
+Fixture GREEN `66a3b35` changes only
+`backend/testphase4/stream_test.go`. Two private loopback PostgreSQL proxies
+serve the two owned API children. Each inspects only a bounded startup packet
+for the owned database and fixed listener application name. Ordinary database
+connections and subsequent authentication/query traffic pass unchanged. The
+parent control pool and notification observer keep direct access to NEW PG.
+No raw startup parameters, authentication bytes, passwords or DSNs are logged.
+Startup length/key-value parsing follows the official
+[PostgreSQL message format](https://www.postgresql.org/docs/current/protocol-message-formats.html).
+The fixture explicitly requires its existing plaintext loopback test mode;
+production SSL/security configuration is unchanged.
+
+The repaired case first awaits both established listeners, closes both startup
+gates, terminates only the two owned listener PIDs and observes a blocked
+reconnect attempt from **each** child. While both gates stay closed, it asserts
+actual PG listener PID absence and `unavailable` for **each** readiness
+dependency. It then commits a real workflow using the direct control pool and
+requires both actual streams to receive it through durable polling. It again
+checks zero listener PIDs and both unavailable states **before releasing
+either gate**. Only then does it release the gates and require new LISTEN PIDs,
+successful re-LISTEN queries, `ok` for both and replay of another real commit.
+The proof no longer depends on observing a brief reconnect window.
+
+The proxies bind only127.0.0.1, target only the newly owned isolated database,
+bound startup packets64KiB and startup reads/dials5s, and restore gates on
+all failure paths. Cleanup cancels waiting work, closes every tracked accepted
+and upstream connection, closes the listeners and joins proxy workers/copy
+goroutines within5s. API child cleanup precedes proxy cleanup, which precedes
+parent-pool/database cleanup. Every actual passing run completed those joins
+and owned database drops without reported cleanup failure.
+
+Follow-up evidence is retained in the same private14 directory, with exact
+SHA/worktree/UTC/elapsed/exit fields and unchanged0700/0600/child022 handling:
+
+| Follow-up check, Oct26 UTC | Start–end | Monotonic elapsed | Actual result |
+|---|---|---:|---|
+| Controlled old-sample schedule RED |06:09:30–06:10:07|37.850s|1; only WR-01 assertion fails; other10 pass |
+| Held-barrier full native GREEN |06:12:25–06:13:06|40.799s|0; all11 cases, package38.873s |
+| Initial phase4 lint |06:13:20–06:13:26|5.924s|0; no issues |
+| Targeted held-barrier repeat |06:14:10–06:14:36|26.092s|0; three actual runs, package22.976s |
+| Clean ordinary make test |06:14:11–06:15:21|70.006s|0; ordinary Go/web170/generator121; unchanged300s cap |
+| Three-mode vet/build/lint |06:14:20–06:14:46|Individual0.558..6.249s|0 for all nine commands |
+| Committed-HEAD full native Stream |06:15:44–06:16:26|41.746s|0; all11 cases, package40.739s at66a3b35 |
+
+The full native command remains exact phase4-only/race/10m/p1/nonempty as
+recorded below. The justified concurrency repeat uses the same flags and:
+
+```sh
+bash ../scripts/go-test-nonempty.sh './testphase4/...' '^TestPhase4Stream$/^owned_listener_loss_readiness_relisten_and_both_replicas_replay$' -tags=phase4 -race -timeout=10m -p=1 -count=3
+```
+
+Each run mints fresh finite credentials; no auth, retry or test budget was
+enlarged. All eleven original cases remain, including independent no-hint
+polling,206-ID replay/auth/heartbeat/expiry, slow socket/queue stress/admission
+and active-stream/listener shutdown. This repair introduces no test failure
+beyond the deliberately demonstrated old-assertion RED, and no production fix.
+
+`git diff 7ccf285..66a3b35 -- backend/internal backend/cmd web api` is empty.
+Accordingly the actual browser1440/375 evidence at production `7ccf285` is
+**carried by unchanged production identity**, not claimed as a browser rerun
+at the fixture commit. No wider native families were rerun for this test-only
+repair. Ordinary make's npm replacement ran without a concurrent separate
+web/browser process. OpenAPI/generated hashes below remain unchanged.
+
+Pinned gitleaks8.30.1 staged/generated/private-harness/full-history scans pass
+with unchanged policy before RED and GREEN commits. The follow-up summary is
+committed separately, followed by a final full-history scan reported to root.
+Only this summary, the one owned native test source and private evidence changed
+in the repair envelope. Root tracking/reviews and user dirt are untouched.
+The NEW detector-history/eight-healthy and old-runtime holds remain unchanged;
+no recovery/reset/role/hba/global clock/offset/fence/retention/remote action ran.
+
+WR-01 self-check passes: RED `62f09a0` precedes fixture GREEN `66a3b35`, the
+committed-HEAD native evidence names its full SHA and shows only preserved
+user dirt, all owned proxy/child/database resources joined/cleaned up, and no
+tracked deletion occurred. Independent R1 and root postwave acceptance are next.
+
+## Original implementation record
 
 Both implementation tasks are complete, with tests-only RED `fb8bba0` and
 minimal GREEN `7ccf285`. Independent source review and root acceptance remain
