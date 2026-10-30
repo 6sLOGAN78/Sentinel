@@ -80,7 +80,7 @@ correct but indirect. A comment or explicit reset would make it clearer.
 | `go test -tags phase4 -run XXX_none ./testphase4/` (compile) | pass |
 | `go test -race -count=1 ./internal/alertstream/` | pass (1.16s) |
 | golangci-lint | not run — not installed locally |
-| Native `TestPhase4Stream` | **not run** — see below |
+| Native `TestPhase4Stream` | pass (11/11 subtests, 55s) — see Runtime verification |
 
 ## Runtime verification (added 2026-10-30)
 
