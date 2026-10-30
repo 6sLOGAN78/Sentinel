@@ -294,7 +294,56 @@ Plans:
   4. Under excess load, memory and queues stay bounded and clients receive the expected 429/503
   5. `make bench` runs a multi-replica run with ≥1,000,000 generated events and writes `benchmarks/results/<date>-<scenario>.md` (hardware, config, throughput, p50/p95/p99 latency, resources, lag, loss/duplicate counts, limitations). Counts reconcile (sent, accepted, rejected, persisted, expected vs observed rule hits), the report refuses to emit when they don't, and a detector restart under load recovers with measured recovery time
 
-**Plans**: TBD
+**Plans**: 21 plans in 9 waves (revision 1). Waves 1-4 avoid every file owned by pending Phase 4 plans 04-14/04-15/04-16. Plans 05-14..05-21 declare a dependency on 04-16 (Phase 4 closure) because they edit Phase 4 shared surfaces. Real-container runs pass the read-only resource gate `scripts/check-resources.sh` (≥10 GiB free, MemAvailable ≥3 GiB; never prunes). Same-wave Go plans share one module: without worktrees run them sequentially in the noted order.
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — Legitimacy checkpoint for 8 Go modules + 3 images; ingest metrics + producer-buffer gauges on an injected registry (/metrics)
+- [ ] 05-02-PLAN.md — Shared full-jitter retry policy for event-writer, alert-writer and detector poison retries
+- [ ] 05-03-PLAN.md — Raw benchmark contract + stdlib bench/report.py that refuses on any reconciliation mismatch
+- [ ] 05-04-PLAN.md — Live-time, bounded-pool 1M-event workload with exact mix/attack plan and three-cap capacity + benign preflights
+
+**Wave 2**
+
+- [ ] 05-05-PLAN.md — Writers: position-based consumer lag, ClickHouse write latency, DLQ counters
+- [ ] 05-06-PLAN.md — JSON-by-default logs with timestamp/request_id/trace_id and scrubbing tests
+- [ ] 05-07-PLAN.md — Resource gate + chaos suite A (broker restart, CH outages, graceful SIGTERM, writer restart), check-chaos.sh (human-action before first run)
+- [ ] 05-08-PLAN.md — Open-loop async sender + SSE arrival subscriber producing the raw client/sse sections
+
+**Wave 3**
+
+- [ ] 05-09-PLAN.md — Detector metrics (alerts, delay, late rename, processed-position lag, capacity, pin margin)
+- [ ] 05-10-PLAN.md — Edge tracing: config, sampler, OTLP exporter, Kafka traceparent headers, ingest spans
+- [ ] 05-11-PLAN.md — Chaos suite B: slow-consumer lag rise/recovery and bounded overload (429/503)
+
+**Wave 4**
+
+- [ ] 05-12-PLAN.md — Worker tracing: detect/store/store_alert spans through Kafka headers, end-to-end trace test
+- [ ] 05-13-PLAN.md — Observability as code: Prometheus/Grafana/Jaeger overlay, dashboards, alert rules + promtool tests
+
+**Wave 5** *(requires Phase 4 closed: 04-16 accepted)*
+
+- [ ] 05-14-PLAN.md — query-api telemetry: sentinel_sse_clients, spans, jittered LISTEN/delivery backoff
+- [ ] 05-17-PLAN.md — Isolated sentinel-bench-<id> multi-replica stack, safety preflights, bench-up/down/purge + test-chaos targets
+
+**Wave 6**
+
+- [ ] 05-15-PLAN.md — Analyst/admin lag-only GET /api/v1/metrics/lag (viewer audited 403; fixed PromQL; per-field unavailable) + OpenAPI
+- [ ] 05-18-PLAN.md — Bench scenarios (sustained-restart with detector kill, overload), read-only collectors, make bench
+
+**Wave 7**
+
+- [ ] 05-21-PLAN.md — Admin-only GET /api/v1/system (fixed PromQL, readiness probes, per-field availability) + OpenAPI
+
+**Wave 8**
+
+- [ ] 05-16-PLAN.md — Admin-only System page + Overview consumer-lag panel (numbers for analyst/admin, notice for viewers) (05-UI-SPEC)
+- [ ] 05-19-PLAN.md — ADR 0010, operations/architecture docs (metric rename), CI observability checks
+
+**Wave 9** *(human checkpoints: free ≥15 GiB disk; live visual verification)*
+
+- [ ] 05-20-PLAN.md — Real ≥1M-event and overload benchmark runs, live Grafana/Jaeger/System verification, ADR 0011 + results
+
 **UI hint**: yes
 **Research flag**: Needs research. Open-loop benchmark method, cost of `FINAL` at the pinned ClickHouse version, detector restart catch-up (horizon × partition rate).
 
@@ -324,7 +373,7 @@ Plans:
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
 | 3. Detection & Alert Pipeline | 21/21 | Complete    | 2026-10-21 |
 | 4. Query API & Analyst Dashboard | 14/17 accepted | 04-14 LISTEN/resourceproof; pipelinehold separate | - |
-| 5. Observability, Resilience & Scale | 0/TBD | Not started | - |
+| 5. Observability, Resilience & Scale | 0/21 | Planned | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
 
 ## Coverage

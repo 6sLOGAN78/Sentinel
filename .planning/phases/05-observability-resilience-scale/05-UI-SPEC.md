@@ -17,7 +17,7 @@ created: 2026-10-30
 Frontend scope covers two surfaces:
 
 1. **UI-05:** a new System page at `/system` showing pipeline and consumer health, ingest throughput, consumer lag, detection delay, write latency, DLQ and errors, with an optional Grafana link.
-2. **UI-01 completion:** the Overview "Consumer lag" placeholder (`web/src/pages/Overview.tsx`, last `<p>`) is replaced with real position-based lag from the same System endpoint.
+2. **UI-01 completion:** the Overview "Consumer lag" placeholder (`web/src/pages/Overview.tsx`, last `<p>`) is replaced with real position-based lag from a separate lag-only endpoint, `GET /api/v1/metrics/lag`. It is readable by every role that may read the Overview; the System endpoint stays admin-only.
 
 Grafana dashboards (OBS-05) are provisioned config-as-code under `observability/grafana/`. They are not governed by this contract. The System page only links to them.
 
@@ -101,7 +101,9 @@ shadcn gate: `components.json` absent → auto default declines (consistent with
 **Overview consumer-lag panel (UI-01)**
 - Replaces the placeholder `<p>` with a `<section aria-labelledby="overview-lag-title">` placed after "Top rules". It holds:
   - `<h3>` "Consumer lag"
-  - for admins: the per-group lag values in a 2-column `<dl>`, plus a "View system health" link → `/system`, using in-app navigation
+  - for analysts and admins: the per-group lag values in a 2-column `<dl>` from `GET /api/v1/metrics/lag` (the endpoint returns an audited 403 to viewers)
+  - for viewers: the text "Consumer lag requires the analyst role." (14px muted), no numbers and no request. This endpoint carries only position-based lag per consumer group: no throughput, volumes, error counts or tenant data
+  - for admins only: a "View system health" link → `/system`, using in-app navigation
 - The panel has its own query and state, independent of the summary query. An Overview summary error must not hide lag, and a lag error must not hide the summary.
 
 ## Spacing Scale
@@ -201,14 +203,13 @@ Each section renders its own state from per-field availability. The page-level s
 
 | Condition | Rendering |
 |---|---|
-| Non-admin | Text "Consumer lag requires the admin role." (14px muted). No request is sent. |
-| Admin, loading | `role="status"` "Loading consumer lag…" |
-| Admin, data | `<dl>` with group → `12,345 records` + "View system health" link |
-| Admin, unavailable | "Consumer lag unavailable. The metrics source is not responding." + "Retry loading consumer lag" (secondary button) |
-| Admin, request error | Same copy as unavailable, in `role="alert"` |
-| Admin, server 403 | Falls back to the non-admin text |
+| Viewer | Text "Consumer lag requires the analyst role." (14px muted). No request is sent. A server 403 for any role falls back to this text |
+| Loading | `role="status"` "Loading consumer lag…" |
+| Data | `<dl>` with group → `12,345 records`; admins also get the "View system health" link |
+| Unavailable (field state unavailable/no_data) | "Consumer lag unavailable. The metrics source is not responding." + "Retry loading consumer lag" (secondary button). Never `0` |
+| Request error | Same copy as unavailable, in `role="alert"` |
 
-The OpenAPI description on `getMetricsSummary` that says "Consumer lag is unavailable until Phase 5" is updated to point at `GET /api/v1/system`.
+The OpenAPI description on `getMetricsSummary` that says "Consumer lag is unavailable until Phase 5" is updated to point at `GET /api/v1/metrics/lag`.
 
 ## Copywriting Contract
 
@@ -234,8 +235,8 @@ The OpenAPI description on `getMetricsSummary` that says "Consumer lag is unavai
 | Error breakdown labels | "5xx" / "429 rate limited" / "503 unavailable" |
 | Lag caption | "Position-based: end offset minus next unprocessed offset, maximum across partitions." |
 | Footnote | "Values come from Prometheus with fixed server-side queries. Use Grafana for history." |
-| Overview lag (admin) link | "View system health" |
-| Overview lag non-admin | "Consumer lag requires the admin role." |
+| Overview lag System link (admins only) | "View system health" |
+| Overview lag viewer | "Consumer lag requires the analyst role." |
 | Overview lag unavailable | "Consumer lag unavailable. The metrics source is not responding." + "Retry loading consumer lag" |
 | Overview lag loading | "Loading consumer lag…" |
 | Destructive confirmation | none: this phase has no destructive actions. The System page is read-only. |
@@ -278,13 +279,13 @@ Copy rules:
 |----------|-------------|-------------|
 | none | none | not applicable: no shadcn, no third-party registry blocks, no new UI dependencies |
 
-## Assumptions (user may override)
+## Assumptions
 
-1. **⚠ System page is admin-only (prominent).**
-   - The data is global, not tenant-scoped, and ingest volume leaks cross-tenant activity (05-RESEARCH Open Question 2).
-   - Viewer and analyst get a server 403 and the "Admin access required" state. The nav link is hidden for them.
-   - **This changes UI-01 for analysts:** the Overview lag panel shows "Consumer lag requires the admin role." instead of numbers.
-   - Override option: allow analysts, and/or add a separate "operator" role. Both require backend RBAC changes.
+1. **RESOLVED (user decision, 2026-10-30): the System page stays admin-only, and Overview consumer lag is a separate lag-only field.**
+   - The System data is global, not tenant-scoped, and ingest volume would leak cross-tenant activity (05-RESEARCH Open Question 2).
+   - Viewer and analyst get a server 403 and the "Admin access required" state on `/system`. The System nav link is shown to admins only.
+   - The Overview lag panel reads `GET /api/v1/metrics/lag`. It carries position-based consumer lag per group only (no throughput, volumes, error counts or tenant data). Analysts and admins see the numbers. Viewers see "Consumer lag requires the analyst role." and the server returns an audited 403 to them. So UI-01's "analyst sees consumer lag" holds.
+   - Implemented in plans 05-15 (lag endpoint), 05-21 (System endpoint) and 05-16 (UI).
 2. Non-admins visiting `/system` see a forbidden state rather than a redirect, so deep links stay explainable.
 3. 15s polling while the tab is visible and a 60s staleness threshold. Both are chosen to sit above the 5–10s lag-tracker cadence and the 1m/5m PromQL windows.
 4. No charts on the System page; Grafana provides history. Phase 4's "no fabricated data" rule makes a client-side sparkline buffer undesirable.

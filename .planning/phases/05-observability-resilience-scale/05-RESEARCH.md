@@ -548,21 +548,26 @@ async def run(schedule, clients, sem, log):
 | A2 | Unsampled (non-recording) spans still carry a valid TraceID usable for `trace_id` log fields | Pattern 3/4 | Logs for unsampled requests lack trace_id. Verify with a unit test, or generate the ID in middleware |
 | A3 | Compose DNS for a scaled service returns all replica IPs to Prometheus `dns_sd_configs` type A | Pattern 7 | Some replicas unscraped. Fallback: static targets per replica container name |
 | A4 | `client_golang/api/prometheus/v1` lives in the client_golang v1.25.0 module (no separate module) | Pattern 5 | Extra dependency |
-| A5 | Per-process detector ceiling ≈ 100,000/330 ≈ 300 ev/s (derived from source, not measured) | Pattern 12, Pitfall 1 | Actual may be lower (CPU) or slightly different (sawtooth). The bench measures it |
+| A5 | Per-process detector ceiling ≈ 100,000/330 ≈ 300 ev/s for the ledger cap (derived from source, not measured). Revision 2: the windows cap (key {tenant, rule, source_ip, second}; AUTH second=principal, SCAN second=destination IP) binds first with large entity pools. Round-1 pools predicted ~24,800 windows per process. The defaults were recomputed in 05-04 (source_pool 200, a fixed principal per source, destination_pool 2, auth.failure 1%), giving windows 1,240, ledger 66,000 and bytes ≈ 7.8 MB per process at 400 ev/s with N=3 | Pattern 12, Pitfall 1 | Actual may be lower (CPU). The bench measures peak state via sentinel_detector_state_* |
 | A6 | Jaeger 2.22 in-memory store supports a bounded `max_traces` setting | Stack | Unbounded memory. Verify in its config docs at execution time |
 | A7 | Docker Hub digests read via API are the multi-arch index digests | Stack | Pin mismatch. Re-verify with `docker buildx imagetools inspect` |
 | A8 | The franz-go default keyed partitioner is murmur2-compatible sticky-key | Pattern 12 | Skew estimate. Measured in warm-up regardless |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Disk space (blocking for bench and image builds).**
    - Known: `/` has 2.6 GB free (99% used). STATE forbids agent-initiated prune.
-   - Recommendation: a plan checkpoint requiring the user to free ≥ 15 GB before any bench/chaos task. The bench preflight enforces it.
+   - RESOLVED: chaos and real-container integration runs require ≥ 10 GiB free on the filesystems holding the repo and Docker data, plus MemAvailable ≥ 3 GiB. Below that, the read-only gate `scripts/check-resources.sh` refuses with a clear message. The benchmark keeps its own ≥ 15 GiB / ≥ 6 GiB preflight. The agent never prunes; the user frees space. (Where implemented: 05-07 gate + human-action checkpoint; reused in 05-09, 05-10, 05-11, 05-12, 05-14, 05-15, 05-16, 05-21; bench floors in 05-17 and the 05-20 human-action checkpoint.)
 2. **Who may see the System page?** Global pipeline data leaks cross-tenant volume. Recommendation: admin-only, with an Overview lag panel shown to admins only. Needs user confirmation because it changes UI-01 behaviour for analysts.
+   - RESOLVED: the System page and `GET /api/v1/system` stay admin-only. The Overview gets a separate lag-only endpoint `GET /api/v1/metrics/lag` (position-based lag per group, no throughput/volume/error/tenant data) restricted to analyst and admin (viewers get an audited 403 and the Overview copy "Consumer lag requires the analyst role."), so analysts see consumer lag. (Where implemented: 05-15 lag endpoint, 05-21 System endpoint, 05-16 UI, 05-UI-SPEC Assumption 1.)
 3. **Persistence-latency measurement.** Without a wall-clock column, persistence latency is bounded by SSE notification. Recommendation: accept the SSE upper bound plus the detector delay histogram. Adding `persisted_at` (migration 009) is possible but touches Phase 4-owned delivery triggers.
+   - RESOLVED: persistence latency is reported as the SSE-arrival upper bound, clearly labelled as such. No migration 009. (Where implemented: 05-03 report.py Limitations text, 05-08 SSE subscriber, 05-18 scenarios, 05-20 ADR 0011.)
 4. **Benign event mix.** Including `auth.failure` sets the 330 s horizon, which roughly triples the ceiling penalty. Recommendation: keep the realistic mix, report the ceiling honestly, and optionally add a second scenario without AUTH traffic to show the horizon effect (clearly labelled).
+   - RESOLVED: the default benign mix includes auth.failure at 1%, with a fixed principal per benign source (the exact mix and per-rule window/ledger/bytes arithmetic are in 05-04: windows 1,240 / ledger 66,000 / bytes ≈ 7.8 MB per process at 400 ev/s, N=3, P=6). The capacity preflight refuses any configuration above 80% of the windows, ledger or bytes caps instead of silently changing the mix. `benign_auth_failure=false` exists only as a clearly labelled alternate scenario. (Where implemented: 05-04 model/preflight, 05-18 scenarios.)
 5. **Unrelated host load (`devrag-stack`, about 2 GB RAM).** Ask the user to stop it for the run, or record it as a limitation with measured host load.
+   - RESOLVED: the user decides at the 05-20 Task 1 human-action checkpoint. If it keeps running, it is recorded in the report's Limitations with the measured host load. (Where implemented: 05-20.)
 6. **Phase 4 sequencing.** UI-05 and `GET /api/v1/system` touch Phase 4 surfaces. Recommendation: order these plans last, after Phase 4 closes.
+   - RESOLVED: waves 1-4 avoid every Phase 4-owned file. Plans 05-14 to 05-21 declare `depends_on: 04-16` and verify Phase 4 closure first. (Where implemented: 05-14, 05-15, 05-16, 05-17, 05-18, 05-19, 05-20, 05-21.)
 
 ## Environment Availability
 

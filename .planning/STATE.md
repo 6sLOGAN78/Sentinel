@@ -28,6 +28,14 @@ Status: NEW detector nowalsoholdscheckpoint-historylost;8serviceshealthy,PG-only
 Progress: 70/73 accepted numberedplans; Phase4 14/17accepted,3remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
+## Phase 5 Planning (2026-10-30)
+
+- Phase 5 planned: 21 plans / 9 waves (05-01..05-21), plan-checker PASSED at iteration 3. Not executed.
+- User decisions: System page admin-only; Overview lag-only field for analyst+admin (viewer 403); persistence latency = SSE-arrival upper bound (no migration 009); chaos/integration resource floor 10 GiB disk + 3 GiB RAM.
+- Waves 1-4 touch no Phase 4 files; waves 5-9 (05-14..05-21) depend on 04-16. Phase 4 holds above are unchanged.
+- First human checkpoints: 05-01 T1 (approve 8 Go modules + 3 images), 05-07 T3 (resources before first chaos run). Disk currently ~2.3 GB free.
+- 04-14 R1 review written (04-REVIEW-14-R1.md, clean, static only); native TestPhase4Stream not run because the NEW stack infra containers are missing.
+
 ## Latest Verified Evidence
 
 - 04-13 acceptedUTC23:18:33Oct25: SSEsource2c88d18/UTC1a3529e, cleanfeature14
