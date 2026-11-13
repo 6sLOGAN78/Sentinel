@@ -30,6 +30,7 @@ ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readines
 
 ## Phase 4 local status (2026-11-14)
 
+- 2026-11-14: user approved push; pushed 6cef65d..d5ef90a to origin/main (gitleaks 8.30.1 over the 44 unpushed commits: 0 findings). Hosted CI run 43511445052 FAILED in ~2s on every job with GitHub annotation "job was not started because your account is locked due to a billing issue" (6cef65d failed the same way). No hosted job executed; hosted acceptance is NOT met, so Phase 4 stays open. No credits purchased or account changed. Needs the account owner to clear the billing lock, then re-run CI at the head SHA.
 - 04-14 accepted (native stream pass, R1 clean). 04-15 done: tenant matrix 12/12, real-proxy browser 13/13 (04-15-SUMMARY, a56074c). 04-16 Tasks 1-2 done locally (runner, CI jobs, guards; 04-16-SUMMARY, f76120c); Task 3 (push + hosted CI) pending explicit user approval. Phase 4 NOT closed.
 - Not run: `make test-integ` and `scripts/check-phase3-tests.sh` (they drive the old `sentinel` stack via make dev-up); gitleaks history scan; all hosted CI.
 - Fixed e2b59e7: base compose now wires rules file into query-api (was missing since 04-10).
