@@ -99,6 +99,8 @@ def job_block(workflow: str, name: str) -> str:
 
 def step_block(job: str, name: str) -> str:
     head = f"      - name: {name}\n"
+    if head not in job:
+        raise AssertionError("required step is missing: " + name)
     body = job.split(head, 1)[1]
     return head + body.split("\n      - ", 1)[0].rstrip("\n")
 
@@ -295,9 +297,12 @@ class Phase4GuardTests(unittest.TestCase):
             "family excluded": ("group: [auth, alerts, events, triage, summary, delivery, stream, tenant]\n",
                                 "group: [auth, alerts, events, triage, summary, delivery, stream, tenant]\n"
                                 "        exclude:\n          - group: tenant\n"),
-            "fail fast": ("fail-fast: false", "fail-fast: true"),
-            "larger budget": ("timeout-minutes: 45\n    needs: [go]\n    strategy:",
-                              "timeout-minutes: 60\n    needs: [go]\n    strategy:"),
+            "fail fast": ("fail-fast: false\n      matrix:\n        group: [auth",
+                          "fail-fast: true\n      matrix:\n        group: [auth"),
+            "larger budget": ("timeout-minutes: 45\n    needs: [go]\n    strategy:\n      fail-fast: false\n"
+                              "      matrix:\n        group: [auth",
+                              "timeout-minutes: 60\n    needs: [go]\n    strategy:\n      fail-fast: false\n"
+                              "      matrix:\n        group: [auth"),
             "browser skipped": (browser, "        if: false\n" + browser),
             "browser masked": (browser, browser + " || true"),
             "browser continues": (browser, "        continue-on-error: true\n" + browser),

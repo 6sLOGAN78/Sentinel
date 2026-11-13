@@ -100,6 +100,9 @@ jobs:
       - name: phase 3 selector and CI guards
         working-directory: .
         run: python3 -B -m unittest discover -s scripts -p test_phase3_guards.py
+      - name: phase 4 selector and CI guards
+        working-directory: .
+        run: python3 -B -m unittest discover -s scripts -p test_phase4_guards.py
       - name: five application stack configuration guards
         working-directory: .
         run: python3 -B -m unittest discover -s scripts -p test_stack_config.py
@@ -204,6 +207,66 @@ jobs:
               exit 1
             }
           done
+      - name: tear down
+        if: always()
+        run: make dev-down
+
+  # Phase 4 native families (backend/testphase4, phase4 build tag only, so the
+  # legacy integration suite above is unchanged). Eight independent jobs each run
+  # one exact TestPhase4* family that must pass nonempty.
+  phase4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs: [go]
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [auth, alerts, events, triage, summary, delivery, stream, tenant]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - run: make dev-up
+      - run: scripts/check-stack.sh
+      - name: independently nonempty Phase 4 native family
+        run: bash scripts/check-phase4-tests.sh '${{ matrix.group }}'
+      - name: tear down
+        if: always()
+        run: make dev-down
+
+  # Real Chromium acceptance through a pinned nginx proxy and two query replicas.
+  phase4-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs: [go]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make dev-up
+      - run: scripts/check-stack.sh
+      - name: dashboard dependencies
+        working-directory: web
+        run: npm ci
+      - name: pinned Chromium for Playwright
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: generator environment for the seeder
+        working-directory: generator
+        run: uv sync --locked
+      - name: real browser acceptance through the proxy and two replicas
+        run: bash scripts/check-phase4-browser.sh
       - name: tear down
         if: always()
         run: make dev-down

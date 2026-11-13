@@ -130,3 +130,24 @@ Loss of a response after COMMIT does not undo that audit; retrying its old versi
 returns409 without adding a second row. Existing generic HTTP logs are distinct
 from this security-event contract. This increment does not audit every endpoint
 or certify production log retention, transport or access policy.
+
+## Phase 4 acceptance gates (T04-35, T04-36)
+
+**T04-35, false green or dropped selector (high).** A broad regex, an empty
+selection, a skipped job or a masked exit could report green without running a
+family. Mitigation: `scripts/check-phase4-tests.sh` runs each exact family through
+the nonempty helper and fails fast; CI runs eight independent family jobs plus the
+browser job; `scripts/test_phase4_guards.py` (a required CI step) fails on
+unknown/empty/failing groups, a changed selector union, relaxed budgets, a removed
+`phase4` tag, and `if:`/`continue-on-error`/`|| true` bypasses, including fields
+placed after separator comments. The guards use a fake `go`: they prove
+orchestration, not native success.
+
+**T04-36, unauthorized remote or local-state mutation (medium).** Pushing,
+triggering hosted CI or staging user-modified files would exceed the approved
+scope. Mitigation: local gates and scoped commits come first; publication and hosted
+CI need a separate explicit approval, and user-dirty files are never staged.
+Hosted results are not inferred from local checks.
+
+Residual limit: the base Compose file does not wire the rules file that query-api
+requires, so a hosted `make dev-up` is expected to be blocked until it is fixed.

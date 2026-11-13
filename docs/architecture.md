@@ -168,3 +168,15 @@ is invented. Sequence allocation is not commit order: a lower seq may commit
 after a higher one. Phase 4 must design and prove backfill that handles this;
 `seq > last_seen` alone is not a lossless SSE protocol. No stream implementation
 is included here. See [ADR 0008](decisions/0008-alert-list-source-and-conflicts.md).
+
+## Phase 4 acceptance layout
+
+Phase 4 native acceptance is isolated from the legacy integration suite: the eight
+`TestPhase4*` families sit in `backend/testphase4` behind the `phase4` build tag and
+run through `scripts/check-phase4-tests.sh` (`make test-phase4`), each as its own
+nonempty, time-bounded selector. The real-browser acceptance
+(`scripts/check-phase4-browser.sh`) drives Chromium through a pinned nginx proxy
+and two query replicas over the actual ingest, Kafka, detector, writer and
+query path. CI mirrors both as independent jobs and runs the script guards.
+Native, component, static and orchestration-model evidence are distinct; the guard
+tests use a fake `go` and prove selection and exit propagation only.

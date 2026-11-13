@@ -285,6 +285,34 @@ alone cannot establish a pass. Production builds exclude integration hook
 files and read no fault-control environment settings. Fault tests alone build
 integration binaries; there is no public failure-control endpoint.
 
+### Phase 4 gates
+
+```sh
+make test-phase4                      # bash scripts/check-phase4-tests.sh
+bash scripts/check-phase4-browser.sh  # real Chromium, proxy, two replicas
+python3 -B -m unittest discover -s scripts -p test_phase4_guards.py
+```
+
+`scripts/check-phase4-tests.sh [all|auth|alerts|events|triage|summary|delivery|stream|tenant]`
+runs each exact `TestPhase4*` family (Auth, Alerts, Events, Triage, SummaryRules,
+Delivery, Stream, TenantMatrix) through `scripts/go-test-nonempty.sh` with
+`-tags=phase4 -race -p=1`: 6m for ordinary families, 10m for delivery and stream.
+The families live in `backend/testphase4` behind the `phase4` tag, so
+`make test-integ` and the Phase 3 runner never collect them. Any empty selection or
+non-zero exit fails the run, and `all` stops at the first failure; each family
+prints its measured duration. They need the healthy dev stack (`make dev-up`).
+`make dev-up` starts query-api from the base Compose file, which does not yet wire
+the rules file that query-api requires; `scripts/check-phase4-browser.sh` adds it only
+through the acceptance overlay. Fixing the base file is an open follow-up.
+
+CI runs eight independent `phase4` matrix jobs (one family each), a required
+`phase4-browser` job, and `test_phase4_guards.py` as a required step of the python
+job. The guards pin the exact selector union, budgets, build tag, the job text and
+the absence of skip/`continue-on-error`/masked-failure bypasses. The legacy
+integration job, the seven Phase 2 groups and the 44 core plus 2 scenario Phase 3
+selectors are unchanged. Local passes here are not a hosted CI result; the hosted
+run needs separate approval to publish.
+
 For `seq`/commit-order and future backfill constraints, see
 [architecture](architecture.md#alert-storage-and-phase-4-handoff). Phase 4 owns
 that design; these operations do not provide an SSE implementation.
