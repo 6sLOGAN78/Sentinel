@@ -128,3 +128,44 @@ repeats do not establish its cause.
 Run the complete [operations regression gates](operations.md#regression-commands)
 for final proof. Hosted CI remains pending; no benchmark, exactly-once claim,
 security certification, dashboard or SSE result is implied by this demo.
+
+## Dashboard through a real proxy (Phase 4 browser acceptance)
+
+`scripts/check-phase4-browser.sh` proves the analyst dashboard end to end with a
+real reverse proxy in front of two query replicas. It is an incremental slice
+check, not whole-phase acceptance, a benchmark or an exactly-once claim.
+
+What it does, in order (hard 10 minute budget, at least 4 GiB free disk):
+
+1. Verifies Vitest collects only `web/src` (`vitest list --filesOnly src`) so the
+   Playwright spec is never collected, and that unfiltered discovery still sees it.
+2. Builds the dashboard and starts, additively, `query-api-b` (a second replica of
+   the same image and config, no host port) and a pinned `nginx:1.30.6-alpine`
+   proxy from `deployments/compose/phase4-acceptance.yml` and
+   `deployments/proxy/phase4.conf`. Existing services, ports and volumes are not
+   changed. A second proxy (`proxy-buffered`, profile `phase4-negative`) uses the
+   same template with buffering switched on as a negative control.
+3. Creates two fresh tenants and sends the `all` scenario (benign plus all four
+   built-in threat families) and one HTML-injection event for each through the
+   actual ingest -> Kafka -> detector -> writers path. It records expected and
+   observed alert IDs; the eight expected detections per tenant must match
+   PostgreSQL exactly. Delivery is at-least-once; nothing here claims otherwise.
+4. Runs `npm run test:e2e` (Chromium via Playwright) against the proxy: first SSE
+   frame within 5 seconds (and the buffering control missing that deadline),
+   header/tenant/CORS handling, both tenants on all four pages, safe JSON, viewer
+   403, stale 409, dialog focus, Back/Forward, 375/1440 px and 200% zoom reflow,
+   reduced motion, loading/empty/error states, logout/expiry, and a reconnect
+   test that stops both replicas, commits real detections while no stream exists
+   and recovers the exact expected IDs through each replica in turn.
+5. Scans the 0700/0600 artifact directory for the signing key and bearer tokens.
+
+Run it against the default local stack with `bash scripts/check-phase4-browser.sh`.
+Tokens are minted in memory from the private local key and never printed; traces,
+video and automatic screenshots are off. To target another Compose project, set
+`PHASE4_COMPOSE_CMD` (a full `docker compose -p ... -f ... -f
+deployments/compose/phase4-acceptance.yml --env-file ...` prefix), plus
+`PHASE4_INGEST_URL`, `PHASE4_PROXY_PORT` and `PHASE4_ARTIFACT_DIR` as needed.
+Set `PHASE4_KEEP=1` to leave the added replica and proxies running. Known limits:
+the proxy template relies on Docker's embedded DNS (`127.0.0.11`), the
+replica-identity header `X-Phase4-Replica` exists only on this acceptance proxy,
+and Consumer lag / System remain Phase 5.

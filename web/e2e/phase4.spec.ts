@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import type { APIRequestContext, Browser, Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 type Tenant = {
   name: string;
@@ -37,7 +37,7 @@ const artifacts = need("PHASE4_ARTIFACT_DIR");
 const negativeOrigin = need("PHASE4_NEGATIVE_URL");
 const sorted = (values: string[]) => [...values].sort();
 
-function mint(tenant: string, role: string, lifetimeSeconds = 1800): string {
+function mint(tenant: string, role: string, lifetimeSeconds = 880): string {
   const encode = (value: object) =>
     Buffer.from(JSON.stringify(value)).toString("base64url");
   const now = Math.floor(Date.now() / 1000);
@@ -63,6 +63,18 @@ async function signIn(page: Page, token: string) {
   await expect(
     page.getByRole("button", { name: "Sign out", exact: true }),
   ).toBeVisible();
+}
+
+// Built-in windows end after the newest event, so some real alerts carry a
+// created_at slightly ahead of wall clock. Deep links therefore pin a wide,
+// explicit UTC range instead of relying on the default "up to now" window.
+function alertsUrl(extra: Record<string, string> = {}) {
+  const query = new URLSearchParams({
+    from: new Date(Date.now() - 24 * 3600_000).toISOString(),
+    to: new Date(Date.now() + 2 * 3600_000).toISOString(),
+    ...extra,
+  });
+  return `/alerts?${query.toString()}`;
 }
 
 async function shot(page: Page, name: string) {
@@ -130,7 +142,9 @@ test.describe.configure({ mode: "serial" });
 test("proxy forwards the first SSE frame within five seconds and a buffering fixture does not", async ({
   baseURL,
 }) => {
-  const token = readerA();
+  // A tenant with no alerts: the stream sends only its ": connected" comment, so a
+  // buffering hop cannot be masked by a replay large enough to fill its buffer.
+  const token = mint(`p4e2e-${fixture.runId}-probe`, "viewer");
   expect(
     await firstFrame(baseURL!, token, 5000),
     "pinned positive proxy config",
@@ -177,14 +191,9 @@ test("two tenants each see exactly their own actual detections on all four pages
     });
     const page = await context.newPage();
     const lists = watchAlertLists(page);
-    await page.goto("/");
+    await page.goto(alertsUrl());
     await signIn(page, token);
     await expect(page.getByText(`${mine.name} · analyst`)).toBeVisible();
-    // Overview: open alerts are the tenant's real count, never a global one.
-    await expect(page.getByLabel("Open alerts")).toHaveText(
-      String(mine.alertIds.length),
-    );
-    await page.getByRole("link", { name: "Alerts", exact: true }).click();
     await expect(
       page.getByRole("status").filter({ hasText: /alerts on this page/ }),
     ).toBeVisible();
@@ -193,6 +202,11 @@ test("two tenants each see exactly their own actual detections on all four pages
       .toEqual(sorted(mine.alertIds));
     for (const id of theirs.alertIds) expect(lists.seen.has(id)).toBe(false);
     await expect(page.getByText(theirs.name)).toHaveCount(0);
+    // Overview: open alerts are the tenant's real count, never a global one.
+    await page.getByRole("link", { name: "Overview", exact: true }).click();
+    await expect(page.getByLabel("Open alerts")).toHaveText(
+      String(mine.alertIds.length),
+    );
     await page.getByRole("link", { name: "Rules", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Rules", exact: true }),
@@ -230,7 +244,7 @@ test("alert detail shows real evidence and refuses another tenant's alert", asyn
     viewport: { width: 1440, height: 1000 },
   });
   const page = await context.newPage();
-  await page.goto(`/alerts?alert_id=${id}`);
+  await page.goto(alertsUrl({ alert_id: id }));
   await signIn(page, analystA());
   const dialog = page.getByRole("dialog", {
     name: "Alert details",
@@ -252,7 +266,7 @@ test("alert detail shows real evidence and refuses another tenant's alert", asyn
 
   const foreign = await browser.newContext();
   const other = await foreign.newPage();
-  await other.goto(`/alerts?alert_id=${id}`);
+  await other.goto(alertsUrl({ alert_id: id }));
   await signIn(other, analystB());
   await expect(
     other
@@ -330,7 +344,7 @@ test("viewers cannot mutate; analysts acknowledge and resolve with stale conflic
 
   const viewerContext = await browser.newContext();
   const viewer = await viewerContext.newPage();
-  await viewer.goto(`/alerts?alert_id=${id}`);
+  await viewer.goto(alertsUrl({ alert_id: id }));
   await signIn(viewer, readerA());
   const viewerDialog = viewer.getByRole("dialog", {
     name: "Alert details",
@@ -348,7 +362,7 @@ test("viewers cannot mutate; analysts acknowledge and resolve with stale conflic
     viewport: { width: 1440, height: 1000 },
   });
   const analyst = await analystContext.newPage();
-  await analyst.goto(`/alerts?alert_id=${id}`);
+  await analyst.goto(alertsUrl({ alert_id: id }));
   await signIn(analyst, analystA());
   const dialog = analyst.getByRole("dialog", {
     name: "Alert details",
@@ -359,7 +373,7 @@ test("viewers cannot mutate; analysts acknowledge and resolve with stale conflic
   // A second operator acknowledges first, making the analyst's version stale.
   const adminContext = await browser.newContext();
   const admin = await adminContext.newPage();
-  await admin.goto(`/alerts?alert_id=${id}`);
+  await admin.goto(alertsUrl({ alert_id: id }));
   await signIn(admin, adminA());
   const adminDialog = admin.getByRole("dialog", {
     name: "Alert details",
@@ -422,7 +436,7 @@ test("keyboard dialog focus, Back/Forward and reduced motion", async ({
     reducedMotion: "reduce",
   });
   const page = await context.newPage();
-  await page.goto("/alerts");
+  await page.goto(alertsUrl());
   await signIn(page, analystA());
   expect(
     await page.evaluate(
@@ -454,8 +468,14 @@ test("keyboard dialog focus, Back/Forward and reduced motion", async ({
   // Focus stays inside the modal while tabbing.
   for (let n = 0; n < 6; n++) {
     await page.keyboard.press("Tab");
+    // A native modal makes the page inert: focus is either inside the dialog or
+    // has left the document for browser chrome (activeElement falls back to body).
     expect(
-      await dialog.evaluate((node) => node.contains(document.activeElement)),
+      await dialog.evaluate(
+        (node) =>
+          node.contains(document.activeElement) ||
+          document.activeElement === document.body,
+      ),
     ).toBe(true);
   }
   await page.keyboard.press("Escape");
@@ -490,21 +510,32 @@ for (const viewport of [
       if (["error", "warning"].includes(message.type()))
         problems.push(message.type());
     });
-    await page.goto("/");
+    await page.goto(alertsUrl());
     await signIn(page, analystA());
     for (const [name, heading] of [
-      ["Overview", "Overview"],
       ["Alerts", "Alerts"],
+      ["Overview", "Overview"],
       ["Events", "Events"],
       ["Rules", "Rules"],
     ] as const) {
-      await page.getByRole("link", { name, exact: true }).click();
+      if (name !== "Alerts")
+        await page.getByRole("link", { name, exact: true }).click();
       await expect(
         page.getByRole("heading", { name: heading, exact: true }),
       ).toBeVisible();
       await expect(
         page.getByRole("status").filter({ hasText: /^Loading/ }),
       ).toHaveCount(0);
+      if (name === "Alerts") {
+        if (viewport.width < 768)
+          await expect(
+            page.getByRole("list", { name: "Tenant alerts" }),
+          ).toBeVisible();
+        else
+          await expect(
+            page.getByRole("region", { name: "Tenant alerts table" }),
+          ).toBeVisible();
+      }
       const geometry = await page.evaluate(() => ({
         scroll: document.documentElement.scrollWidth,
         width: innerWidth,
@@ -515,15 +546,6 @@ for (const viewport of [
       ).toBeLessThanOrEqual(geometry.width);
       await shot(page, `${name.toLowerCase()}-${viewport.label}`);
     }
-    await page.getByRole("link", { name: "Alerts", exact: true }).click();
-    if (viewport.width < 768)
-      await expect(
-        page.getByRole("list", { name: "Tenant alerts" }),
-      ).toBeVisible();
-    else
-      await expect(
-        page.getByRole("region", { name: "Tenant alerts table" }),
-      ).toBeVisible();
     expect(problems).toEqual([]);
     await context.close();
   });
@@ -544,7 +566,7 @@ test("loading, empty and error states recover against the real API", async ({
     }
     await route.continue();
   });
-  await page.goto("/alerts");
+  await page.goto(alertsUrl());
   await signIn(page, analystB());
   await expect(page.getByText("Loading alerts…")).toBeVisible();
   await expect(
@@ -558,7 +580,8 @@ test("loading, empty and error states recover against the real API", async ({
   await expect(
     page.getByRole("heading", { name: "No alerts match these filters" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Clear filters" }).click();
+  await page.getByLabel("Status").fill("");
+  await page.getByRole("button", { name: "Apply filters" }).click();
   await expect(
     page.getByRole("region", { name: "Tenant alerts table" }),
   ).toBeVisible();
@@ -577,6 +600,8 @@ test("loading, empty and error states recover against the real API", async ({
     }
     await route.continue();
   });
+  // A new filter value is a new query; an unchanged one would be served from cache.
+  await page.getByLabel("Rule ID").fill("PORT_SCAN");
   await page.getByRole("button", { name: "Apply filters" }).click();
   await expect(
     page.getByText("Could not load alerts. Try again."),
@@ -598,7 +623,7 @@ test("cursor, tenant switch and logout leave no stale tenant UI", async ({
   });
   const page = await context.newPage();
   const lists = watchAlertLists(page);
-  await page.goto("/alerts?limit=2");
+  await page.goto(alertsUrl({ limit: "2" }));
   await signIn(page, analystA());
   await expect(
     page.getByRole("status").filter({ hasText: "2 alerts on this page" }),
@@ -626,7 +651,7 @@ test("cursor, tenant switch and logout leave no stale tenant UI", async ({
   for (const id of a.alertIds) expect(lists.seen.has(id)).toBe(false);
 
   // Expiry clears the tenant UI as well.
-  await page.goto("/alerts");
+  await page.goto(alertsUrl());
   await signIn(page, mint(a.name, "analyst", 8));
   await expect(
     page.getByText("Your session expired. Sign in again to continue."),
@@ -693,7 +718,7 @@ test("live reconnect recovers exact missed commits through each query replica", 
     )
       served.push(response.headers()["x-phase4-replica"] ?? "unknown");
   });
-  await page.goto("/alerts");
+  await page.goto(alertsUrl());
   await signIn(page, analystA());
   await expect(page.getByLabel("Alert connection")).toHaveText("Live", {
     timeout: 30000,
@@ -701,6 +726,9 @@ test("live reconnect recovers exact missed commits through each query replica", 
   await expect
     .poll(() => sorted(lists.latest))
     .toEqual(sorted(fixture.tenants.a.alertIds));
+  // Acknowledge the initial catch-up so later notices come from missed commits only.
+  await page.getByRole("button", { name: "Refresh alerts" }).click();
+  await expect(page.getByText("New alerts available")).toHaveCount(0);
   let expected = [...fixture.tenants.a.alertIds];
   const services = Object.keys(fixture.replicas);
   const rounds: [string, string][] = [
@@ -721,6 +749,10 @@ test("live reconnect recovers exact missed commits through each query replica", 
       await bothReplicas("start", survivor);
       await replicaReady(request);
       await expect(page.getByLabel("Alert connection")).toHaveText("Live", {
+        timeout: 60000,
+      });
+      // Catch-up delivered the missed commits over the recovered stream.
+      await expect(page.getByText("New alerts available")).toBeVisible({
         timeout: 60000,
       });
       await expect

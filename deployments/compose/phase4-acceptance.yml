@@ -1,0 +1,69 @@
+# Phase 4 browser/proxy acceptance overlay. Strictly additive: it adds a second
+# query replica and a pinned real reverse proxy to whichever Compose project it
+# is layered on; it changes no existing service, port or volume.
+#
+#   docker compose -p <project> -f docker-compose.yml -f phase4-acceptance.yml \
+#     --env-file ../../.env up -d --build --wait query-api query-api-b proxy
+#
+# scripts/check-phase4-browser.sh drives this overlay. The negative-control
+# proxy (buffering on) only starts under the phase4-negative profile.
+#
+# Pin: nginx stable 1.30.6 (alpine), multi-arch index digest verified against
+# the Docker Hub registry (docker buildx imagetools inspect nginx:1.30.6-alpine).
+x-proxy: &proxy
+  image: nginx:1.30.6-alpine@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949
+  depends_on:
+    query-api:
+      condition: service_healthy
+    query-api-b:
+      condition: service_healthy
+  volumes:
+    - ../proxy/phase4.conf:/etc/nginx/templates/default.conf.template:ro
+    - ../../web/dist:/usr/share/nginx/html:ro
+  healthcheck:
+    test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/__proxy_ready"]
+    interval: 3s
+    timeout: 3s
+    retries: 20
+    start_period: 2s
+  restart: "no"
+
+services:
+  # The current query-api binary loads the startup rule snapshot for GET
+  # /api/v1/rules, but the base service wires neither the file nor its path.
+  # Supply both here for the primary and the replica (read-only, same file the
+  # detector mounts) instead of editing the base file.
+  query-api:
+    volumes:
+      - "../../config/rules.yaml:/etc/sentinel/rules.yaml:ro"
+    environment:
+      SENTINEL_DETECTOR.RULES_PATH: /etc/sentinel/rules.yaml
+
+  # Second replica of the very same image/config; no published port, reachable
+  # only through the proxy, so it can never collide with the primary's host port.
+  query-api-b:
+    extends:
+      file: docker-compose.yml
+      service: query-api
+    ports: !override []
+    volumes:
+      - "../../config/rules.yaml:/etc/sentinel/rules.yaml:ro"
+    environment:
+      SENTINEL_DETECTOR.RULES_PATH: /etc/sentinel/rules.yaml
+
+  proxy:
+    <<: *proxy
+    environment:
+      NGINX_ENVSUBST_FILTER: PHASE4_
+      PHASE4_SSE_BUFFERING: "proxy_buffering off;"
+      PHASE4_SSE_UPSTREAM: 'proxy_http_version 1.1; proxy_set_header Connection "";'
+    ports: ["127.0.0.1:${PHASE4_PROXY_PORT:-18090}:8080"]
+
+  proxy-buffered:
+    <<: *proxy
+    profiles: ["phase4-negative"]
+    environment:
+      NGINX_ENVSUBST_FILTER: PHASE4_
+      PHASE4_SSE_BUFFERING: "proxy_buffering on; proxy_ignore_headers X-Accel-Buffering;"
+      PHASE4_SSE_UPSTREAM: "proxy_http_version 1.0; proxy_set_header Connection close;"
+    ports: ["127.0.0.1:${PHASE4_NEGATIVE_PORT:-18091}:8080"]
