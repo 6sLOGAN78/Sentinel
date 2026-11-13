@@ -149,5 +149,5 @@ scope. Mitigation: local gates and scoped commits come first; publication and ho
 CI need a separate explicit approval, and user-dirty files are never staged.
 Hosted results are not inferred from local checks.
 
-Residual limit: the base Compose file does not wire the rules file that query-api
-requires, so a hosted `make dev-up` is expected to be blocked until it is fixed.
+Residual limit: the base Compose file now wires the rules file into query-api, but a
+real `make dev-up` and hosted CI have not yet confirmed it.

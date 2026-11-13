@@ -301,9 +301,9 @@ The families live in `backend/testphase4` behind the `phase4` tag, so
 `make test-integ` and the Phase 3 runner never collect them. Any empty selection or
 non-zero exit fails the run, and `all` stops at the first failure; each family
 prints its measured duration. They need the healthy dev stack (`make dev-up`).
-`make dev-up` starts query-api from the base Compose file, which does not yet wire
-the rules file that query-api requires; `scripts/check-phase4-browser.sh` adds it only
-through the acceptance overlay. Fixing the base file is an open follow-up.
+`make dev-up` starts query-api from the base Compose file, which mounts the rules file
+and sets `SENTINEL_DETECTOR.RULES_PATH` for query-api as it does for the detector. A real
+`make dev-up` run and hosted CI have not yet confirmed this.
 
 CI runs eight independent `phase4` matrix jobs (one family each), a required
 `phase4-browser` job, and `test_phase4_guards.py` as a required step of the python
