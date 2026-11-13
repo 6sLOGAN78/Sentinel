@@ -294,9 +294,13 @@ services:
     ports:
       - "127.0.0.1:8081:8081"
       - "127.0.0.1:9105:9105"
+    volumes:
+      # /api/v1/rules reads the same rules file as the detector (required since 04-10).
+      - "../../config/rules.yaml:/etc/sentinel/rules.yaml:ro"
     environment:
       # Empty permits read-only config/ps; the actual binary refuses an empty key.
       SENTINEL_AUTH.JWT_SECRET: ${SENTINEL_AUTH_JWT_SECRET:-}
+      SENTINEL_DETECTOR.RULES_PATH: /etc/sentinel/rules.yaml
       SENTINEL_PRIMARY.ENV: local
       SENTINEL_SERVER.BIND_ADDRESS: 0.0.0.0
       SENTINEL_SERVER.PORT: "8081"

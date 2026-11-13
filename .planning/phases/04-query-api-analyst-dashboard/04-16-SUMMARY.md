@@ -68,6 +68,7 @@ Family durations (s): Auth 15, Alerts 6, Events 7, Triage 10, SummaryRules 6, De
 
 1. **[Rule 1] Guard fixture fixes during GREEN.** The CI mutation anchors were not unique against the Phase 3 job (two matches), and a missing-step lookup raised `IndexError` instead of `AssertionError`. I scoped the anchors to the phase4 job and made the missing-step case an assertion. The fix is in `f76120c`.
 2. **Hosted `make dev-up` blocker (pre-existing, not fixed).** The base `deployments/compose/docker-compose.yml` does not wire the rules file that query-api needs (`SENTINEL_DETECTOR.RULES_PATH`, required since 04-10). On a hosted runner `make dev-up` will fail at query-api health, which affects the existing integration/phase3/smoke jobs too and all new phase4 jobs. The base file is not owned by this plan; it is a two-line fix that should be approved before Task 3. Documented in operations.md and threat-model.md.
+   **Update 2026-11-14:** fixed in the base compose file (query-api now mounts `config/rules.yaml` and sets `SENTINEL_DETECTOR.RULES_PATH`, same as the detector); base and acceptance-overlay configs render, `check-pins.sh images`, `test_stack_config.py` and `test_phase4_guards.py` pass. Not yet proven by a real `make dev-up` run (that targets the old `sentinel` stack) or by hosted CI.
 3. The phase4 jobs and the browser job each start the full stack, so the jobs are heavy. The 45-minute caps have not been measured on hosted runners.
 
 ## Limits
