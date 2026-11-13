@@ -28,6 +28,13 @@ Status: NEW detector nowalsoholdscheckpoint-historylost;8serviceshealthy,PG-only
 Progress: 70/73 accepted numberedplans; Phase4 14/17accepted,3remaining. Overallphaseprogress3/6=50%.
 ActualAuth19/web15/OpenAPI11/helper8/script59/default/integrationstatic/readiness/lifecycle/host/ViteHTTP/dev-up/twoexact1000seedruns retained. Freshall9healthy at11dddea; pinned8.30.1fullhistory496commitszeroata302b65. Historicalfailuresandreviewsremainunchanged. No fullPhase4/hostedCI claim.
 
+## Phase 4 local status (2026-11-14)
+
+- 04-14 accepted (native stream pass, R1 clean). 04-15 done: tenant matrix 12/12, real-proxy browser 13/13 (04-15-SUMMARY, a56074c). 04-16 Tasks 1-2 done locally (runner, CI jobs, guards; 04-16-SUMMARY, f76120c); Task 3 (push + hosted CI) pending explicit user approval. Phase 4 NOT closed.
+- Not run: `make test-integ` and `scripts/check-phase3-tests.sh` (they drive the old `sentinel` stack via make dev-up); gitleaks history scan; all hosted CI.
+- Fixed e2b59e7: base compose now wires rules file into query-api (was missing since 04-10).
+- Detector hold: NEW stack detector now uses group sentinel-detector-p4r3 (old group fell behind 24h retention; see .local/phase4-acceptance/04-15/detector-hold-recovery-NOTE.md). Recurs if stack idles >24h.
+
 ## Phase 5 Planning (2026-10-30)
 
 - Phase 5 planned: 21 plans / 9 waves (05-01..05-21), plan-checker PASSED at iteration 3. Not executed.
