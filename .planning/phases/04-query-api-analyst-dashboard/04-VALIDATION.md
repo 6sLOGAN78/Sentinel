@@ -23,6 +23,8 @@ Samplingcontract: original16plansapprovedR2; inserted04-17independentlyapproveda
 
 04-07accepted2026-10-24: strictdualauth/safeJSON/nativeEvents+Auth+Alerts/OpenAPI11+contract/runtime/web114/static/default/browser1440+375 PASS. CR01reloadRED3260ab6/GREENec14c34 andCR02filteredBackRED843ba72/GREENcc22566 closedbycleanR2at2059335. UserapprovedfreshSEPARATEdemo; actualninehealthy/exact1000currentIDs/controlledcanonicalCH-PG-APIalerts/currentbrowser PASS. Rootfreshdata/nativeEvents/health/old-resource-preservation/backend+webbuilds/normalmake test PASSatbb8fa1e; seeSTACK-RECOVERY. OldKafkaoffsetsbelowretainedstart remainheld,notrestored; noguardwaiver/reset. ExacthistoricalproseSCAN-A2 unchanged;576commithistoryzeroatbb8fa1e. Eightof17accepted;continue08usingNEWprivatecontext,notdefaultoldports. No wholePhase4/remoteclaim.
 
+04-16 local tasks 1-2 done 2026-11-13 (RED 08515a9, GREEN f76120c); NOT whole-phase or remote acceptance. Guards 15, runner `all` eight families nonempty (~104s), real browser 13/13, make test and make lint exit 0. `make test-integ` and `scripts/check-phase3-tests.sh` were NOT run: the preserved-repeat/scenario families drive `make dev-up`/`seed-scenarios` against the old `sentinel` project and root .env ports, forbidden for this run. Publication/hosted CI (04-16-3) pending user approval. Base compose lacks the query-api rules file, so hosted `make dev-up` is expected to fail until fixed.
+
 ## Test Infrastructure
 
 04-13 acceptedOct25UTC: REDbc5acbe/GREEN2c88d18, nativeStream6/tworeplicas206IDs/
