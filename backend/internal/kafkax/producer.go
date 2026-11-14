@@ -53,6 +53,9 @@ func NewProducer(_ context.Context, cfg config.KafkaConfig) (*Producer, error) {
 	return &Producer{client: client, topic: cfg.EventsTopic, timeout: cfg.ProduceTimeout}, nil
 }
 
+// BufferedRecords reports the number of records currently buffered for produce.
+func (p *Producer) BufferedRecords() int64 { return p.client.BufferedProduceRecords() }
+
 // Ping verifies that a broker is reachable and the producer topic has usable
 // partition leaders. A broker-only metadata response is not sufficient for
 // publication readiness after an outage.

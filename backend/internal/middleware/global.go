@@ -101,6 +101,16 @@ func (global *GlobalMiddlewares) Secure() echo.MiddlewareFunc {
 	return middleware.Secure()
 }
 
+// ResponseStatus returns the status the client receives for a handler result:
+// the written status when err is nil, otherwise the error handler's mapping.
+func ResponseStatus(err error, c echo.Context) int {
+	if err == nil {
+		return c.Response().Status
+	}
+
+	return toHTTPError(err).Status
+}
+
 // toHTTPError maps any error to a sanitized *errs.HTTPError.
 func toHTTPError(err error) *errs.HTTPError {
 	var httpErr *errs.HTTPError

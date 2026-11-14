@@ -21,6 +21,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/errs"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 const apiKeyHeader = "X-Api-Key" //nolint:gosec // Public HTTP header name, not a credential.
@@ -42,6 +43,7 @@ type Handler struct {
 	limiter   limiter
 	cfg       *config.Config
 	inFlight  chan struct{}
+	metrics   *telemetry.IngestMetrics
 }
 
 // NewHandler constructs a handler whose semaphore exists for the service lifetime.
@@ -54,9 +56,27 @@ func NewHandler(
 	}
 }
 
+// WithMetrics attaches ingest metrics. A nil value disables recording.
+func (h *Handler) WithMetrics(m *telemetry.IngestMetrics) *Handler {
+	h.metrics = m
+
+	return h
+}
+
 // Register installs only the literal-colon v1 batch route.
 func (h *Handler) Register(e *echo.Echo) {
-	e.POST("/api/v1/events\\:batch", h.PostBatch)
+	e.POST("/api/v1/events\\:batch", h.PostBatch, h.recordRequest)
+}
+
+// recordRequest observes the final client-visible status and duration.
+func (h *Handler) recordRequest(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		start := time.Now()
+		err := next(c)
+		h.metrics.Request(middleware.ResponseStatus(err, c), time.Since(start))
+
+		return err
+	}
 }
 
 type batchEnvelope struct {
@@ -76,14 +96,16 @@ func (h *Handler) PostBatch(c echo.Context) error {
 	case h.inFlight <- struct{}{}:
 		defer func() { <-h.inFlight }()
 	default:
-		return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
+		// The body is unread, so the batch size is unknown: create the series
+		// without inventing a count; requests_total{status="503"} carries the rate.
+		return h.fail(telemetry.ResultShed, 0, unavailableError())
 	}
 
 	principal, err := h.verifier.Authenticate(c.Request().Context(), c.Request().Header.Get(apiKeyHeader))
 	if err != nil {
 		if errors.Is(err, apikeys.ErrUnavailable) {
 			auth.Audit(c, "producer_auth", "unavailable", "auth_unavailable", auth.Principal{})
-			return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
+			return h.fail(telemetry.ResultUnavailable, 0, unavailableError())
 		}
 		auth.Audit(c, "producer_auth", "denied", "invalid_credential", auth.Principal{})
 		return errs.NewUnauthorizedError(http.StatusText(http.StatusUnauthorized), false)
@@ -96,16 +118,17 @@ func (h *Handler) PostBatch(c echo.Context) error {
 
 	envelope, err := h.decodeEnvelope(c)
 	if err != nil {
-		return err
+		return h.fail(telemetry.ResultRejected, 0, err)
 	}
 	allowed, retryAfter, err := h.limiter.Allow(
 		c.Request().Context(), principal.KeyID, len(envelope.Events),
 	)
 	if err != nil {
-		return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
+		return h.fail(telemetry.ResultUnavailable, len(envelope.Events), unavailableError())
 	}
 	if !allowed {
-		return errs.NewTooManyRequestsError(http.StatusText(http.StatusTooManyRequests), retryAfter)
+		return h.fail(telemetry.ResultRateLimited, len(envelope.Events),
+			errs.NewTooManyRequestsError(http.StatusText(http.StatusTooManyRequests), retryAfter))
 	}
 
 	normalized, details, tenantMismatch := normalizeBatch(envelope.Events, principal.TenantID)
@@ -114,8 +137,30 @@ func (h *Handler) PostBatch(c echo.Context) error {
 		return errs.NewForbiddenError(http.StatusText(http.StatusForbidden), false)
 	}
 
-	events := make([]*contracts.Event, 0, len(envelope.Events))
-	eventIDs := make([]string, 0, len(envelope.Events))
+	events, eventIDs, details := h.decodeEvents(normalized, details, len(envelope.Events))
+	if len(details) > 0 {
+		return h.fail(telemetry.ResultRejected, len(envelope.Events),
+			errs.NewBadRequestError("Invalid event batch", false, nil, details, nil))
+	}
+
+	requestID := middleware.GetRequestID(c)
+	if err = h.publisher.PublishBatch(c.Request().Context(), events, requestID); err != nil {
+		return h.fail(telemetry.ResultUnavailable, len(events), unavailableError())
+	}
+	h.metrics.Events(telemetry.ResultAccepted, len(events))
+
+	return c.JSON(http.StatusAccepted, acceptedResponse{
+		AcceptedCount: len(events), RejectedCount: 0, EventIDs: eventIDs, RequestID: requestID,
+	})
+}
+
+// decodeEvents canonically decodes and validates every normalized event,
+// stamping the server-owned received_at, and appends per-event details.
+func (h *Handler) decodeEvents(
+	normalized [][]byte, details []errs.FieldError, size int,
+) ([]*contracts.Event, []string, []errs.FieldError) {
+	events := make([]*contracts.Event, 0, size)
+	eventIDs := make([]string, 0, size)
 	now := time.Now().UTC()
 	receivedAt := contracts.NewTimestamp(now)
 	limits := contracts.LimitsFromConfig(h.cfg.Contracts)
@@ -139,18 +184,19 @@ func (h *Handler) PostBatch(c echo.Context) error {
 		events = append(events, event)
 		eventIDs = append(eventIDs, event.EventID)
 	}
-	if len(details) > 0 {
-		return errs.NewBadRequestError("Invalid event batch", false, nil, details, nil)
-	}
 
-	requestID := middleware.GetRequestID(c)
-	if err = h.publisher.PublishBatch(c.Request().Context(), events, requestID); err != nil {
-		return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
-	}
+	return events, eventIDs, details
+}
 
-	return c.JSON(http.StatusAccepted, acceptedResponse{
-		AcceptedCount: len(events), RejectedCount: 0, EventIDs: eventIDs, RequestID: requestID,
-	})
+// fail records the outcome of a rejected request and returns err unchanged.
+func (h *Handler) fail(result string, events int, err error) error {
+	h.metrics.Events(result, events)
+
+	return err
+}
+
+func unavailableError() error {
+	return errs.NewServiceUnavailableError(http.StatusText(http.StatusServiceUnavailable), 1)
 }
 
 func (h *Handler) decodeEnvelope(c echo.Context) (*batchEnvelope, error) {

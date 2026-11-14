@@ -17,15 +17,19 @@ func (m *DetectionMetrics) IncLate() { m.late.Add(1) }
 type Option func(*handler)
 
 // WithDetectionMetrics binds the detector's fixed numeric counter.
+// It is superseded by WithMetricsHandler and removed when the detector migrates.
 func WithDetectionMetrics(metrics *DetectionMetrics) Option {
-	return func(h *handler) { h.metrics = metrics }
+	return func(h *handler) {
+		h.metricsHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+			_, _ = fmt.Fprintf(w,
+				"# TYPE detection_late_events_total counter\ndetection_late_events_total %d\n",
+				metrics.late.Load())
+		})
+	}
 }
 
-func (h *handler) serveMetrics(w http.ResponseWriter, _ *http.Request) {
-	var count uint64
-	if h.metrics != nil {
-		count = h.metrics.late.Load()
-	}
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "# TYPE detection_late_events_total counter\ndetection_late_events_total %d\n", count)
+// WithMetricsHandler mounts h at GET /metrics on the internal ops listener.
+func WithMetricsHandler(metrics http.Handler) Option {
+	return func(h *handler) { h.metricsHandler = metrics }
 }

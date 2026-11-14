@@ -21,6 +21,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	"github.com/6sLOGAN78/sentinel/internal/ratelimit"
 	"github.com/6sLOGAN78/sentinel/internal/redisx"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 func main() {
@@ -28,6 +29,9 @@ func main() {
 }
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
+	reg := telemetry.NewRegistry()
+	ingestMetrics := telemetry.NewIngestMetrics(reg)
+
 	var opsServer *opshttp.Server
 	lc.Add("ops-http", func(closeCtx context.Context) error {
 		if opsServer == nil {
@@ -59,6 +63,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return fmt.Errorf("kafka: %w", err)
 	}
 	lc.Add("kafka", producer.Close)
+	telemetry.RegisterProducerBuffer(reg, producer.BufferedRecords, cfg.Kafka.MaxBufferedRecords)
 
 	if err = producer.Ping(ctx); err != nil {
 		return fmt.Errorf("kafka: %w", err)
@@ -69,7 +74,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		{Name: "postgres", Fn: db.Pool.Ping},
 		{Name: "redis", Fn: func(checkCtx context.Context) error { return client.Ping(checkCtx).Err() }},
 		{Name: "kafka", Fn: producer.Ping},
-	})
+	}, opshttp.WithMetricsHandler(telemetry.Handler(reg)))
 	if err != nil {
 		return fmt.Errorf("ops http: %w", err)
 	}
@@ -85,7 +90,8 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	)
 	e := echo.New()
 	middleware.Apply(e, &log, cfg.Server.CORSAllowedOrigins)
-	ingest.NewHandler(verifier, producer, ratelimit.New(client, cfg.RateLimit, log), cfg, log).Register(e)
+	ingest.NewHandler(verifier, producer, ratelimit.New(client, cfg.RateLimit, log), cfg, log).
+		WithMetrics(ingestMetrics).Register(e)
 
 	server := httpx.New(cfg.Server, e)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)

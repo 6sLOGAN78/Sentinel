@@ -59,11 +59,11 @@ type response struct {
 }
 
 type handler struct {
-	timeout  time.Duration
-	draining *Draining
-	checks   []Check
-	sem      chan struct{}
-	metrics  *DetectionMetrics
+	timeout        time.Duration
+	draining       *Draining
+	checks         []Check
+	sem            chan struct{}
+	metricsHandler http.Handler
 }
 
 type checkResult struct {
@@ -89,8 +89,8 @@ func NewHandler(timeout time.Duration, draining *Draining, checks []Check, optio
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.healthz)
 	mux.HandleFunc("GET /readyz", h.readyz)
-	if h.metrics != nil {
-		mux.HandleFunc("GET /metrics", h.serveMetrics)
+	if h.metricsHandler != nil {
+		mux.Handle("GET /metrics", h.metricsHandler)
 	}
 
 	return mux

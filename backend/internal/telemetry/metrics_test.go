@@ -87,8 +87,9 @@ func TestLabelNamesStayInsideAllowlist(t *testing.T) {
 	require.Empty(t, outside)
 
 	bad := prometheus.NewRegistry()
-	bad.MustRegister(prometheus.NewCounterVec(prometheus.CounterOpts{Name: "bad_total"}, []string{"tenant_id"}))
-	vec := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "bad2_total"}, []string{"request_id"})
+	unobserved := prometheus.CounterOpts{Name: "bad_total", Help: "unobserved"}
+	bad.MustRegister(prometheus.NewCounterVec(unobserved, []string{"tenant_id"}))
+	vec := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "bad2_total", Help: "observed"}, []string{"request_id"})
 	vec.WithLabelValues("x").Inc()
 	bad.MustRegister(vec)
 	outside, err = telemetry.LabelNamesOutsideAllowlist(bad)

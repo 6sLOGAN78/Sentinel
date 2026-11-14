@@ -582,7 +582,9 @@ func newMetricsEcho(
 func TestPostBatchCountsEveryExitPathByResult(t *testing.T) {
 	writer := apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}
 	okPublish := publisherFunc(func(context.Context, []*contracts.Event, string) error { return nil })
-	failPublish := publisherFunc(func(context.Context, []*contracts.Event, string) error { return errors.New("kafka down") })
+	failPublish := publisherFunc(func(context.Context, []*contracts.Event, string) error {
+		return errors.New("kafka down")
+	})
 	invalid := validEvent(nil)
 	invalid["event_id"] = "not-a-uuid"
 	denyAll := limiterFunc(func(context.Context, string, int) (bool, int, error) { return false, 3, nil })

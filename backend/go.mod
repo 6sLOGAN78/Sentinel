@@ -18,6 +18,8 @@ require (
 	github.com/knadh/koanf/v2 v2.3.8
 	github.com/labstack/echo/v4 v4.16.0
 	github.com/moby/moby/api v1.56.1
+	github.com/prometheus/client_golang v1.25.0
+	github.com/prometheus/client_model v0.6.3
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/rs/zerolog v1.35.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -94,8 +96,6 @@ require (
 	github.com/paulmach/orb v0.13.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.30 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
-	github.com/prometheus/client_golang v1.25.0 // indirect
-	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.74.0 // indirect
 	github.com/prometheus/procfs v0.23.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
