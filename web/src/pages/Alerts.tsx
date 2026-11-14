@@ -190,13 +190,15 @@ export default function Alerts() {
       client,
       session.tenant_id,
       controller.signal,
-      async (items, through) => {
+      async (items, through, initial) => {
         if (!items.length) return;
         await cache.invalidateQueries({
           queryKey: prefix,
           refetchType: "none",
         });
         client.assertActive(controller.signal);
+        // History replayed by the first-load catch-up is not a new arrival.
+        if (initial) return;
         latestArrival.current = through;
         setArrivals(true);
       },

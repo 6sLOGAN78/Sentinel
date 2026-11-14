@@ -86,9 +86,16 @@ export async function receiveLiveAlerts(
   client: APIClient,
   tenant: string,
   signal: AbortSignal,
-  process: (items: Delivery[], through: string) => Promise<void>,
+  process: (
+    items: Delivery[],
+    through: string,
+    initial: boolean,
+  ) => Promise<void>,
   status: (state: LiveState) => void,
 ) {
+  // The first complete catch-up walk of this mounted generation is the load
+  // baseline: its pages are history, not arrivals. Everything after it is new.
+  let baseline = true;
   let backoff = 250;
   let recoveringStream = false;
   while (!signal.aborted) {
@@ -101,12 +108,13 @@ export async function receiveLiveAlerts(
         client.assertActive(signal);
         if (!page.items.every((item) => validDelivery(item, tenant)))
           throw new APIError(503);
-        await process(page.items, page.next_seq);
+        await process(page.items, page.next_seq, baseline);
         client.assertActive(signal);
         cursors.set(client, page.next_seq);
         if (!recoveringStream) backoff = 250;
         if (!page.has_more) break;
       }
+      baseline = false;
       attached = true;
       const attempt = new AbortController();
       const combined = AbortSignal.any([signal, attempt.signal]);
@@ -151,7 +159,7 @@ export async function receiveLiveAlerts(
                 client.assertActive(combined);
                 if (BigInt(item.seq) <= BigInt(cursors.get(client) ?? "0"))
                   return;
-                await process([item], item.seq);
+                await process([item], item.seq, false);
                 client.assertActive(combined);
                 cursors.set(client, item.seq);
               })
