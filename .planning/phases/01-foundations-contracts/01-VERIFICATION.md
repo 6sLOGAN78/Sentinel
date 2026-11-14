@@ -1,8 +1,9 @@
 ---
 phase: 01-foundations-contracts
 verified: 2026-10-11T21:10:00Z
-status: human_needed
-score: 5/5 roadmap success criteria verified locally (2 evidence items need human confirmation)
+status: passed
+score: 5/5 roadmap success criteria verified; both former human items closed on 2026-11-15
+reverified: 2026-11-15
 overrides_applied: 0
 human_verification:
   - test: "Push a branch to the GitHub remote and confirm every job in .github/workflows/ci.yml (go, web, python, schema) passes"
@@ -16,8 +17,15 @@ human_verification:
 # Phase 1: Foundations & Contracts Verification Report
 
 **Phase Goal:** A developer can clone the repo, bring up the full dependency stack with one command, and rely on versioned contracts and decisions that later phases build on.
-**Status:** human_needed. No code gaps were found. Two evidence items cannot be produced in this environment.
-**Re-verification:** No, initial verification.
+**Status:** passed (re-verified 2026-11-15). The two items originally marked human_needed are now closed with evidence, below.
+**Re-verification:** Yes, see "Re-verification 2026-11-15".
+
+## Re-verification 2026-11-15
+
+1. **CI on GitHub (SC4).** Hosted GitHub Actions ran green on push at `7a72028` (run 39613182464) and `358114c` (run 39621468170) on 2026-10-21 on github.com/6sLOGAN78/Sentinel. The `go`, `web`, `python` and `schema` jobs from this phase are part of that workflow.
+2. **Fresh from reset (SC1).** Exercised on an isolated compose project (`COMPOSE_PROJECT_NAME=sentinel-resetcheck`, so the protected `sentinel` stack and its volumes were never touched). All exit 0, evidence in `.local/phase1-reset-check/`:
+   `make dev-up` (23:02:51Z-23:05:09Z), `scripts/check-stack.sh`, idempotent `make dev-up`, `make reset` refuses without `CONFIRM=1`, `make reset CONFIRM=1` removes the project volumes, `make dev-up` from zero volumes (23:05:53Z-23:06:42Z, includes topic-init and `make migrate`), `scripts/check-stack.sh` again, cleanup reset. The three `sentinel_*` volumes were confirmed present afterwards.
+
 
 ## Roadmap Success Criteria
 
