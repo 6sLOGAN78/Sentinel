@@ -1,5 +1,7 @@
 # Approved separate demo recovery — bounded execution contract
 
+Status: SUPERSEDED by 04-07-STACK-RECOVERY.md (status PASS, 04-07 accepted 2026-10-24) and 04-07-STACK-RECOVERY-CHECK.md (APPROVE/PASS). The 'pending' gates below are historical.
+
 Status: user_choice_1_approved; independent preflight04-07-STACK-RECOVERY-CHECK
 APPROVE/PASS,zeroissues. Runtime isolation/health/data/preservation gates pending.
 Historical admission HOLD: free4,045,037,568bytes below4,294,967,296floor,

@@ -340,7 +340,7 @@ paths:
       description: |
         Requires the analyst or admin role. The verified tenant, ID, expected version
         and open status guard one atomic PostgreSQL workflow update and audit insert.
-        Only open to acknowledged is currently delivered; resolved returns 409.
+        Allowed transitions: open->acknowledged and acknowledged->resolved; skip, reopen and no-op return 409.
         Stale versions and illegal transitions return 409. Body is at most 4096 bytes;
         unknown or duplicate fields are rejected. Actor and time are server controlled.
         A successful commit returns PostgreSQL workflow metadata independently of
@@ -382,6 +382,8 @@ paths:
       tags: [rules]
       operationId: listRules
       summary: Read-only startup rule definitions
+      description: |
+        No query parameters are accepted; any query string returns 400.
       security:
         - BearerAuth: []
       responses:
@@ -391,6 +393,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RulesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -405,7 +409,8 @@ paths:
       summary: Rollup statistics for the dashboard
       description: |
         Verified tenant only. One server UTC now bounds every query (5 seconds
-        total). No caller ranges. Event rate is complete canonical event identities
+        total). No caller ranges or query parameters are accepted; any query
+        string returns 400. Event rate is complete canonical event identities
         in [now-60 seconds,now), divided by 60; earliest received representation
         and deterministic complete-tuple ties are selected before time filtering.
         Open counts and severity use current open PG workflows across all time.
