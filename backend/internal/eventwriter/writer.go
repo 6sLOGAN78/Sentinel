@@ -4,10 +4,8 @@ package eventwriter
 import (
 	"bytes"
 	"context"
-	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
-	"math/big"
 	"sort"
 	"time"
 
@@ -17,9 +15,8 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/retry"
 )
-
-const backoffMultiplier = 2
 
 // Consumer is the manual offset lifecycle required by the writer.
 type Consumer interface {
@@ -48,6 +45,7 @@ type Writer struct {
 	settings config.WriterConfig
 	limits   contracts.Limits
 	log      zerolog.Logger
+	wait     retry.Waiter
 }
 
 // New creates a writer from explicit dependencies and validated settings.
@@ -60,6 +58,26 @@ func New(
 	log zerolog.Logger,
 ) *Writer {
 	return &Writer{consumer: consumer, store: store, dlq: dlq, settings: settings, limits: limits, log: log}
+}
+
+// WithRetryWaiter replaces the full-jitter retry wait before Run, chiefly so
+// tests can observe ceilings without sleeping. Nil restores retry.Wait.
+func (w *Writer) WithRetryWaiter(waiter retry.Waiter) *Writer {
+	w.wait = waiter
+	return w
+}
+
+func (w *Writer) waitRetry(ctx context.Context, ceiling time.Duration) error {
+	if w.wait != nil {
+		return w.wait(ctx, ceiling)
+	}
+	return retry.Wait(ctx, ceiling)
+}
+
+func (w *Writer) retryPolicy() retry.Policy {
+	return retry.Policy{
+		Min: w.settings.RetryMinBackoff, Max: w.settings.RetryMaxBackoff, Attempts: w.settings.MaxAttempts,
+	}
 }
 
 // Run polls no more than one in-memory batch, stops polling during storage
@@ -320,41 +338,29 @@ func (w *Writer) publishWithRetry(
 	reason kafkax.DLQReason,
 ) error {
 	var lastErr error
-	backoff := w.settings.RetryMinBackoff
-	for attempt := 1; attempt <= w.settings.MaxAttempts; attempt++ {
+	policy := w.retryPolicy()
+	for attempt := 1; attempt <= policy.Attempts; attempt++ {
 		operationCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
 		lastErr = w.dlq.Publish(operationCtx, record, reason)
 		cancel()
 		if lastErr == nil {
 			return nil
 		}
-		if attempt == w.settings.MaxAttempts || ctx.Err() != nil {
+		if attempt == policy.Attempts || ctx.Err() != nil {
 			break
 		}
 
 		w.log.Warn().Int("attempt", attempt).Str("reason", string(reason)).
 			Msg("DLQ publish failed; retrying")
-		if err := waitForRetry(ctx, backoff); err != nil {
+		if err := w.waitRetry(ctx, policy.Ceiling(attempt)); err != nil {
 			return fmt.Errorf("publish DLQ record at %s: %w", recordLocation(record), errors.Join(lastErr, err))
 		}
-		backoff = min(backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
 	}
 
 	return fmt.Errorf(
 		"publish DLQ record at %s after %d attempts: %w",
 		recordLocation(record), w.settings.MaxAttempts, lastErr,
 	)
-}
-
-func waitForRetry(ctx context.Context, maximum time.Duration) error {
-	timer := time.NewTimer(jitterDelay(maximum))
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }
 
 func groupContiguousRecords(records []*kgo.Record) (map[topicPartition][]*kgo.Record, error) {
@@ -396,35 +402,25 @@ func recordLocation(record *kgo.Record) string {
 
 func (w *Writer) insertWithRetry(ctx context.Context, events []*contracts.Event) error {
 	var lastErr error
-	backoff := w.settings.RetryMinBackoff
-	for attempt := 1; attempt <= w.settings.MaxAttempts; attempt++ {
+	policy := w.retryPolicy()
+	for attempt := 1; attempt <= policy.Attempts; attempt++ {
 		operationCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
 		lastErr = w.store.InsertBatch(operationCtx, events)
 		cancel()
 		if lastErr == nil {
 			return nil
 		}
-		if attempt == w.settings.MaxAttempts || ctx.Err() != nil {
+		if attempt == policy.Attempts || ctx.Err() != nil {
 			break
 		}
 
 		w.log.Warn().Int("attempt", attempt).Msg("event insert failed; retrying")
-		if err := waitForRetry(ctx, backoff); err != nil {
+		if err := w.waitRetry(ctx, policy.Ceiling(attempt)); err != nil {
 			return fmt.Errorf("insert event batch: %w", errors.Join(lastErr, err))
 		}
-		backoff = min(backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
 	}
 
 	return fmt.Errorf("insert event batch after %d attempts: %w", w.settings.MaxAttempts, lastErr)
-}
-
-func jitterDelay(maximum time.Duration) time.Duration {
-	value, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(maximum)+1))
-	if err != nil {
-		return maximum
-	}
-
-	return time.Duration(value.Int64())
 }
 
 type topicPartition struct {

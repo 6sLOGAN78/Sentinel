@@ -12,6 +12,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/retry"
 )
 
 const poisonBackoffMultiplier = 2
@@ -64,6 +65,20 @@ func detectorRecords(records []*kgo.Record) (map[detection.TopicPartition][]*kgo
 	return partitions, keys, nil
 }
 
+// WithRetryWaiter replaces the full-jitter retry wait before Run, chiefly so
+// tests can observe ceilings without sleeping. Nil restores retry.Wait.
+func (w *Worker) WithRetryWaiter(waiter retry.Waiter) *Worker {
+	w.wait = waiter
+	return w
+}
+
+func (w *Worker) waitRetry(ctx context.Context, ceiling time.Duration) error {
+	if w.wait != nil {
+		return w.wait(ctx, ceiling)
+	}
+	return retry.Wait(ctx, ceiling)
+}
+
 // One sequence is shared by every quarantine in the owned batch. Successful
 // publications do not replenish retry allowance or reset the backoff.
 type poisonRetries struct {
@@ -87,12 +102,10 @@ func (w *Worker) quarantine(ctx context.Context, record *kgo.Record, reason kafk
 			break
 		}
 		retries.remaining--
-		timer := time.NewTimer(retries.backoff)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		// Full jitter in [0, backoff] desynchronizes replicas; the shared
+		// backoff ceiling still doubles across the owned batch.
+		if w.waitRetry(ctx, retries.backoff) != nil {
 			return errors.New("detector quarantine budget exhausted")
-		case <-timer.C:
 		}
 		retries.backoff = min(retries.backoff*poisonBackoffMultiplier, w.settings.RetryMaxBackoff)
 	}

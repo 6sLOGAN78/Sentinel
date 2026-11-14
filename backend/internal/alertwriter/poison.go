@@ -10,11 +10,26 @@ import (
 
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/retry"
 )
 
 type effectRetries struct {
 	remaining int
 	backoff   time.Duration
+}
+
+// WithRetryWaiter replaces the full-jitter retry wait before Run, chiefly so
+// tests can observe ceilings without sleeping. Nil restores retry.Wait.
+func (w *Writer) WithRetryWaiter(waiter retry.Waiter) *Writer {
+	w.wait = waiter
+	return w
+}
+
+func (w *Writer) waitRetry(ctx context.Context, ceiling time.Duration) error {
+	if w.wait != nil {
+		return w.wait(ctx, ceiling)
+	}
+	return retry.Wait(ctx, ceiling)
 }
 
 // retry shares failed-attempt allowance and backoff across all sink and poison
@@ -32,12 +47,10 @@ func (w *Writer) retry(ctx context.Context, retries *effectRetries, effect func(
 		}
 		retries.remaining--
 		w.log.Warn().Msg("alert effect failed; retrying")
-		timer := time.NewTimer(retries.backoff)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
+		// Full jitter in [0, backoff] desynchronizes replicas hitting the same
+		// recovering store; the shared backoff ceiling still doubles per batch.
+		if waitErr := w.waitRetry(ctx, retries.backoff); waitErr != nil {
+			return waitErr
 		}
 		retries.backoff = min(retries.backoff*backoffMultiplier, w.settings.RetryMaxBackoff)
 	}

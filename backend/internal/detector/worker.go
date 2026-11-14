@@ -17,6 +17,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
+	"github.com/6sLOGAN78/sentinel/internal/retry"
 	"github.com/6sLOGAN78/sentinel/internal/storage/postgres"
 )
 
@@ -103,6 +104,7 @@ type Worker struct {
 	metrics    *opshttp.DetectionMetrics
 	restored   atomic.Pointer[kafkax.DetectorReadiness]
 	dlq        QuarantinePublisher
+	wait       retry.Waiter
 }
 
 // WithQuarantine binds the publisher before Run.

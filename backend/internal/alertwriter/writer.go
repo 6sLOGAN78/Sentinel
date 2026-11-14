@@ -15,6 +15,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/retry"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 )
 
@@ -61,6 +62,7 @@ type Writer struct {
 	settings   config.WriterConfig
 	log        zerolog.Logger
 	dlq        QuarantinePublisher
+	wait       retry.Waiter
 }
 
 // WithQuarantine binds the publisher before Run. Without it permanent failures
