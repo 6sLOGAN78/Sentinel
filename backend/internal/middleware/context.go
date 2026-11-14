@@ -5,6 +5,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Echo context keys set by upstream middleware and read by this package.
@@ -21,6 +22,10 @@ const (
 type contextKey string
 
 const loggerContextKey contextKey = "logger"
+
+// userIDLoggedKey marks that the request logger already carries user_id, so
+// the request logger middleware does not add it a second time.
+const userIDLoggedKey = "logger_has_user_id"
 
 // ContextEnhancer attaches a request-scoped logger to every request.
 type ContextEnhancer struct {
@@ -49,9 +54,18 @@ func (ce *ContextEnhancer) EnhanceContext() echo.MiddlewareFunc {
 				Str("ip", c.RealIP()).
 				Logger()
 
+			// Only a valid span context yields trace fields; never a fake ID.
+			if sc := trace.SpanContextFromContext(c.Request().Context()); sc.IsValid() {
+				contextLogger = contextLogger.With().
+					Str("trace_id", sc.TraceID().String()).
+					Str("span_id", sc.SpanID().String()).
+					Logger()
+			}
+
 			// Identity set by an upstream auth middleware, if any.
 			if userID, ok := c.Get(UserIDKey).(string); ok && userID != "" {
 				contextLogger = contextLogger.With().Str("user_id", userID).Logger()
+				c.Set(userIDLoggedKey, true)
 			}
 
 			if userRole, ok := c.Get(UserRoleKey).(string); ok && userRole != "" {
@@ -75,6 +89,13 @@ func GetUserID(c echo.Context) string {
 	}
 
 	return ""
+}
+
+// userIDLogged reports whether EnhanceContext put user_id on the request logger.
+func userIDLogged(c echo.Context) bool {
+	logged, ok := c.Get(userIDLoggedKey).(bool)
+
+	return ok && logged
 }
 
 // GetLogger returns the request-scoped logger, or a no-op logger when unset.

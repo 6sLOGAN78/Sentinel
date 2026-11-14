@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+// Log output formats accepted by LoggingConfig.Format.
+const (
+	// LogFormatJSON emits one JSON object per line (the default everywhere).
+	LogFormatJSON = "json"
+	// LogFormatConsole emits human-readable lines; explicit opt-in only.
+	LogFormatConsole = "console"
+)
+
 // ObservabilityConfig holds logging settings for a binary.
 type ObservabilityConfig struct {
 	ServiceName string        `koanf:"service_name"`
@@ -27,7 +35,7 @@ func DefaultObservabilityConfig() *ObservabilityConfig {
 		Environment: "development",
 		Logging: LoggingConfig{
 			Level:              levelInfo,
-			Format:             "json",
+			Format:             LogFormatJSON,
 			SlowQueryThreshold: defaultSlowQuery,
 		},
 	}
@@ -43,6 +51,12 @@ func (c *ObservabilityConfig) Validate() error {
 	case "debug", levelInfo, "warn", "error":
 	default:
 		return fmt.Errorf("invalid logging level: %s (must be one of: debug, info, warn, error)", c.Logging.Level)
+	}
+
+	switch c.Logging.Format {
+	case LogFormatJSON, LogFormatConsole:
+	default:
+		return fmt.Errorf("invalid logging format: %q (must be one of: json, console)", c.Logging.Format)
 	}
 
 	if c.Logging.SlowQueryThreshold < 0 {

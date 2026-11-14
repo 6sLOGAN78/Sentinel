@@ -42,7 +42,6 @@ func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 		LogStatus:  true,
 		LogError:   true,
 		LogLatency: true,
-		LogMethod:  true,
 		LogURIPath: true,
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
 			statusCode := v.Status
@@ -68,20 +67,18 @@ func (global *GlobalMiddlewares) RequestLogger() echo.MiddlewareFunc {
 				e = logger.Info()
 			}
 
-			if requestID := GetRequestID(c); requestID != "" {
-				e = e.Str("request_id", requestID)
-			}
-
-			if userID := GetUserID(c); userID != "" {
+			// The context logger already carries request_id, method, path,
+			// ip and any trace_id/span_id. user_id is added here only when
+			// route-level auth set it after EnhanceContext ran, so every key
+			// appears once. Headers, query and body are never logged.
+			if userID := GetUserID(c); userID != "" && !userIDLogged(c) {
 				e = e.Str("user_id", userID)
 			}
 
 			e.
 				Dur("latency", v.Latency).
 				Int("status", statusCode).
-				Str("method", v.Method).
 				Str("uri", v.URIPath).
-				Str("ip", c.RealIP()).
 				Msg("API")
 
 			return nil
