@@ -15,6 +15,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 func main() {
@@ -23,6 +24,9 @@ func main() {
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
 	var opsServer *opshttp.Server
+	draining := &opshttp.Draining{}
+	reg := telemetry.NewRegistry()
+	consumerMetrics := telemetry.NewConsumerMetrics(reg)
 	lc.Add("ops-http", func(closeCtx context.Context) error {
 		if opsServer == nil {
 			return nil
@@ -37,7 +41,9 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	}
 	lc.Add("clickhouse", func(context.Context) error { return conn.Close() })
 
-	consumer, err := kafkax.NewConsumer(ctx, cfg.Kafka, cfg.Writer)
+	// NewConsumer binds its own kadm client as the tracker's end-offset source.
+	tracker := kafkax.NewLagTracker(nil, consumerMetrics, cfg.Kafka.EventWriterGroup, cfg.Kafka.EventsTopic, 0)
+	consumer, err := kafkax.NewConsumer(ctx, cfg.Kafka, cfg.Writer, kafkax.WithLagTracker(tracker))
 	if err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
@@ -45,10 +51,12 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err = consumer.Ping(ctx); err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
+	startLagTracker(ctx, lc, draining, tracker)
 	dlq, err := kafkax.NewDLQPublisher(ctx, cfg.Kafka, cfg.Kafka.DLQTopic, cfg.Writer.DLQMaxBytes)
 	if err != nil {
 		return fmt.Errorf("kafka DLQ: %w", err)
 	}
+	dlq.WithMetrics(consumerMetrics)
 	lc.Add("kafka-dlq", dlq.Close)
 
 	worker := eventwriter.New(
@@ -58,7 +66,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		cfg.Writer,
 		contracts.LimitsFromConfig(cfg.Contracts),
 		log,
-	)
+	).WithMetrics(consumerMetrics)
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
 	go func() {
@@ -79,11 +87,10 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		}
 	})
 
-	draining := &opshttp.Draining{}
 	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
 		{Name: "kafka", Fn: consumer.Ping},
 		{Name: "clickhouse", Fn: conn.Ping},
-	})
+	}, opshttp.WithMetricsHandler(telemetry.Handler(reg)))
 	if err != nil {
 		return fmt.Errorf("ops http: %w", err)
 	}
@@ -96,4 +103,27 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
+}
+
+// startLagTracker runs the position-lag poller until shutdown. It is
+// registered after the Kafka consumer, so LIFO close stops it first.
+func startLagTracker(ctx context.Context, lc *app.Lifecycle, draining *opshttp.Draining, tracker *kafkax.LagTracker) {
+	lagCtx, stopLag := context.WithCancel(ctx)
+	lagDone := make(chan struct{})
+	go func() {
+		defer close(lagDone)
+		if lagErr := tracker.Run(lagCtx); lagErr != nil && lagCtx.Err() == nil {
+			draining.Begin()
+			lc.Fail(fmt.Errorf("lag tracker: %w", lagErr))
+		}
+	}()
+	lc.Add("lag-tracker", func(closeCtx context.Context) error {
+		stopLag()
+		select {
+		case <-lagDone:
+			return nil
+		case <-closeCtx.Done():
+			return closeCtx.Err()
+		}
+	})
 }

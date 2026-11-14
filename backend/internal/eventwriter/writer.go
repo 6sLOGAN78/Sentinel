@@ -16,6 +16,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/retry"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 // Consumer is the manual offset lifecycle required by the writer.
@@ -46,6 +47,7 @@ type Writer struct {
 	limits   contracts.Limits
 	log      zerolog.Logger
 	wait     retry.Waiter
+	metrics  *telemetry.ConsumerMetrics
 }
 
 // New creates a writer from explicit dependencies and validated settings.
@@ -64,6 +66,13 @@ func New(
 // tests can observe ceilings without sleeping. Nil restores retry.Wait.
 func (w *Writer) WithRetryWaiter(waiter retry.Waiter) *Writer {
 	w.wait = waiter
+	return w
+}
+
+// WithMetrics observes every ClickHouse insert attempt, retries included.
+// Nil disables observation.
+func (w *Writer) WithMetrics(metrics *telemetry.ConsumerMetrics) *Writer {
+	w.metrics = metrics
 	return w
 }
 
@@ -405,7 +414,9 @@ func (w *Writer) insertWithRetry(ctx context.Context, events []*contracts.Event)
 	policy := w.retryPolicy()
 	for attempt := 1; attempt <= policy.Attempts; attempt++ {
 		operationCtx, cancel := context.WithTimeout(ctx, w.settings.OperationTimeout)
+		started := time.Now()
 		lastErr = w.store.InsertBatch(operationCtx, events)
+		w.metrics.ObserveWrite(lastErr == nil, time.Since(started))
 		cancel()
 		if lastErr == nil {
 			return nil

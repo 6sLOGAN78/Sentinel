@@ -17,6 +17,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/retry"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 const (
@@ -70,6 +71,28 @@ type Writer struct {
 func (w *Writer) WithQuarantine(publisher QuarantinePublisher) *Writer {
 	w.dlq = publisher
 	return w
+}
+
+// WithMetrics observes every ClickHouse alert insert attempt by result. It
+// wraps the detection store, so it must be called before Run. Nil disables it.
+func (w *Writer) WithMetrics(metrics *telemetry.ConsumerMetrics) *Writer {
+	if metrics != nil && w.detections != nil {
+		w.detections = observedDetections{DetectionStore: w.detections, metrics: metrics}
+	}
+	return w
+}
+
+// observedDetections times InsertBatch only; Get is a read, not a write.
+type observedDetections struct {
+	DetectionStore
+	metrics *telemetry.ConsumerMetrics
+}
+
+func (o observedDetections) InsertBatch(ctx context.Context, alerts []*contracts.Alert) error {
+	started := time.Now()
+	err := o.DetectionStore.InsertBatch(ctx, alerts)
+	o.metrics.ObserveWrite(err == nil, time.Since(started))
+	return err
 }
 
 // New binds explicit dependencies without creating alternate persistence paths.
