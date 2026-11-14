@@ -283,3 +283,14 @@ The product code for Phase 4 is real and wired end to end. Auth, tenant scoping,
 
 _Verified: 2026-11-14T23:08Z_
 _Verifier: Claude (gsd-verifier)_
+
+
+## Addendum 2026-11-15: final hosted run 43649750865 results
+
+Run completed `failure`. Passed: go, web, python, schema, hygiene, secrets, compose-smoke, phase4 (alerts), phase4 (events). Failed: integration, phase3 (core), phase3 (scenarios), phase4-browser, phase4 (triage, stream, tenant, summary, auth, delivery). Logs: `.local/ci-mirror-43649750865/`.
+
+Two further gaps found in the jobs still running when this report was written:
+
+- **G8 (blocker for green CI):** integration `TestHealthz/query-api`, `TestReadyzDraining/query-api`, `TestReadyzDependencies` fail ("/healthz did not return 200"). `backend/test/lifecycle_test.go` starts query-api without `SENTINEL_DETECTOR.RULES_PATH` (the detector case sets it), required by query-api since 04-10. Fix: supply it in the query-api case. Plan 04-26.
+- **G9 (blocker for green CI):** phase3 (core) `TestAlertReservationsSchema` fails `expected: 6, actual: 8` at `alert_reservations_schema_test.go:70`; the test hard-codes the latest migration, and Phase 4 added 007/008. Fix: derive the expected version from `backend/migrations/postgres`. Plan 04-26.
+- phase4 (auth) also failed on the hosted run; it is in the G1 family set covered by 04-18.
