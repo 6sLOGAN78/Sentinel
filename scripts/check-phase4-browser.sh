@@ -15,6 +15,8 @@
 #   PHASE4_KEEP=1        leave the added replica/proxies running afterwards
 # The JWT signing key comes from SENTINEL_AUTH_JWT_SECRET, or from the same
 # private local key file the dev stack uses (scripts/dev_auth_env.py).
+# keyctl's PG connection is derived from the repo .env SENTINEL_DATABASE.* values
+# (scripts/phase4_pg_env.py); no launcher-exported PG* variable is needed.
 # The whole run has a hard 10 minute budget.
 set -euo pipefail
 umask 077
@@ -104,7 +106,9 @@ from pathlib import Path
 ROOT = Path(os.environ["PHASE4_ROOT"])
 ART = Path(os.environ["PHASE4_ARTIFACT_DIR"])
 sys.path.insert(0, str(ROOT / "generator/src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 import httpx  # noqa: E402
+from phase4_pg_env import keyctl_env  # noqa: E402
 from sentinel_generator.events import build_event  # noqa: E402
 from sentinel_generator.scenarios import build_scenario  # noqa: E402
 from sentinel_generator.send import send_events  # noqa: E402
@@ -133,7 +137,8 @@ def ensure_key(tenant):
     out = ART / "keys" / (tenant + ".key")
     subprocess.run(["go", "run", "./tools/keyctl", "ensure", "--tenant", tenant, "--scopes",
                     "events:read,events:write", "--name", "phase4-browser", "--out", str(out)],
-                   cwd=ROOT / "backend", check=True, capture_output=True, timeout=120)
+                   cwd=ROOT / "backend", env=keyctl_env(ROOT / ".env", os.environ),
+                   check=True, capture_output=True, timeout=120)
     return out.read_text().strip()
 
 
