@@ -298,3 +298,77 @@ func testWorkerAggregateBudget(t *testing.T, mode string) {
 		require.Equal(t, 1, acks, "successful poison must not replenish failed-attempt allowance")
 	}
 }
+
+type recordingWaiter struct {
+	ceilings []time.Duration
+	fail     error
+}
+
+func (r *recordingWaiter) wait(_ context.Context, ceiling time.Duration) error {
+	r.ceilings = append(r.ceilings, ceiling)
+	return r.fail
+}
+
+func jitterWorker(t *testing.T, waiter *recordingWaiter) (*Worker, *poisonConsumer) {
+	t.Helper()
+	w, c := poisonWorker(t)
+	w.settings.MaxAttempts = 3
+	w.settings.RetryMinBackoff = 100 * time.Millisecond
+	w.settings.RetryMaxBackoff = 150 * time.Millisecond
+	return w.WithRetryWaiter(waiter.wait), c
+}
+
+func TestDetectorQuarantineUsesJitteredWaiter(t *testing.T) {
+	t.Run("transient failures recover within ceilings", func(t *testing.T) {
+		waiter := &recordingWaiter{}
+		w, c := jitterWorker(t, waiter)
+		calls := 0
+		w.WithQuarantine(poisonPublisher{func(context.Context, *kgo.Record, kafkax.DLQReason) error {
+			calls++
+			if calls <= 2 {
+				return errors.New("dlq recovering")
+			}
+			return nil
+		}})
+		require.NoError(t, w.process(t.Context(), []*kgo.Record{{Topic: "events", Offset: 0, Value: []byte("{")}}))
+		require.Equal(t, 3, calls)
+		require.Equal(t, []time.Duration{100 * time.Millisecond, 150 * time.Millisecond}, waiter.ceilings,
+			"waits receive the capped exponential ceiling, not a fixed timer")
+		require.Equal(t, int64(1), c.committed[detection.TopicPartition{Topic: "events"}].Offset)
+	})
+	t.Run("shared budget is not reset by success", func(t *testing.T) {
+		waiter := &recordingWaiter{}
+		w, c := jitterWorker(t, waiter)
+		attempts := make(map[int64]int)
+		w.WithQuarantine(poisonPublisher{func(_ context.Context, r *kgo.Record, _ kafkax.DLQReason) error {
+			attempts[r.Offset]++
+			if r.Offset == 0 && attempts[0] > 2 {
+				return nil
+			}
+			return errors.New("dlq outage")
+		}})
+		err := w.process(t.Context(), []*kgo.Record{
+			{Topic: "events", Offset: 0, Value: []byte("{")}, {Topic: "events", Offset: 1, Value: []byte("{")},
+		})
+		require.Error(t, err)
+		require.Equal(t, map[int64]int{0: 3, 1: 1}, attempts)
+		require.Len(t, waiter.ceilings, 2, "remaining allowance is shared across the batch")
+		require.Equal(t, int64(1), c.committed[detection.TopicPartition{Topic: "events"}].Offset)
+	})
+	t.Run("wait failure is terminal without acknowledging poison", func(t *testing.T) {
+		waiter := &recordingWaiter{fail: errors.New("wait aborted")}
+		w, c := jitterWorker(t, waiter)
+		calls := 0
+		w.WithQuarantine(poisonPublisher{func(context.Context, *kgo.Record, kafkax.DLQReason) error {
+			calls++
+			return errors.New("dlq outage")
+		}})
+		require.Error(t, w.process(t.Context(), []*kgo.Record{{Topic: "events", Offset: 0, Value: []byte("{")}}))
+		require.Equal(t, 1, calls)
+		require.Len(t, waiter.ceilings, 1)
+		cp, ok := c.committed[detection.TopicPartition{Topic: "events"}]
+		if ok {
+			require.Zero(t, cp.Offset, "unacknowledged poison cannot advance the source offset")
+		}
+	})
+}

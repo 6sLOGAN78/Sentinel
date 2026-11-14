@@ -467,3 +467,79 @@ func TestWriterConsumerCloseDoesNotStartShutdownTransfer(t *testing.T) {
 	require.Empty(t, consumer.commits)
 	require.Equal(t, 1, consumer.allowRebalance)
 }
+
+type flakyStore struct {
+	mu       sync.Mutex
+	attempts int
+	failures int
+	fail     error
+}
+
+func (s *flakyStore) InsertBatch(context.Context, []*contracts.Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attempts++
+	if s.attempts <= s.failures {
+		return s.fail
+	}
+
+	return nil
+}
+
+type recordingWaiter struct {
+	mu       sync.Mutex
+	ceilings []time.Duration
+	fail     error
+}
+
+func (r *recordingWaiter) wait(_ context.Context, ceiling time.Duration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ceilings = append(r.ceilings, ceiling)
+
+	return r.fail
+}
+
+func jitterSettings() config.WriterConfig {
+	settings := writerSettings(1, time.Second)
+	settings.RetryMinBackoff = 100 * time.Millisecond
+	settings.RetryMaxBackoff = 150 * time.Millisecond
+
+	return settings
+}
+
+func TestWriterInsertRetryWaitsThroughJitteredCeilings(t *testing.T) {
+	now := time.Now().UTC()
+	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, now, now)}}
+	store := &flakyStore{failures: 2, fail: errors.New("clickhouse recovering")}
+	waiter := &recordingWaiter{}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	consumer.onCommit = cancel
+	w := eventwriter.New(consumer, store, &recordingDLQ{}, jitterSettings(), contracts.DefaultLimits(), zerolog.Nop()).
+		WithRetryWaiter(waiter.wait)
+
+	require.NoError(t, w.Run(ctx))
+	require.Equal(t, 3, store.attempts)
+	require.Equal(t, []time.Duration{100 * time.Millisecond, 150 * time.Millisecond}, waiter.ceilings,
+		"waits use the capped exponential ceiling, never a fixed delay")
+	require.Len(t, consumer.commits, 1)
+}
+
+func TestWriterInsertRetryWaitFailureIsTerminalWithoutCommit(t *testing.T) {
+	now := time.Now().UTC()
+	consumer := &scriptedConsumer{records: []*kgo.Record{validRecord(t, 0, now, now)}}
+	storeErr := errors.New("clickhouse down")
+	waitErr := errors.New("wait aborted")
+	store := &flakyStore{failures: 3, fail: storeErr}
+	waiter := &recordingWaiter{fail: waitErr}
+	w := eventwriter.New(consumer, store, &recordingDLQ{}, jitterSettings(), contracts.DefaultLimits(), zerolog.Nop()).
+		WithRetryWaiter(waiter.wait)
+
+	err := w.Run(t.Context())
+	require.ErrorIs(t, err, storeErr)
+	require.ErrorIs(t, err, waitErr)
+	require.Equal(t, 1, store.attempts)
+	require.Len(t, waiter.ceilings, 1)
+	require.Empty(t, consumer.commits)
+}

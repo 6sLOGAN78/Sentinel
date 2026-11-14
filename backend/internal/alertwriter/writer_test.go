@@ -421,3 +421,82 @@ func testAlertAggregateBudget(t *testing.T, mode string) {
 		require.Equal(t, 1, acks, "poison success must not reset the aggregate retry allowance")
 	}
 }
+
+type recordingWaiter struct {
+	ceilings []time.Duration
+	fail     error
+}
+
+func (r *recordingWaiter) wait(_ context.Context, ceiling time.Duration) error {
+	r.ceilings = append(r.ceilings, ceiling)
+	return r.fail
+}
+
+func jitterAlertWriter(t *testing.T, records []*kgo.Record, waiter *recordingWaiter,
+	publish func(context.Context, *kgo.Record, kafkax.DLQReason) error,
+) (*alertwriter.Writer, *poisonBatchConsumer, context.Context) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	c := &poisonBatchConsumer{records: records, cancel: cancel}
+	order := []string{}
+	settings := config.WriterConfig{BatchSize: 500, FlushInterval: time.Millisecond, MaxAttempts: 3,
+		RetryMinBackoff: 100 * time.Millisecond, RetryMaxBackoff: 150 * time.Millisecond,
+		OperationTimeout: 50 * time.Millisecond, ShutdownTimeout: time.Second}
+	w := alertwriter.New(c, &orderDetections{order: &order}, &orderWorkflows{tx: &orderTx{t: t, order: &order}},
+		settings, zerolog.Nop()).WithQuarantine(poisonDLQ{publish}).WithRetryWaiter(waiter.wait)
+	return w, c, ctx
+}
+
+func TestAlertWriterRetryUsesJitteredWaiter(t *testing.T) {
+	t.Run("transient failures recover within ceilings", func(t *testing.T) {
+		waiter := &recordingWaiter{}
+		calls := 0
+		w, c, ctx := jitterAlertWriter(t, []*kgo.Record{{Topic: "alerts", Offset: 0, Value: []byte("{")}}, waiter,
+			func(context.Context, *kgo.Record, kafkax.DLQReason) error {
+				calls++
+				if calls <= 2 {
+					return errors.New("dlq recovering")
+				}
+				return nil
+			})
+		require.NoError(t, w.Run(ctx))
+		require.Equal(t, 3, calls)
+		require.Equal(t, []time.Duration{100 * time.Millisecond, 150 * time.Millisecond}, waiter.ceilings,
+			"waits receive the capped exponential ceiling, not a fixed timer")
+		require.Len(t, c.committed, 1)
+	})
+	t.Run("shared budget is not reset by success", func(t *testing.T) {
+		waiter := &recordingWaiter{}
+		attempts := make(map[int64]int)
+		records := []*kgo.Record{
+			{Topic: "alerts", Offset: 0, Value: []byte("{")}, {Topic: "alerts", Offset: 1, Value: []byte("{")},
+		}
+		w, c, ctx := jitterAlertWriter(t, records, waiter,
+			func(_ context.Context, r *kgo.Record, _ kafkax.DLQReason) error {
+				attempts[r.Offset]++
+				if r.Offset == 0 && attempts[0] > 2 {
+					return nil
+				}
+				return errors.New("dlq outage")
+			})
+		_ = w.Run(ctx)
+		require.Equal(t, map[int64]int{0: 3, 1: 1}, attempts)
+		require.Len(t, waiter.ceilings, 2, "remaining allowance is shared across the batch")
+		require.Len(t, c.committed, 1)
+		require.Equal(t, int64(0), c.committed[0].Offset)
+	})
+	t.Run("wait failure is terminal without commit", func(t *testing.T) {
+		waiter := &recordingWaiter{fail: errors.New("wait aborted")}
+		calls := 0
+		w, c, ctx := jitterAlertWriter(t, []*kgo.Record{{Topic: "alerts", Offset: 0, Value: []byte("{")}}, waiter,
+			func(context.Context, *kgo.Record, kafkax.DLQReason) error {
+				calls++
+				return errors.New("dlq outage")
+			})
+		require.Error(t, w.Run(ctx))
+		require.Equal(t, 1, calls)
+		require.Len(t, waiter.ceilings, 1)
+		require.Empty(t, c.committed)
+	})
+}
