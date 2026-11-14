@@ -1,0 +1,2308 @@
+{
+ "format_version": 1,
+ "provenance": "fixture",
+ "run": {
+  "run_id": "fixture0001",
+  "scenario": "api-latency",
+  "tenant": "bench-fixture0001",
+  "started_at": "2026-11-14T10:00:00Z",
+  "ended_at": "2026-11-14T10:02:20Z",
+  "git_sha": "fixture-git-sha",
+  "image_tag": "fixture-image-tag",
+  "compose_project": "sentinel-bench-fixture0001"
+ },
+ "config": {
+  "events_partitions": 6,
+  "replication_factor": 1,
+  "replicas": {
+   "ingest": 2,
+   "event_writer": 2,
+   "detector": 3,
+   "alert_writer": 1,
+   "query_api": 2
+  },
+  "target_rate_eps": 25,
+  "batch_size": 25,
+  "max_in_flight_requests": 64,
+  "rate_limit": {
+   "capacity": 4000,
+   "refill_per_second": 2000
+  },
+  "retry_budget_seconds": 15,
+  "lateness_seconds": 30,
+  "detector_limits": {
+   "windows": 8000,
+   "ledger_entries": 100000,
+   "bytes": 16777216
+  }
+ },
+ "hardware": {
+  "cpu_model": "fixture-cpu",
+  "logical_cpus": 8,
+  "ram_bytes": 16000000000,
+  "disk_free_bytes_start": 20000000000,
+  "kernel": "fixture-kernel",
+  "docker_version": "fixture-docker",
+  "compose_version": "fixture-compose",
+  "host_load_note": "fixture host, no measurement"
+ },
+ "client": {
+  "generated": 1000,
+  "event_size_bytes": {
+   "min": 300,
+   "p50": 420,
+   "p95": 510,
+   "max": 600
+  },
+  "requests": [
+   {
+    "batch_seq": 0,
+    "intended_ns": 1794650400000000000,
+    "sent_ns": 1794650400000000000,
+    "done_ns": 1794650400010000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 1,
+    "intended_ns": 1794650401000000000,
+    "sent_ns": 1794650401001000000,
+    "done_ns": 1794650401012000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 2,
+    "intended_ns": 1794650402000000000,
+    "sent_ns": 1794650402002000000,
+    "done_ns": 1794650402014000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 3,
+    "intended_ns": 1794650403000000000,
+    "sent_ns": 1794650403003000000,
+    "done_ns": 1794650403016000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 4,
+    "intended_ns": 1794650404000000000,
+    "sent_ns": 1794650404000000000,
+    "done_ns": 1794650404014000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 5,
+    "intended_ns": 1794650405000000000,
+    "sent_ns": 1794650405001000000,
+    "done_ns": 1794650405016000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 6,
+    "intended_ns": 1794650406000000000,
+    "sent_ns": 1794650406002000000,
+    "done_ns": 1794650406018000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 7,
+    "intended_ns": 1794650407000000000,
+    "sent_ns": 1794650407003000000,
+    "done_ns": 1794650407020000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 8,
+    "intended_ns": 1794650408000000000,
+    "sent_ns": 1794650408000000000,
+    "done_ns": 1794650408018000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 9,
+    "intended_ns": 1794650409000000000,
+    "sent_ns": 1794650409001000000,
+    "done_ns": 1794650409020000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 10,
+    "intended_ns": 1794650410000000000,
+    "sent_ns": 1794650410002000000,
+    "done_ns": 1794650410012000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 11,
+    "intended_ns": 1794650411000000000,
+    "sent_ns": 1794650411003000000,
+    "done_ns": 1794650411014000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 12,
+    "intended_ns": 1794650412000000000,
+    "sent_ns": 1794650412000000000,
+    "done_ns": 1794650412012000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 13,
+    "intended_ns": 1794650413000000000,
+    "sent_ns": 1794650413001000000,
+    "done_ns": 1794650413014000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 14,
+    "intended_ns": 1794650414000000000,
+    "sent_ns": 1794650414002000000,
+    "done_ns": 1794650414016000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 15,
+    "intended_ns": 1794650415000000000,
+    "sent_ns": 1794650415003000000,
+    "done_ns": 1794650415018000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 16,
+    "intended_ns": 1794650416000000000,
+    "sent_ns": 1794650416000000000,
+    "done_ns": 1794650416016000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 17,
+    "intended_ns": 1794650417000000000,
+    "sent_ns": 1794650417001000000,
+    "done_ns": 1794650417018000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 18,
+    "intended_ns": 1794650418000000000,
+    "sent_ns": 1794650418002000000,
+    "done_ns": 1794650418020000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 19,
+    "intended_ns": 1794650419000000000,
+    "sent_ns": 1794650419003000000,
+    "done_ns": 1794650419022000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 20,
+    "intended_ns": 1794650420000000000,
+    "sent_ns": 1794650420000000000,
+    "done_ns": 1794650420010000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 21,
+    "intended_ns": 1794650421000000000,
+    "sent_ns": 1794650421001000000,
+    "done_ns": 1794650421012000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 22,
+    "intended_ns": 1794650422000000000,
+    "sent_ns": 1794650422002000000,
+    "done_ns": 1794650422014000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 23,
+    "intended_ns": 1794650423000000000,
+    "sent_ns": 1794650423003000000,
+    "done_ns": 1794650423016000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 24,
+    "intended_ns": 1794650424000000000,
+    "sent_ns": 1794650424000000000,
+    "done_ns": 1794650424014000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 25,
+    "intended_ns": 1794650425000000000,
+    "sent_ns": 1794650425001000000,
+    "done_ns": 1794650425016000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 26,
+    "intended_ns": 1794650426000000000,
+    "sent_ns": 1794650426002000000,
+    "done_ns": 1794650426018000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 27,
+    "intended_ns": 1794650427000000000,
+    "sent_ns": 1794650427003000000,
+    "done_ns": 1794650427020000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 28,
+    "intended_ns": 1794650428000000000,
+    "sent_ns": 1794650428000000000,
+    "done_ns": 1794650428018000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 29,
+    "intended_ns": 1794650429000000000,
+    "sent_ns": 1794650429001000000,
+    "done_ns": 1794650429020000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 30,
+    "intended_ns": 1794650430000000000,
+    "sent_ns": 1794650430002000000,
+    "done_ns": 1794650430012000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 31,
+    "intended_ns": 1794650431000000000,
+    "sent_ns": 1794650431003000000,
+    "done_ns": 1794650431014000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 32,
+    "intended_ns": 1794650432000000000,
+    "sent_ns": 1794650432000000000,
+    "done_ns": 1794650432012000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 33,
+    "intended_ns": 1794650433000000000,
+    "sent_ns": 1794650433001000000,
+    "done_ns": 1794650433014000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 34,
+    "intended_ns": 1794650434000000000,
+    "sent_ns": 1794650434002000000,
+    "done_ns": 1794650434016000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 35,
+    "intended_ns": 1794650435000000000,
+    "sent_ns": 1794650435003000000,
+    "done_ns": 1794650435018000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 36,
+    "intended_ns": 1794650436000000000,
+    "sent_ns": 1794650436000000000,
+    "done_ns": 1794650436016000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 37,
+    "intended_ns": 1794650437000000000,
+    "sent_ns": 1794650437001000000,
+    "done_ns": 1794650437018000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 38,
+    "intended_ns": 1794650438000000000,
+    "sent_ns": 1794650438002000000,
+    "done_ns": 1794650438020000000,
+    "status": 202,
+    "attempts": 1,
+    "event_count": 25,
+    "accepted_count": 25
+   },
+   {
+    "batch_seq": 39,
+    "intended_ns": 1794650439000000000,
+    "sent_ns": 1794650439003000000,
+    "done_ns": 1794650439022000000,
+    "status": 503,
+    "attempts": 3,
+    "event_count": 25,
+    "accepted_count": 0
+   }
+  ],
+  "accepted_unique": 975,
+  "accepted_id_digest": "4184eebfc6a2ab05",
+  "rejected_4xx": 0,
+  "unaccepted_final": 25,
+  "schedule_slip_ms_max": 3,
+  "harness_cpu_percent_max": 12.5
+ },
+ "attack_plan": {
+  "rules": {
+   "AUTH_BRUTE_FORCE": {
+    "expected": 3
+   },
+   "PORT_SCAN": {
+    "expected": 3
+   },
+   "REQUEST_FLOOD": {
+    "expected": 2
+   },
+   "DENY_SPIKE": {
+    "expected": 2
+   }
+  },
+  "expected_dlq": 0,
+  "expected_late": 0
+ },
+ "kafka": {
+  "events_records_delta": 980
+ },
+ "clickhouse": {
+  "unique": 975,
+  "physical": 978,
+  "id_digest": "4184eebfc6a2ab05",
+  "alerts_unique_by_rule": {
+   "AUTH_BRUTE_FORCE": 3,
+   "PORT_SCAN": 3,
+   "REQUEST_FLOOD": 2,
+   "DENY_SPIKE": 2
+  }
+ },
+ "postgres": {
+  "alerts_by_rule": {
+   "AUTH_BRUTE_FORCE": 3,
+   "PORT_SCAN": 3,
+   "REQUEST_FLOOD": 2,
+   "DENY_SPIKE": 2
+  },
+  "benign_hits": 0
+ },
+ "prometheus": {
+  "detection_delay_buckets_before": {
+   "0.5": 5,
+   "1": 7,
+   "2.5": 8,
+   "5": 8,
+   "10": 8,
+   "+Inf": 8
+  },
+  "detection_delay_buckets_after": {
+   "0.5": 5,
+   "1": 9,
+   "2.5": 14,
+   "5": 17,
+   "10": 18,
+   "+Inf": 18
+  },
+  "dlq_total_before": 3,
+  "dlq_total_after": 3,
+  "late_total_before": 1,
+  "late_total_after": 1,
+  "detector_state_peak": {
+   "windows": 400,
+   "ledger_entries": 20000,
+   "bytes": 2097152
+  },
+  "lag_samples": [
+   {
+    "t_ns": 1794650400000000000,
+    "group": "detector",
+    "max_lag": 12
+   },
+   {
+    "t_ns": 1794650400000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650401000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650401000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650402000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650402000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650403000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650403000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650404000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650404000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650405000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650405000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650406000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650406000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650407000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650407000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650408000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650408000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650409000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650409000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650410000000000,
+    "group": "detector",
+    "max_lag": 12
+   },
+   {
+    "t_ns": 1794650410000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650411000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650411000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650412000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650412000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650413000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650413000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650414000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650414000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650415000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650415000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650416000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650416000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650417000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650417000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650418000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650418000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650419000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650419000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650420000000000,
+    "group": "detector",
+    "max_lag": 12
+   },
+   {
+    "t_ns": 1794650420000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650421000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650421000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650422000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650422000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650423000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650423000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650424000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650424000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650425000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650425000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650426000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650426000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650427000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650427000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650428000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650428000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650429000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650429000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650430000000000,
+    "group": "detector",
+    "max_lag": 12
+   },
+   {
+    "t_ns": 1794650430000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650431000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650431000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650432000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650432000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650433000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650433000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650434000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650434000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650435000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650435000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650436000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650436000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650437000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650437000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650438000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650438000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650439000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650439000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650440000000000,
+    "group": "detector",
+    "max_lag": 12
+   },
+   {
+    "t_ns": 1794650440000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650441000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650441000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650442000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650442000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650443000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650443000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650444000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650444000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650445000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650445000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650446000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650446000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650447000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650447000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650448000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650448000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650449000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650449000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650450000000000,
+    "group": "detector",
+    "max_lag": 12
+   },
+   {
+    "t_ns": 1794650450000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650451000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650451000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650452000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650452000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650453000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650453000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650454000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650454000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650455000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650455000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650456000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650456000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650457000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650457000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650458000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650458000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650459000000000,
+    "group": "detector",
+    "max_lag": 10
+   },
+   {
+    "t_ns": 1794650459000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650460000000000,
+    "group": "detector",
+    "max_lag": 50
+   },
+   {
+    "t_ns": 1794650460000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650461000000000,
+    "group": "detector",
+    "max_lag": 70
+   },
+   {
+    "t_ns": 1794650461000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650462000000000,
+    "group": "detector",
+    "max_lag": 90
+   },
+   {
+    "t_ns": 1794650462000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650463000000000,
+    "group": "detector",
+    "max_lag": 110
+   },
+   {
+    "t_ns": 1794650463000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650464000000000,
+    "group": "detector",
+    "max_lag": 130
+   },
+   {
+    "t_ns": 1794650464000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650465000000000,
+    "group": "detector",
+    "max_lag": 150
+   },
+   {
+    "t_ns": 1794650465000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650466000000000,
+    "group": "detector",
+    "max_lag": 170
+   },
+   {
+    "t_ns": 1794650466000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650467000000000,
+    "group": "detector",
+    "max_lag": 190
+   },
+   {
+    "t_ns": 1794650467000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650468000000000,
+    "group": "detector",
+    "max_lag": 210
+   },
+   {
+    "t_ns": 1794650468000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650469000000000,
+    "group": "detector",
+    "max_lag": 230
+   },
+   {
+    "t_ns": 1794650469000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650470000000000,
+    "group": "detector",
+    "max_lag": 250
+   },
+   {
+    "t_ns": 1794650470000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650471000000000,
+    "group": "detector",
+    "max_lag": 270
+   },
+   {
+    "t_ns": 1794650471000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650472000000000,
+    "group": "detector",
+    "max_lag": 290
+   },
+   {
+    "t_ns": 1794650472000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650473000000000,
+    "group": "detector",
+    "max_lag": 310
+   },
+   {
+    "t_ns": 1794650473000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650474000000000,
+    "group": "detector",
+    "max_lag": 330
+   },
+   {
+    "t_ns": 1794650474000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650475000000000,
+    "group": "detector",
+    "max_lag": 350
+   },
+   {
+    "t_ns": 1794650475000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650476000000000,
+    "group": "detector",
+    "max_lag": 370
+   },
+   {
+    "t_ns": 1794650476000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650477000000000,
+    "group": "detector",
+    "max_lag": 390
+   },
+   {
+    "t_ns": 1794650477000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650478000000000,
+    "group": "detector",
+    "max_lag": 410
+   },
+   {
+    "t_ns": 1794650478000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650479000000000,
+    "group": "detector",
+    "max_lag": 430
+   },
+   {
+    "t_ns": 1794650479000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650480000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650480000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650481000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650481000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650482000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650482000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650483000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650483000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650484000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650484000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650485000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650485000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650486000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650486000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650487000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650487000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650488000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650488000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650489000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650489000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650490000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650490000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650491000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650491000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650492000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650492000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650493000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650493000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650494000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650494000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650495000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650495000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650496000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650496000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650497000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650497000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650498000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650498000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650499000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650499000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650500000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650500000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650501000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650501000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650502000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650502000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650503000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650503000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650504000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650504000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650505000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650505000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650506000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650506000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650507000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650507000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650508000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650508000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650509000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650509000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650510000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650510000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650511000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650511000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650512000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650512000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650513000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650513000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650514000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650514000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650515000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650515000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650516000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650516000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650517000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650517000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650518000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650518000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650519000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650519000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650520000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650520000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650521000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650521000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650522000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650522000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650523000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650523000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650524000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650524000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650525000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650525000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650526000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650526000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650527000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650527000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650528000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650528000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650529000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650529000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650530000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650530000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650531000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650531000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650532000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650532000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650533000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650533000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650534000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650534000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650535000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650535000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650536000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650536000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650537000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650537000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650538000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650538000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   },
+   {
+    "t_ns": 1794650539000000000,
+    "group": "detector",
+    "max_lag": 9
+   },
+   {
+    "t_ns": 1794650539000000000,
+    "group": "event-writer",
+    "max_lag": 5000
+   }
+  ]
+ },
+ "sse": {
+  "arrivals": [
+   {
+    "alert_id": "78836c33-18ae-5370-9111-b5a306ce23be",
+    "rule_id": "AUTH_BRUTE_FORCE",
+    "trigger_intended_ns": 1794650401000000000,
+    "received_ns": 1794650402000000000
+   },
+   {
+    "alert_id": "27d3dcb8-3a28-5156-9c9f-bc9460a10a0a",
+    "rule_id": "AUTH_BRUTE_FORCE",
+    "trigger_intended_ns": 1794650402000000000,
+    "received_ns": 1794650403100000000
+   },
+   {
+    "alert_id": "fff20009-7994-5846-9035-a1aaf77adfb4",
+    "rule_id": "AUTH_BRUTE_FORCE",
+    "trigger_intended_ns": 1794650403000000000,
+    "received_ns": 1794650404200000000
+   },
+   {
+    "alert_id": "d6e50a15-28ae-59f7-88e4-6ff881a9adcb",
+    "rule_id": "PORT_SCAN",
+    "trigger_intended_ns": 1794650404000000000,
+    "received_ns": 1794650405300000000
+   },
+   {
+    "alert_id": "299fe6c8-5d58-5015-beb2-c74834feebf7",
+    "rule_id": "PORT_SCAN",
+    "trigger_intended_ns": 1794650405000000000,
+    "received_ns": 1794650406400000000
+   },
+   {
+    "alert_id": "2cc1889e-2c35-5c97-8a6d-e014b3111972",
+    "rule_id": "PORT_SCAN",
+    "trigger_intended_ns": 1794650406000000000,
+    "received_ns": 1794650407500000000
+   },
+   {
+    "alert_id": "08c95c1c-f68a-5ae5-a6f9-a53754ca69a8",
+    "rule_id": "REQUEST_FLOOD",
+    "trigger_intended_ns": 1794650407000000000,
+    "received_ns": 1794650408600000000
+   },
+   {
+    "alert_id": "681ad039-09ff-5d42-832f-274c186a2524",
+    "rule_id": "REQUEST_FLOOD",
+    "trigger_intended_ns": 1794650408000000000,
+    "received_ns": 1794650409700000000
+   },
+   {
+    "alert_id": "252a4557-a597-5f17-83a6-566690b3fb42",
+    "rule_id": "DENY_SPIKE",
+    "trigger_intended_ns": 1794650409000000000,
+    "received_ns": 1794650410800000000
+   },
+   {
+    "alert_id": "81171882-6ac6-5074-be9a-f146e63e6e2a",
+    "rule_id": "DENY_SPIKE",
+    "trigger_intended_ns": 1794650410000000000,
+    "received_ns": 1794650411900000000
+   },
+   {
+    "alert_id": "78836c33-18ae-5370-9111-b5a306ce23be",
+    "rule_id": "AUTH_BRUTE_FORCE",
+    "trigger_intended_ns": 1794650401000000000,
+    "received_ns": 1794650407000000000
+   }
+  ]
+ },
+ "api": {
+  "samples": [
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650500000000000,
+    "done_ns": 1794650500005000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650500250000000,
+    "done_ns": 1794650500256000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650500500000000,
+    "done_ns": 1794650500507000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650500750000000,
+    "done_ns": 1794650500758000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650501000000000,
+    "done_ns": 1794650501009000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650501250000000,
+    "done_ns": 1794650501260000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650501500000000,
+    "done_ns": 1794650501511000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650501750000000,
+    "done_ns": 1794650501762000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650502000000000,
+    "done_ns": 1794650502013000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650502250000000,
+    "done_ns": 1794650502264000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650502500000000,
+    "done_ns": 1794650502515000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650502750000000,
+    "done_ns": 1794650502766000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650503000000000,
+    "done_ns": 1794650503017000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650503250000000,
+    "done_ns": 1794650503268000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650503500000000,
+    "done_ns": 1794650503519000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650503750000000,
+    "done_ns": 1794650503770000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650504000000000,
+    "done_ns": 1794650504021000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650504250000000,
+    "done_ns": 1794650504272000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650504500000000,
+    "done_ns": 1794650504523000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/events",
+    "intended_ns": 1794650504750000000,
+    "done_ns": 1794650504774000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650500000000000,
+    "done_ns": 1794650500005000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650500250000000,
+    "done_ns": 1794650500256000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650500500000000,
+    "done_ns": 1794650500507000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650500750000000,
+    "done_ns": 1794650500758000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650501000000000,
+    "done_ns": 1794650501009000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650501250000000,
+    "done_ns": 1794650501260000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650501500000000,
+    "done_ns": 1794650501511000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650501750000000,
+    "done_ns": 1794650501762000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650502000000000,
+    "done_ns": 1794650502013000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650502250000000,
+    "done_ns": 1794650502264000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650502500000000,
+    "done_ns": 1794650502515000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650502750000000,
+    "done_ns": 1794650502766000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650503000000000,
+    "done_ns": 1794650503017000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650503250000000,
+    "done_ns": 1794650503268000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650503500000000,
+    "done_ns": 1794650503519000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650503750000000,
+    "done_ns": 1794650503770000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650504000000000,
+    "done_ns": 1794650504021000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650504250000000,
+    "done_ns": 1794650504272000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650504500000000,
+    "done_ns": 1794650504523000000,
+    "status": 200
+   },
+   {
+    "endpoint": "/api/v1/alerts",
+    "intended_ns": 1794650504750000000,
+    "done_ns": 1794650504774000000,
+    "status": 200
+   }
+  ],
+  "concurrency": 4,
+  "dataset_note": "run tenant only, fixed filters"
+ },
+ "resources": {
+  "samples": [
+   {
+    "t_ns": 1794650400000000000,
+    "container": "sentinel-bench-fixture-detector-1",
+    "service": "detector",
+    "rss_bytes": 50000000,
+    "cpu_percent": 20.0
+   },
+   {
+    "t_ns": 1794650400000000000,
+    "container": "sentinel-bench-fixture-ingest-1",
+    "service": "ingest",
+    "rss_bytes": 30000000,
+    "cpu_percent": 15.5
+   },
+   {
+    "t_ns": 1794650430000000000,
+    "container": "sentinel-bench-fixture-detector-1",
+    "service": "detector",
+    "rss_bytes": 51000000,
+    "cpu_percent": 21.0
+   },
+   {
+    "t_ns": 1794650430000000000,
+    "container": "sentinel-bench-fixture-ingest-1",
+    "service": "ingest",
+    "rss_bytes": 29000000,
+    "cpu_percent": 14.5
+   },
+   {
+    "t_ns": 1794650460000000000,
+    "container": "sentinel-bench-fixture-detector-1",
+    "service": "detector",
+    "rss_bytes": 52000000,
+    "cpu_percent": 22.0
+   },
+   {
+    "t_ns": 1794650460000000000,
+    "container": "sentinel-bench-fixture-ingest-1",
+    "service": "ingest",
+    "rss_bytes": 28000000,
+    "cpu_percent": 13.5
+   }
+  ]
+ },
+ "restart": {
+  "kill_ns": 1794650460000000000,
+  "killed_container": "sentinel-bench-fixture-detector-2",
+  "baseline_window_s": 30,
+  "stable_window_s": 30,
+  "timeout_s": 120
+ },
+ "limitations": [
+  "Fixture data for unit tests; not a measurement."
+ ]
+}

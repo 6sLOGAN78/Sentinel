@@ -1,0 +1,184 @@
+{
+ "base": "bench_raw_reconciled.json",
+ "cases": [
+  {
+   "name": "generated_not_accounted",
+   "equation": "generated_accounting",
+   "set": [
+    {
+     "path": [
+      "client",
+      "unaccepted_final"
+     ],
+     "value": 26
+    }
+   ]
+  },
+  {
+   "name": "kafka_below_accepted",
+   "equation": "kafka_records",
+   "set": [
+    {
+     "path": [
+      "kafka",
+      "events_records_delta"
+     ],
+     "value": 974
+    }
+   ]
+  },
+  {
+   "name": "clickhouse_lost_event",
+   "equation": "ch_unique",
+   "set": [
+    {
+     "path": [
+      "clickhouse",
+      "unique"
+     ],
+     "value": 974
+    }
+   ]
+  },
+  {
+   "name": "clickhouse_digest_differs",
+   "equation": "id_digest",
+   "set": [
+    {
+     "path": [
+      "clickhouse",
+      "id_digest"
+     ],
+     "value": "0000000000000001"
+    }
+   ]
+  },
+  {
+   "name": "postgres_hits_differ_from_plan",
+   "equation": "rule_pg:PORT_SCAN",
+   "set": [
+    {
+     "path": [
+      "postgres",
+      "alerts_by_rule",
+      "PORT_SCAN"
+     ],
+     "value": 4
+    },
+    {
+     "path": [
+      "clickhouse",
+      "alerts_unique_by_rule",
+      "PORT_SCAN"
+     ],
+     "value": 4
+    }
+   ]
+  },
+  {
+   "name": "clickhouse_alerts_differ_from_postgres",
+   "equation": "rule_ch:DENY_SPIKE",
+   "set": [
+    {
+     "path": [
+      "clickhouse",
+      "alerts_unique_by_rule",
+      "DENY_SPIKE"
+     ],
+     "value": 1
+    }
+   ]
+  },
+  {
+   "name": "benign_traffic_alerted",
+   "equation": "benign_hits",
+   "set": [
+    {
+     "path": [
+      "postgres",
+      "benign_hits"
+     ],
+     "value": 1
+    }
+   ]
+  },
+  {
+   "name": "unexpected_dlq_records",
+   "equation": "dlq_delta",
+   "set": [
+    {
+     "path": [
+      "prometheus",
+      "dlq_total_after"
+     ],
+     "value": 4
+    }
+   ]
+  },
+  {
+   "name": "unexpected_late_drops",
+   "equation": "late_delta",
+   "set": [
+    {
+     "path": [
+      "prometheus",
+      "late_total_after"
+     ],
+     "value": 2
+    }
+   ]
+  },
+  {
+   "name": "recovery_not_reached_in_timeout",
+   "equation": "recovery_timeout",
+   "set": [
+    {
+     "path": [
+      "restart",
+      "timeout_s"
+     ],
+     "value": 10
+    }
+   ]
+  },
+  {
+   "name": "sustained_restart_below_one_million",
+   "equation": "generated_floor",
+   "set": [
+    {
+     "path": [
+      "run",
+      "scenario"
+     ],
+     "value": "sustained-restart"
+    },
+    {
+     "path": [
+      "client",
+      "generated"
+     ],
+     "value": 999999
+    }
+   ]
+  },
+  {
+   "name": "unsupported_format_version",
+   "equation": "format_version",
+   "set": [
+    {
+     "path": [
+      "format_version"
+     ],
+     "value": 2
+    }
+   ]
+  },
+  {
+   "name": "fixture_into_results_dir",
+   "equation": "provenance",
+   "out": "results",
+   "expect_exit": 2,
+   "set": []
+  }
+ ]
+}
