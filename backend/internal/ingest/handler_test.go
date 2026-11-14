@@ -15,6 +15,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
@@ -24,6 +26,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/errs"
 	"github.com/6sLOGAN78/sentinel/internal/ingest"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 const testCredential = "snt_aaaaaaaaaaaa_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -519,4 +522,164 @@ func TestPostBatchPublishFailureIsSanitized(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Equal(t, "1", rec.Header().Get(echo.HeaderRetryAfter))
 	require.NotContains(t, rec.Body.String(), testCredential)
+}
+
+func metricSample(t *testing.T, reg prometheus.Gatherer, name, label, value string) (*dto.Metric, bool) {
+	t.Helper()
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			if label == "" {
+				return metric, true
+			}
+			for _, pair := range metric.GetLabel() {
+				if pair.GetName() == label && pair.GetValue() == value {
+					return metric, true
+				}
+			}
+		}
+	}
+
+	return nil, false
+}
+
+func eventsCount(t *testing.T, reg prometheus.Gatherer, result string) float64 {
+	t.Helper()
+	metric, found := metricSample(t, reg, "sentinel_ingest_events_total", "result", result)
+	if !found {
+		return 0
+	}
+
+	return metric.GetCounter().GetValue()
+}
+
+func newMetricsEcho(
+	t *testing.T,
+	principal apikeys.Principal,
+	verifyErr error,
+	publisher publisherFunc,
+	limiter limiterFunc,
+	cfg *config.Config,
+) (*echo.Echo, *prometheus.Registry) {
+	t.Helper()
+	reg := telemetry.NewRegistry()
+	e := echo.New()
+	logger := zerolog.Nop()
+	middleware.Apply(e, &logger, nil)
+	verifier := verifierFunc(func(context.Context, string) (apikeys.Principal, error) {
+		return principal, verifyErr
+	})
+	ingest.NewHandler(verifier, publisher, limiter, cfg, logger).
+		WithMetrics(telemetry.NewIngestMetrics(reg)).Register(e)
+
+	return e, reg
+}
+
+func TestPostBatchCountsEveryExitPathByResult(t *testing.T) {
+	writer := apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}
+	okPublish := publisherFunc(func(context.Context, []*contracts.Event, string) error { return nil })
+	failPublish := publisherFunc(func(context.Context, []*contracts.Event, string) error { return errors.New("kafka down") })
+	invalid := validEvent(nil)
+	invalid["event_id"] = "not-a-uuid"
+	denyAll := limiterFunc(func(context.Context, string, int) (bool, int, error) { return false, 3, nil })
+	brokenLimiter := limiterFunc(func(context.Context, string, int) (bool, int, error) {
+		return false, 0, errors.New("redis down")
+	})
+
+	cases := []struct {
+		name      string
+		verifyErr error
+		publisher publisherFunc
+		limiter   limiterFunc
+		body      []byte
+		status    int
+		result    string
+		count     float64
+	}{
+		{"accepted", nil, okPublish, allowAll, batchBody(t, validEvent(nil), validEvent(nil)),
+			http.StatusAccepted, telemetry.ResultAccepted, 2},
+		{"rejected", nil, okPublish, allowAll, batchBody(t, validEvent(nil), invalid),
+			http.StatusBadRequest, telemetry.ResultRejected, 2},
+		{"rate limited", nil, okPublish, denyAll, batchBody(t, validEvent(nil), validEvent(nil), validEvent(nil)),
+			http.StatusTooManyRequests, telemetry.ResultRateLimited, 3},
+		{"limiter dependency", nil, okPublish, brokenLimiter, batchBody(t, validEvent(nil), validEvent(nil)),
+			http.StatusServiceUnavailable, telemetry.ResultUnavailable, 2},
+		{"publish failure", nil, failPublish, allowAll, batchBody(t, validEvent(nil)),
+			http.StatusServiceUnavailable, telemetry.ResultUnavailable, 1},
+		{"auth dependency", apikeys.ErrUnavailable, okPublish, allowAll, batchBody(t, validEvent(nil)),
+			http.StatusServiceUnavailable, telemetry.ResultUnavailable, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e, reg := newMetricsEcho(t, writer, tc.verifyErr, tc.publisher, tc.limiter, handlerConfig())
+			rec := postBatch(t, e, tc.body, testCredential)
+			require.Equal(t, tc.status, rec.Code)
+
+			require.InDelta(t, tc.count, eventsCount(t, reg, tc.result), 0)
+			if tc.count == 0 {
+				_, found := metricSample(t, reg, "sentinel_ingest_events_total", "result", tc.result)
+				require.True(t, found, "the result series must exist even without a known batch size")
+			}
+			requests, found := metricSample(t, reg, "sentinel_ingest_requests_total", "status", strconv.Itoa(tc.status))
+			require.True(t, found)
+			require.InDelta(t, 1, requests.GetCounter().GetValue(), 0)
+			duration, found := metricSample(t, reg, "sentinel_ingest_request_duration_seconds", "", "")
+			require.True(t, found)
+			require.EqualValues(t, 1, duration.GetHistogram().GetSampleCount())
+		})
+	}
+}
+
+func TestInFlightShedIsCounted(t *testing.T) {
+	cfg := handlerConfig()
+	cfg.Ingest.MaxInFlight = 1
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	publisher := publisherFunc(func(ctx context.Context, _ []*contracts.Event, _ string) error {
+		close(entered)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	writer := apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}
+	e, reg := newMetricsEcho(t, writer, nil, publisher, limiterFunc(allowAll), cfg)
+	body := batchBody(t, validEvent(nil))
+	firstDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() { firstDone <- postBatch(t, e, body, testCredential) }()
+	<-entered
+
+	require.Equal(t, http.StatusServiceUnavailable, postBatch(t, e, body, testCredential).Code)
+	_, found := metricSample(t, reg, "sentinel_ingest_events_total", "result", telemetry.ResultShed)
+	require.True(t, found, "shed series must exist")
+	require.InDelta(t, 0, eventsCount(t, reg, telemetry.ResultShed), 0, "body unread, so no batch size is invented")
+	requests, found := metricSample(t, reg, "sentinel_ingest_requests_total", "status", "503")
+	require.True(t, found)
+	require.InDelta(t, 1, requests.GetCounter().GetValue(), 0)
+
+	close(release)
+	require.Equal(t, http.StatusAccepted, (<-firstDone).Code)
+	require.InDelta(t, 1, eventsCount(t, reg, telemetry.ResultAccepted), 0)
+}
+
+func TestNilIngestMetricsDoesNotPanic(t *testing.T) {
+	writer := apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}
+	e := newHandlerEcho(t, writer, nil,
+		func(context.Context, []*contracts.Event, string) error { return nil }, handlerConfig())
+	require.Equal(t, http.StatusAccepted, postBatch(t, e, batchBody(t, validEvent(nil)), testCredential).Code)
+}
+
+func TestPublicRouterDoesNotServeMetrics(t *testing.T) {
+	writer := apikeys.Principal{KeyID: "aaaaaaaaaaaa", TenantID: "demo", Scopes: []string{apikeys.ScopeWrite}}
+	e, _ := newMetricsEcho(t, writer, nil,
+		func(context.Context, []*contracts.Event, string) error { return nil }, limiterFunc(allowAll), handlerConfig())
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	require.Equal(t, http.StatusNotFound, rec.Code)
 }
