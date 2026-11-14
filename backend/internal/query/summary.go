@@ -93,6 +93,9 @@ func (h *SummaryHandler) GetSummary(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if c.Request().URL.RawQuery != "" {
+		return queryNotAccepted()
+	}
 	now := h.now().UTC()
 	ctx, cancel := context.WithTimeout(c.Request().Context(), detailTimeout)
 	defer cancel()
@@ -152,4 +155,9 @@ func summaryTrend(start, end time.Time, events, alerts []SummaryCount) []trendPo
 		}
 	}
 	return trend
+}
+
+// queryNotAccepted rejects any query string on routes that declare none.
+func queryNotAccepted() error {
+	return errs.NewBadRequestError("Query parameters are not accepted", false, nil, nil, nil)
 }

@@ -54,6 +54,9 @@ func (h *RulesHandler) ListRules(c echo.Context) error {
 	if _, err := auth.RequirePrincipal(c); err != nil {
 		return err
 	}
+	if c.Request().URL.RawQuery != "" {
+		return queryNotAccepted()
+	}
 	return c.JSON(http.StatusOK, struct {
 		Rules []ruleDefinition `json:"rules"`
 	}{Rules: h.rules})

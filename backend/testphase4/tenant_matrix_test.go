@@ -310,11 +310,10 @@ func TestPhase4TenantMatrix(t *testing.T) {
 				}
 				require.NoError(t, json.Unmarshal(raw, &summary))
 				require.Equal(t, owner.open, summary.Open)
-				// The summary accepts no caller scope; a spoofed tenant is ignored, never honored.
+				// The summary accepts no caller scope; a spoofed tenant is rejected, never honored.
 				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/metrics/summary?tenant_id="+foreign.name, credential, "", nil)
-				require.Equal(t, 200, status)
-				require.NoError(t, json.Unmarshal(raw, &summary))
-				require.Equal(t, owner.open, summary.Open, "tenant query tampering cannot select another tenant")
+				require.Equal(t, 400, status, "tenant query tampering is rejected")
+				require.NotContains(t, string(raw), foreign.name, "tenant query tampering cannot select another tenant")
 
 				// rules are one global read-only policy, identical for every tenant and role.
 				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/rules", credential, "", nil)
