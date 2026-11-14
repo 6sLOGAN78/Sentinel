@@ -13,6 +13,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 const (
@@ -46,9 +47,11 @@ const (
 // DLQPublisher durably writes bounded quarantine records.
 type DLQPublisher struct {
 	client        *kgo.Client
+	produce       func(context.Context, *kgo.Record) error
 	topic         string
 	timeout       time.Duration
 	maxValueBytes int
+	metrics       *telemetry.ConsumerMetrics
 }
 
 // NewDLQPublisher configures an independent all-ISR, idempotent producer. A
@@ -92,7 +95,10 @@ func NewDLQPublisher(
 	}
 
 	return &DLQPublisher{
-		client:        client,
+		client: client,
+		produce: func(ctx context.Context, record *kgo.Record) error {
+			return client.ProduceSync(ctx, record).FirstErr()
+		},
 		topic:         topic,
 		timeout:       cfg.ProduceTimeout,
 		maxValueBytes: maxValueBytes,
@@ -108,11 +114,19 @@ func (p *DLQPublisher) Publish(ctx context.Context, original *kgo.Record, reason
 
 	publishCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
-	if err = p.client.ProduceSync(publishCtx, record).FirstErr(); err != nil {
+	if err = p.produce(publishCtx, record); err != nil {
 		return fmt.Errorf("publish DLQ record: %w", err)
 	}
+	// Count only after the all-ISR acknowledgement.
+	p.metrics.IncDLQ(string(reason))
 
 	return nil
+}
+
+// WithMetrics counts acknowledged DLQ records by reason. Nil disables counting.
+func (p *DLQPublisher) WithMetrics(metrics *telemetry.ConsumerMetrics) *DLQPublisher {
+	p.metrics = metrics
+	return p
 }
 
 // Close flushes acknowledged DLQ work within ctx, then closes the producer.

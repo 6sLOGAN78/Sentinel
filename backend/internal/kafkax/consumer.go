@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
@@ -27,10 +28,29 @@ type Consumer struct {
 	closeOnce sync.Once
 	closeDone chan struct{}
 	closeFn   func()
+	lag       *LagTracker
+	admin     CommittedOffsetSource
+}
+
+// ConsumerOption configures optional Consumer collaborators.
+type ConsumerOption func(*consumerOptions)
+
+type consumerOptions struct {
+	lag *LagTracker
+}
+
+// WithLagTracker registers rebalance hooks and commit tracking for t. The
+// tracker must target the consumer's group and topic. NewConsumer binds the
+// consumer's own kadm client as t's end-offset source when t has none, so no
+// second Kafka client is needed; the caller runs t.Run separately.
+func WithLagTracker(t *LagTracker) ConsumerOption {
+	return func(o *consumerOptions) { o.lag = t }
 }
 
 // NewConsumer creates a bounded group consumer with auto-commit disabled.
-func NewConsumer(_ context.Context, kafka config.KafkaConfig, writer config.WriterConfig) (*Consumer, error) {
+func NewConsumer(
+	_ context.Context, kafka config.KafkaConfig, writer config.WriterConfig, options ...ConsumerOption,
+) (*Consumer, error) {
 	brokers, err := config.ParseBrokers(kafka.Brokers)
 	if err != nil {
 		return nil, err
@@ -39,8 +59,21 @@ func NewConsumer(_ context.Context, kafka config.KafkaConfig, writer config.Writ
 	if err != nil {
 		return nil, err
 	}
+	var opts consumerOptions
+	for _, option := range options {
+		option(&opts)
+	}
+	c := &Consumer{closeDone: make(chan struct{}), lag: opts.lag}
+	hooks := []kgo.Opt(nil)
+	if c.lag != nil {
+		if c.lag.group != kafka.EventWriterGroup || c.lag.topic != kafka.EventsTopic {
+			return nil, errors.New("lag tracker group/topic does not match the consumer")
+		}
+		hooks = append(hooks, kgo.OnPartitionsAssigned(c.onAssigned),
+			kgo.OnPartitionsRevoked(c.onRevoked), kgo.OnPartitionsLost(c.onRevoked))
+	}
 
-	client, err := kgo.NewClient(
+	client, err := kgo.NewClient(append([]kgo.Opt{
 		kgo.SeedBrokers(brokers...),
 		kgo.ConsumeTopics(kafka.EventsTopic),
 		kgo.ConsumerGroup(kafka.EventWriterGroup),
@@ -53,16 +86,57 @@ func NewConsumer(_ context.Context, kafka config.KafkaConfig, writer config.Writ
 		kgo.FetchMaxWait(consumerFetchMaxWait),
 		kgo.SessionTimeout(consumerSessionTimeout),
 		kgo.RebalanceTimeout(budgets.Rebalance),
-	)
+	}, hooks...)...)
 	if err != nil {
 		return nil, fmt.Errorf("create Kafka consumer: %w", err)
 	}
+	c.client, c.closeFn = client, client.CloseAllowingRebalance
+	if c.lag != nil {
+		admin := kadm.NewClient(client)
+		c.admin = admin
+		c.lag.bind(admin)
+	}
 
-	return &Consumer{
-		client:    client,
-		closeDone: make(chan struct{}),
-		closeFn:   client.CloseAllowingRebalance,
-	}, nil
+	return c, nil
+}
+
+// onAssigned seeds the tracker for newly owned partitions from the group's
+// committed offsets (bounded by the tracker's 2 s query timeout).
+func (c *Consumer) onAssigned(ctx context.Context, _ *kgo.Client, topics map[string][]int32) {
+	if c.lag == nil {
+		return
+	}
+	c.lag.SeedAssigned(ctx, c.admin, topics[c.lag.topic])
+}
+
+// onRevoked handles both revoke and loss: the series must disappear from this
+// process either way, or sum() across replicas double counts the backlog.
+func (c *Consumer) onRevoked(_ context.Context, _ *kgo.Client, topics map[string][]int32) {
+	if c.lag == nil {
+		return
+	}
+	c.lag.Revoked(topics[c.lag.topic])
+}
+
+// recordProcessed advances processed next to max committed offset + 1 per
+// partition. Writers commit right after effects succeed, so this is the
+// processed position.
+func (c *Consumer) recordProcessed(records []*kgo.Record) {
+	if c.lag == nil {
+		return
+	}
+	next := make(map[int32]int64)
+	for _, record := range records {
+		if record == nil || record.Topic != c.lag.topic {
+			continue
+		}
+		if candidate := record.Offset + 1; candidate > next[record.Partition] {
+			next[record.Partition] = candidate
+		}
+	}
+	for partition, offset := range next {
+		c.lag.Processed(partition, offset)
+	}
 }
 
 // Ping verifies that the configured Kafka cluster is reachable.
@@ -95,6 +169,7 @@ func (c *Consumer) CommitRecords(ctx context.Context, records ...*kgo.Record) er
 	if err := c.client.CommitRecords(ctx, records...); err != nil {
 		return fmt.Errorf("commit Kafka records: %w", err)
 	}
+	c.recordProcessed(records)
 
 	return nil
 }

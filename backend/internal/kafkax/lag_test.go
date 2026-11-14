@@ -226,6 +226,9 @@ func TestLagRevokedDeletesSeriesAndStaysAbsent(t *testing.T) {
 	tracker.Processed(0, 99)
 	require.NoError(t, tracker.Tick(t.Context()))
 	requireAbsent(t, reg, 0)
+
+	tracker.Revoked([]int32{1})
+	requireAbsent(t, reg, 1)
 }
 
 func TestLagSumAcrossReplicasEqualsBacklogAfterRebalance(t *testing.T) {

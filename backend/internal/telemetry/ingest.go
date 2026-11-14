@@ -38,7 +38,7 @@ func NewIngestMetrics(reg prometheus.Registerer) *IngestMetrics {
 		events: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "sentinel_ingest_events_total",
 			Help: "Events handled by ingest, by outcome.",
-		}, []string{"result"}),
+		}, []string{labelResult}),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "sentinel_ingest_requests_total",
 			Help: "Ingest batch requests by HTTP status.",
