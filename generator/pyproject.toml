@@ -36,6 +36,9 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # The seeded random.Random is deliberately non-cryptographic: reproducibility
 # from a seed is the requirement for synthetic traffic, not unpredictability.
 "src/sentinel_generator/events.py" = ["S311"]
+# Same justification: the bench workload must rebuild batch k byte-identically from (seed, k).
+"src/sentinel_generator/bench/model.py" = ["S311"]
+"src/sentinel_generator/bench/schedule.py" = ["S311"]
 
 [tool.mypy]
 strict = true
