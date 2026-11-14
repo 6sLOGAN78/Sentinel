@@ -262,7 +262,7 @@ func TestRecoveryPlanDigest(t *testing.T) {
 	}
 	for name, mutate := range fields {
 		plan := clonePlan(t, base)
-		mutate(&plan.Entries[0])
+		mutate(&plan.Entries[1]) // log_start 9 != log_end 20, so a swap is observable
 		require.NotEqual(t, digest, plan.Digest(), name)
 	}
 	fingerprint := clonePlan(t, base)
