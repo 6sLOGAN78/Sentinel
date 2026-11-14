@@ -457,6 +457,18 @@ class Phase4HarnessEnvGuards(unittest.TestCase):
         self.assertIn('t.Setenv("SENTINEL_ENV_FILE", envFile)', helper)
         self.assertIn("config.Load(config.ServiceQueryAPI)", helper)
 
+    def test_query_api_children_pin_structured_json_logs(self):
+        """The repo .env opts local runs into console logs; the security-audit
+        assertions parse the child's JSON lines, so startQueryAPI must override
+        the format for its child exactly like it overrides PRIMARY.ENV."""
+        source = phase4_sources()["auth_test.go"]
+        start = source.index("func startQueryAPI(")
+        following = re.search(r"^func ", source[start + 1:], re.M)
+        body = source[start:start + 1 + following.start()] if following else source[start:]
+        overrides = body[body.index("env := map[string]string{"):body.index("for _, entry := range os.Environ()")]
+        self.assertIn('"SENTINEL_OBSERVABILITY.LOGGING.FORMAT": "json"', overrides)
+        self.assertIn('"SENTINEL_PRIMARY.ENV": "test"', overrides)
+
     def test_family_guard_catches_a_dropped_or_late_helper(self):
         sources = phase4_sources()
         triage = sources["triage_test.go"]
