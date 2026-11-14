@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/fs"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +37,29 @@ func TestAlertReservationsSchema(t *testing.T) {
 			testAlertReservationSchema(t, upgrade)
 		})
 	}
+}
+
+// latestPostgresMigration returns the highest migration number embedded from
+// backend/migrations/postgres, so the schema assertion tracks legitimate new
+// migrations instead of a hard-coded version.
+func latestPostgresMigration(t *testing.T) int {
+	t.Helper()
+	// Tern migration files are named like 006_alert_reservations.sql.
+	postgresMigrationName := regexp.MustCompile(`^(\d{3})_[a-z0-9_]+\.sql$`)
+	entries, err := fs.ReadDir(migrations.Postgres(), ".")
+	require.NoError(t, err)
+	latest := 0
+	for _, entry := range entries {
+		match := postgresMigrationName.FindStringSubmatch(entry.Name())
+		if entry.IsDir() || match == nil {
+			continue
+		}
+		n, convErr := strconv.Atoi(match[1])
+		require.NoError(t, convErr)
+		latest = max(latest, n)
+	}
+	require.GreaterOrEqual(t, latest, 6, "alert_reservations migration 006 must be embedded")
+	return latest
 }
 
 const alertReservationSchemaInsertSQL = `INSERT INTO alert_reservations
@@ -67,7 +93,7 @@ func testAlertReservationSchema(t *testing.T, upgrade bool) {
 	require.NoError(t, conn.QueryRow(t.Context(),
 		"SELECT to_regclass('public.alert_reservations')::text").Scan(&relation))
 	require.NotNil(t, relation, "immutable alert reservation relation is absent")
-	require.Equal(t, 6, schemaVersion(t.Context(), t, cfg))
+	require.Equal(t, latestPostgresMigration(t), schemaVersion(t.Context(), t, cfg))
 	baseline := readReservationWorkflowSnapshot(t, conn)
 	if upgrade {
 		require.Equal(t, beforeMigration, baseline, "forward migration changed the existing workflow or sequence")
@@ -144,7 +170,7 @@ func testAlertReservationSchema(t *testing.T, upgrade bool) {
 				FROM alert_reservations r`
 	require.NoError(t, conn.QueryRow(t.Context(), snapshot).Scan(&beforeRerun))
 	require.NoError(t, database.Migrate(t.Context(), cfg, zerolog.Nop()))
-	require.Equal(t, 6, schemaVersion(t.Context(), t, cfg))
+	require.Equal(t, latestPostgresMigration(t), schemaVersion(t.Context(), t, cfg))
 	require.NoError(t, conn.QueryRow(t.Context(), snapshot).Scan(&afterRerun))
 	require.Equal(t, beforeRerun, afterRerun, "second migration changed reservations")
 	require.Equal(t, baseline, readReservationWorkflowSnapshot(t, conn), "second migration changed workflows/sequence")

@@ -102,6 +102,7 @@ func serviceEnv(t *testing.T, service string) []string {
 		env = append(env, pg...)
 		env = append(env, ch...)
 		env = append(env, redis...)
+		env = append(env, "SENTINEL_DETECTOR.RULES_PATH="+lifecycleRulesPath)
 	}
 
 	return env
