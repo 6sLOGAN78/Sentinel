@@ -760,3 +760,22 @@ func TestLoadRedisSecurity(t *testing.T) {
 	_, err = config.Load("detector")
 	require.NoError(t, err)
 }
+
+func TestObservabilityLoggingFormat(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []string{"json", "console"} {
+		cfg := config.DefaultObservabilityConfig()
+		cfg.Logging.Format = format
+		require.NoError(t, cfg.Validate(), format)
+	}
+
+	for _, format := range []string{"xml", "", "JSON"} {
+		cfg := config.DefaultObservabilityConfig()
+		cfg.Logging.Format = format
+		err := cfg.Validate()
+		require.Error(t, err, format)
+		require.Contains(t, err.Error(), "json")
+		require.Contains(t, err.Error(), "console")
+	}
+}

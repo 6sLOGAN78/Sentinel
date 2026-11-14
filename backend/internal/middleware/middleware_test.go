@@ -15,8 +15,11 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/errs"
+	"github.com/6sLOGAN78/sentinel/internal/logger"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
 )
 
@@ -337,4 +340,226 @@ func TestNoKeyInLogs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newContractEcho builds an Echo with the production JSON logger writing to
+// sink. pre runs before the global chain (nil for none).
+func newContractEcho(t *testing.T, sink *syncBuffer, pre echo.MiddlewareFunc) *echo.Echo {
+	t.Helper()
+
+	cfg := config.DefaultObservabilityConfig()
+	cfg.Environment = "local"
+	cfg.Logging.Level = "debug"
+	log := logger.NewWithWriter(cfg, "query-api", sink)
+
+	e := echo.New()
+	if pre != nil {
+		e.Use(pre)
+	}
+
+	middleware.Apply(e, &log, nil)
+
+	return e
+}
+
+// logLines parses every line in sink as one JSON object.
+func logLines(t *testing.T, sink *syncBuffer) ([]string, []map[string]any) {
+	t.Helper()
+
+	raw := strings.TrimSpace(sink.String())
+	require.NotEmpty(t, raw)
+
+	var lines []string
+
+	var entries []map[string]any
+
+	for line := range strings.SplitSeq(raw, "\n") {
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &entry), line)
+
+		lines = append(lines, line)
+		entries = append(entries, entry)
+	}
+
+	return lines, entries
+}
+
+// duplicateKeys returns the top-level keys that appear more than once in the
+// JSON object line. encoding/json silently keeps the last duplicate, so the
+// raw token stream is inspected.
+func duplicateKeys(t *testing.T, line string) []string {
+	t.Helper()
+
+	dec := json.NewDecoder(strings.NewReader(line))
+	tok, err := dec.Token()
+	require.NoError(t, err)
+	require.Equal(t, json.Delim('{'), tok)
+
+	seen := map[string]bool{}
+
+	var dups []string
+
+	for dec.More() {
+		keyTok, kerr := dec.Token()
+		require.NoError(t, kerr)
+
+		key, ok := keyTok.(string)
+		require.True(t, ok)
+
+		if seen[key] {
+			dups = append(dups, key)
+		}
+
+		seen[key] = true
+
+		var skip json.RawMessage
+		require.NoError(t, dec.Decode(&skip))
+	}
+
+	return dups
+}
+
+func TestRequestLogJSONContract(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []string{"success", "client", "server"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &syncBuffer{}
+			e := newContractEcho(t, sink, nil)
+			e.POST("/events", func(c echo.Context) error {
+				var body map[string]any
+				if err := c.Bind(&body); err != nil {
+					return err
+				}
+
+				switch kind {
+				case "client":
+					return errs.NewBadRequestError("invalid event", false, nil, nil, nil)
+				case "server":
+					return errors.New("store failed")
+				default:
+					return c.NoContent(http.StatusAccepted)
+				}
+			})
+
+			req := httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(`{"password":"hunter2"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			req.Header.Set("X-Api-Key", "sk_test_secret_value")
+			req.Header.Set("Authorization", "Bearer eyJhbGciOi.secret.sig")
+			e.ServeHTTP(httptest.NewRecorder(), req)
+
+			lines, entries := logLines(t, sink)
+			for i, line := range lines {
+				assert.Equal(t, 1, strings.Count(line, `"request_id":`), line)
+				assert.LessOrEqual(t, strings.Count(line, `"ip":`), 1, line)
+				assert.Empty(t, duplicateKeys(t, line), line)
+
+				for _, secret := range []string{"sk_test_secret_value", "eyJhbGciOi", "hunter2"} {
+					assert.NotContains(t, line, secret)
+				}
+
+				assert.Equal(t, "query-api", entries[i]["service"])
+				assert.NotEmpty(t, entries[i]["level"])
+				assert.NotEmpty(t, entries[i]["timestamp"])
+				assert.NotContains(t, entries[i], "time")
+			}
+
+			assert.Equal(t, "/events", apiLogLine(t, sink)["uri"])
+		})
+	}
+}
+
+func TestRequestLogUserIDOnce(t *testing.T) {
+	t.Parallel()
+
+	setUser := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(middleware.UserIDKey, "user-1")
+
+			return next(c)
+		}
+	}
+
+	cases := map[string]struct {
+		pre   echo.MiddlewareFunc
+		route []echo.MiddlewareFunc
+	}{
+		// identity known before EnhanceContext: the context logger carries it
+		"before_context": {pre: setUser},
+		// identity set by route-level auth after EnhanceContext
+		"route_auth": {route: []echo.MiddlewareFunc{setUser}},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			sink := &syncBuffer{}
+			e := newContractEcho(t, sink, tc.pre)
+			e.GET("/me", func(c echo.Context) error { return c.NoContent(http.StatusNoContent) }, tc.route...)
+			do(t, e, "/me", nil)
+
+			lines, _ := logLines(t, sink)
+			for _, line := range lines {
+				assert.LessOrEqual(t, strings.Count(line, `"user_id":`), 1, line)
+			}
+
+			api := apiLogLine(t, sink)
+			assert.Equal(t, "user-1", api["user_id"])
+		})
+	}
+}
+
+func TestRequestLogTraceID(t *testing.T) {
+	t.Parallel()
+
+	traceID := trace.TraceID{
+		0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6,
+		0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+	}
+	spanID := trace.SpanID{0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7}
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID})
+	require.True(t, sc.IsValid())
+
+	withSpan := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			ctx := trace.ContextWithSpanContext(c.Request().Context(), sc)
+			c.SetRequest(c.Request().WithContext(ctx))
+
+			return next(c)
+		}
+	}
+
+	t.Run("with_span", func(t *testing.T) {
+		t.Parallel()
+
+		sink := &syncBuffer{}
+		e := newContractEcho(t, sink, withSpan)
+		e.GET("/ok", func(c echo.Context) error { return c.NoContent(http.StatusNoContent) })
+		do(t, e, "/ok", nil)
+
+		api := apiLogLine(t, sink)
+		assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", api["trace_id"])
+		assert.Equal(t, "00f067aa0ba902b7", api["span_id"])
+
+		lines, _ := logLines(t, sink)
+		for _, line := range lines {
+			assert.Equal(t, 1, strings.Count(line, `"trace_id":`), line)
+		}
+	})
+
+	t.Run("without_span", func(t *testing.T) {
+		t.Parallel()
+
+		sink := &syncBuffer{}
+		e := newContractEcho(t, sink, nil)
+		e.GET("/ok", func(c echo.Context) error { return c.NoContent(http.StatusNoContent) })
+		do(t, e, "/ok", nil)
+
+		api := apiLogLine(t, sink)
+		assert.NotContains(t, api, "trace_id")
+		assert.NotContains(t, api, "span_id")
+	})
 }
