@@ -1,17 +1,21 @@
 package kafkax_test
 
 import (
+	"context"
 	"encoding/binary"
+	"errors"
 	"math"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 func TestBuildDLQRecordEncodedHeaderFlood(t *testing.T) {
@@ -252,6 +256,76 @@ func TestBuildDLQRecordBoundsSourceInspection(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, record.Headers, 5)
 	require.LessOrEqual(t, encodedDLQBytes(record), 1+8192)
+}
+
+type scriptedProduce struct {
+	err     error
+	records []*kgo.Record
+}
+
+func (p *scriptedProduce) produce(_ context.Context, record *kgo.Record) error {
+	p.records = append(p.records, record)
+	return p.err
+}
+
+func TestDLQPublishCountsOnlyAcknowledgedRecords(t *testing.T) {
+	reg := telemetry.NewRegistry()
+	metrics := telemetry.NewConsumerMetrics(reg)
+	ok := &scriptedProduce{}
+	publisher := kafkax.NewDLQPublisherWithProducer(ok.produce, kafkax.DefaultDLQTopic, time.Second, 64<<10).
+		WithMetrics(metrics)
+	source := &kgo.Record{Topic: "security.events.v1", Value: []byte("poison")}
+
+	require.NoError(t, publisher.Publish(t.Context(), source, kafkax.DLQReasonDecode))
+	require.NoError(t, publisher.Publish(t.Context(), source, kafkax.DLQReasonDecode))
+	require.NoError(t, publisher.Publish(t.Context(), source, kafkax.DLQReasonValidation))
+	require.InDelta(t, 2, dlqCount(t, reg, "decode_error"), 0)
+	require.InDelta(t, 1, dlqCount(t, reg, "validation_error"), 0)
+
+	failing := &scriptedProduce{err: errors.New("not enough replicas")}
+	broken := kafkax.NewDLQPublisherWithProducer(failing.produce, kafkax.DefaultDLQTopic, time.Second, 64<<10).
+		WithMetrics(metrics)
+	require.Error(t, broken.Publish(t.Context(), source, kafkax.DLQReasonDecode))
+	require.Len(t, failing.records, 1, "the produce was attempted")
+	require.InDelta(t, 2, dlqCount(t, reg, "decode_error"), 0, "an unacknowledged publish is not counted")
+}
+
+func TestDLQPublishWithoutMetricsStillPublishes(t *testing.T) {
+	ok := &scriptedProduce{}
+	publisher := kafkax.NewDLQPublisherWithProducer(ok.produce, kafkax.DefaultDLQTopic, time.Second, 64<<10)
+	require.NoError(t, publisher.Publish(t.Context(), &kgo.Record{Topic: "events"}, kafkax.DLQReasonDecode))
+	require.Len(t, ok.records, 1)
+}
+
+func TestDLQPublishCopiesTraceparent(t *testing.T) {
+	const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	ok := &scriptedProduce{}
+	publisher := kafkax.NewDLQPublisherWithProducer(ok.produce, kafkax.DefaultDLQTopic, time.Second, 64<<10)
+	source := &kgo.Record{Topic: "security.events.v1", Value: []byte("poison"),
+		Headers: []kgo.RecordHeader{{Key: "traceparent", Value: []byte(traceparent)}}}
+
+	require.NoError(t, publisher.Publish(t.Context(), source, kafkax.DLQReasonDecode))
+	require.Len(t, ok.records, 1)
+	require.Equal(t, traceparent, headerValue(ok.records[0].Headers, "traceparent"))
+}
+
+func dlqCount(t *testing.T, reg prometheus.Gatherer, reason string) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "sentinel_dlq_events_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			for _, pair := range metric.GetLabel() {
+				if pair.GetName() == "reason" && pair.GetValue() == reason {
+					return metric.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
 }
 
 func headerValue(headers []kgo.RecordHeader, key string) string {
