@@ -378,5 +378,196 @@ class Phase4GuardTests(unittest.TestCase):
             self.assertNotRegex(text.lower(), r"phase 4 (is )?(complete|accepted|closed)")
 
 
+# --- launcher independence (04-18 / G1) -----------------------------------
+
+HELPER_CALL = "phase4Config(t, root)"
+FAMILY_FUNC = re.compile(r"^func (TestPhase4[A-Za-z]+)\(t \*testing\.T\)", re.M)
+KEYCTL_CALL = 'subprocess.run(["go", "run", "./tools/keyctl"'
+PASSWORD = "pw-NEVER-in-messages-7c1e"
+
+
+def family_bodies(sources: dict[str, str]) -> dict[str, str]:
+    """Each TestPhase4* body up to the next top-level func."""
+    bodies = {}
+    for source in sources.values():
+        for match in FAMILY_FUNC.finditer(source):
+            rest = source[match.end():]
+            following = re.search(r"^func ", rest, re.M)
+            bodies[match.group(1)] = rest[:following.start()] if following else rest
+    return bodies
+
+
+def family_helper_violations(sources: dict[str, str]) -> list[str]:
+    problems = []
+    for name, body in sorted(family_bodies(sources).items()):
+        helper = body.find(HELPER_CALL)
+        if helper < 0:
+            problems.append(f"{name}: does not call {HELPER_CALL}")
+            continue
+        for later in ("config.Load(", "startQueryAPI("):
+            index = body.find(later)
+            if 0 <= index < helper:
+                problems.append(f"{name}: {later} runs before {HELPER_CALL}")
+    return problems
+
+
+def call_text(text: str, start: int) -> str:
+    """The full call expression starting at start (balanced parentheses)."""
+    depth = 0
+    for index in range(text.index("(", start), len(text)):
+        if text[index] == "(":
+            depth += 1
+        elif text[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1]
+    raise AssertionError("unterminated call")
+
+
+def seeder_env_violations(script: str) -> list[str]:
+    problems = []
+    if "from phase4_pg_env import keyctl_env" not in script:
+        problems.append("seeder does not import keyctl_env from phase4_pg_env")
+    if 'sys.path.insert(0, str(ROOT / "scripts"))' not in script:
+        problems.append("seeder does not put the repo scripts dir on sys.path")
+    calls = [call_text(script, m.start()) for m in re.finditer(re.escape(KEYCTL_CALL), script)]
+    if len(calls) != 1:
+        problems.append(f"expected exactly one keyctl subprocess call, found {len(calls)}")
+    for call in calls:
+        if not re.search(r"\benv=keyctl_env\(", call):
+            problems.append("keyctl subprocess does not pass env=keyctl_env(...)")
+    return problems
+
+
+def phase4_sources() -> dict[str, str]:
+    return {path.name: path.read_text(encoding="utf-8")
+            for path in sorted((ROOT / "backend" / "testphase4").glob("*_test.go"))}
+
+
+class Phase4HarnessEnvGuards(unittest.TestCase):
+    # --- static guards ---------------------------------------------------
+
+    def test_every_family_uses_the_shared_helper_before_config_and_children(self):
+        sources = phase4_sources()
+        self.assertEqual(set(family_bodies(sources)), {name for name, _ in FAMILIES.values()})
+        self.assertEqual(family_helper_violations(sources), [])
+        helper = (ROOT / "backend/testphase4/harness_env_test.go").read_text(encoding="utf-8")
+        self.assertIn("func phase4Config(", helper)
+        self.assertIn('t.Setenv("SENTINEL_PRIMARY.ENV", "local")', helper)
+        self.assertIn('t.Setenv("SENTINEL_ENV_FILE", envFile)', helper)
+        self.assertIn("config.Load(config.ServiceQueryAPI)", helper)
+
+    def test_family_guard_catches_a_dropped_or_late_helper(self):
+        sources = phase4_sources()
+        triage = sources["triage_test.go"]
+        dropped = dict(sources, **{"triage_test.go": triage.replace(HELPER_CALL, "nil", 1)})
+        late_child = dict(sources, **{"summary_rules_test.go": sources["summary_rules_test.go"].replace(
+            "\t_ = " + HELPER_CALL + "\n\tbase, _ := startQueryAPI(t, binary, root, secret, \"\")\n",
+            "\tbase, _ := startQueryAPI(t, binary, root, secret, \"\")\n\t_ = " + HELPER_CALL + "\n", 1)})
+        late_load = dict(sources, **{"stream_test.go": sources["stream_test.go"].replace(
+            "\tcfg := " + HELPER_CALL + "\n",
+            "\t_, _ = config.Load(config.ServiceQueryAPI)\n\tcfg := " + HELPER_CALL + "\n", 1)})
+        for label, mutant in (("helper dropped", dropped), ("startQueryAPI first", late_child),
+                              ("config.Load first", late_load)):
+            with self.subTest(mutation=label):
+                self.assertNotEqual(mutant, sources, "mutation must change a family")
+                self.assertNotEqual(family_helper_violations(mutant), [], "mutant accepted: " + label)
+
+    def test_browser_seeder_derives_keyctl_env_from_the_repo_env(self):
+        script = (ROOT / "scripts/check-phase4-browser.sh").read_text(encoding="utf-8")
+        self.assertEqual(seeder_env_violations(script), [])
+        self.assertEqual(script.count("env=keyctl_env("), 1)
+
+    def test_seeder_guard_catches_a_dropped_keyctl_env(self):
+        script = (ROOT / "scripts/check-phase4-browser.sh").read_text(encoding="utf-8")
+        mutants = {
+            "env dropped": re.sub(r",?\s*env=keyctl_env\([^)]*\)", "", script, count=1),
+            "import dropped": script.replace("from phase4_pg_env import keyctl_env", "keyctl_env = dict", 1),
+        }
+        for label, mutant in mutants.items():
+            with self.subTest(mutation=label):
+                self.assertNotEqual(mutant, script, "mutation must change the seeder")
+                self.assertNotEqual(seeder_env_violations(mutant), [], "mutant accepted: " + label)
+
+    # --- phase4_pg_env.keyctl_env ----------------------------------------
+
+    def write_env(self, directory: str, values: dict[str, str], extra: str = "") -> Path:
+        path = Path(directory) / ".env"
+        lines = ["# comment line", ""] + [f"{key}={value}" for key, value in values.items()]
+        path.write_text("\n".join(lines) + "\n" + extra, encoding="utf-8")
+        return path
+
+    def full(self) -> dict[str, str]:
+        return {"SENTINEL_DATABASE.HOST": "127.0.0.1", "SENTINEL_DATABASE.PORT": "15432",
+                "SENTINEL_DATABASE.USER": "sentinel", "SENTINEL_DATABASE.PASSWORD": PASSWORD,
+                "SENTINEL_DATABASE.NAME": "sentinel", "SENTINEL_DATABASE.SSL_MODE": "disable"}
+
+    def expected(self) -> dict[str, str]:
+        return {"PGHOST": "127.0.0.1", "PGPORT": "15432", "PGUSER": "sentinel", "PGPASSWORD": PASSWORD,
+                "PGDATABASE": "sentinel", "PGSSLMODE": "disable"}
+
+    def test_keyctl_env_maps_database_settings_and_copies_base(self):
+        import contextlib
+        import io
+        import phase4_pg_env
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_env(directory, self.full())
+            base = {"PATH": "/bin", "PGHOST": "ambient-host"}
+            before = dict(base)
+            printed = io.StringIO()
+            with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(printed):
+                result = phase4_pg_env.keyctl_env(path, base)
+            self.assertEqual(printed.getvalue(), "", "keyctl_env must print nothing")
+            self.assertEqual(base, before, "base must not be mutated")
+            self.assertIsNot(result, base)
+            self.assertEqual(result, dict({"PATH": "/bin"}, **self.expected()))
+
+    def test_keyctl_env_strips_quotes_and_lets_process_env_win(self):
+        import phase4_pg_env
+        values = dict(self.full(), **{"SENTINEL_DATABASE.HOST": '"db.local"', "SENTINEL_DATABASE.NAME": "'quoted'"})
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_env(directory, values)
+            result = phase4_pg_env.keyctl_env(path, {"SENTINEL_DATABASE.PORT": "25432"})
+        self.assertEqual(result["PGHOST"], "db.local")
+        self.assertEqual(result["PGDATABASE"], "quoted")
+        self.assertEqual(result["PGPORT"], "25432", "process env wins, as with godotenv")
+
+    def test_keyctl_env_rejects_missing_empty_or_invalid_values_without_leaking(self):
+        import phase4_pg_env
+        required = ("HOST", "PORT", "USER", "PASSWORD", "NAME")
+        cases = {}
+        for key in required:
+            missing = self.full()
+            del missing["SENTINEL_DATABASE." + key]
+            cases["missing " + key] = (missing, "SENTINEL_DATABASE." + key)
+            cases["empty " + key] = (dict(self.full(), **{"SENTINEL_DATABASE." + key: ""}),
+                                     "SENTINEL_DATABASE." + key)
+        for port in ("abc", "0", "65536", "-1", "15432x"):
+            cases["port " + port] = (dict(self.full(), **{"SENTINEL_DATABASE.PORT": port}), "SENTINEL_DATABASE.PORT")
+        for label, (values, key) in cases.items():
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                path = self.write_env(directory, values)
+                with self.assertRaises(ValueError) as raised:
+                    phase4_pg_env.keyctl_env(path, {})
+                self.assertIn(key, str(raised.exception))
+                self.assertNotIn(PASSWORD, str(raised.exception), "error message leaks the password")
+
+    def test_keyctl_env_needs_no_ambient_environment(self):
+        from unittest import mock
+        import phase4_pg_env
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_env(directory, self.full())
+            scrubbed = {"PATH": os.environ.get("PATH", "/usr/bin"), "HOME": os.environ.get("HOME", "/")}
+            with mock.patch.dict(os.environ, scrubbed, clear=True):
+                result = phase4_pg_env.keyctl_env(path, os.environ)
+        for key, value in self.expected().items():
+            self.assertEqual(result[key], value)
+
+    def test_keyctl_env_resolves_all_keys_from_the_committed_example(self):
+        import phase4_pg_env
+        result = phase4_pg_env.keyctl_env(ROOT / ".env.example", {})
+        self.assertLessEqual({"PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE", "PGSSLMODE"}, set(result))
+
+
 if __name__ == "__main__":
     unittest.main()
