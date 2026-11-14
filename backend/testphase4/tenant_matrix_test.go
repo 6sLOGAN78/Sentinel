@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/6sLOGAN78/sentinel/internal/chmigrate"
-	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/database"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
@@ -95,8 +94,7 @@ func TestPhase4TenantMatrix(t *testing.T) {
 	require.NoError(t, err)
 	secret := base64.RawURLEncoding.EncodeToString(key)
 	t.Setenv("SENTINEL_AUTH.JWT_SECRET", secret)
-	cfg, err := config.Load(config.ServiceQueryAPI)
-	require.NoError(t, err)
+	cfg := phase4Config(t, root)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	require.NoError(t, database.Migrate(ctx, cfg.Database, zerolog.Nop()), "actual PG migrations are setup")

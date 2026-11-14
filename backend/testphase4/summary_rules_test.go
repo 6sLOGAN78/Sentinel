@@ -43,8 +43,6 @@ func TestPhase4SummaryRules(t *testing.T) {
 	require.NoError(t, err)
 	secret := base64.RawURLEncoding.EncodeToString(material)
 	t.Setenv("SENTINEL_AUTH.JWT_SECRET", secret)
-	t.Setenv("SENTINEL_PRIMARY.ENV", "local")
-	t.Setenv("SENTINEL_ENV_FILE", filepath.Join(root, ".env"))
 	raw, err := os.ReadFile(filepath.Join(root, "config/rules.yaml"))
 	require.NoError(t, err)
 	updated := strings.ReplaceAll(string(raw), "version: 1\n    enabled:", "version: 12\n    enabled:")
@@ -62,6 +60,7 @@ func TestPhase4SummaryRules(t *testing.T) {
 	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/query-api")
 	build.Dir, build.Stdout, build.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
 	require.NoError(t, build.Run(), "build must pass before behavioral RED")
+	_ = phase4Config(t, root)
 	base, _ := startQueryAPI(t, binary, root, secret, "")
 	tenant := "p4rules-" + uuid.NewString()
 	tokenFor := func(role string) string {

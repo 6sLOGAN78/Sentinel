@@ -29,7 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
-	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/database"
 )
 
@@ -38,15 +37,12 @@ import (
 func TestPhase4Auth(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	require.NoError(t, err)
-	t.Setenv("SENTINEL_PRIMARY.ENV", "local")
-	t.Setenv("SENTINEL_ENV_FILE", filepath.Join(root, ".env"))
 	secret := make([]byte, 48)
 	_, err = rand.Read(secret)
 	require.NoError(t, err)
 	secretText := base64.RawURLEncoding.EncodeToString(secret)
 	t.Setenv("SENTINEL_AUTH.JWT_SECRET", secretText)
-	cfg, err := config.Load(config.ServiceQueryAPI)
-	require.NoError(t, err)
+	cfg := phase4Config(t, root)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	require.NoError(t, database.Migrate(ctx, cfg.Database, zerolog.Nop()), "apply actual PG migrations")

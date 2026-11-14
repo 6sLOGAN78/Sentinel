@@ -58,3 +58,26 @@ func TestHarnessEnvBootstrap(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, cfg.Database.Host, again.Database.Host)
 }
+
+// phase4ConfigFrom makes a Phase 4 family self-sufficient on a clean runner: it
+// selects the local dotenv path for envFile and loads the query-api config, so
+// godotenv puts the file values into the process env that startQueryAPI copies
+// into each child. Callers set SENTINEL_AUTH.JWT_SECRET before calling it.
+func phase4ConfigFrom(t *testing.T, envFile string) *config.Config {
+	t.Helper()
+	t.Setenv("SENTINEL_PRIMARY.ENV", "local")
+	t.Setenv("SENTINEL_ENV_FILE", envFile)
+	_, err := os.Stat(envFile)
+	require.NoError(t, err, "run make dev-up first: %s missing", envFile)
+	cfg, err := config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+
+	return cfg
+}
+
+// phase4Config loads the Phase 4 configuration from the repo-root .env.
+func phase4Config(t *testing.T, root string) *config.Config {
+	t.Helper()
+
+	return phase4ConfigFrom(t, filepath.Join(root, ".env"))
+}

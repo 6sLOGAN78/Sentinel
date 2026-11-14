@@ -53,6 +53,8 @@ jobs:
         run: python3 -B -m unittest discover -s scripts -p test_go_dependencies.py
       - name: unit tests with race detector
         run: go test -race ./...
+      - name: phase4 harness bootstraps from a scrubbed environment
+        run: env -i PATH="$PATH" HOME="$HOME" GOCACHE="$(go env GOCACHE)" GOMODCACHE="$(go env GOMODCACHE)" GOPATH="$(go env GOPATH)" ../scripts/go-test-nonempty.sh './testphase4/...' '^TestHarnessEnvBootstrap$' -tags=phase4 -race -timeout 3m -p 1
       - name: defect-fix tests must not silently disappear
         run: ../scripts/go-test-nonempty.sh './internal/...' 'TestRecover|TestShutdown|TestRedis|TestDSN|TestConnString|TestDotenv|TestClose'
 

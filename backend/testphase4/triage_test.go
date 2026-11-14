@@ -23,7 +23,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
-	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/database"
 	"github.com/6sLOGAN78/sentinel/internal/query"
@@ -41,8 +40,7 @@ func TestPhase4Triage(t *testing.T) {
 	require.NoError(t, err)
 	secret := base64.RawURLEncoding.EncodeToString(key)
 	t.Setenv("SENTINEL_AUTH.JWT_SECRET", secret)
-	cfg, err := config.Load(config.ServiceQueryAPI)
-	require.NoError(t, err)
+	cfg := phase4Config(t, root)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	require.NoError(t, database.Migrate(ctx, cfg.Database, zerolog.Nop()), "actual migrator is setup, not behavioral RED")

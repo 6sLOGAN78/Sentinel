@@ -90,8 +90,7 @@ func TestPhase4Stream(t *testing.T) {
 	// An ordinary finite HTTP deadline remains enabled, and the real route must
 	// override it locally while idle (heartbeat is deliberately later than 2s).
 	t.Setenv("SENTINEL_SERVER.WRITE_TIMEOUT", "2")
-	cfg, err := config.Load(config.ServiceQueryAPI)
-	require.NoError(t, err)
+	cfg := phase4Config(t, root)
 	ctx, cancel := context.WithTimeout(t.Context(), 9*time.Minute)
 	defer cancel()
 	owned := deliveryDatabase(ctx, t, cfg.Database, 8)

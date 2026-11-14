@@ -102,8 +102,7 @@ func TestPhase4Delivery(t *testing.T) {
 	require.NoError(t, err)
 	secret := base64.RawURLEncoding.EncodeToString(key)
 	t.Setenv("SENTINEL_AUTH.JWT_SECRET", secret)
-	cfg, err := config.Load(config.ServiceQueryAPI)
-	require.NoError(t, err)
+	cfg := phase4Config(t, root)
 	ctx, cancel := context.WithTimeout(t.Context(), 9*time.Minute)
 	defer cancel()
 	// On RED this runs the existing seven migrations successfully. An absent

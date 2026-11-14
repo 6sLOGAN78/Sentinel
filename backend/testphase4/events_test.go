@@ -24,7 +24,6 @@ import (
 
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
 	"github.com/6sLOGAN78/sentinel/internal/chmigrate"
-	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/database"
 	"github.com/6sLOGAN78/sentinel/internal/query"
@@ -43,15 +42,12 @@ type eventSearchPage struct {
 func TestPhase4Events(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	require.NoError(t, err)
-	t.Setenv("SENTINEL_PRIMARY.ENV", "local")
-	t.Setenv("SENTINEL_ENV_FILE", filepath.Join(root, ".env"))
 	material := make([]byte, 48)
 	_, err = rand.Read(material)
 	require.NoError(t, err)
 	secret := base64.RawURLEncoding.EncodeToString(material)
 	t.Setenv("SENTINEL_AUTH.JWT_SECRET", secret)
-	cfg, err := config.Load(config.ServiceQueryAPI)
-	require.NoError(t, err)
+	cfg := phase4Config(t, root)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	require.NoError(t, database.Migrate(ctx, cfg.Database, zerolog.Nop()))
