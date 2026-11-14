@@ -39,6 +39,13 @@ function page(
   };
 }
 
+const encoder = new TextEncoder();
+function frame(seq: string, alert: unknown = page().items[0]) {
+  return encoder.encode(
+    `id: ${seq}\nevent: alert\ndata: ${JSON.stringify({ seq, alert })}\n\n`,
+  );
+}
+
 function signIn() {
   fireEvent.change(screen.getByLabelText("Development access token"), {
     target: { value: "filter-test-credential" },
@@ -58,15 +65,21 @@ async function start(
   const requests: Request[] = [];
   const backfills: Request[] = [];
   const streams: Request[] = [];
+  const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
   let tenant = "filters-tenant";
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
       if (new URL(request.url).pathname === "/api/v1/alerts/stream") {
         streams.push(request);
-        return new Response(new ReadableStream(), {
-          headers: { "Content-Type": "text/event-stream" },
-        });
+        return new Response(
+          new ReadableStream({
+            start(c) {
+              bodies.push(c);
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
       }
       if (new URL(request.url).pathname === "/api/v1/alerts/backfill") {
         backfills.push(request);
@@ -91,6 +104,7 @@ async function start(
     requests,
     backfills,
     streams,
+    bodies,
     cache,
     switchTenant: () => {
       tenant = "second-tenant";
@@ -109,7 +123,7 @@ describe("filtered alert pages", () => {
     "recovers transient backfill 503 in the mounted session, after a processed page: %s",
     async (processedFirst) => {
       let failed = false;
-      const { backfills, requests } = await start(
+      const { backfills, requests, streams } = await start(
         async () => Response.json(page("Prior snapshot", null)),
         600000,
         async (request) => {
@@ -144,7 +158,10 @@ describe("filtered alert pages", () => {
           ? ["0", "9007199254740993", "9007199254740993"]
           : ["0", "0"],
       );
-      await screen.findByText("New alerts available");
+      // A transient retry inside the first walk is still the load baseline.
+      await waitFor(() => expect(streams).toHaveLength(1));
+      await screen.findByText("Live");
+      expect(screen.queryByText("New alerts available")).toBeNull();
       expect(
         screen.queryByText("Reconnecting… Missed alerts will be recovered."),
       ).toBeNull();
@@ -156,11 +173,7 @@ describe("filtered alert pages", () => {
   );
 
   it("retains a later arrival and stale query when an older refresh snapshot finishes", async () => {
-    let finishPage: (response: Response) => void = () => {};
     let finishRefresh: (response: Response) => void = () => {};
-    const pendingPage = new Promise<Response>((resolve) => {
-      finishPage = resolve;
-    });
     const pendingRefresh = new Promise<Response>((resolve) => {
       finishRefresh = resolve;
     });
@@ -170,7 +183,7 @@ describe("filtered alert pages", () => {
       summary: "Later commit",
     };
     let listReads = 0;
-    const { cache, requests, backfills } = await start(
+    const { cache, requests, backfills, bodies } = await start(
       async () => {
         listReads++;
         if (listReads === 2) return pendingRefresh;
@@ -179,28 +192,20 @@ describe("filtered alert pages", () => {
         return Response.json(current);
       },
       600000,
-      async (request) =>
-        new URL(request.url).searchParams.get("after_seq") === "0"
-          ? Response.json({
-              items: [{ seq: "1", alert: page().items[0] }],
-              next_seq: "1",
-              has_more: true,
-            })
-          : pendingPage,
+      async () =>
+        Response.json({
+          items: [{ seq: "1", alert: page().items[0] }],
+          next_seq: "1",
+          has_more: false,
+        }),
     );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    await act(async () => bodies[0].enqueue(frame("2")));
     await screen.findByText("New alerts available");
     await screen.findByText("Prior snapshot");
     fireEvent.click(screen.getByRole("button", { name: "Refresh alerts" }));
     await waitFor(() => expect(requests).toHaveLength(2));
-    await act(async () =>
-      finishPage(
-        Response.json({
-          items: [{ seq: "2", alert: later }],
-          next_seq: "2",
-          has_more: false,
-        }),
-      ),
-    );
+    await act(async () => bodies[0].enqueue(frame("3", later)));
     await act(async () =>
       finishRefresh(Response.json(page("Prior snapshot", null))),
     );
@@ -210,7 +215,7 @@ describe("filtered alert pages", () => {
     expect(new URL(requests[1].url).search).toBe(
       new URL(requests[0].url).search,
     );
-    expect(backfills).toHaveLength(2);
+    expect(backfills).toHaveLength(1);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Refresh alerts" }),
@@ -302,7 +307,7 @@ describe("filtered alert pages", () => {
 
   it("catches up exact decimal delivery pages above 2^53 before advancing and keeps visible rows bounded", async () => {
     const order: string[] = [];
-    const { cache, requests, backfills } = await start(
+    const { cache, requests, backfills, bodies } = await start(
       async () => Response.json(page("Existing filtered page", null)),
       600000,
       async (request) => {
@@ -323,6 +328,9 @@ describe("filtered alert pages", () => {
     );
     await waitFor(() => expect(backfills).toHaveLength(2));
     expect(order).toEqual(["0", "9007199254740993"]);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(screen.queryByText("New alerts available")).toBeNull();
+    await act(async () => bodies[0].enqueue(frame("9007199254740995")));
     await screen.findByText("New alerts available");
     expect(requests).toHaveLength(1);
     expect(cache.getQueryCache().getAll()).toHaveLength(1);
@@ -335,6 +343,54 @@ describe("filtered alert pages", () => {
     await waitFor(() =>
       expect(screen.queryByText("New alerts available")).toBeNull(),
     );
+  });
+
+  it("does not announce existing delivery history on first load", async () => {
+    const { backfills, streams, requests } = await start(
+      async () => Response.json(page("Existing history", null)),
+      600000,
+      async (request) =>
+        new URL(request.url).searchParams.get("after_seq") === "0"
+          ? Response.json({
+              items: [
+                { seq: "1", alert: page().items[0] },
+                { seq: "2", alert: page().items[0] },
+              ],
+              next_seq: "2",
+              has_more: true,
+            })
+          : Response.json({
+              items: [{ seq: "3", alert: page().items[0] }],
+              next_seq: "3",
+              has_more: false,
+            }),
+    );
+    await screen.findByText("Existing history");
+    await waitFor(() => expect(streams).toHaveLength(1));
+    await screen.findByText("Live");
+    expect(backfills).toHaveLength(2);
+    expect(streams[0].headers.get("Last-Event-ID")).toBe("3");
+    expect(screen.queryByText("New alerts available")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh alerts" })).toBeNull();
+    expect(requests).toHaveLength(1);
+  });
+
+  it("announces a delivery that arrives after the first-load catch-up", async () => {
+    const { bodies } = await start(
+      async () => Response.json(page("Existing history", null)),
+      600000,
+      async () =>
+        Response.json({
+          items: [{ seq: "1", alert: page().items[0] }],
+          next_seq: "1",
+          has_more: false,
+        }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(screen.queryByText("New alerts available")).toBeNull();
+    await act(async () => bodies[0].enqueue(frame("2")));
+    await screen.findByText("New alerts available");
+    expect(screen.getByRole("button", { name: "Refresh alerts" })).toBeTruthy();
   });
 
   it("does not request the next delivery page until invalidation processing completes", async () => {

@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { createElement } from "react";
 import { createAPIClient } from "./client";
+import { receiveLiveAlerts } from "./live-alerts";
 import { QueryClient } from "@tanstack/react-query";
 
 const workflow = {
@@ -305,4 +306,113 @@ describe("live delivery through the actual guarded client and App", () => {
       expect(unauthorized).toHaveBeenCalledTimes(current ? 1 : 0);
     },
   );
+});
+describe("initial catch-up baseline for a mounted generation", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  function harness(pages: Record<string, { seqs: string[]; more: boolean }>) {
+    const afters: string[] = [];
+    const lastEventIDs: (string | null)[] = [];
+    const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        const url = new URL(request.url);
+        if (url.pathname === "/api/v1/alerts/backfill") {
+          const after = url.searchParams.get("after_seq")!;
+          afters.push(after);
+          const next = pages[after] ?? { seqs: [], more: false };
+          return Response.json({
+            items: next.seqs.map((seq) => ({ seq, alert: workflow })),
+            next_seq: next.seqs.at(-1) ?? after,
+            has_more: next.more,
+          });
+        }
+        if (url.pathname === "/api/v1/alerts/stream") {
+          lastEventIDs.push(request.headers.get("Last-Event-ID"));
+          return new Response(
+            new ReadableStream({
+              start(c) {
+                bodies.push(c);
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        return new Response(null, { status: 404 });
+      }),
+    );
+    const client = createAPIClient(
+      () => "baseline-private-credential",
+      new AbortController().signal,
+      () => true,
+      vi.fn(),
+    );
+    return { client, afters, lastEventIDs, bodies };
+  }
+  function run(
+    client: ReturnType<typeof createAPIClient>,
+    calls: [string, string[], boolean][],
+  ) {
+    const controller = new AbortController();
+    const done = receiveLiveAlerts(
+      client,
+      workflow.tenant_id,
+      controller.signal,
+      async (items, through, initial) => {
+        calls.push([through, items.map((item) => item.seq), initial]);
+      },
+      () => {},
+    );
+    return { controller, done };
+  }
+
+  it("marks every first-walk page initial, then SSE and reconnect backfill pages not initial, without gaps or repeats", async () => {
+    const { client, afters, lastEventIDs, bodies } = harness({
+      "0": { seqs: ["1"], more: true },
+      "1": { seqs: ["2"], more: false },
+      "3": { seqs: ["4"], more: false },
+    });
+    const calls: [string, string[], boolean][] = [];
+    const { controller, done } = run(client, calls);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(calls).toEqual([
+      ["1", ["1"], true],
+      ["2", ["2"], true],
+    ]);
+    expect(lastEventIDs).toEqual(["2"]);
+    bodies[0].enqueue(encoder.encode(frame("3")));
+    await waitFor(() => expect(calls).toHaveLength(3));
+    expect(calls[2]).toEqual(["3", ["3"], false]);
+    bodies[0].close();
+    await waitFor(() => expect(bodies).toHaveLength(2), { timeout: 4000 });
+    expect(calls[3]).toEqual(["4", ["4"], false]);
+    // Each request resumes exactly at the last processed sequence.
+    expect(afters).toEqual(["0", "1", "3"]);
+    expect(lastEventIDs).toEqual(["2", "4"]);
+    expect(calls.flatMap(([, seqs]) => seqs)).toEqual(["1", "2", "3", "4"]);
+    controller.abort();
+    await done;
+  });
+
+  it("treats a remount resuming from a committed cursor as a new baseline", async () => {
+    const { client, afters, bodies } = harness({
+      "0": { seqs: ["1"], more: false },
+      "1": { seqs: ["2"], more: false },
+    });
+    const first: [string, string[], boolean][] = [];
+    const mountedOnce = run(client, first);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(first).toEqual([["1", ["1"], true]]);
+    mountedOnce.controller.abort();
+    await mountedOnce.done;
+    const second: [string, string[], boolean][] = [];
+    const mountedTwice = run(client, second);
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(afters).toEqual(["0", "1"]);
+    expect(second).toEqual([["2", ["2"], true]]);
+    mountedTwice.controller.abort();
+    await mountedTwice.done;
+  });
 });
