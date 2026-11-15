@@ -387,6 +387,42 @@ func TestDetectorHistoryRecovery(t *testing.T) {
 		require.Contains(t, second.stderr, "nothing to recover")
 		require.Len(t, auditRows(t, f.db, group), 1)
 	})
+	t.Run("audit table is append-only", func(t *testing.T) {
+		db, err := database.New(t.Context(), pgCfg, zerolog.Nop())
+		require.NoError(t, err)
+		t.Cleanup(db.Close)
+		group, digest := "audit-"+uuid.NewString(), strings.Repeat("b", 64)
+		var id int64
+		require.NoError(t, db.Pool.QueryRow(t.Context(), `INSERT INTO detection_history_recoveries
+			(group_id, topic, partition_id, committed_offset, log_start, log_end, never_evaluated_from,
+			 never_evaluated_to, open_windows_discarded, config_fingerprint, plan_digest, repinned_offset,
+			 operator, reason, status)
+			VALUES ($1,'t',0,1,5,9,3,5,true,$2,$3,5,'op','why','pending') RETURNING recovery_id`,
+			group, strings.Repeat("c", 64), digest).Scan(&id))
+		for _, statement := range []string{
+			"UPDATE detection_history_recoveries SET operator='other' WHERE recovery_id=$1",
+			"UPDATE detection_history_recoveries SET reason='other', status='applied', applied_at=now() WHERE recovery_id=$1",
+			"UPDATE detection_history_recoveries SET status='applied' WHERE recovery_id=$1",
+			"DELETE FROM detection_history_recoveries WHERE recovery_id=$1",
+		} {
+			_, err = db.Pool.Exec(t.Context(), statement, id)
+			require.Error(t, err, statement)
+		}
+		_, err = db.Pool.Exec(t.Context(),
+			"UPDATE detection_history_recoveries SET status='applied', applied_at=now() WHERE recovery_id=$1", id)
+		require.NoError(t, err, "pending to applied is the only permitted update")
+		for _, statement := range []string{
+			"UPDATE detection_history_recoveries SET status='pending', applied_at=NULL WHERE recovery_id=$1",
+			"UPDATE detection_history_recoveries SET applied_at=now() + interval '1 hour' WHERE recovery_id=$1",
+			"DELETE FROM detection_history_recoveries WHERE recovery_id=$1",
+		} {
+			_, err = db.Pool.Exec(t.Context(), statement, id)
+			require.Error(t, err, statement)
+		}
+		_, err = db.Pool.Exec(t.Context(), "TRUNCATE detection_history_recoveries")
+		require.Error(t, err, "truncate is rejected")
+		require.Equal(t, 1, recoveryRowCount(t, db, group))
+	})
 	t.Run("missing group metadata with fences", func(t *testing.T) {
 		env, kafka := detectorPGEnv(t, pgCfg)
 		db, err := database.New(t.Context(), pgCfg, zerolog.Nop())
