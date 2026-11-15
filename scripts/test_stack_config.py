@@ -73,6 +73,30 @@ class StackConfigTests(unittest.TestCase):
             self.assertIn(f"http://127.0.0.1:{port}/readyz", config["healthcheck"]["test"])
             self.assertTrue(all(p["host_ip"] == "127.0.0.1" for p in config["ports"]))
 
+    def test_kafka_keeps_group_offsets_for_a_year(self):
+        env = dict(os.environ)
+        env.update(
+            SENTINEL_POSTGRES_PASSWORD="synthetic-secret",
+            SENTINEL_CLICKHOUSE_PASSWORD="synthetic-secret",
+        )
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(ROOT / "deployments/compose/docker-compose.yml"),
+                "config",
+                "--format",
+                "json",
+            ],
+            env=env,
+            capture_output=True,
+            check=True,
+        )
+        kafka = json.loads(result.stdout)["services"]["kafka"]
+        # ADR 0012: an idle detector group must not lose its offsets after 7 days.
+        self.assertEqual(kafka["environment"]["KAFKA_OFFSETS_RETENTION_MINUTES"], "525600")
+
     def run_checker(self, dotenv=(), shell=(), actual=None, config_fail=False):
         docker = shutil.which("docker")
         self.assertIsNotNone(docker, "Docker Compose CLI is required (no daemon needed)")

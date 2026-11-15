@@ -34,6 +34,9 @@ services:
       KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
       KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      # One year: an idle detector group keeps its committed offsets, generation
+      # and PG fence continuity instead of expiring after the 7-day default (ADR 0012).
+      KAFKA_OFFSETS_RETENTION_MINUTES: "525600"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes: ["kafka-data:/var/lib/kafka/data"]
     healthcheck:

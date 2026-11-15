@@ -187,6 +187,8 @@ jobs:
         run: make test-integ
       - name: API key integration group is nonempty
         run: scripts/go-test-nonempty.sh './test/...' 'TestKeyctl|TestIngestAuth' -tags=integration -timeout 4m -p 1
+      - name: detector history recovery group is nonempty
+        run: scripts/go-test-nonempty.sh './test/...' '^TestDetectorHistoryRecovery$' -tags=integration -race -timeout 8m -p 1
       - name: ingest integration group is nonempty
         run: scripts/go-test-nonempty.sh './test/...' 'TestIngest' -tags=integration -timeout 6m -p 1
       - name: dedupe schema and TTL integration group is nonempty
