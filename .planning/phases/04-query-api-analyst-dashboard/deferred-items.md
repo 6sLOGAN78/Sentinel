@@ -10,3 +10,11 @@
 - **Suggested fix (owner: G4 follow-up, not 04-18):** replace the click at spec:730 with an assertion that, after the initial catch-up, the banner and button are absent. G4 requires exactly that, so the check becomes stronger, not weaker. Keep the rest of the reconnect rounds unchanged.
 
 **D-04-18-01 resolved 2026-11-15:** `web/e2e/phase4.spec.ts` now asserts that neither the "New alerts available" notice nor the "Refresh alerts" button is present after the initial catch-up (stronger than clicking it away). Prettier, tsc and eslint pass; the real browser proof is the hosted phase4-browser job in 04-25.
+
+## From 04-24 (G7), 2026-11-15
+
+### D-04-24-01: ADR index and ADR gate cover only 0001-0006
+
+- **Symptom:** `docs/decisions/README.md` lists 0001-0006 and now 0012, but not 0007-0009. `scripts/check-adrs.sh` globs `000[1-6]-*.md` and requires exactly six files, so 0007-0009 and 0012 are not heading-checked by the gate.
+- **Scope:** pre-existing, not caused by 04-24. 04-24 added only the 0012 row. 0012 has all four required headings (checked by grep).
+- **Suggested fix:** list 0007-0009 in the index and widen check-adrs to every `[0-9][0-9][0-9][0-9]-*.md`, with the count assertion replaced by a nonempty check.
