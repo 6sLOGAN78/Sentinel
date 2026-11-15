@@ -8,3 +8,5 @@
 - **Cause:** 04-20 (a59f365) suppresses the banner for the initial catch-up, so the first-load "New alerts available" notice and its "Refresh alerts" button no longer appear. The spec still clicks that button to "acknowledge the initial catch-up". 04-20 was web-only and did not run Playwright (04-20-SUMMARY).
 - **Evidence it is not a launcher/G1 issue:** the same scrubbed run, made from a temporary worktree at HEAD with only the four 04-20 `web/src` files restored to bbd8d35^, gives 13/13 (`.local/phase4-acceptance/04-18/9-browser-isolation-cwdfix.log`).
 - **Suggested fix (owner: G4 follow-up, not 04-18):** replace the click at spec:730 with an assertion that, after the initial catch-up, the banner and button are absent. G4 requires exactly that, so the check becomes stronger, not weaker. Keep the rest of the reconnect rounds unchanged.
+
+**D-04-18-01 resolved 2026-11-15:** `web/e2e/phase4.spec.ts` now asserts that neither the "New alerts available" notice nor the "Refresh alerts" button is present after the initial catch-up (stronger than clicking it away). Prettier, tsc and eslint pass; the real browser proof is the hosted phase4-browser job in 04-25.

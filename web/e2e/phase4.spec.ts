@@ -726,9 +726,12 @@ test("live reconnect recovers exact missed commits through each query replica", 
   await expect
     .poll(() => sorted(lists.latest))
     .toEqual(sorted(fixture.tenants.a.alertIds));
-  // Acknowledge the initial catch-up so later notices come from missed commits only.
-  await page.getByRole("button", { name: "Refresh alerts" }).click();
+  // The initial catch-up is a baseline (04-20, G4): no notice, so any later
+  // notice can only come from commits missed while disconnected.
   await expect(page.getByText("New alerts available")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Refresh alerts" }),
+  ).toHaveCount(0);
   let expected = [...fixture.tenants.a.alertIds];
   const services = Object.keys(fixture.replicas);
   const rounds: [string, string][] = [
