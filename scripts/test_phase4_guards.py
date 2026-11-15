@@ -439,6 +439,15 @@ def seeder_env_violations(script: str) -> list[str]:
     return problems
 
 
+def seeder_compose_cwd_violations(script: str) -> list[str]:
+    calls = [call_text(script, m.start()) for m in re.finditer(r"subprocess\.run\(COMPOSE \+", script)]
+    problems = [] if calls else ["no compose subprocess calls found in the seeder"]
+    for call in calls:
+        if not re.search(r"\bcwd=ROOT\b", call):
+            problems.append("compose subprocess call does not pin cwd=ROOT")
+    return problems
+
+
 def phase4_sources() -> dict[str, str]:
     return {path.name: path.read_text(encoding="utf-8")
             for path in sorted((ROOT / "backend" / "testphase4").glob("*_test.go"))}
@@ -489,6 +498,17 @@ class Phase4HarnessEnvGuards(unittest.TestCase):
         script = (ROOT / "scripts/check-phase4-browser.sh").read_text(encoding="utf-8")
         self.assertEqual(seeder_env_violations(script), [])
         self.assertEqual(script.count("env=keyctl_env("), 1)
+
+    def test_seeder_compose_calls_run_from_the_repo_root(self):
+        """PHASE4_COMPOSE_CMD may use repo-relative -f paths (the CI default does),
+        and Playwright runs the burst subcommand from web/, so every compose
+        subprocess must pin cwd=ROOT instead of relying on a launcher's absolute paths."""
+        script = (ROOT / "scripts/check-phase4-browser.sh").read_text(encoding="utf-8")
+        self.assertEqual(seeder_compose_cwd_violations(script), [])
+        mutant = script.replace("cwd=ROOT, check=True, capture_output=True, text=True, timeout=30",
+                                "check=True, capture_output=True, text=True, timeout=30", 1)
+        self.assertNotEqual(mutant, script, "mutation must change the seeder")
+        self.assertNotEqual(seeder_compose_cwd_violations(mutant), [], "compose call without cwd accepted")
 
     def test_seeder_guard_catches_a_dropped_keyctl_env(self):
         script = (ROOT / "scripts/check-phase4-browser.sh").read_text(encoding="utf-8")
