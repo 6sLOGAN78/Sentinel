@@ -146,7 +146,9 @@ Keep source retention beyond the oldest active pin plus downtime and catch-up.
 Fired windows retain pins too. Local Kafka defaults are 24h events and seven days
 alerts/DLQ; these are defaults, not recovery-duration guarantees. Event CH TTL is
 independent (seven days by default). Idle state can outlive source retention;
-trimmed pins or truncated history fail closed. Changing topic partition counts
+trimmed pins or truncated history fail closed (see
+[expired checkpoint history](#detector-refuses-to-start-expired-checkpoint-history)
+for the audited recovery). Changing topic partition counts
 also changes entity placement and is not a supported live recovery operation.
 
 Format-2 metadata is strict and at most 1,024 bytes: fingerprint, all versions,
@@ -168,6 +170,145 @@ Group generation rollback/recreation, changed incarnation and inconsistent store
 restores need explicit stopped maintenance, not automatic namespace adoption.
 Keep the failed evidence and restore a consistent recovery set before restarting.
 No alert TTL or ledger-GC procedure is supplied by this phase.
+
+## Detector refuses to start: expired checkpoint history
+
+[ADR 0012](decisions/0012-detector-history-recovery.md) records this design.
+The fastest fix is not to need it: keep the stack up, or start it at least once
+a day, so the detector's pins do not fall behind event retention.
+
+**Symptom.** The detector exits before it becomes ready, and its log contains:
+
+```text
+detector checkpoint history lost; stop detectors and see docs/operations.md (make detector-recover-history)
+```
+
+`/readyz` never returns 200, and new alerts stop reaching the dashboard.
+
+**Cause.** `security.events.v1` keeps records for 24 hours by default
+(`EVENTS_RETENTION_MS`). An idle detector does not move its committed pin. After
+more than a day without traffic, the broker deletes the records at and after the
+pin, so the committed offset is below the retained log start. The detector fails
+closed rather than skip them. This happens even when every partition is now
+empty. The records in the gap expired before the detector evaluated them, so
+detection on them cannot be recovered. ClickHouse may still hold them for search.
+
+The recovery re-pins the same consumer group through the Kafka admin API. It
+writes one audit row per partition and never touches fences.
+
+1. **Stop every detector replica.** You do not need `make dev-down`; stop only
+   the detector, using the same `COMPOSE_PROJECT_NAME` the stack runs under:
+
+   ```bash
+   python3 -B scripts/dev_auth_env.py -- docker compose -f deployments/compose/docker-compose.yml --env-file .env stop detector
+   ```
+
+   Also stop any `make run SVC=detector` process. The tool refuses with "detector
+   group has active members; stop every detector replica first" while any
+   member remains.
+
+2. **Plan (dry-run).** Run `make detector-recover-history`. It reads the root
+   `.env`, never joins the group, writes nothing, and prints one JSON object:
+
+   | Field | Meaning |
+   | --- | --- |
+   | `group`, `topic` | The detector group (`sentinel-detector` by default) and the events topic. |
+   | `config_fingerprint` | Fingerprint of the loaded rules. It must match the checkpoints, or the tool refuses. |
+   | `entries[]` | One entry per partition whose committed offset is below its log start. Retained and uncommitted partitions are not listed. |
+   | `entries[].committed` | The committed pin, now below the retained history. |
+   | `entries[].log_start`, `log_end` | The retained range of that partition right now. |
+   | `entries[].never_evaluated_from`, `never_evaluated_to` | Records the detector will never evaluate. `to - from` is the size of the loss. An empty range means only already-evaluated records expired. |
+   | `entries[].open_windows_discarded` | `true` if the old checkpoint was undrained. Partly filled windows are dropped and their counts start again. |
+   | `entries[].repinned` | The new drained checkpoint: offset `max(log_start, processed_next)` and its metadata. |
+   | `plan_digest` | 64-hex digest of this exact plan. Apply needs it. |
+   | `nothing_to_recover`, `applied` | `nothing_to_recover` is `true` when no partition is expired, and stderr also says "nothing to recover". `applied` is `false` on a dry-run. |
+
+   Exit 0 means a plan or nothing to recover. Exit 1 means a fixed refusal or
+   failure message on stderr. Exit 2 means a usage error.
+
+3. **Decide.** Applying is irreversible for detection. The never-evaluated
+   records are never re-detected, and discarded windows do not come back. If the
+   gap matters, search those offsets' time range in ClickHouse before going on.
+   Keep the dry-run output with your incident notes.
+
+4. **Apply with acknowledgement.**
+
+   ```bash
+   make detector-recover-history ACK=<plan_digest> OPERATOR=<you> REASON="stack idle over retention; loss accepted"
+   ```
+
+   All three values are required. If you set only some of them, the target
+   refuses before running anything. The recipe never echoes `REASON`. Avoid `$`
+   in it, because Make expands it. The tool recomputes the plan and refuses with
+   "plan digest mismatch; rerun the dry-run and acknowledge its plan_digest" if
+   anything changed. In that case go back to step 2. It then writes `pending`
+   audit rows, re-checks that the group has zero members, commits the re-pinned
+   checkpoints, verifies them, marks the rows `applied`, and prints the plan with
+   `applied: true`.
+
+5. **Start the detector and verify.** Start it the same way you stopped it
+   (`... up -d detector`, or `make run SVC=detector`). Wait for `/readyz` to
+   return 200 on the detector ops port. A second dry-run should report
+   `nothing_to_recover: true`.
+
+6. **Check the audit trail.** Rows are append-only, enforced by triggers:
+
+   ```sql
+   SELECT recovery_id, topic, partition_id, committed_offset, log_start, log_end,
+          never_evaluated_from, never_evaluated_to, open_windows_discarded,
+          repinned_offset, plan_digest, operator, reason, status, created_at, applied_at
+   FROM detection_history_recoveries WHERE group_id = $1 ORDER BY recovery_id;
+   ```
+
+   With `psql`, bind the group as a variable, for example
+   `printf '%s\n' "SELECT ... WHERE group_id = :'g' ORDER BY recovery_id;" | psql -v g=sentinel-detector ...`.
+   Every row of the plan should be `applied` with `applied_at` set.
+
+**Do not delete or rename the detector group, edit `detection_partition_fences`,
+or delete topics to get past this error.** A recreated group starts a new Kafka
+generation, so the fences reject it ("stale detector assignment"). Editing
+fences destroys the replay guarantees. Deleting topics loses retained events.
+A renamed group restarts cooldown and decision lineage. That is what the two
+Phase 4 manual recoveries did, and ADR 0012 replaces it.
+
+**Commit succeeded, audit still `pending`.** The apply can fail with "offsets
+committed and verified but audit rows remain pending; rerun the same apply".
+That means Kafka now holds the re-pin but the PostgreSQL update to `applied`
+failed. A rerun cannot finish those rows: it sees nothing expired and reports
+"nothing to recover". To recognize this case, look for audit rows of that
+`plan_digest` that are still `pending`, while a dry-run reports
+`nothing_to_recover: true` and the group's committed offsets equal each row's
+`repinned_offset`. The rows already record the operator, reason, digest and
+ranges, so the acknowledgement is not lost. Record the finalization in your
+incident notes, with the error output and the verification. Then, once
+PostgreSQL is healthy, you may set the rows to applied. The trigger allows only
+this change:
+
+```sql
+UPDATE detection_history_recoveries SET status = 'applied', applied_at = now()
+WHERE group_id = $1 AND plan_digest = $2 AND status = 'pending';
+```
+
+Two other kinds of error leave the commit unverified and the rows `pending`. One
+is "offset commit not verified; audit rows remain pending, rerun the same apply".
+The other is any refusal that ends in "; audit rows remain pending", for example
+when a detector rejoined between the two member checks. For these, fix the cause
+and rerun the same acknowledged apply. The unique audit key makes the rerun
+idempotent. If that rerun reports "nothing to recover", the earlier commit did
+land, so handle it as the case above. "recovery audit failed; nothing was committed to Kafka" means
+PostgreSQL refused the pending rows and Kafka was not touched.
+
+**Group metadata missing.** "group metadata missing while PG fences exist" means
+Kafka no longer has the group or any committed offset, but PostgreSQL fences
+show it ran before. This happens when offsets retention expires, or when someone
+deleted the group. The tool writes nothing, and a same-group re-pin is
+impossible because the generation the fences recorded is gone. Compose sets
+`KAFKA_OFFSETS_RETENTION_MINUTES=525600` (one year) so that an idle local stack
+does not reach this state. If it happens anyway, stop and escalate. Keep the
+detector stopped and preserve the Kafka and PostgreSQL volumes and the tool
+output. Do not delete fences or rename the group. Restore a consistent
+Kafka/PostgreSQL backup, or decide on a reset (`make reset CONFIRM=1`, which
+destroys local history) as an explicit, recorded decision.
 
 ## Change rules through a stopped-owner handover
 

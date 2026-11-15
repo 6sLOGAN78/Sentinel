@@ -10,3 +10,4 @@ Short MADR-style records. Each has Status, Context, Decision and Consequences se
 | [0004](0004-metrics-label-policy.md) | Metrics label policy |
 | [0005](0005-redis-failure-policy.md) | Redis failure policy |
 | [0006](0006-alert-storage-split.md) | Alert storage split |
+| [0012](0012-detector-history-recovery.md) | Detector expired-history recovery |

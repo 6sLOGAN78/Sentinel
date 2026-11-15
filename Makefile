@@ -16,7 +16,7 @@ PG_HOST ?= 127.0.0.1
 PG_PORT ?= 15432
 CH_ADDR ?= http://127.0.0.1:18123
 
-.PHONY: help dev-up dev-down reset migrate test test-integ test-phase3 test-phase4 lint seed seed-scenarios bench run
+.PHONY: help dev-up dev-down reset migrate test test-integ test-phase3 test-phase4 lint seed seed-scenarios bench run detector-recover-history
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
@@ -81,6 +81,22 @@ run: ## Run a service: make run SVC=<ingest|detector|event-writer|alert-writer|q
 	esac
 	@if [ ! -f .env ]; then echo ".env not found; run 'make dev-up' first" >&2; exit 1; fi
 	cd backend && $(if $(filter query-api,$(SVC)),python3 -B ../scripts/dev_auth_env.py --,env -u SENTINEL_AUTH_JWT_SECRET -u SENTINEL_AUTH.JWT_SECRET) env 'SENTINEL_PRIMARY.ENV=local' 'SENTINEL_ENV_FILE=$(CURDIR)/.env' 'SENTINEL_SERVER.BIND_ADDRESS=127.0.0.1' 'SENTINEL_OPS.BIND_ADDRESS=127.0.0.1' go run ./cmd/$(SVC)
+
+# Offline, audited recovery for a detector group whose checkpoints fell below
+# the retained log start (docs/operations.md, ADR 0012). Dry-run by default.
+# ACK, OPERATOR and REASON reach the recipe through the environment and are
+# quoted there, never interpolated or echoed; they apply only when all are set.
+# Partial input fails before any go command runs.
+RECOVER_APPLY_ARGS = if [ -z "$${ACK:-}" ] || [ -z "$${OPERATOR:-}" ] || [ -z "$${REASON:-}" ]; then \
+		echo "refusing: apply needs ACK=<plan_digest> OPERATOR=<name> REASON=<text> together" >&2; \
+		exit 1; \
+	fi; \
+	set -- --apply --acknowledge-loss="$$ACK" --operator="$$OPERATOR" --reason="$$REASON";
+detector-recover-history: ## Plan (default) or apply an acknowledged expired-history detector recovery
+	@set --; \
+	$(if $(or $(value ACK),$(value OPERATOR),$(value REASON)),$(RECOVER_APPLY_ARGS)) \
+	if [ ! -f .env ]; then echo ".env not found; run 'make dev-up' first" >&2; exit 1; fi; \
+	cd backend && env -u SENTINEL_AUTH_JWT_SECRET -u SENTINEL_AUTH.JWT_SECRET env 'SENTINEL_PRIMARY.ENV=local' 'SENTINEL_ENV_FILE=$(CURDIR)/.env' go run ./tools/detector-recover "$$@"
 
 seed: dev-up ## Seed and verify 1000 events through the real application path
 	python3 -B scripts/seed.py

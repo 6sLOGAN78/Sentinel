@@ -467,7 +467,8 @@ func (c *DetectorConsumer) restorePartition(
 	assignment.HistoryStart = start.Offset
 	if p.Offset >= 0 {
 		if p.Offset < start.Offset || p.Offset > end.Offset || p.Metadata == nil {
-			return errors.New("detector checkpoint history lost")
+			//nolint:lll // One literal keeps the runbook hint greppable next to the original phrase.
+			return errors.New("detector checkpoint history lost; stop detectors and see docs/operations.md (make detector-recover-history)")
 		}
 		cp := detection.Checkpoint{Offset: p.Offset, Metadata: *p.Metadata}
 		if err := c.validateConfigCheckpoint(cp); err != nil {
