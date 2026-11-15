@@ -24,12 +24,16 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
+	"github.com/6sLOGAN78/sentinel/internal/chmigrate"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/database"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 	storagepostgres "github.com/6sLOGAN78/sentinel/internal/storage/postgres"
 )
+
+// staticScenarioRetentionDays is the maximum events TTL chmigrate accepts.
+const staticScenarioRetentionDays = 3650
 
 // TestDetectionScenarios executes the exact private operator path against the
 // real preserved local pipeline. Fixed historical fixture equality is guarded
@@ -130,10 +134,16 @@ func newStaticScenarioPG(ctx context.Context, t *testing.T) config.DatabaseConfi
 }
 
 // newStaticScenarioCH creates the private ClickHouse database that the fixed
-// historical static scenarios write their acknowledged event rows into.
+// historical static scenarios write their acknowledged event rows into. Like
+// the ingest PAST_SKEW override below, the fixed 2026-10-17 fixtures need the
+// longest operator-supported events retention: the default 7-day TTL expires
+// them against the wall clock, so ClickHouse drops every acknowledged row.
+// Only this private database is changed; production retention is untouched.
 func newStaticScenarioCH(t *testing.T) config.ClickHouseConfig {
 	t.Helper()
 	cfg, _ := newRecoveryDatabase(t)
+	require.NoError(t, chmigrate.New(cfg.HTTPAddress, cfg.User, cfg.Password, cfg.Database, nil).
+		SetEventsTTL(t.Context(), staticScenarioRetentionDays))
 
 	return cfg
 }
