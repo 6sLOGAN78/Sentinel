@@ -272,7 +272,6 @@ func requireAuditMatches(t *testing.T, rows []auditRow, plan recoverOutput, reas
 	}
 }
 
-//nolint:funlen // One executable operator workflow; the steps are the specification.
 func TestDetectorHistoryRecovery(t *testing.T) {
 	tool := buildRecoverTool(t)
 	t.Run("idle retention recovery", func(t *testing.T) {
@@ -310,7 +309,9 @@ func TestDetectorHistoryRecovery(t *testing.T) {
 			Metadata: committed.Metadata, Start: start, End: end}})
 		require.NoError(t, err)
 		require.Len(t, expected.Entries, 1)
-		plan := parseRecoverOutput(t, runRecoverTool(t, tool, f.env))
+		dryRun := runRecoverTool(t, tool, f.env)
+		t.Logf("dry-run plan: %s", strings.TrimSpace(dryRun.stdout))
+		plan := parseRecoverOutput(t, dryRun)
 		require.Equal(t, group, plan.Group)
 		require.Equal(t, topic, plan.Topic)
 		require.Equal(t, f.rules.Fingerprint(), plan.ConfigFingerprint)
