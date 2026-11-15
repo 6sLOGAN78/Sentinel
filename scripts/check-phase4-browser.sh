@@ -146,7 +146,7 @@ def pg_alerts(tenant):
     assert TENANT.match(tenant)
     sql = f"SELECT alert_id FROM alert_workflows WHERE tenant_id='{tenant}' ORDER BY alert_id"
     out = subprocess.run(COMPOSE + ["exec", "-T", "postgres", "psql", "-U", "sentinel", "-d", "sentinel", "-Atc", sql],
-                         check=True, capture_output=True, text=True, timeout=30).stdout
+                         cwd=ROOT, check=True, capture_output=True, text=True, timeout=30).stdout
     return {line for line in out.split() if line}
 
 
@@ -255,13 +255,13 @@ def burst(letter, name):
     sql = (f"SELECT coalesce(extract(epoch from max(trigger_occurred_at)),0) FROM detection_decisions "
            f"WHERE tenant_id='{tenant}' AND rule_id='{rule}' AND allowed")
     last = float(subprocess.run(COMPOSE + ["exec", "-T", "postgres", "psql", "-U", "sentinel", "-d", "sentinel", "-Atc", sql],
-                                check=True, capture_output=True, text=True, timeout=30).stdout.strip() or 0)
+                                cwd=ROOT, check=True, capture_output=True, text=True, timeout=30).stdout.strip() or 0)
     # An alert ID is (tenant, rule, entity, window): events must also land after the previous
     # alert's window end (its created_at) or the burst would re-derive the very same IDs.
     sql = (f"SELECT coalesce(extract(epoch from max(created_at)),0) FROM alert_workflows "
            f"WHERE tenant_id='{tenant}' AND rule_id='{rule}'")
     ends = float(subprocess.run(COMPOSE + ["exec", "-T", "postgres", "psql", "-U", "sentinel", "-d", "sentinel", "-Atc", sql],
-                                check=True, capture_output=True, text=True, timeout=30).stdout.strip() or 0)
+                                cwd=ROOT, check=True, capture_output=True, text=True, timeout=30).stdout.strip() or 0)
     ready = max(last + cooldown + 8, ends + 1) + 5
     if time.time() < ready:
         time.sleep(ready - time.time())
