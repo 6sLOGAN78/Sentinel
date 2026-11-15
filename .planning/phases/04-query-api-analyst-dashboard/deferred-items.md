@@ -18,3 +18,5 @@
 - **Symptom:** `docs/decisions/README.md` lists 0001-0006 and now 0012, but not 0007-0009. `scripts/check-adrs.sh` globs `000[1-6]-*.md` and requires exactly six files, so 0007-0009 and 0012 are not heading-checked by the gate.
 - **Scope:** pre-existing, not caused by 04-24. 04-24 added only the 0012 row. 0012 has all four required headings (checked by grep).
 - **Suggested fix:** list 0007-0009 in the index and widen check-adrs to every `[0-9][0-9][0-9][0-9]-*.md`, with the count assertion replaced by a nonempty check.
+
+**D-04-24-01 resolved 2026-11-15:** ADRs 0007-0009 now carry the Status/Context/Decision/Consequences headings (content kept; short Context sections added for 0007/0008, 0009 paragraphs grouped under headings), all are listed in `docs/decisions/README.md`, and `scripts/check-adrs.sh` now checks every ADR's headings and index entry while still requiring the six foundation ADRs. A heading mutation makes it exit 1.

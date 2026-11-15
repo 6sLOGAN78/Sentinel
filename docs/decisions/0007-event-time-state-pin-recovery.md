@@ -4,6 +4,10 @@
 
 Accepted engineering policy, 2026-10-17. Implements spec §5.1 and inherited D-15/D-16. The user's cross-window cooldown choice in `03-COOLDOWN-DECISION.md` supersedes candidate-only throttling. This record specifies the final Phase 3 contract; the first AUTH slice precedes the durable cooldown implementation and is not proof of that final contract.
 
+## Context
+
+Spec §5.1 requires every rule window to use `occurred_at`, with bounded per-key state and a deterministic, documented lateness tolerance, and detection must survive crashes, restarts and replay without losing or duplicating decisions. The record below fixes how event-time state is pinned and recovered.
+
 ## Decision
 
 All instants are UTC milliseconds. Windows are epoch-aligned tumbling `[start,end)` intervals. The partition watermark is the maximum valid occurred_at minus 30 seconds. Equality is accepted; older events are dropped. Every valid nonmatching event advances the maximum; poison records and idle wall time do not. Null grouping fields mean no match. Require the existing canonical `tenant|source_ip` input key.
@@ -26,7 +30,9 @@ PostgreSQL operational rows are separate from analyst workflow: immutable detect
 
 Allow ordering is PG decision commit → canonical Kafka publish → all-ISR acknowledgement → Kafka pin/metadata commit. Suppress ordering is PG decision commit → no publication → checkpoint. PG may be ahead after decision-before-publish crashes. Restore verifies the checkpoint frontier's exact immutable row and PG fence >= marker; missing, older or divergent PG state fails closed. Do not require PG equality. Group recreation/generation rollback requires explicit stopped maintenance, never automatic adoption. Revoke/loss prevents new decisions/commits; stale assignment cannot supersede newer generation/member ownership. No automatic decision GC is permitted: disk growth, Kafka retention and consistent PG/Kafka backups are operational obligations.
 
-## Live scenarios and consequences
+## Consequences
+
+### Live scenarios
 
 Private operator tooling snapshots source ends and group metadata, waits for processed_next catch-up and derives processed maximum from sealed_through+lateness (with explicit empty/idle handling), not pre-pin max. A capped retained-history scan may support this private tool. Under quiescent other producers, base>=max(now, observed maxima+1ms); same-ms threat events precede per-key auth.success markers at window end+30s. Schedule within ingest future-skew limits and a 15-minute orchestration deadline, retaining the sender's five-attempt/120s per-batch budget. Far-future/concurrent traffic causes bounded refusal. No group reset, public debug API or volume reset.
 

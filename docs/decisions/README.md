@@ -10,4 +10,7 @@ Short MADR-style records. Each has Status, Context, Decision and Consequences se
 | [0004](0004-metrics-label-policy.md) | Metrics label policy |
 | [0005](0005-redis-failure-policy.md) | Redis failure policy |
 | [0006](0006-alert-storage-split.md) | Alert storage split |
+| [0007](0007-event-time-state-pin-recovery.md) | Event-time state pins and replay recovery |
+| [0008](0008-alert-list-source-and-conflicts.md) | Alert list authority and immutable conflicts |
+| [0009](0009-gap-safe-alert-delivery.md) | Gap-safe alert delivery projection |
 | [0012](0012-detector-history-recovery.md) | Detector expired-history recovery |

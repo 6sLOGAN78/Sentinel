@@ -1,10 +1,16 @@
 # 0009. Gap-safe alert delivery projection
 
+## Status
+
 Accepted engineering policy, 2026-10-25. Refines ADR 0008.
+
+## Context
 
 Workflow identity sequences describe allocation order, not commit order. A
 writer can allocate an earlier sequence and commit after a later one has been
 read. Neither max(workflow.seq) nor notifications alone provide safe recovery.
+
+## Decision
 
 Migration 008 adds a durable pending ledger, a singleton transactional bigint
 counter and a delivery log. An AFTER INSERT workflow trigger queues each new
@@ -22,12 +28,6 @@ Rollback uses an independent one-second context. Uncertain acknowledgements
 retry against the same unique log; overflow fails the managed service.
 Idle projection polls every second, with failure backoff from 100ms to 5s.
 
-Delivery IDs order projection commits. They do not claim to preserve the exact
-commit order of original workflows or establish a distributed transaction.
-The singleton lock serializes projection throughput, and a backlog introduces
-delivery latency. Log/pending persistence grows with workload: this phase adds
-no retention, garbage collection or fixed disk bound.
-
 Bearer-only backfill reads the verified tenant from PostgreSQL, independently
 of ClickHouse. It captures the committed counter before its page query and
 restricts rows to that bound. A full page advances only to its last item; an
@@ -41,3 +41,11 @@ appending an unbounded list or identity set. Arrivals offer an explicit refresh
 while preserving current filters and pagination. At-least-once replay is
 visibly idempotent; neither physical exactly-once delivery nor a persistent
 browser cursor is promised. SSE/notification recovery is a later increment.
+
+## Consequences
+
+Delivery IDs order projection commits. They do not claim to preserve the exact
+commit order of original workflows or establish a distributed transaction.
+The singleton lock serializes projection throughput, and a backlog introduces
+delivery latency. Log/pending persistence grows with workload: this phase adds
+no retention, garbage collection or fixed disk bound.
