@@ -35,14 +35,11 @@ const (
 func serviceEnv(t *testing.T, service string) []string {
 	t.Helper()
 
-	serverPort, err := sentineltesting.FreePort()
+	ports, err := sentineltesting.FreePorts(2)
 	if err != nil {
-		t.Fatalf("allocate server port: %v", err)
+		t.Fatalf("allocate server and ops ports: %v", err)
 	}
-	opsPort, err := sentineltesting.FreePort()
-	if err != nil {
-		t.Fatalf("allocate ops port: %v", err)
-	}
+	serverPort, opsPort := ports[0], ports[1]
 
 	redis := []string{"SENTINEL_REDIS.ADDRESS=" + redisCfg.Address}
 	kafka := []string{

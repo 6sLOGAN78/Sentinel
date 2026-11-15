@@ -282,7 +282,7 @@ func observedDetector(t *testing.T, binary string, env []string) (*proc, string)
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.Chmod(dir, 0o700))
-	env = append(without(env, "SENTINEL_OPS.PORT="), "SENTINEL_OPS.PORT="+opsPort(t, serviceEnv(t, "detector")))
+	env = append(without(env, "SENTINEL_OPS.PORT="), "SENTINEL_OPS.PORT="+distinctOpsPort(t, env))
 	process := startRecoveryProc(t, binary, append(env, detectorControl+"OBSERVATIONS="+dir))
 	t.Cleanup(func() {
 		if !t.Failed() {

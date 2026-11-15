@@ -111,7 +111,7 @@ func testDetectorJoinedReplica(t *testing.T) {
 		return json.Unmarshal([]byte(cp.Metadata), &m) == nil && m.ProcessedNext == 9
 	}, 10*time.Second, 25*time.Millisecond)
 	secondEnv := append(without(firstEnv, "SENTINEL_OPS.PORT="),
-		"SENTINEL_OPS.PORT="+opsPort(t, serviceEnv(t, "detector")))
+		"SENTINEL_OPS.PORT="+distinctOpsPort(t, firstEnv))
 	second := startProc(t, "detector", "", secondEnv)
 	t.Cleanup(func() {
 		if t.Failed() {

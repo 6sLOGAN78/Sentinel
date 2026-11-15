@@ -236,6 +236,30 @@ func serviceEnvWithDependencies(
 	return env
 }
 
+// distinctOpsPort returns a free ops port that differs from the server and ops
+// ports already in env, for tests that start a second process from the same env.
+func distinctOpsPort(t *testing.T, env []string) string {
+	t.Helper()
+	taken := map[string]bool{}
+	for _, value := range env {
+		for _, key := range []string{"SENTINEL_SERVER.PORT=", "SENTINEL_OPS.PORT="} {
+			if strings.HasPrefix(value, key) {
+				taken[strings.TrimPrefix(value, key)] = true
+			}
+		}
+	}
+	ports, err := sentineltesting.FreePorts(len(taken) + 1)
+	require.NoError(t, err)
+	for _, port := range ports {
+		if !taken[port] {
+			return port
+		}
+	}
+	t.Fatal("no distinct ops port available")
+
+	return ""
+}
+
 func opsPort(t *testing.T, env []string) string {
 	t.Helper()
 	const key = "SENTINEL_OPS.PORT"

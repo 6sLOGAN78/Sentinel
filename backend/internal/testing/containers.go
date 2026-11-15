@@ -234,6 +234,33 @@ func FreePort() (string, error) {
 	return port, nil
 }
 
+// FreePorts returns n distinct free loopback TCP ports. All listeners stay open
+// until every port is chosen, so the kernel cannot hand out the same port twice
+// (separate FreePort calls can collide).
+func FreePorts(n int) ([]string, error) {
+	listeners := make([]net.Listener, 0, n)
+	defer func() {
+		for _, l := range listeners {
+			_ = l.Close()
+		}
+	}()
+	ports := make([]string, 0, n)
+	for range n {
+		l, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", loopback+":0")
+		if err != nil {
+			return nil, fmt.Errorf("find free port: %w", err)
+		}
+		listeners = append(listeners, l)
+		_, port, err := net.SplitHostPort(l.Addr().String())
+		if err != nil {
+			return nil, fmt.Errorf("split address: %w", err)
+		}
+		ports = append(ports, port)
+	}
+
+	return ports, nil
+}
+
 // FaultContainer retains a dedicated container handle for pause/unpause fault tests.
 // Call Close as soon as the handle is acquired, normally through t.Cleanup.
 type FaultContainer struct {

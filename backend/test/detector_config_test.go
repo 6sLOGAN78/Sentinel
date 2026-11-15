@@ -88,7 +88,7 @@ func TestDetectorConfigRestart(t *testing.T) {
 		return true
 	}, 30*time.Second, 100*time.Millisecond, "old replica must join before the mixed-member probe")
 	peerEnv := append(without(f.env, "SENTINEL_OPS.PORT="),
-		"SENTINEL_OPS.PORT="+opsPort(t, serviceEnv(t, "detector")))
+		"SENTINEL_OPS.PORT="+distinctOpsPort(t, f.env))
 	peer := startProc(t, "detector", "", peerEnv)
 	require.Eventually(t, func() bool {
 		groups, describeErr := f.admin.DescribeGroups(t.Context(), f.kafka.DetectorGroup)
@@ -108,7 +108,7 @@ func TestDetectorConfigRestart(t *testing.T) {
 		return true
 	}, 30*time.Second, 100*time.Millisecond)
 	mixedEnv := append(without(env, "SENTINEL_OPS.PORT="),
-		"SENTINEL_OPS.PORT="+opsPort(t, serviceEnv(t, "detector")))
+		"SENTINEL_OPS.PORT="+distinctOpsPort(t, env))
 	mixed := startProc(t, "detector", "", mixedEnv)
 	require.NotZero(t, mixed.requireExit(t, 30*time.Second))
 	require.Contains(t, mixed.output.String(), "exactly one detector member")
