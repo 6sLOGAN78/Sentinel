@@ -45,6 +45,9 @@ func TestDetectionScenarios(t *testing.T) {
 		Cases []scenarioCase `json:"cases"`
 	}
 	require.NoError(t, json.Unmarshal(rawFixture, &fixtures))
+	t.Run("static-history-retained", func(t *testing.T) {
+		requireStaticHistoryRetained(t, fixtures.Cases)
+	})
 	for _, fixture := range fixtures.Cases {
 		if fixture.Name == "all" || fixture.Name == "boundary" || fixture.Name == "lateness" {
 			t.Run("isolated-static-"+fixture.Name, func(t *testing.T) {
@@ -126,6 +129,50 @@ func newStaticScenarioPG(ctx context.Context, t *testing.T) config.DatabaseConfi
 	return pg
 }
 
+// newStaticScenarioCH creates the private ClickHouse database that the fixed
+// historical static scenarios write their acknowledged event rows into.
+func newStaticScenarioCH(t *testing.T) config.ClickHouseConfig {
+	t.Helper()
+	cfg, _ := newRecoveryDatabase(t)
+
+	return cfg
+}
+
+// requireStaticHistoryRetained proves the oldest fixed static fixture event
+// stays readable in the static scenario database after the TTL merge. Retention is evaluated
+// against the wall clock, so fixed fixtures dated in the past must never be
+// dropped on insert, or current_event_rows can never observe them.
+func requireStaticHistoryRetained(t *testing.T, cases []scenarioCase) {
+	t.Helper()
+	var oldest *contracts.Event
+	for _, fixture := range cases {
+		if fixture.Name != "all" && fixture.Name != "boundary" && fixture.Name != "lateness" {
+			continue
+		}
+		for _, event := range fixture.Events {
+			if oldest == nil || event.OccurredAt.Before(oldest.OccurredAt.Time) {
+				oldest = event
+			}
+		}
+	}
+	require.NotNil(t, oldest, "static fixtures must contain events")
+	cfg := newStaticScenarioCH(t)
+	conn, err := storageclickhouse.Open(t.Context(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	row := *oldest
+	received := contracts.NewTimestamp(time.Now())
+	row.ReceivedAt = &received
+	store := storageclickhouse.NewEventStore(conn)
+	require.NoError(t, store.InsertBatch(t.Context(), []*contracts.Event{&row}))
+	// Expired rows are removed by a TTL merge that ClickHouse schedules shortly
+	// after the insert; FINAL runs that merge now instead of racing it.
+	require.NoError(t, conn.Exec(t.Context(), "OPTIMIZE TABLE events FINAL"))
+	got, err := store.Get(t.Context(), row.TenantID, row.EventID)
+	require.NoError(t, err, "oldest static fixture event must survive the events retention TTL merge")
+	require.Equal(t, row.OccurredAt.Time, got.OccurredAt.Time)
+}
+
 func runStaticScenario(ctx context.Context, t *testing.T, root string, fixture scenarioCase) {
 	t.Helper()
 	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafkaCfg.Brokers, ",")...))
@@ -144,7 +191,7 @@ func runStaticScenario(ctx context.Context, t *testing.T, root string, fixture s
 	rulesBytes, err := os.ReadFile(filepath.Join(root, "config/rules.yaml"))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(rules, rulesBytes, 0o600))
-	ch, _ := newRecoveryDatabase(t)
+	ch := newStaticScenarioCH(t)
 	pg := newStaticScenarioPG(ctx, t)
 	settings := map[string]string{
 		"SENTINEL_KAFKA.EVENTS_TOPIC": topic, "SENTINEL_KAFKA.ALERTS_TOPIC": alerts,
