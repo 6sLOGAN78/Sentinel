@@ -278,7 +278,10 @@ func startQueryAPI(t *testing.T, binary, root, secret, chAddress string, logs ..
 	cmd.Dir = filepath.Join(root, "backend")
 	env := map[string]string{"SENTINEL_SERVER.BIND_ADDRESS": "127.0.0.1", "SENTINEL_SERVER.PORT": httpPort,
 		"SENTINEL_OPS.BIND_ADDRESS": "127.0.0.1", "SENTINEL_OPS.PORT": opsPort, "SENTINEL_AUTH.JWT_SECRET": secret,
-		"SENTINEL_PRIMARY.ENV": "test"}
+		"SENTINEL_PRIMARY.ENV": "test",
+		// The repo .env opts local runs into console logs; the audit assertions
+		// read the child's structured JSON lines, the production default.
+		"SENTINEL_OBSERVABILITY.LOGGING.FORMAT": "json"}
 	if chAddress != "" {
 		env["SENTINEL_CLICKHOUSE.NATIVE_ADDRESS"] = chAddress
 	}
