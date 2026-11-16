@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -581,7 +582,9 @@ func TestChainOrderIncludesTrace(t *testing.T) {
 }
 
 // tracedEdge wraps a logged Echo with the same otelhttp options as cmd/ingest.
-func tracedEdge(t *testing.T, ratio float64, sink *syncBuffer) (http.Handler, *tracetest.InMemoryExporter, *telemetry.Tracing) {
+func tracedEdge(
+	t *testing.T, ratio float64, sink *syncBuffer,
+) (http.Handler, *tracetest.InMemoryExporter, *telemetry.Tracing) {
 	t.Helper()
 
 	exporter := tracetest.NewInMemoryExporter()
@@ -589,7 +592,7 @@ func tracedEdge(t *testing.T, ratio float64, sink *syncBuffer) (http.Handler, *t
 		config.TracingConfig{Enabled: true, SampleRatio: ratio, OTLPEndpoint: "http://127.0.0.1:4318"},
 		config.ServiceIngest, telemetry.WithExporter(exporter))
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, tr.Shutdown(t.Context())) })
+	t.Cleanup(func() { require.NoError(t, tr.Shutdown(context.Background())) })
 
 	e := newContractEcho(t, sink, nil)
 	e.POST("/api/v1/events\\:batch", func(c echo.Context) error { return c.NoContent(http.StatusAccepted) })
@@ -632,10 +635,12 @@ func TestEdgeServerSpanNamedByRouteTemplate(t *testing.T) {
 	assert.Equal(t, trace.SpanKindServer, span.SpanKind)
 	assert.Contains(t, span.Attributes, attribute.String("http.route", "/api/v1/events:batch"))
 	for _, kv := range span.Attributes {
-		for _, forbidden := range []string{"client.address", "network.peer.address", "user_agent.original", "url.path", "server.address"} {
+		for _, forbidden := range []string{
+			"client.address", "network.peer.address", "user_agent.original", "url.path", "server.address",
+		} {
 			assert.NotEqual(t, forbidden, string(kv.Key))
 		}
-		assert.NotContains(t, kv.Value.Emit(), "198.51.100.7")
+		assert.NotContains(t, kv.Value.String(), "198.51.100.7")
 	}
 
 	assert.Equal(t, span.SpanContext.TraceID().String(), apiLogLine(t, sink)["trace_id"])
@@ -673,4 +678,17 @@ func TestEdgeClientTraceparentCannotForceSampling(t *testing.T) {
 	require.True(t, ok, "request log still carries a trace_id when unsampled")
 	assert.Regexp(t, `^[0-9a-f]{32}$`, traceID)
 	assert.NotEqual(t, "4bf92f3577b34da6a3ce929d0e0e4736", traceID, "public endpoint starts a new root")
+}
+
+func TestEdgeServerSpanBoundsUnknownMethod(t *testing.T) {
+	t.Parallel()
+
+	sink := &syncBuffer{}
+	h, exporter, tr := tracedEdge(t, 1, sink)
+	serveEdge(t, h, "X-SECRET-METHOD", "/api/v1/alerts/1", nil)
+	require.NoError(t, tr.ForceFlush(t.Context()))
+
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "_OTHER /api/v1/alerts/:id", spans[0].Name)
 }

@@ -11,6 +11,11 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -21,11 +26,17 @@ type Publisher interface {
 	PublishBatch(context.Context, []*contracts.Event, string) error
 }
 
+// publishSpanName names the span wrapping one batch produce.
+const publishSpanName = "publish"
+
 // Producer owns one long-lived bounded franz-go client.
 type Producer struct {
-	client  *kgo.Client
-	topic   string
-	timeout time.Duration
+	client     *kgo.Client
+	produce    func(context.Context, []*kgo.Record) error
+	tracer     trace.Tracer
+	propagator propagation.TextMapPropagator
+	topic      string
+	timeout    time.Duration
 }
 
 // NewProducer configures an all-ISR, idempotent producer with finite buffers,
@@ -50,7 +61,37 @@ func NewProducer(_ context.Context, cfg config.KafkaConfig) (*Producer, error) {
 		return nil, fmt.Errorf("create Kafka producer: %w", err)
 	}
 
-	return &Producer{client: client, topic: cfg.EventsTopic, timeout: cfg.ProduceTimeout}, nil
+	return &Producer{
+		client: client,
+		produce: func(ctx context.Context, records []*kgo.Record) error {
+			return client.ProduceSync(ctx, records...).FirstErr()
+		},
+		topic:   cfg.EventsTopic,
+		timeout: cfg.ProduceTimeout,
+	}, nil
+}
+
+// WithTracing makes PublishBatch start a "publish" span from tp and inject
+// its context into every record with prop.
+func (p *Producer) WithTracing(tp trace.TracerProvider, prop propagation.TextMapPropagator) *Producer {
+	p.tracer = tp.Tracer("sentinel/kafkax")
+	p.propagator = prop
+
+	return p
+}
+
+// tracing returns the configured tracer and propagator. Without WithTracing a
+// noop tracer keeps the caller's span context, which is still injected.
+func (p *Producer) tracing() (trace.Tracer, propagation.TextMapPropagator) {
+	tracer, prop := p.tracer, p.propagator
+	if tracer == nil {
+		tracer = noop.NewTracerProvider().Tracer("sentinel/kafkax")
+	}
+	if prop == nil {
+		prop = propagation.TraceContext{}
+	}
+
+	return tracer, prop
 }
 
 // BufferedRecords reports the number of records currently buffered for produce.
@@ -103,8 +144,32 @@ func (p *Producer) Close(ctx context.Context) error {
 }
 
 // PublishBatch waits for every record result and returns the first error.
+// One "publish" span covers the whole batch, and every record carries the
+// same traceparent. Span attributes never include tenant, IP or principal.
 func (p *Producer) PublishBatch(ctx context.Context, events []*contracts.Event, requestID string) error {
-	records, err := p.recordsFor(events, requestID)
+	tracer, prop := p.tracing()
+	publishCtx, span := tracer.Start(ctx, publishSpanName,
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "kafka"),
+			attribute.String("messaging.destination.name", p.topic),
+			attribute.Int("messaging.batch.message_count", len(events)),
+		))
+	defer span.End()
+
+	if err := p.publish(publishCtx, prop, events, requestID); err != nil {
+		span.SetStatus(codes.Error, "publish failed")
+
+		return err
+	}
+
+	return nil
+}
+
+func (p *Producer) publish(
+	ctx context.Context, prop propagation.TextMapPropagator, events []*contracts.Event, requestID string,
+) error {
+	records, err := BuildEventRecords(ctx, prop, p.topic, events, requestID)
 	if err != nil {
 		return err
 	}
@@ -119,7 +184,7 @@ func (p *Producer) PublishBatch(ctx context.Context, events []*contracts.Event, 
 		return nil
 	}
 
-	if err = p.client.ProduceSync(produceCtx, records...).FirstErr(); err != nil {
+	if err = p.produce(produceCtx, records); err != nil {
 		return fmt.Errorf("publish event batch: %w", err)
 	}
 
@@ -144,7 +209,12 @@ type wireEvent struct {
 	Attributes      map[string]any       `json:"attributes"`
 }
 
-func (p *Producer) recordsFor(events []*contracts.Event, requestID string) ([]*kgo.Record, error) {
+// BuildEventRecords encodes events as canonical topic records with the
+// schema_version and request_id headers. The trace context of ctx is injected
+// once and copied, so every record of the batch has the same traceparent.
+func BuildEventRecords(
+	ctx context.Context, prop propagation.TextMapPropagator, topic string, events []*contracts.Event, requestID string,
+) ([]*kgo.Record, error) {
 	records := make([]*kgo.Record, 0, len(events))
 	for _, event := range events {
 		value, err := json.Marshal(wireEvent{
@@ -163,7 +233,7 @@ func (p *Producer) recordsFor(events []*contracts.Event, requestID string) ([]*k
 			sourceIP = *event.SourceIP
 		}
 		records = append(records, &kgo.Record{
-			Topic: p.topic,
+			Topic: topic,
 			Key:   []byte(event.TenantID + "|" + sourceIP),
 			Value: value,
 			Headers: []kgo.RecordHeader{
@@ -171,6 +241,18 @@ func (p *Producer) recordsFor(events []*contracts.Event, requestID string) ([]*k
 				{Key: "request_id", Value: []byte(requestID)},
 			},
 		})
+	}
+
+	if len(records) > 0 {
+		first := HeaderCarrier{Record: records[0]}
+		prop.Inject(ctx, first)
+		for _, record := range records[1:] {
+			for _, field := range prop.Fields() {
+				if value := first.Get(field); value != "" {
+					HeaderCarrier{Record: record}.Set(field, value)
+				}
+			}
+		}
 	}
 
 	return records, nil

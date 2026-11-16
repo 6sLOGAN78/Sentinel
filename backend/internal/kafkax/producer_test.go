@@ -88,11 +88,12 @@ func tracedProducer(
 	t.Cleanup(func() { require.NoError(t, tr.Shutdown(context.Background())) })
 
 	captured := &[]*kgo.Record{}
-	producer := &Producer{topic: "events-test", timeout: time.Second, produce: func(_ context.Context, records []*kgo.Record) error {
+	producer := &Producer{topic: "events-test", timeout: time.Second}
+	producer.produce = func(_ context.Context, records []*kgo.Record) error {
 		*captured = records
 
 		return produceErr
-	}}
+	}
 
 	return producer.WithTracing(tr.Provider(), tr.Propagator()), exporter, tr, captured
 }
@@ -187,17 +188,20 @@ func TestPublishBatchWithoutTracingInjectsIncomingContext(t *testing.T) {
 	t.Parallel()
 
 	var captured []*kgo.Record
-	producer := &Producer{topic: "events-test", timeout: time.Second, produce: func(_ context.Context, records []*kgo.Record) error {
+	producer := &Producer{topic: "events-test", timeout: time.Second}
+	producer.produce = func(_ context.Context, records []*kgo.Record) error {
 		captured = records
 
 		return nil
-	}}
+	}
 
 	require.NoError(t, producer.PublishBatch(t.Context(), tracedEvents(1), "request-1"))
 	require.Empty(t, headerValue(captured[0].Headers, "traceparent"), "no span context, no header")
 
 	sc := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    trace.TraceID{0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36},
+		TraceID: trace.TraceID{
+			0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+		},
 		SpanID:     trace.SpanID{0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7},
 		TraceFlags: trace.FlagsSampled,
 	})

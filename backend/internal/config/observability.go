@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
+	"net/url"
 	"time"
 )
 
@@ -19,6 +21,53 @@ type ObservabilityConfig struct {
 	ServiceName string        `koanf:"service_name"`
 	Environment string        `koanf:"environment"`
 	Logging     LoggingConfig `koanf:"logging"`
+	Tracing     TracingConfig `koanf:"tracing"`
+}
+
+// TracingConfig controls OpenTelemetry span export. The zero value disables
+// export; spans then still carry trace IDs for log correlation.
+type TracingConfig struct {
+	Enabled      bool    `koanf:"enabled"`
+	SampleRatio  float64 `koanf:"sample_ratio"`
+	OTLPEndpoint string  `koanf:"otlp_endpoint"`
+}
+
+// Validate checks the sample ratio bounds and, when export is enabled, that
+// the OTLP/HTTP endpoint is a bare http(s) origin without credentials.
+func (c TracingConfig) Validate() error {
+	if math.IsNaN(c.SampleRatio) || c.SampleRatio < 0 || c.SampleRatio > 1 {
+		return errors.New("tracing sample_ratio must be within [0, 1]")
+	}
+
+	if !c.Enabled {
+		return nil
+	}
+
+	if c.OTLPEndpoint == "" {
+		return errors.New("tracing otlp_endpoint is required when tracing is enabled")
+	}
+
+	// The parse error is not wrapped: it would echo the raw value, which may
+	// hold credentials.
+	endpoint, err := url.Parse(c.OTLPEndpoint)
+	if err != nil {
+		return errors.New("tracing otlp_endpoint is not a valid URL")
+	}
+
+	switch {
+	case endpoint.Scheme != "http" && endpoint.Scheme != "https":
+		return errors.New("tracing otlp_endpoint scheme must be http or https")
+	case endpoint.User != nil:
+		return errors.New("tracing otlp_endpoint must not contain credentials")
+	case endpoint.Hostname() == "":
+		return errors.New("tracing otlp_endpoint host is required")
+	case endpoint.Path != "" && endpoint.Path != "/":
+		return errors.New("tracing otlp_endpoint must be an origin without a path")
+	case endpoint.RawQuery != "" || endpoint.Fragment != "":
+		return errors.New("tracing otlp_endpoint must not have a query or fragment")
+	}
+
+	return nil
 }
 
 // LoggingConfig controls log level and format.
@@ -63,7 +112,7 @@ func (c *ObservabilityConfig) Validate() error {
 		return errors.New("logging slow_query_threshold must be non-negative")
 	}
 
-	return nil
+	return c.Tracing.Validate()
 }
 
 // GetLogLevel returns the effective log level.

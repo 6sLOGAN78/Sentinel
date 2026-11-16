@@ -21,6 +21,7 @@ func Chain(logger *zerolog.Logger, allowedOrigins []string) []Named {
 	return []Named{
 		{Name: "recover", Func: global.Recover()},
 		{Name: "request_id", Func: RequestID()},
+		{Name: "trace", Func: TraceRename()},
 		{Name: "context", Func: NewContextEnhancer(logger).EnhanceContext()},
 		{Name: "cors", Func: global.CORS()},
 		{Name: "secure", Func: global.Secure()},

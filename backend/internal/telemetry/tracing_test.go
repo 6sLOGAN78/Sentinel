@@ -30,7 +30,7 @@ func newTestTracing(
 	return tr, exporter
 }
 
-func startAndEnd(t *testing.T, ctx context.Context, tr *telemetry.Tracing) trace.SpanContext {
+func startAndEnd(ctx context.Context, t *testing.T, tr *telemetry.Tracing) trace.SpanContext {
 	t.Helper()
 
 	_, span := tr.Provider().Tracer("test").Start(ctx, "op")
@@ -44,7 +44,7 @@ func TestTracingRatioOneExportsSpan(t *testing.T) {
 	t.Parallel()
 
 	tr, exporter := newTestTracing(t, config.TracingConfig{Enabled: true, SampleRatio: 1, OTLPEndpoint: testEndpoint})
-	sc := startAndEnd(t, t.Context(), tr)
+	sc := startAndEnd(t.Context(), t, tr)
 
 	require.True(t, sc.IsSampled())
 	spans := exporter.GetSpans()
@@ -58,7 +58,7 @@ func TestTracingRatioZeroExportsNothingButHasTraceID(t *testing.T) {
 	t.Parallel()
 
 	tr, exporter := newTestTracing(t, config.TracingConfig{Enabled: true, SampleRatio: 0, OTLPEndpoint: testEndpoint})
-	sc := startAndEnd(t, t.Context(), tr)
+	sc := startAndEnd(t.Context(), t, tr)
 
 	require.True(t, sc.TraceID().IsValid(), "unsampled spans still carry a trace ID for logs")
 	require.True(t, sc.IsValid())
@@ -71,7 +71,7 @@ func TestTracingDisabledExportsNothingButHasTraceID(t *testing.T) {
 
 	// The exporter is offered but must never receive spans while disabled.
 	tr, exporter := newTestTracing(t, config.TracingConfig{Enabled: false, SampleRatio: 1})
-	sc := startAndEnd(t, t.Context(), tr)
+	sc := startAndEnd(t.Context(), t, tr)
 
 	require.True(t, sc.TraceID().IsValid())
 	require.False(t, sc.IsSampled())
@@ -83,22 +83,32 @@ func TestTracingParentBasedFollowsSampledRemoteParent(t *testing.T) {
 
 	tr, exporter := newTestTracing(t, config.TracingConfig{Enabled: true, SampleRatio: 0, OTLPEndpoint: testEndpoint})
 	parent := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    trace.TraceID{0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36},
+		TraceID: trace.TraceID{
+			0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36,
+		},
 		SpanID:     trace.SpanID{0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7},
 		TraceFlags: trace.FlagsSampled,
 		Remote:     true,
 	})
-	sc := startAndEnd(t, trace.ContextWithRemoteSpanContext(t.Context(), parent), tr)
+	sc := startAndEnd(trace.ContextWithRemoteSpanContext(t.Context(), parent), t, tr)
 
 	require.True(t, sc.IsSampled())
 	require.Equal(t, parent.TraceID(), sc.TraceID())
 	require.Len(t, exporter.GetSpans(), 1)
 }
 
+// keepOnShutdown keeps exported spans readable after Shutdown;
+// InMemoryExporter.Shutdown resets its store.
+type keepOnShutdown struct {
+	*tracetest.InMemoryExporter
+}
+
+func (keepOnShutdown) Shutdown(context.Context) error { return nil }
+
 func TestTracingShutdownIsIdempotent(t *testing.T) {
 	t.Parallel()
 
-	exporter := tracetest.NewInMemoryExporter()
+	exporter := keepOnShutdown{tracetest.NewInMemoryExporter()}
 	tr, err := telemetry.NewTracing(t.Context(),
 		config.TracingConfig{Enabled: true, SampleRatio: 1, OTLPEndpoint: testEndpoint}, "ingest",
 		telemetry.WithExporter(exporter))
