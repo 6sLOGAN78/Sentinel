@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -19,6 +20,10 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
+
+// pinMarginInterval paces the read-only log-start poll behind the pin
+// retention margin gauge; each poll is bounded by a 2 s query timeout.
+const pinMarginInterval = 30 * time.Second
 
 func main() {
 	os.Exit(app.Run(config.ServiceDetector, setup))
@@ -54,10 +59,15 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err = checkConfigTransition(ctx, cfg); err != nil {
 		return err
 	}
-	consumer, err := openConsumer(ctx, cfg, rules, fail, lc)
+	tracker := kafkax.NewLagTracker(nil, consumerMetrics, cfg.Kafka.DetectorGroup, cfg.Kafka.EventsTopic, 0)
+	consumer, err := openConsumer(ctx, cfg, rules, fail, lc, kafkax.WithLagTracker(tracker))
 	if err != nil {
 		return err
 	}
+	startPoller(ctx, lc, draining, "lag-tracker", tracker.Run)
+	startPoller(ctx, lc, draining, "pin-margins", func(pollCtx context.Context) error {
+		return consumer.RunPinMargins(pollCtx, detectorMetrics, pinMarginInterval)
+	})
 	publisher, err := detector.NewAlertProducer(ctx, cfg.Kafka)
 	if err != nil {
 		return err
@@ -73,7 +83,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	dlq.WithMetrics(consumerMetrics)
 	worker := detector.New(consumer, publisher, rules, cfg.Detector.Writer,
 		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets).
-		WithQuarantine(dlq).WithMetrics(detectorMetrics)
+		WithQuarantine(dlq).WithMetrics(detectorMetrics).WithPositions(tracker)
 	limits := worker.Limits()
 	detectorMetrics.SetLimits(limits.Windows, limits.Ledger, limits.Bytes)
 	startWorker(ctx, lc, worker, fail)
@@ -121,9 +131,33 @@ func startWorker(ctx context.Context, lc *app.Lifecycle, worker *detector.Worker
 	})
 }
 
+// startPoller runs a read-only offset poller until shutdown, following the
+// 05-05 lag tracker lifecycle: an unexpected error drains and fails the process.
+func startPoller(ctx context.Context, lc *app.Lifecycle, draining *opshttp.Draining, name string,
+	run func(context.Context) error) {
+	pollCtx, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := run(pollCtx); err != nil && pollCtx.Err() == nil {
+			draining.Begin()
+			lc.Fail(fmt.Errorf("%s: %w", name, err))
+		}
+	}()
+	lc.Add(name, func(closeCtx context.Context) error {
+		stop()
+		select {
+		case <-done:
+			return nil
+		case <-closeCtx.Done():
+			return closeCtx.Err()
+		}
+	})
+}
+
 func openConsumer(ctx context.Context, cfg *config.Config, rules *detection.Rules,
-	fail func(error), lc *app.Lifecycle) (*detector.KafkaConsumer, error) {
-	consumer, err := detector.NewKafkaConsumer(ctx, cfg.Kafka, cfg.Detector.Writer, rules, fail)
+	fail func(error), lc *app.Lifecycle, options ...kafkax.ConsumerOption) (*detector.KafkaConsumer, error) {
+	consumer, err := detector.NewKafkaConsumer(ctx, cfg.Kafka, cfg.Detector.Writer, rules, fail, options...)
 	if err != nil {
 		return nil, fmt.Errorf("kafka: %w", err)
 	}

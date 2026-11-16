@@ -63,6 +63,20 @@ type DetectorConsumer struct {
 	assignmentMember      string
 	assignmentGeneration  int32
 	observer              DetectorAssignmentObserver
+	topic                 string
+	lag                   *LagTracker
+	starts                startOffsetLister
+}
+
+type startOffsetLister interface {
+	ListStartOffsets(ctx context.Context, topics ...string) (kadm.ListedOffsets, error)
+}
+
+// PinMarginSink publishes and removes per-partition pin retention margins.
+// *telemetry.DetectorMetrics satisfies it.
+type PinMarginSink interface {
+	SetPinMargin(topic string, partition int32, margin int64)
+	DeletePinMargin(topic string, partition int32)
 }
 
 // DetectorReadiness identifies one callback-observed group assignment.
@@ -128,7 +142,7 @@ func VerifyStoppedDetectorGroup(ctx context.Context, kafka config.KafkaConfig) e
 func NewDetectorConsumer(
 	ctx context.Context, kafka config.KafkaConfig, settings config.WriterConfig,
 	rules *detection.Rules, onFatal func(error),
-	observers ...DetectorAssignmentObserver,
+	observer DetectorAssignmentObserver, options ...ConsumerOption,
 ) (*DetectorConsumer, error) {
 	brokers, err := config.ParseBrokers(kafka.Brokers)
 	if err != nil {
@@ -138,13 +152,18 @@ func NewDetectorConsumer(
 	if err != nil {
 		return nil, err
 	}
+	var opts consumerOptions
+	for _, option := range options {
+		option(&opts)
+	}
+	if opts.lag != nil && (opts.lag.group != kafka.DetectorGroup || opts.lag.topic != kafka.EventsTopic) {
+		return nil, errors.New("lag tracker group/topic does not match the detector consumer")
+	}
 	lifetime, cancel := context.WithCancel(ctx)
 	c := &DetectorConsumer{
 		rules: rules, settings: settings, assignments: make(map[detection.TopicPartition]DetectorAssignment),
 		onFatal: onFatal, lifetime: lifetime, cancel: cancel, closeDone: make(chan struct{}), group: kafka.DetectorGroup,
-	}
-	if len(observers) > 0 {
-		c.observer = observers[0]
+		observer: observer, topic: kafka.EventsTopic, lag: opts.lag,
 	}
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...), kgo.ConsumeTopics(kafka.EventsTopic), kgo.ConsumerGroup(kafka.DetectorGroup),
@@ -161,6 +180,11 @@ func NewDetectorConsumer(
 		return nil, err
 	}
 	c.client = client
+	admin := kadm.NewClient(client)
+	c.starts = admin
+	if c.lag != nil {
+		c.lag.bind(admin)
+	}
 	return c, nil
 }
 
@@ -227,6 +251,9 @@ func (c *DetectorConsumer) releaseAssignments(ctx context.Context, boundary stri
 		}
 	}
 	c.mu.Unlock()
+	if c.lag != nil {
+		c.lag.Revoked(topics[c.lag.topic])
+	}
 	// Every completed batch checkpoint already precedes AllowRebalance. Neither
 	// revoke nor loss can manufacture a newer consumed-next commit.
 	if err := c.observe(ctx, boundary, released); err != nil {
@@ -277,6 +304,7 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 	if len(topics) == 0 {
 		return c.finishOffsetFetch(checkCtx, client, expected)
 	}
+	restored := make([]int32, 0, len(expected))
 	starts, err := admin.ListStartOffsets(checkCtx, topics...)
 	if err != nil {
 		return c.fail(errors.New("detector retained history unavailable"))
@@ -291,9 +319,108 @@ func (c *DetectorConsumer) fetched(ctx context.Context, client *kgo.Client, resp
 			if err = c.restorePartition(tp, p, starts, ends); err != nil {
 				return c.fail(err)
 			}
+			if topic.Topic == c.topic {
+				restored = append(restored, p.Partition)
+			}
 		}
 	}
-	return c.finishOffsetFetch(checkCtx, client, expected)
+	if err = c.finishOffsetFetch(checkCtx, client, expected); err != nil {
+		return err
+	}
+	c.trackRestored(restored)
+	return nil
+}
+
+// trackRestored seeds the lag tracker with each restored partition's replay
+// start: the committed pin, or the retained history start for a new group. The
+// worker then advances it with its own processed position.
+func (c *DetectorConsumer) trackRestored(partitions []int32) {
+	if c.lag == nil || len(partitions) == 0 {
+		return
+	}
+	assigned := c.Assignments()
+	seeds := make(map[int32]int64, len(partitions))
+	for _, partition := range partitions {
+		a, ok := assigned[detection.TopicPartition{Topic: c.lag.topic, Partition: partition}]
+		if !ok || a.RestorePending {
+			continue
+		}
+		seeds[partition] = a.HistoryStart
+		if a.Checkpoint != nil {
+			seeds[partition] = a.Checkpoint.Offset
+		}
+	}
+	c.lag.Assigned(seeds)
+}
+
+// PinMargins returns committed pin offset minus log start offset for every
+// restored owned partition with a committed pin. A margin near zero means
+// retention is about to delete the replay history (ADR 0007). The admin query
+// is bounded by 2 s.
+func (c *DetectorConsumer) PinMargins(ctx context.Context) (map[int32]int64, error) {
+	pins := make(map[int32]int64)
+	for tp, a := range c.Assignments() {
+		if tp.Topic == c.topic && !a.RestorePending && a.Checkpoint != nil {
+			pins[tp.Partition] = a.Checkpoint.Offset
+		}
+	}
+	margins := make(map[int32]int64, len(pins))
+	if len(pins) == 0 {
+		return margins, nil
+	}
+	if c.starts == nil {
+		return nil, errors.New("detector start offsets unavailable")
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, lagQueryTimeout)
+	defer cancel()
+	starts, err := c.starts.ListStartOffsets(queryCtx, c.topic)
+	if err != nil {
+		return nil, fmt.Errorf("list start offsets: %w", err)
+	}
+	for partition, pin := range pins {
+		start, ok := starts.Lookup(c.topic, partition)
+		if ok && start.Err == nil && start.Offset >= 0 {
+			margins[partition] = pin - start.Offset
+		}
+	}
+	return margins, nil
+}
+
+// RunPinMargins polls PinMargins immediately and then every interval until ctx
+// is done. Transient errors keep the last values. It returns nil on
+// cancellation and an error only when the consumer has no start offset source.
+func (c *DetectorConsumer) RunPinMargins(ctx context.Context, sink PinMarginSink, interval time.Duration) error {
+	if c.starts == nil || sink == nil {
+		return errors.New("pin margin poller has no start offset source or sink")
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	published := make(map[int32]bool)
+	for {
+		c.pinMarginTick(ctx, sink, published)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func (c *DetectorConsumer) pinMarginTick(ctx context.Context, sink PinMarginSink, published map[int32]bool) {
+	margins, err := c.PinMargins(ctx)
+	if err != nil {
+		return // transient: the previous gauge values stay in place
+	}
+	for partition := range published {
+		if _, owned := margins[partition]; !owned {
+			sink.DeletePinMargin(c.topic, partition)
+			delete(published, partition)
+		}
+	}
+	for partition, margin := range margins {
+		sink.SetPinMargin(c.topic, partition, margin)
+		published[partition] = true
+	}
 }
 
 // Cooperative offset fetches contain additions only. Validate the complete
