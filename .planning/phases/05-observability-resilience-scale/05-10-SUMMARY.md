@@ -176,3 +176,7 @@ The only new egress is OTLP/HTTP to the configured endpoint, and only when traci
 - FOUND: backend/internal/telemetry/tracing.go, backend/internal/kafkax/headers.go, backend/internal/middleware/trace.go, backend/cmd/ingest/main_test.go, backend/test/tracing_edge_test.go
 - FOUND commits: a79605b, 47e759b, 2fa012a
 - STATE.md and ROADMAP.md were not touched, as instructed.
+
+## Real-container gate (run 2026-11-17)
+
+`scripts/check-resources.sh` PASS: 18.07 GiB free, MemAvailable 4.88 GiB. `go-test-nonempty.sh './test/...' '^(TestIngest(AcceptedAfterAck|RetryNoDuplicates)|TestTracingEdgePropagation)$' -tags=integration -timeout=8m -p=1` exit 0: TestIngestRetryNoDuplicates (7.68s), TestIngestAcceptedAfterAck (0.43s) and TestTracingEdgePropagation (0.24s) PASS; package ok in 26.95s at HEAD 9350868. The plan is now fully complete.

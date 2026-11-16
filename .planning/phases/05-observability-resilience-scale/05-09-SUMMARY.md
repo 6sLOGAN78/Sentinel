@@ -172,3 +172,7 @@ None. There is no new endpoint: `/metrics` is on the existing internal ops liste
 - FOUND: backend/internal/telemetry/detector.go, backend/internal/telemetry/detector_test.go, backend/internal/kafkax/detector_lag_test.go
 - FOUND commits: b14b512, 7f2e9b8, 8431477, 951ca8d
 - STATE.md and ROADMAP.md were not touched, as instructed.
+
+## Real-container gate (run 2026-11-17)
+
+`scripts/check-resources.sh` PASS: 18.07 GiB free on the repo and docker root, MemAvailable 4.88 GiB. `go-test-nonempty.sh './test/...' '^TestDetectorCapacity' -tags=integration -timeout=10m -p=1` exit 0: `--- PASS: TestDetectorCapacity (7.53s)`, package ok in 68.95s at HEAD 9350868. The plan is now fully complete.
