@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
 	"github.com/6sLOGAN78/sentinel/internal/app"
@@ -41,6 +44,14 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return opsServer.Shutdown(closeCtx)
 	})
 
+	// Registered right after ops-http so LIFO closes it after the HTTP server
+	// and the producer have stopped, flushing their final spans.
+	tr, err := telemetry.NewTracing(ctx, cfg.Observability.Tracing, config.ServiceIngest)
+	if err != nil {
+		return fmt.Errorf("tracing: %w", err)
+	}
+	lc.Add("tracing", tr.Shutdown)
+
 	db, err := database.New(ctx, cfg.Database, log)
 	if err != nil {
 		return fmt.Errorf("postgres: %w", err)
@@ -62,6 +73,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err != nil {
 		return fmt.Errorf("kafka: %w", err)
 	}
+	producer.WithTracing(tr.Provider(), tr.Propagator())
 	lc.Add("kafka", producer.Close)
 	telemetry.RegisterProducerBuffer(reg, producer.BufferedRecords, cfg.Kafka.MaxBufferedRecords)
 
@@ -93,7 +105,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	ingest.NewHandler(verifier, producer, ratelimit.New(client, cfg.RateLimit, log), cfg, log).
 		WithMetrics(ingestMetrics).Register(e)
 
-	server := httpx.New(cfg.Server, e)
+	server := httpx.New(cfg.Server, tracedHandler(e, tr))
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)
 	if err != nil {
 		return fmt.Errorf("http listen: %w", err)
@@ -113,4 +125,17 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 
 	return nil
+}
+
+// tracedHandler wraps the public Echo router with the ingest server span.
+// The endpoint is public: a client traceparent never decides sampling; it is
+// kept only as a link on a new root. Ops endpoints are on a separate mux and
+// are not traced.
+func tracedHandler(e *echo.Echo, tr *telemetry.Tracing) http.Handler {
+	return otelhttp.NewHandler(e, "ingest",
+		otelhttp.WithTracerProvider(tr.Provider()),
+		otelhttp.WithPropagators(tr.Propagator()),
+		otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()),
+		otelhttp.WithPublicEndpointFn(func(*http.Request) bool { return true }),
+	)
 }
