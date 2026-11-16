@@ -779,3 +779,71 @@ func TestObservabilityLoggingFormat(t *testing.T) {
 		require.Contains(t, err.Error(), "console")
 	}
 }
+
+func TestLoadTracingDefaultsDisabled(t *testing.T) {
+	setCompleteEnv(t)
+	cfg, err := config.Load(config.ServiceIngest)
+	require.NoError(t, err)
+	require.Equal(t, config.TracingConfig{}, cfg.Observability.Tracing)
+	require.False(t, cfg.Observability.Tracing.Enabled)
+	require.Zero(t, cfg.Observability.Tracing.SampleRatio)
+	require.Empty(t, cfg.Observability.Tracing.OTLPEndpoint)
+}
+
+func TestLoadTracingFromEnv(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_OBSERVABILITY.TRACING.ENABLED", "true")
+	t.Setenv("SENTINEL_OBSERVABILITY.TRACING.SAMPLE_RATIO", "0.25")
+	t.Setenv("SENTINEL_OBSERVABILITY.TRACING.OTLP_ENDPOINT", "http://jaeger:4318")
+	cfg, err := config.Load(config.ServiceIngest)
+	require.NoError(t, err)
+	require.Equal(t, config.TracingConfig{
+		Enabled: true, SampleRatio: 0.25, OTLPEndpoint: "http://jaeger:4318",
+	}, cfg.Observability.Tracing)
+}
+
+func TestLoadTracingRejectsInvalidSettings(t *testing.T) {
+	for name, env := range map[string]map[string]string{
+		"ratio_negative":     {"SAMPLE_RATIO": "-0.1"},
+		"ratio_above_one":    {"SAMPLE_RATIO": "1.5"},
+		"enabled_no_target":  {"ENABLED": "true", "SAMPLE_RATIO": "1"},
+		"scheme_not_http":    {"ENABLED": "true", "OTLP_ENDPOINT": "grpc://jaeger:4317"},
+		"userinfo":           {"ENABLED": "true", "OTLP_ENDPOINT": "http://user:secret@jaeger:4318"},
+		"empty_host":         {"ENABLED": "true", "OTLP_ENDPOINT": "http:///v1"},
+		"path_not_root":      {"ENABLED": "true", "OTLP_ENDPOINT": "http://jaeger:4318/v1/traces"},
+		"unparseable":        {"ENABLED": "true", "OTLP_ENDPOINT": "http://[::1"},
+		"query_not_accepted": {"ENABLED": "true", "OTLP_ENDPOINT": "http://jaeger:4318?x=1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setCompleteEnv(t)
+			for key, value := range env {
+				t.Setenv("SENTINEL_OBSERVABILITY.TRACING."+key, value)
+			}
+			_, err := config.Load(config.ServiceIngest)
+			require.ErrorContains(t, err, "tracing")
+			require.NotContains(t, err.Error(), "secret")
+		})
+	}
+}
+
+func TestTracingConfigValidate(t *testing.T) {
+	t.Parallel()
+
+	for _, ok := range []config.TracingConfig{
+		{},
+		{SampleRatio: 1},
+		{Enabled: true, SampleRatio: 0, OTLPEndpoint: "http://jaeger:4318"},
+		{Enabled: true, SampleRatio: 0.5, OTLPEndpoint: "https://collector.internal:4318/"},
+	} {
+		require.NoError(t, ok.Validate(), "%+v", ok)
+	}
+
+	for _, bad := range []config.TracingConfig{
+		{SampleRatio: math.NaN()},
+		{SampleRatio: math.Inf(1)},
+		{Enabled: true, OTLPEndpoint: ""},
+		{Enabled: true, OTLPEndpoint: "jaeger:4318"},
+	} {
+		require.Error(t, bad.Validate(), "%+v", bad)
+	}
+}

@@ -15,12 +15,17 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/errs"
 	"github.com/6sLOGAN78/sentinel/internal/logger"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 type envelope struct {
@@ -562,4 +567,110 @@ func TestRequestLogTraceID(t *testing.T) {
 		assert.NotContains(t, api, "trace_id")
 		assert.NotContains(t, api, "span_id")
 	})
+}
+
+func TestChainOrderIncludesTrace(t *testing.T) {
+	t.Parallel()
+
+	logger := zerolog.Nop()
+	names := make([]string, 0, 8)
+	for _, m := range middleware.Chain(&logger, nil) {
+		names = append(names, m.Name)
+	}
+	assert.Equal(t, []string{"recover", "request_id", "trace", "context", "cors", "secure", "request_logger"}, names)
+}
+
+// tracedEdge wraps a logged Echo with the same otelhttp options as cmd/ingest.
+func tracedEdge(t *testing.T, ratio float64, sink *syncBuffer) (http.Handler, *tracetest.InMemoryExporter, *telemetry.Tracing) {
+	t.Helper()
+
+	exporter := tracetest.NewInMemoryExporter()
+	tr, err := telemetry.NewTracing(t.Context(),
+		config.TracingConfig{Enabled: true, SampleRatio: ratio, OTLPEndpoint: "http://127.0.0.1:4318"},
+		config.ServiceIngest, telemetry.WithExporter(exporter))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tr.Shutdown(t.Context())) })
+
+	e := newContractEcho(t, sink, nil)
+	e.POST("/api/v1/events\\:batch", func(c echo.Context) error { return c.NoContent(http.StatusAccepted) })
+	e.GET("/api/v1/alerts/:id", func(c echo.Context) error { return c.NoContent(http.StatusNoContent) })
+
+	handler := otelhttp.NewHandler(e, "ingest",
+		otelhttp.WithTracerProvider(tr.Provider()),
+		otelhttp.WithPropagators(tr.Propagator()),
+		otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()),
+		otelhttp.WithPublicEndpointFn(func(*http.Request) bool { return true }),
+	)
+
+	return handler, exporter, tr
+}
+
+func serveEdge(t *testing.T, h http.Handler, method, target string, hdr map[string]string) {
+	t.Helper()
+
+	req := httptest.NewRequest(method, target, strings.NewReader(`{}`))
+	req.RemoteAddr = "198.51.100.7:51000"
+	req.Header.Set("User-Agent", "edge-test/1")
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	h.ServeHTTP(httptest.NewRecorder(), req)
+}
+
+func TestEdgeServerSpanNamedByRouteTemplate(t *testing.T) {
+	t.Parallel()
+
+	sink := &syncBuffer{}
+	h, exporter, tr := tracedEdge(t, 1, sink)
+	serveEdge(t, h, http.MethodPost, "/api/v1/events:batch", nil)
+	require.NoError(t, tr.ForceFlush(t.Context()))
+
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal(t, "POST /api/v1/events:batch", span.Name)
+	assert.Equal(t, trace.SpanKindServer, span.SpanKind)
+	assert.Contains(t, span.Attributes, attribute.String("http.route", "/api/v1/events:batch"))
+	for _, kv := range span.Attributes {
+		for _, forbidden := range []string{"client.address", "network.peer.address", "user_agent.original", "url.path", "server.address"} {
+			assert.NotEqual(t, forbidden, string(kv.Key))
+		}
+		assert.NotContains(t, kv.Value.Emit(), "198.51.100.7")
+	}
+
+	assert.Equal(t, span.SpanContext.TraceID().String(), apiLogLine(t, sink)["trace_id"])
+}
+
+func TestEdgeServerSpanUsesTemplateNotRawID(t *testing.T) {
+	t.Parallel()
+
+	sink := &syncBuffer{}
+	h, exporter, tr := tracedEdge(t, 1, sink)
+	serveEdge(t, h, http.MethodGet, "/api/v1/alerts/secret-alert-id", nil)
+	serveEdge(t, h, http.MethodGet, "/no/such/secret-path", nil)
+	require.NoError(t, tr.ForceFlush(t.Context()))
+
+	names := []string{}
+	for _, span := range exporter.GetSpans() {
+		names = append(names, span.Name)
+	}
+	assert.ElementsMatch(t, []string{"GET /api/v1/alerts/:id", "HTTP GET"}, names)
+}
+
+func TestEdgeClientTraceparentCannotForceSampling(t *testing.T) {
+	t.Parallel()
+
+	sink := &syncBuffer{}
+	h, exporter, tr := tracedEdge(t, 0, sink)
+	serveEdge(t, h, http.MethodPost, "/api/v1/events:batch", map[string]string{
+		"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+	})
+	require.NoError(t, tr.ForceFlush(t.Context()))
+
+	assert.Empty(t, exporter.GetSpans(), "public endpoint: the client sampled flag is not trusted")
+
+	traceID, ok := apiLogLine(t, sink)["trace_id"].(string)
+	require.True(t, ok, "request log still carries a trace_id when unsampled")
+	assert.Regexp(t, `^[0-9a-f]{32}$`, traceID)
+	assert.NotEqual(t, "4bf92f3577b34da6a3ce929d0e0e4736", traceID, "public endpoint starts a new root")
 }
