@@ -55,6 +55,51 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             with self.subTest(after=after, identity=other), self.assertRaises(scenarios.SeedError):
                 scenarios.verify_late_observation(10, after, 0, identity, other)
 
+    def _late_metric_from(self, body):
+        class Response:
+            def __init__(self, raw):
+                self.raw = raw
+
+            def read(self, limit=-1):
+                return self.raw if limit < 0 else self.raw[:limit]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+        deadline = datetime.now(UTC) + timedelta(seconds=30)
+        with mock.patch.object(scenarios.urllib.request, "urlopen", return_value=Response(body)) as opened:
+            value = scenarios.late_metric(deadline)
+        self.assertEqual(opened.call_args.args[0], "http://127.0.0.1:9102/metrics")
+        return value
+
+    def test_late_metric_parses_prefixed_counter_from_large_promhttp_body(self):
+        noise = "".join(
+            f'go_gc_duration_seconds{{quantile="0.{n}"}} 1.5e-05\n' for n in range(10)
+        )
+        filler = ("# HELP go_memstats_example noise\n" + noise) * (200 * 1024 // len(noise) + 1)
+        body = (
+            filler
+            + "# HELP sentinel_detection_late_events_total Valid inputs below the watermark.\n"
+            + "# TYPE sentinel_detection_late_events_total counter\n"
+            + "sentinel_detection_late_events_total 3\n"
+            + 'sentinel_detection_alerts_total{rule_id="AUTH_BRUTE_FORCE",severity="high"} 2\n'
+        ).encode()
+        self.assertGreater(len(body), 200 * 1024)
+        self.assertEqual(self._late_metric_from(body), 3)
+
+    def test_late_metric_rejects_body_over_one_mebibyte(self):
+        body = b"sentinel_detection_late_events_total 3\n" + b"#" * (1024 * 1024)
+        with self.assertRaises(scenarios.SeedError):
+            self._late_metric_from(body)
+
+    def test_late_metric_rejects_old_unprefixed_name(self):
+        body = b"# TYPE detection_late_events_total counter\ndetection_late_events_total 3\n"
+        with self.assertRaises(scenarios.SeedError):
+            self._late_metric_from(body)
+
     def test_actual_orchestration_uses_snapshot_then_capture_then_ack_then_verify(self):
         calls = []
         certify = True

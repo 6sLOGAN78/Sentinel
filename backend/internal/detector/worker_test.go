@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -16,8 +19,8 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
-	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	"github.com/6sLOGAN78/sentinel/internal/storage/postgres"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 type poisonConsumer struct {
@@ -62,8 +65,7 @@ func poisonWorker(t *testing.T) (*Worker, *poisonConsumer) {
 	settings := config.WriterConfig{BatchSize: 500, FlushInterval: time.Millisecond, MaxAttempts: 2,
 		RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
 		OperationTimeout: 50 * time.Millisecond, ShutdownTimeout: time.Second}
-	w := New(c, nil, rules, settings, contracts.DefaultLimits(), nil,
-		config.DetectorPGConfig{}, &opshttp.DetectionMetrics{})
+	w := New(c, nil, rules, settings, contracts.DefaultLimits(), nil, config.DetectorPGConfig{})
 	w.decisions = poisonDecisions{}
 	for n := range int32(2) {
 		tp := detection.TopicPartition{Topic: "events", Partition: n}
@@ -371,4 +373,144 @@ func TestDetectorQuarantineUsesJitteredWaiter(t *testing.T) {
 			require.Zero(t, cp.Offset, "unacknowledged poison cannot advance the source offset")
 		}
 	})
+}
+
+type allowAllDecisions struct{ decisionStore }
+
+func (allowAllDecisions) CheckpointCommitted(context.Context, postgres.DetectionOwnership, detection.Checkpoint) error {
+	return nil
+}
+
+func (allowAllDecisions) Decide(_ context.Context, _ postgres.DetectionOwnership,
+	candidate detection.Candidate) (postgres.DetectionDecision, error) {
+	return postgres.DetectionDecision{Allowed: true, Canonical: candidate.CanonicalBytes()}, nil
+}
+
+type ackPublisher struct{ published [][]byte }
+
+func (p *ackPublisher) PublishCanonical(_ context.Context, canonical []byte) error {
+	p.published = append(p.published, canonical)
+	return nil
+}
+
+type recordedPositions struct{ calls map[int32][]int64 }
+
+func (p *recordedPositions) Processed(partition int32, next int64) {
+	if p.calls == nil {
+		p.calls = make(map[int32][]int64)
+	}
+	p.calls[partition] = append(p.calls[partition], next)
+}
+
+type failingCommitConsumer struct{ *poisonConsumer }
+
+func (failingCommitConsumer) CommitCheckpoints(context.Context,
+	map[detection.TopicPartition]detection.Checkpoint) error {
+	return errors.New("kafka commit unavailable")
+}
+
+func gatherValue(t *testing.T, reg *prometheus.Registry, name string, labels map[string]string) *dto.Metric {
+	t.Helper()
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			matched := 0
+			for _, pair := range metric.GetLabel() {
+				if labels[pair.GetName()] == pair.GetValue() {
+					matched++
+				}
+			}
+			if matched == len(labels) {
+				return metric
+			}
+		}
+	}
+	return nil
+}
+
+// alertBatch builds ten AUTH failures crossing the threshold at at, then one
+// valid input more than the lateness tolerance behind the event-time maximum.
+func alertBatch(t *testing.T, at time.Time) []*kgo.Record {
+	t.Helper()
+	principal := "metrics"
+	var records []*kgo.Record
+	for n := range int64(11) {
+		r := poisonEvent(t, n, at)
+		var e contracts.Event
+		require.NoError(t, json.Unmarshal(r.Value, &e))
+		e.EventID = fmt.Sprintf("00000000-0000-4000-8000-%012d", n+1)
+		e.EventType, e.Principal = "auth.failure", &principal
+		if n == 10 {
+			e.EventType, e.Principal = "auth.success", nil
+			e.OccurredAt = contracts.NewTimestamp(at.Add(-detection.Lateness - time.Millisecond))
+		}
+		raw, err := json.Marshal(e)
+		require.NoError(t, err)
+		r.Value = raw
+		records = append(records, r)
+	}
+	return records
+}
+
+func TestWorkerMetricsAndProcessedPosition(t *testing.T) {
+	at := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	w, c := poisonWorker(t)
+	reg := telemetry.NewRegistry()
+	positions := &recordedPositions{}
+	publisher := &ackPublisher{}
+	w.publisher = publisher
+	w.decisions = allowAllDecisions{}
+	w.now = func() time.Time { return at.Add(2500 * time.Millisecond) }
+	require.Same(t, w, w.WithMetrics(telemetry.NewDetectorMetrics(reg)).WithPositions(positions))
+
+	require.NoError(t, w.process(t.Context(), alertBatch(t, at)))
+	require.Len(t, publisher.published, 1)
+	require.Equal(t, int64(11), poisonMetadata(t, c.committed[detection.TopicPartition{Topic: "events"}]).ProcessedNext)
+
+	alerts := gatherValue(t, reg, "sentinel_detection_alerts_total",
+		map[string]string{"rule_id": "AUTH_BRUTE_FORCE", "severity": "high"})
+	require.NotNil(t, alerts)
+	require.InDelta(t, 1, alerts.GetCounter().GetValue(), 0)
+	late := gatherValue(t, reg, "sentinel_detection_late_events_total", nil)
+	require.NotNil(t, late)
+	require.InDelta(t, 1, late.GetCounter().GetValue(), 0)
+	delay := gatherValue(t, reg, "sentinel_detection_delay_seconds", nil)
+	require.NotNil(t, delay)
+	require.EqualValues(t, 1, delay.GetHistogram().GetSampleCount())
+	require.InDelta(t, 2.5, delay.GetHistogram().GetSampleSum(), 1e-9, "fake now minus trigger occurred_at")
+
+	windows, ledger, bytes := w.bounds.Usage()
+	require.Positive(t, windows)
+	for name, want := range map[string]int{"sentinel_detector_state_windows": windows,
+		"sentinel_detector_state_ledger_entries": ledger, "sentinel_detector_state_bytes": bytes} {
+		got := gatherValue(t, reg, name, nil)
+		require.NotNil(t, got, name)
+		require.InDelta(t, float64(want), got.GetGauge().GetValue(), 0, name)
+	}
+	require.Equal(t, map[int32][]int64{0: {11}}, positions.calls,
+		"processed position is last offset+1 of each committed partition")
+}
+
+func TestWorkerReportsNoPositionWhenCommitFails(t *testing.T) {
+	at := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	w, c := poisonWorker(t)
+	w.consumer = failingCommitConsumer{c}
+	positions := &recordedPositions{}
+	w.publisher = &ackPublisher{}
+	w.decisions = allowAllDecisions{}
+	w.WithMetrics(telemetry.NewDetectorMetrics(telemetry.NewRegistry())).WithPositions(positions)
+
+	require.ErrorContains(t, w.process(t.Context(), alertBatch(t, at)), "commit unavailable")
+	require.Empty(t, positions.calls, "an uncommitted batch is not a processed position")
+}
+
+func TestWorkerWithoutMetricsOrPositionsIsSafe(t *testing.T) {
+	w, _ := poisonWorker(t)
+	w.publisher = &ackPublisher{}
+	w.decisions = allowAllDecisions{}
+	require.NoError(t, w.process(t.Context(), alertBatch(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))))
 }

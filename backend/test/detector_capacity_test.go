@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +84,7 @@ func TestDetectorCapacity(t *testing.T) {
 			defer r.Body.Close()
 			body, readErr := io.ReadAll(r.Body)
 			return readErr == nil && r.StatusCode == http.StatusOK &&
-				strings.Contains(string(body), "detection_late_events_total 1\n") && !strings.Contains(string(body), "{")
+				slices.Contains(strings.Split(string(body), "\n"), "sentinel_detection_late_events_total 1")
 		}, 5*time.Second, 25*time.Millisecond, "worker late classification must reach internal counter")
 		require.Zero(t, process.terminate(t), process.output.String())
 	})

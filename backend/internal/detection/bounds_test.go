@@ -187,3 +187,34 @@ func TestLateMetric(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, maximum, *s.maximum, "idle checkpoint must not advance event time")
 }
+
+func TestBoundsUsageAndLimits(t *testing.T) {
+	budget := NewBounds(StateLimits{Windows: 2, Ledger: 7})
+	require.Equal(t, StateLimits{Windows: 2, Ledger: 7, Bytes: MaxStateBytes, Events: MaxWindowEvents,
+		Ports: MaxWindowEvents}, budget.Limits(), "Limits reports the effective lowered ceilings")
+	require.Equal(t, StateLimits{Windows: MaxWindows, Ledger: MaxLedgerEntries, Bytes: MaxStateBytes,
+		Events: MaxWindowEvents, Ports: MaxWindowEvents}, NewBounds(StateLimits{}).Limits())
+	windows, ledger, bytes := budget.Usage()
+	require.Equal(t, []int{0, 0, 0}, []int{windows, ledger, bytes})
+
+	a, b := NewPartitionStateWithBounds(boundRules(), budget), NewPartitionStateWithBounds(boundRules(), budget)
+	applyBound(t, a, 0, boundEvent(1, "a"))
+	applyBound(t, a, 1, boundEvent(2, "a"))
+	applyBound(t, b, 0, boundEvent(3, "b"))
+	aw, al, ab := a.Usage()
+	bw, bl, bb := b.Usage()
+	windows, ledger, bytes = budget.Usage()
+	require.Equal(t, []int{aw + bw, al + bl, ab + bb}, []int{windows, ledger, bytes},
+		"process usage is the sum of every attached partition's reservations")
+	require.Equal(t, 2, windows)
+	require.Positive(t, bytes)
+
+	rejectUnchanged(t, a, 2, boundEvent(4, "c"))
+	w2, l2, b2 := budget.Usage()
+	require.Equal(t, 2, w2, "rejected admission reserves nothing")
+	require.Equal(t, []int{ledger, bytes}, []int{l2, b2})
+
+	a.Release()
+	windows, ledger, bytes = budget.Usage()
+	require.Equal(t, []int{bw, bl, bb}, []int{windows, ledger, bytes}, "release returns the partition's share")
+}
