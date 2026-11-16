@@ -105,6 +105,34 @@ func (w *chaosWriter) stop(t *testing.T) error {
 	}
 }
 
+// closeConsumer leaves the group and closes the client of an exited writer.
+func (w *chaosWriter) closeConsumer(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), chaosWriterStopLimit)
+	defer cancel()
+	require.NoError(t, w.consumer.Close(ctx), "exited writer's consumer did not close")
+}
+
+// groupMemberCount returns the number of live members of group (-1 on error).
+func groupMemberCount(t *testing.T, kafka config.KafkaConfig, group string) int {
+	t.Helper()
+	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...))
+	require.NoError(t, err)
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	described, err := kadm.NewClient(client).DescribeGroups(ctx, group)
+	if err != nil {
+		return -1
+	}
+	info, ok := described[group]
+	if !ok || info.Err != nil {
+		return -1
+	}
+
+	return len(info.Members)
+}
+
 func topicEndOffset(t *testing.T, kafka config.KafkaConfig, topic string) int64 {
 	t.Helper()
 	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(kafka.Brokers, ",")...))
@@ -189,8 +217,14 @@ func TestChaosKafkaBrokerRestart(t *testing.T) {
 	}, chaosBrokerRecovery, 500*time.Millisecond, "batch B was never acknowledged after restart")
 
 	if done, runErr := writer.exited(); done {
+		// A crashed process releases its group membership when it exits (the
+		// lifecycle closes the consumer). Model that before the replacement
+		// starts, or the orphaned client rejoins and owns the partition.
 		t.Logf("event-writer exited during the outage (%v); restarting it", runErr)
+		writer.closeConsumer(t)
 		writer = startChaosWriter(t, kafka, store, settings, nil)
+		require.Eventually(t, func() bool { return groupMemberCount(t, kafka, group) == 1 },
+			chaosBrokerRecovery, 250*time.Millisecond, "replacement writer is not the sole group member")
 	}
 	total := topicEndOffset(t, kafka, topic)
 	require.GreaterOrEqual(t, total, int64(2*chaosBrokerBatch))
