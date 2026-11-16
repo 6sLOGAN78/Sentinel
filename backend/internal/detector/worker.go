@@ -3,6 +3,7 @@ package detector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"sync/atomic"
@@ -16,9 +17,9 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/detection"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
-	"github.com/6sLOGAN78/sentinel/internal/opshttp"
 	"github.com/6sLOGAN78/sentinel/internal/retry"
 	"github.com/6sLOGAN78/sentinel/internal/storage/postgres"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 // Assignment couples restored metadata to one ownership incarnation.
@@ -71,6 +72,12 @@ type Publisher interface {
 	PublishCanonical(context.Context, []byte) error
 }
 
+// PositionSink receives the next offset the worker has durably processed per
+// source partition. *kafkax.LagTracker satisfies it.
+type PositionSink interface {
+	Processed(partition int32, next int64)
+}
+
 // QuarantinePublisher acknowledges the existing bounded DLQ envelope.
 type QuarantinePublisher interface {
 	Publish(context.Context, *kgo.Record, kafkax.DLQReason) error
@@ -101,10 +108,29 @@ type Worker struct {
 	pg         config.DetectorPGConfig
 	decisions  decisionStore
 	bounds     *detection.Bounds
-	metrics    *opshttp.DetectionMetrics
+	metrics    *telemetry.DetectorMetrics
+	positions  PositionSink
+	now        func() time.Time
 	restored   atomic.Pointer[kafkax.DetectorReadiness]
 	dlq        QuarantinePublisher
 	wait       retry.Waiter
+}
+
+// WithMetrics binds the detector metrics before Run. Nil disables them.
+func (w *Worker) WithMetrics(metrics *telemetry.DetectorMetrics) *Worker {
+	w.metrics = metrics
+	return w
+}
+
+// WithPositions binds the processed-position sink (consumer lag) before Run.
+func (w *Worker) WithPositions(positions PositionSink) *Worker {
+	w.positions = positions
+	return w
+}
+
+// Limits reports the effective state admission ceilings of this worker.
+func (w *Worker) Limits() detection.StateLimits {
+	return w.bounds.Limits()
 }
 
 // WithQuarantine binds the publisher before Run.
@@ -117,18 +143,15 @@ func (w *Worker) WithQuarantine(publisher QuarantinePublisher) *Worker {
 func New(
 	consumer Consumer, publisher Publisher, rules *detection.Rules,
 	settings config.WriterConfig, limits contracts.Limits,
-	pool *pgxpool.Pool, pg config.DetectorPGConfig, metrics ...*opshttp.DetectionMetrics,
+	pool *pgxpool.Pool, pg config.DetectorPGConfig,
 ) *Worker {
-	w := &Worker{
+	return &Worker{
 		consumer: consumer, publisher: publisher, rules: rules, settings: settings, limits: limits,
 		partitions: make(map[detection.TopicPartition]partition),
 		pool:       pool, pg: pg,
 		bounds: detection.NewBounds(detection.StateLimits{}),
+		now:    time.Now,
 	}
-	if len(metrics) > 0 {
-		w.metrics = metrics[0]
-	}
-	return w
 }
 
 // Run processes one bounded owned batch at a time until cancellation or failure.
@@ -223,10 +246,28 @@ func (w *Worker) process(ctx context.Context, records []*kgo.Record) error {
 	if err = w.commitEffects(commitCtx, checkpoints); err != nil {
 		return err
 	}
+	w.reportProgress(checkpoints)
 	if effectErr == nil {
 		w.publishReadiness(assigned)
 	}
 	return effectErr
+}
+
+// reportProgress runs only after commitEffects succeeded: the committed
+// metadata's ProcessedNext (last processed offset + 1) is the durable
+// processed position, never the replay pin.
+func (w *Worker) reportProgress(checkpoints map[detection.TopicPartition]detection.Checkpoint) {
+	w.metrics.SetState(w.bounds.Usage())
+	if w.positions == nil {
+		return
+	}
+	for tp, cp := range checkpoints {
+		m, err := detection.CheckpointMetadata(cp)
+		if err != nil {
+			continue // commitEffects already validated this metadata
+		}
+		w.positions.Processed(tp.Partition, m.ProcessedNext)
+	}
 }
 
 func minTime(a, b time.Time) time.Time {
@@ -435,7 +476,8 @@ func (w *Worker) applyEvent(ctx context.Context, state *detection.PartitionState
 			return err
 		}
 		if decision.Allowed {
-			if err = w.publishAllowed(ctx, decision.Canonical, source, record.Offset); err != nil {
+			if err = w.publishAllowed(ctx, decision.Canonical, candidate.TriggerOccurredAt(),
+				source, record.Offset); err != nil {
 				return err
 			}
 		}
@@ -446,7 +488,7 @@ func (w *Worker) applyEvent(ctx context.Context, state *detection.PartitionState
 	return state.Acknowledge(record.Offset)
 }
 
-func (w *Worker) publishAllowed(ctx context.Context, canonical []byte,
+func (w *Worker) publishAllowed(ctx context.Context, canonical []byte, trigger contracts.Timestamp,
 	tp detection.TopicPartition, offset int64) error {
 	if err := reachBoundary(ctx, "before-publish", tp, offset); err != nil {
 		return err
@@ -454,11 +496,29 @@ func (w *Worker) publishAllowed(ctx context.Context, canonical []byte,
 	if err := w.publisher.PublishCanonical(ctx, canonical); err != nil {
 		return err
 	}
+	w.recordPublication(canonical, trigger)
 	return reachBoundary(ctx, "after-ack-before-checkpoint", tp, offset)
 }
 
+// recordPublication counts an acknowledged publication. A replay after a crash
+// publishes again and is counted again; unique alerts come from PG/CH.
+func (w *Worker) recordPublication(canonical []byte, trigger contracts.Timestamp) {
+	if w.metrics == nil {
+		return
+	}
+	var alert struct {
+		RuleID   string `json:"rule_id"`
+		Severity string `json:"severity"`
+	}
+	// The frozen canonical alert was produced and validated by this reducer.
+	if err := json.Unmarshal(canonical, &alert); err != nil {
+		return
+	}
+	w.metrics.Published(alert.RuleID, alert.Severity, w.now().Sub(trigger.Time))
+}
+
 func (w *Worker) recordLateness(late bool) {
-	if late && w.metrics != nil {
+	if late {
 		w.metrics.IncLate()
 	}
 }

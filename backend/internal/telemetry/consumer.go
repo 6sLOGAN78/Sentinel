@@ -13,7 +13,11 @@ const (
 	WriteResultError = "error"
 )
 
-const labelResult = "result"
+const (
+	labelResult    = "result"
+	labelTopic     = "topic"
+	labelPartition = "partition"
+)
 
 // ConsumerMetrics holds the spec 11.2 storage-writer metrics: position-based
 // consumer lag, ClickHouse write latency and DLQ counts. A nil
@@ -30,7 +34,7 @@ func NewConsumerMetrics(reg prometheus.Registerer) *ConsumerMetrics {
 		lag: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "sentinel_kafka_consumer_lag",
 			Help: "Broker end offset minus the next offset this process has durably processed.",
-		}, []string{"group", "topic", "partition"}),
+		}, []string{"group", labelTopic, labelPartition}),
 		write: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "sentinel_clickhouse_write_duration_seconds",
 			Help:    "Duration of each ClickHouse insert attempt, by outcome.",

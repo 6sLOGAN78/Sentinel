@@ -17,6 +17,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/detector"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/opshttp"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 func main() {
@@ -26,7 +27,9 @@ func main() {
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
 	var opsServer *opshttp.Server
 	draining := &opshttp.Draining{}
-	metrics := &opshttp.DetectionMetrics{}
+	reg := telemetry.NewRegistry()
+	detectorMetrics := telemetry.NewDetectorMetrics(reg)
+	consumerMetrics := telemetry.NewConsumerMetrics(reg)
 	fail := func(err error) { draining.Begin(); lc.Fail(err) }
 	lc.Add("ops-http", func(closeCtx context.Context) error {
 		if opsServer == nil {
@@ -67,8 +70,37 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	if err != nil {
 		return err
 	}
+	dlq.WithMetrics(consumerMetrics)
 	worker := detector.New(consumer, publisher, rules, cfg.Detector.Writer,
-		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets, metrics).WithQuarantine(dlq)
+		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets).
+		WithQuarantine(dlq).WithMetrics(detectorMetrics)
+	limits := worker.Limits()
+	detectorMetrics.SetLimits(limits.Windows, limits.Ledger, limits.Bytes)
+	startWorker(ctx, lc, worker, fail)
+
+	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
+		{Name: "kafka", Fn: consumer.Ping}, {Name: "alerts", Fn: publisher.Ping},
+		{Name: "postgres", Fn: db.Pool.Ping},
+		{Name: "detector", Fn: worker.Ready},
+	}, opshttp.WithMetricsHandler(telemetry.Handler(reg)))
+	if err != nil {
+		return fmt.Errorf("ops http: %w", err)
+	}
+	go func() {
+		<-opsServer.Done()
+		if serveErr := opsServer.Err(); serveErr != nil {
+			lc.Fail(fmt.Errorf("ops http: %w", serveErr))
+		}
+	}()
+
+	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
+
+	return nil
+}
+
+// startWorker runs the detector worker until shutdown; a worker failure drains
+// and fails the lifecycle.
+func startWorker(ctx context.Context, lc *app.Lifecycle, worker *detector.Worker, fail func(error)) {
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
 	go func() {
@@ -87,25 +119,6 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 			return closeCtx.Err()
 		}
 	})
-
-	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
-		{Name: "kafka", Fn: consumer.Ping}, {Name: "alerts", Fn: publisher.Ping},
-		{Name: "postgres", Fn: db.Pool.Ping},
-		{Name: "detector", Fn: worker.Ready},
-	}, opshttp.WithDetectionMetrics(metrics))
-	if err != nil {
-		return fmt.Errorf("ops http: %w", err)
-	}
-	go func() {
-		<-opsServer.Done()
-		if serveErr := opsServer.Err(); serveErr != nil {
-			lc.Fail(fmt.Errorf("ops http: %w", serveErr))
-		}
-	}()
-
-	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
-
-	return nil
 }
 
 func openConsumer(ctx context.Context, cfg *config.Config, rules *detection.Rules,

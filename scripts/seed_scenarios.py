@@ -208,18 +208,25 @@ def stack_settings():
     return settings, 300
 
 
+# promhttp bodies with the Go/process collectors exceed 8 KiB; cap the read at
+# 1 MiB so a misbehaving endpoint cannot make the operator buffer without bound.
+METRICS_BODY_LIMIT = 1024 * 1024
+LATE_METRIC = "sentinel_detection_late_events_total"
+
+
 def late_metric(deadline):
     try:
         timeout = remaining(deadline, 3)
         if timeout <= 0:
             raise SeedError("original scenario deadline expired")
         with urllib.request.urlopen("http://127.0.0.1:9102/metrics", timeout=timeout) as response:
-            raw = response.read(8193)
-        if len(raw) > 8192:
-            raise ValueError
+            raw = response.read(METRICS_BODY_LIMIT + 1)
+        if len(raw) > METRICS_BODY_LIMIT:
+            raise SeedError("detector metrics body exceeds 1 MiB")
         for line in raw.decode().splitlines():
-            if line.startswith("detection_late_events_total "):
-                return int(line.split()[1])
+            # "# HELP"/"# TYPE" comment lines never start with the metric name.
+            if line.startswith(LATE_METRIC + " "):
+                return int(float(line.split()[1]))
     except (OSError, ValueError) as error:
         raise SeedError("detector late counter unavailable") from error
     raise SeedError("detector late counter missing")

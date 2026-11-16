@@ -34,6 +34,17 @@ func NewBounds(limits StateLimits) *Bounds {
 	return &Bounds{limits: limits}
 }
 
+// Usage reports the process-wide reserved windows, ledger entries and
+// accounted bytes. It is a read-only accessor for capacity metrics.
+func (b *Bounds) Usage() (int, int, int) {
+	return b.windows, b.ledger, b.bytes
+}
+
+// Limits reports the effective admission ceilings after lowering.
+func (b *Bounds) Limits() StateLimits {
+	return b.limits
+}
+
 // NewPartitionStateWithBounds attaches a partition to process accounting.
 func NewPartitionStateWithBounds(rules *Rules, bounds *Bounds) *PartitionState {
 	if bounds == nil {
