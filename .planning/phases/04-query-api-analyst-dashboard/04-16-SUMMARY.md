@@ -82,3 +82,7 @@ Pending. It needs explicit user approval to push the Phase 4 commits and run hos
 ## Self-Check: PASSED
 
 Files exist and commits `08515a9`, `f76120c` exist. Only `.planning/config.json` and `.serena/` remain dirty and were never staged.
+
+## Task 3 (hosted CI), 2026-11-16
+
+Done on the mirror rather than origin (origin is billing-locked). Run [43714363178](https://github.com/chocopie247/Sentinel/actions/runs/43714363178) at `7b15a68` is green for all 19 jobs: all 8 phase4 groups, phase4-browser, phase3 core and scenarios, integration, compose-smoke and the lightweight jobs. The integration job needed one failed-job re-run. The full table and iterations are in 04-25-SUMMARY.md. Deviation 2 above (the base compose rules path) is proven on hosted runners by compose-smoke and the phase4 jobs.

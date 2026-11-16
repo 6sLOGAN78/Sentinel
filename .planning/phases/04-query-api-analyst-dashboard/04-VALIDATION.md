@@ -141,3 +141,5 @@ Primary behaviors automated. Final visual review should inspect fourpages at375/
 - [ ] Planning contract linked by finalplans; no execution pass claimed.
 
 Approval: original16plans/32implementationtasks independentR2PASS; inserted17adds3tasksandindependentplancheckPASS. Plans01/17nowacceptedaftercleanR1source-reviewandactualgates; historicalcounterevidencepreservedinR0reports. `nyquist_compliant:true` retainssamplingdesignapproval,notwholephaseexecution; wave_0_complete remainsfalse whilelaterfixturespending. No wholePhase4PASSclaimed.
+
+> **Hosted status (2026-11-16):** run 43714363178 at 7b15a68 is green for all phase4 jobs, phase4-browser, phase3 core and scenarios, and integration (integration green on its re-run; see 04-25-SUMMARY).
