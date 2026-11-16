@@ -45,6 +45,8 @@ const (
 	postgresDB        = "sentinel"
 	defaultMaxConns   = 5
 	defaultConnSecs   = 300
+	// stopGraceSeconds is the docker stop grace before SIGKILL for fault restarts.
+	stopGraceSeconds = "10"
 )
 
 func start(ctx context.Context, req testcontainers.ContainerRequest) (testcontainers.Container, error) {
@@ -280,17 +282,43 @@ func (c *FaultContainer) Unpause(ctx context.Context) error {
 	return dockerContainerCommand(ctx, "unpause", c.GetContainerID())
 }
 
+// Stop halts the dedicated container gracefully (docker stop, 10 s grace) for
+// real restart tests. It shadows the embedded testcontainers Stop so the fault
+// path uses the same allowlisted docker CLI as Pause. Its fixed host port
+// bindings survive, so clients reconnect to the same address after Start.
+func (c *FaultContainer) Stop(ctx context.Context) error {
+	return dockerContainerCommand(ctx, "stop", c.GetContainerID())
+}
+
+// Start restarts a container previously halted by Stop.
+func (c *FaultContainer) Start(ctx context.Context) error {
+	return dockerContainerCommand(ctx, "start", c.GetContainerID())
+}
+
+// containerActionArgs maps the complete docker verb allowlist for fault tests.
+func containerActionArgs(action, id string) ([]string, error) {
+	switch action {
+	case "pause", "unpause", "start":
+		return []string{action, id}, nil
+	case "stop":
+		return []string{action, "-t", stopGraceSeconds, id}, nil
+	default:
+		return nil, fmt.Errorf("unsupported container action %q", action)
+	}
+}
+
 func dockerContainerCommand(ctx context.Context, action, id string) error {
 	if id == "" {
 		return errors.New("container id is empty")
 	}
-	if action != "pause" && action != "unpause" {
-		return fmt.Errorf("unsupported container action %q", action)
+	args, err := containerActionArgs(action, id)
+	if err != nil {
+		return err
 	}
 	// action is allowlisted and id comes from testcontainers, never user input.
 	//nolint:gosec // exec uses fixed docker argv without a shell
-	if out, err := exec.CommandContext(ctx, "docker", action, id).CombinedOutput(); err != nil {
-		return fmt.Errorf("docker %s container: %w: %s", action, err, strings.TrimSpace(string(out)))
+	if out, runErr := exec.CommandContext(ctx, "docker", args...).CombinedOutput(); runErr != nil {
+		return fmt.Errorf("docker %s container: %w: %s", action, runErr, strings.TrimSpace(string(out)))
 	}
 
 	return nil

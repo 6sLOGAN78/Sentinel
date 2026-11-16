@@ -64,9 +64,9 @@ func startChaosWriter(
 		case <-time.After(chaosWriterStopLimit):
 			t.Errorf("chaos writer did not stop within %s", chaosWriterStopLimit)
 		}
-		ctx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
+		closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelClose()
-		_ = consumer.Close(ctx)
+		_ = consumer.Close(closeCtx)
 	})
 
 	return w

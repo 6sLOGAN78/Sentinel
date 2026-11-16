@@ -4,6 +4,7 @@ package test_test
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -41,6 +42,12 @@ var (
 var services = []string{"ingest", "detector", "event-writer", "alert-writer", "query-api"}
 
 func TestMain(m *testing.M) {
+	// `go test -list` only enumerates tests (the chaos selector's nonempty
+	// guard); it must not build binaries or start any container.
+	flag.Parse()
+	if listing := flag.Lookup("test.list"); listing != nil && listing.Value.String() != "" {
+		os.Exit(m.Run())
+	}
 	os.Exit(run(m))
 }
 
