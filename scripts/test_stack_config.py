@@ -97,6 +97,32 @@ class StackConfigTests(unittest.TestCase):
         # ADR 0012: an idle detector group must not lose its offsets after 7 days.
         self.assertEqual(kafka["environment"]["KAFKA_OFFSETS_RETENTION_MINUTES"], "525600")
 
+    def test_app_services_stop_gracefully(self):
+        # docker stop must exercise the 30 s lifecycle shutdown, never SIGKILL early.
+        env = dict(os.environ)
+        env.update(
+            SENTINEL_POSTGRES_PASSWORD="synthetic-secret",
+            SENTINEL_CLICKHOUSE_PASSWORD="synthetic-secret",
+        )
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(ROOT / "deployments/compose/docker-compose.yml"),
+                "config",
+                "--format",
+                "json",
+            ],
+            env=env,
+            capture_output=True,
+            check=True,
+        )
+        services = json.loads(result.stdout)["services"]
+        for service in ("ingest", "detector", "event-writer", "alert-writer", "query-api"):
+            with self.subTest(service=service):
+                self.assertEqual(services[service].get("stop_grace_period"), "40s")
+
     def run_checker(self, dotenv=(), shell=(), actual=None, config_fail=False):
         docker = shutil.which("docker")
         self.assertIsNotNone(docker, "Docker Compose CLI is required (no daemon needed)")
