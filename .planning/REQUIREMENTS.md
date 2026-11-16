@@ -55,36 +55,36 @@
 
 ### Authentication and Access (AUTH)
 
-- [ ] **AUTH-01**: Dashboard users sign in with a development-safe JWT/session flow, and no credentials are committed [§10]
-- [ ] **AUTH-02**: The server enforces viewer/analyst/admin roles: viewers read, analysts triage, admins manage config. A viewer's mutation attempt is rejected with 403 [§10]
-- [ ] **AUTH-03**: Every query is scoped to the tenant from the verified identity. Two demo tenants cannot read or mutate each other's events or alerts (cross-tenant test matrix) [§10, §14 Phase 4]
-- [ ] **AUTH-04**: Producer authentication failures and role-sensitive actions are audit-logged without secrets [§10]
+- [x] **AUTH-01**: Dashboard users sign in with a development-safe JWT/session flow, and no credentials are committed [§10]
+- [x] **AUTH-02**: The server enforces viewer/analyst/admin roles: viewers read, analysts triage, admins manage config. A viewer's mutation attempt is rejected with 403 [§10]
+- [x] **AUTH-03**: Every query is scoped to the tenant from the verified identity. Two demo tenants cannot read or mutate each other's events or alerts (cross-tenant test matrix) [§10, §14 Phase 4]
+- [x] **AUTH-04**: Producer authentication failures and role-sensitive actions are audit-logged without secrets [§10]
 
 ### Query API (API)
 
-- [ ] **API-01**: An analyst can list events filtered by time range (capped), source IP, type and outcome, with deterministic `(occurred_at, event_id)` cursor pagination returning `items`, `next_cursor` and `has_more` [FR-06, §8]
-- [ ] **API-02**: An analyst can fetch a single event by ID within their tenant [FR-06]
-- [ ] **API-03**: An analyst can list alerts filtered by severity, status, rule and time, with `(created_at, alert_id)` cursor pagination that returns full pages under status filters [FR-06, §8]
-- [ ] **API-04**: An analyst can open alert details including evidence (sample events), rule explanation and status history [FR-06, §8]
-- [ ] **API-05**: An analyst can PATCH alert status (open → acknowledged → resolved) with an optimistic version check. A stale version returns a conflict, and every transition writes an audit row (actor, time, from/to) in the same transaction [FR-08, §7.3]
-- [ ] **API-06**: Anyone authenticated can read the active rule definitions (thresholds, windows, enabled state) via `GET /api/v1/rules` [§8]
-- [ ] **API-07**: The dashboard can fetch rollup stats (event rate, open alerts by severity, top rules, 24 h trend) via `GET /api/v1/metrics/summary`, computed from real data [§8]
-- [ ] **API-08**: All SQL is parameterized, list endpoints enforce result limits and range caps, and invalid or boundary requests are covered by tests [§8]
+- [x] **API-01**: An analyst can list events filtered by time range (capped), source IP, type and outcome, with deterministic `(occurred_at, event_id)` cursor pagination returning `items`, `next_cursor` and `has_more` [FR-06, §8]
+- [x] **API-02**: An analyst can fetch a single event by ID within their tenant [FR-06]
+- [x] **API-03**: An analyst can list alerts filtered by severity, status, rule and time, with `(created_at, alert_id)` cursor pagination that returns full pages under status filters [FR-06, §8]
+- [x] **API-04**: An analyst can open alert details including evidence (sample events), rule explanation and status history [FR-06, §8]
+- [x] **API-05**: An analyst can PATCH alert status (open → acknowledged → resolved) with an optimistic version check. A stale version returns a conflict, and every transition writes an audit row (actor, time, from/to) in the same transaction [FR-08, §7.3]
+- [x] **API-06**: Anyone authenticated can read the active rule definitions (thresholds, windows, enabled state) via `GET /api/v1/rules` [§8]
+- [x] **API-07**: The dashboard can fetch rollup stats (event rate, open alerts by severity, top rules, 24 h trend) via `GET /api/v1/metrics/summary`, computed from real data [§8]
+- [x] **API-08**: All SQL is parameterized, list endpoints enforce result limits and range caps, and invalid or boundary requests are covered by tests [§8]
 
 ### Live Alerts (LIVE)
 
-- [ ] **LIVE-01**: An authenticated client receives new alerts over SSE at `/api/v1/alerts/stream` without tokens in URL query parameters [FR-07, §8]
-- [ ] **LIVE-02**: After a disconnect, the client reconnects with Last-Event-ID (or a documented cursor) and backfills missed alerts via REST with no permanent gaps [FR-07, §8]
-- [ ] **LIVE-03**: The SSE server sends keep-alives, uses bounded per-client buffers and drops slow clients, and every query-api replica delivers every alert [§8]
+- [x] **LIVE-01**: An authenticated client receives new alerts over SSE at `/api/v1/alerts/stream` without tokens in URL query parameters [FR-07, §8]
+- [x] **LIVE-02**: After a disconnect, the client reconnects with Last-Event-ID (or a documented cursor) and backfills missed alerts via REST with no permanent gaps [FR-07, §8]
+- [x] **LIVE-03**: The SSE server sends keep-alives, uses bounded per-client buffers and drops slow clients, and every query-api replica delivers every alert [§8]
 
 ### Dashboard (UI)
 
-- [ ] **UI-01**: An analyst sees the Overview page (`/`): event rate, open alert count, severity breakdown, 24 h trend, top rules and consumer lag [§9]
-- [ ] **UI-02**: An analyst sees the Alerts page (`/alerts`): a live SSE feed, severity/status filters, search, pagination, a detail drawer with evidence and history, and acknowledge/resolve controls (hidden or disabled for viewers) [§9, FR-07, FR-08]
-- [ ] **UI-03**: An analyst sees the Events page (`/events`): time range, IP, type and outcome search, plus event detail JSON rendered safely (no unsafe HTML) [§9]
-- [ ] **UI-04**: An analyst sees the Rules page (`/rules`): read-only descriptions, thresholds and enabled/disabled state [§9]
+- [x] **UI-01**: An analyst sees the Overview page (`/`): event rate, open alert count, severity breakdown, 24 h trend, top rules and consumer lag [§9]
+- [x] **UI-02**: An analyst sees the Alerts page (`/alerts`): a live SSE feed, severity/status filters, search, pagination, a detail drawer with evidence and history, and acknowledge/resolve controls (hidden or disabled for viewers) [§9, FR-07, FR-08]
+- [x] **UI-03**: An analyst sees the Events page (`/events`): time range, IP, type and outcome search, plus event detail JSON rendered safely (no unsafe HTML) [§9]
+- [x] **UI-04**: An analyst sees the Rules page (`/rules`): read-only descriptions, thresholds and enabled/disabled state [§9]
 - [ ] **UI-05**: An operator sees the System page (`/system`): pipeline and consumer health, ingest throughput, detection lag and errors, optionally linking to Grafana [§9]
-- [ ] **UI-06**: The UI uses a typed client generated from OpenAPI and React Query, handles loading, empty, error and reconnecting states, debounces searches, prevents unbounded page loads, and has accessible labels and keyboard-operable controls [§9]
+- [x] **UI-06**: The UI uses a typed client generated from OpenAPI and React Query, handles loading, empty, error and reconnecting states, debounces searches, prevents unbounded page loads, and has accessible labels and keyboard-operable controls [§9]
 
 ### Generator (GEN)
 
@@ -194,26 +194,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ALRT-03 | Phase 3 | Complete |
 | ALRT-04 | Phase 3 | Complete |
 | GEN-02 | Phase 3 | Complete |
-| AUTH-01 | Phase 4 | Pending |
-| AUTH-02 | Phase 4 | Pending |
-| AUTH-03 | Phase 4 | Pending |
-| AUTH-04 | Phase 4 | Pending |
-| API-01 | Phase 4 | Pending |
-| API-02 | Phase 4 | Pending |
-| API-03 | Phase 4 | Pending |
-| API-04 | Phase 4 | Pending |
-| API-05 | Phase 4 | Pending |
-| API-06 | Phase 4 | Pending |
-| API-07 | Phase 4 | Pending |
-| API-08 | Phase 4 | Pending |
-| LIVE-01 | Phase 4 | Pending |
-| LIVE-02 | Phase 4 | Pending |
-| LIVE-03 | Phase 4 | Pending |
-| UI-01 | Phase 4 | Pending |
-| UI-02 | Phase 4 | Pending |
-| UI-03 | Phase 4 | Pending |
-| UI-04 | Phase 4 | Pending |
-| UI-06 | Phase 4 | Pending |
+| AUTH-01 | Phase 4 | Complete |
+| AUTH-02 | Phase 4 | Complete |
+| AUTH-03 | Phase 4 | Complete |
+| AUTH-04 | Phase 4 | Complete |
+| API-01 | Phase 4 | Complete |
+| API-02 | Phase 4 | Complete |
+| API-03 | Phase 4 | Complete |
+| API-04 | Phase 4 | Complete |
+| API-05 | Phase 4 | Complete |
+| API-06 | Phase 4 | Complete |
+| API-07 | Phase 4 | Complete |
+| API-08 | Phase 4 | Complete |
+| LIVE-01 | Phase 4 | Complete |
+| LIVE-02 | Phase 4 | Complete |
+| LIVE-03 | Phase 4 | Complete |
+| UI-01 | Phase 4 | Complete (lag panel wired in Phase 5, 05-16) |
+| UI-02 | Phase 4 | Complete |
+| UI-03 | Phase 4 | Complete |
+| UI-04 | Phase 4 | Complete |
+| UI-06 | Phase 4 | Complete |
 | OBS-02 | Phase 5 | Pending |
 | OBS-03 | Phase 5 | Pending |
 | OBS-04 | Phase 5 | Pending |

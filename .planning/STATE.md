@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-10-25T23:18:33Z"
+last_updated: "2026-11-16T09:00:00Z"
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 73
   completed_plans: 70
   percent: 50
@@ -18,9 +18,11 @@ progress:
 
 See .planning/PROJECT.md, spec.md and .planning/ROADMAP.md.
 Core value: deterministic evidence-backed alerts and no loss of acknowledged events.
-Current focus: Phase4 plans01/17/02/03/04/05/06/07/08/09/10/11/12/13accepted. Continue04-14 LISTEN/resourceproof using NEWPG-onlycontext;detectorhistoryholdseparate. Phase3 remains complete.
+Current focus: Phase 5 (Observability, Resilience & Scale). Phase 4 COMPLETE 2026-11-16 (re-verified passed 6/6, cdae189; hosted mirror run 43714363178 at 7b15a68 19/19 green).
 
 ## Current Position
+
+> 2026-11-16: Phase 4 closed. Phase 5 in progress: 05-01..05-06, 05-08 done; 05-07 code committed, chaos run blocked on host RAM (<3 GiB MemAvailable); 05-09 executing (code/unit; real-container gate deferred until RAM allows). Watch item: TestDetectorCooldownOwners hosted flake (1 failure, passed on rerun). Older notes below are historical.
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
 Plan: 04-14 executing after9-pathA1PASS0atab89caa and PLANsynchronization;13acceptedfeature14+UTC2/reviewsclean/rootgates. SeparateNEWdetectorholdunresolved.

@@ -11,7 +11,7 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 - [x] **Phase 1: Foundations & Contracts** - Clean Go module with five binaries, Compose stack, schemas, OpenAPI skeleton, ADRs, CI skeleton (completed 2026-10-11)
 - [x] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (22/22 plans; verified complete 2026-10-17)
 - [x] **Phase 3: Detection & Alert Pipeline** - 21/21 numbered plans; replacement CI39613182464 all10jobs and final59/59verification passed (completed 2026-10-21)
-- [ ] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
+- [x] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
 - [ ] **Phase 5: Observability, Resilience & Scale** - Metrics, tracing, Grafana, failure suites, overload behavior, benchmark report
 - [ ] **Phase 6: Kubernetes, Hardening & Docs** - Kustomize manifests, hardened CI, threat model, docs, end-to-end demo
 
@@ -272,9 +272,10 @@ Plans:
 - [x] 04-11: Real tenant Overview aggregates — accepted2026-10-25 after precisionrepair/clean13-pathR1/native/browser/rootpostwavePASS
 - [x] 04-12: Gap-safe durable delivery catch-up — PG-onlysliceaccepted2026-10-25 after real008/native/browser,clean13-pathR1/rootpostwave;detectorholdseparate
 - [x] 04-13: Header-authenticated live SSE — accepted2026-10-25 after scopedUTCprerepair,independentreviews/native/browser/rootpostwavePASS
-- [ ] 04-14: LISTEN recovery and bounded stream resource proofs
-- [ ] 04-15: Full tenant matrix and real browser/proxy acceptance
-- [ ] 04-16: Complete fail-closed CI/local acceptance and blocking publication approval
+- [x] 04-14: LISTEN recovery and bounded stream resource proofs
+- [x] 04-15: Full tenant matrix and real browser/proxy acceptance
+- [x] 04-16: Complete fail-closed CI/local acceptance and blocking publication approval
+- [x] 04-18..04-26: Gap closure G1-G9 (harness env, TTL fixtures, query-string 400s, catch-up banner, detector history recovery tool, lifecycle rules path, schema version) — re-verified passed 2026-11-16; hosted mirror run 43714363178 19/19 green
 
 **UI hint**: yes
 **Research flag**: Needs research. pgx `WaitForNotification` reconnect, SSE behind a real proxy, auth spike (header JWT vs cookie). REST layering and React pages are standard patterns.
@@ -372,7 +373,7 @@ Plans:
 | 1. Foundations & Contracts | 13/13 | Complete    | 2026-10-11 |
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
 | 3. Detection & Alert Pipeline | 21/21 | Complete    | 2026-10-21 |
-| 4. Query API & Analyst Dashboard | 14/17 accepted | 04-14 LISTEN/resourceproof; pipelinehold separate | - |
+| 4. Query API & Analyst Dashboard | 26/26 | Complete | 2026-11-16 |
 | 5. Observability, Resilience & Scale | 0/21 | Planned | - |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
 
