@@ -1,126 +1,66 @@
 ---
 phase: 04-query-api-analyst-dashboard
-verified: 2026-11-14T23:08:00Z
-status: gaps_found
-score: 5/6 must-haves verified (roadmap SC1-SC5 verified in code + local native evidence; SC6 "CI green / 04-16 fail-closed acceptance" FAILED)
+verified: 2026-11-16T13:10:00Z
+status: passed
+score: 6/6 must-haves verified (roadmap SC1-SC5 plus SC6 "CI green / 04-16 fail-closed acceptance"; hosted run 43714363178 at 7b15a68 is 19/19 green)
 overrides_applied: 0
-gaps:
-  - id: G1
-    truth: "Phase 4 acceptance is fail-closed and green in hosted CI (04-16, spec §18 DoD: CI is green)"
-    requirement: "Spec §18; 04-16 Task 3; proof for AUTH-03, API-05..07, LIVE-01..03, UI-01..06"
-    severity: blocker
-    status: failed
-    reason: >
-      Hosted run 43649750865 (chocopie247/Sentinel @ b764e24) fails phase4 (triage), phase4 (stream),
-      phase4 (summary), phase4 (tenant) and phase4-browser. Root cause is one harness defect: the native
-      families and the browser seeder rely on ambient env exported by the private local launcher.
-      config.Load only reads .env when SENTINEL_PRIMARY.ENV=local is already in the process env
-      (config.go:432-436); CI never sets it. Families that t.Setenv it (auth, alerts, events) pass or run;
-      families that do not fail with "validate primary config: ... 'Primary.Env' ... required".
-    evidence:
-      - "backend/testphase4/triage_test.go:43-45 (no SENTINEL_PRIMARY.ENV/ENV_FILE before config.Load) -> CI log: triage_test.go:45 Primary.Env required"
-      - "backend/testphase4/stream_test.go:89-94 -> CI log: stream_test.go:94 same error"
-      - "backend/testphase4/tenant_matrix_test.go:97-99 -> CI log: tenant_matrix_test.go:99 same error"
-      - "backend/testphase4/delivery_test.go:104-105 (same pattern; job still running at report time)"
-      - "backend/testphase4/summary_rules_test.go:46-65 sets PRIMARY.ENV=local but never calls config.Load before startQueryAPI, so .env is never loaded into os env; child gets PRIMARY.ENV=test (auth_test.go:283-285) with no DB/CH config -> CI log: summary_rules_test.go:65 'production query-api did not become live within 15s'"
-      - "scripts/check-phase4-browser.sh:134-136 runs `go run ./tools/keyctl ensure` with no PGHOST/PGPORT/PGUSER/PGPASSWORD; backend/tools/keyctl/main.go:233-248 reads only PG* env -> CI log: CalledProcessError, 'FAIL: seeding failed'"
-    artifacts:
-      - path: "backend/testphase4/{triage,stream,tenant_matrix,delivery,summary_rules}_test.go"
-        issue: "depend on undeclared ambient env from the private launcher"
-      - path: "scripts/check-phase4-browser.sh"
-        issue: "seeder keyctl call depends on launcher-provided PG* env"
-    missing:
-      - "In every TestPhase4* family: t.Setenv(\"SENTINEL_PRIMARY.ENV\",\"local\") and t.Setenv(\"SENTINEL_ENV_FILE\", filepath.Join(root,\".env\")) and call config.Load once before building/starting the child query-api (summary_rules_test.go before line 65); or move this into a shared testphase4 harness helper"
-      - "check-phase4-browser.sh: derive and export PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE from the repo .env (as the launcher does) before seeding, or let keyctl fall back to config.Load(database)"
-      - "Add a guard in test_phase4_guards.py that runs each family's env bootstrap with a scrubbed environment (env -i + PATH/HOME) so launcher dependence is caught locally"
-      - "Re-run hosted CI and record all 8 phase4 jobs + phase4-browser green"
-  - id: G2
-    truth: "Full CI (legacy + Phase 3 groups preserved by 04-16) is green"
-    requirement: "Spec §18 DoD; 04-CONTRACT 'Preserve ... 44core+2scenarios'"
-    severity: blocker
-    status: failed
-    reason: >
-      Hosted phase3 (scenarios) failed: TestDetectionScenarios/isolated-static-{boundary,lateness,all}
-      fail with 'private verifier verify failed at current_event_rows'. Not owned by Phase 4 code, but
-      Phase 4 cannot claim CI green; root cause not diagnosed (possibly the same ambient-env class as G1,
-      possibly a real regression). integration and phase3 (core) were still running at report time.
-    evidence:
-      - "backend/test/scenarios_pipeline_test.go:54,204,232 (CI job 132617003591 log lines 1454-1484)"
-    missing:
-      - "Diagnose the current_event_rows verifier failure on a clean hosted stack; fix the harness or the regression; re-run hosted CI"
-  - id: G3
-    truth: "Metrics summary and rules endpoints reject undeclared query fields consistently with the rest of the API"
-    requirement: "API-08 (invalid/boundary requests covered); openapi.yaml summary declares 400"
-    severity: minor
-    status: partial
-    reason: >
-      GetSummary and ListRules never inspect the query string, so ?foo=1 or ?from=... return 200.
-      Every other Phase 4 endpoint rejects unknown fields (alerts.go:123, triage.go:41, handler.go:132).
-      04-CONTRACT does not explicitly mandate 400 for these two routes; summary's OpenAPI lists a 400 and
-      says 'No caller ranges', rules lists no 400. Not a security issue (no parameter is used), so minor.
-    evidence:
-      - "backend/internal/query/summary.go:91-95"
-      - "backend/internal/query/rules.go:53-56"
-      - "api/openapi.yaml:380-399 (rules: no 400), 401-436 (summary: 400 declared, no parameters)"
-    missing:
-      - "Add `if c.Request().URL.RawQuery != \"\" { return errs.NewBadRequestError(...) }` after RequirePrincipal in both handlers; add 400 to /api/v1/rules in openapi.yaml; add unit cases for ?x=1 on both routes"
-  - id: G4
-    truth: "The Alerts page only announces 'New alerts available' for deliveries that arrived after the page loaded"
-    requirement: "UI-02 / LIVE-01 (live feed UX)"
-    severity: minor
-    status: partial
-    reason: >
-      On mount the live client backfills from cursor '0' (no cursor exists for a new APIClient) and
-      walks the tenant's whole durable delivery log in 200-item pages; every non-empty page calls the
-      process callback, which sets arrivals=true. Any tenant with history therefore sees the banner on
-      first load. The same walk costs O(history/200) requests per new session (bounded per page, not
-      unbounded memory).
-    evidence:
-      - "web/src/api/live-alerts.ts:99-108 (backfill from cursors.get(client) ?? \"0\"; process(page.items))"
-      - "web/src/pages/Alerts.tsx:191-201 (if items.length -> setArrivals(true))"
-      - "web/src/pages/Alerts.tsx:315-317 (banner)"
-    missing:
-      - "Treat the initial catch-up walk as a baseline: pass an `initial` flag (true until the first has_more=false page) and skip setArrivals while initial; or add a server head-seq (e.g. backfill returning current tenant head, or after_seq=latest) so new sessions start at head; add a Vitest case 'no banner on first load with existing history'"
-  - id: G5
-    truth: "OpenAPI documents the delivered resolve transition"
-    requirement: "API-05, UI-06 (typed client generated from OpenAPI)"
-    severity: minor
-    status: partial
-    reason: "PATCH description still says resolve is undelivered; code delivers acknowledged->resolved (triage.go storage:36-41, handler decodeTransition accepts resolved). Stale text propagates into the generated client."
-    evidence:
-      - "api/openapi.yaml:343 'Only open to acknowledged is currently delivered; resolved returns 409.'"
-      - "web/src/api/schema.d.ts:220 (generated copy)"
-      - "backend/internal/storage/postgres/triage.go:36-41"
-    missing:
-      - "Replace with 'Allowed transitions: open->acknowledged and acknowledged->resolved; skip, reopen and no-op return 409.' then run `npm run gen:api` in web/"
-  - id: G6
-    truth: "Phase planning artifacts reflect the accepted state"
-    requirement: "Evidence hygiene (04-CONTRACT 'Record ... truthfully')"
-    severity: minor
-    status: partial
-    reason: "04-07-STACK-RECOVERY-PLAN.md header still says runtime gates pending; 04-07-STACK-RECOVERY.md (status PASS, 07 accepted 2026-10-24) and 04-07-STACK-RECOVERY-CHECK.md (APPROVE/PASS) supersede it."
-    evidence:
-      - ".planning/phases/04-query-api-analyst-dashboard/04-07-STACK-RECOVERY-PLAN.md:3-4"
-      - ".planning/phases/04-query-api-analyst-dashboard/04-07-STACK-RECOVERY.md:3-6"
-    missing:
-      - "Add a 'Status: superseded by 04-07-STACK-RECOVERY.md (PASS, accepted 2026-10-24)' line at the top of the plan file"
-  - id: G7
-    truth: "The end-to-end live alert flow survives an idle stack (no permanent detector failure)"
-    requirement: "Core value (generator->...->live dashboard); spec §3 recovery; affects SC4 in practice. Cross-phase (Phase 3 detector), not a Phase 4 requirement"
-    severity: major
-    status: partial
-    reason: >
-      If the stack is idle longer than security.events.v1 retention (24h), the detector refuses to start
-      with 'detector checkpoint history lost' even when every partition is empty (earliest == end, nothing
-      skipped). Recovery has twice required renaming the consumer group via a private overlay
-      (sentinel-detector-p4r2, -p4r3). On any dev machine left off for a day, new alerts stop reaching the
-      dashboard. No later roadmap phase covers it.
-    evidence:
-      - "backend/internal/kafkax/detector_consumer.go:468-470"
-      - ".local/phase4-acceptance/04-15/detector-hold-recovery-NOTE.md (2026-10-30 and 2026-11-13 recurrences)"
-      - ".planning/STATE.md:37 'Recurs if stack idles >24h'"
-    missing:
-      - "Decide and implement a deterministic policy: when committed < log start AND start == end (nothing retained), advance safely and record the gap; otherwise fail with an operator tool that performs an audited, fence-consistent reset. Add a native test for the idle-retention case. Track as a Phase 3 follow-up or gap plan"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 5/6
+  verified_at_head: 491beb0
+  hosted_proof: "chocopie247/Sentinel run 43714363178, headSha 7b15a68458719c735ffd9198af031c328c4d99cb, attempt 2, conclusion success, 19/19 jobs success (confirmed live with gh and in .local/ci-mirror-43714363178/run.json)"
+  gaps_closed:
+    - id: G1
+      truth: "Phase 4 acceptance is fail-closed and green in hosted CI"
+      closed_by: [04-18, 04-25]
+      evidence: "backend/testphase4/harness_env_test.go:66-80 phase4ConfigFrom/phase4Config; all 8 TestPhase4* families call phase4Config (summary_rules_test.go:63 before startQueryAPI at :64); scripts/phase4_pg_env.py keyctl_env used at check-phase4-browser.sh:140; ci.yml:56-57 env -i TestHarnessEnvBootstrap step; hosted 8/8 phase4 jobs + phase4-browser success"
+    - id: G2
+      truth: "Full CI (legacy + Phase 3 groups) is green"
+      closed_by: [04-21, 04-25]
+      evidence: "Root cause was the 7-day events TTL expiring 2026-10-17 fixtures. scenarios_pipeline_test.go:36,146 sets private static DB TTL to 3650 days; regression subtest static-history-retained at :52 with OPTIMIZE TABLE events FINAL at :180; hosted phase3 (scenarios), phase3 (core), integration success"
+    - id: G3
+      truth: "Metrics summary and rules endpoints reject undeclared query fields"
+      closed_by: [04-19]
+      evidence: "summary.go:92-97 and rules.go:54-58 (RequirePrincipal then RawQuery != \"\" -> 400); internal/query/summary_rules_test.go TestSummaryRejectsQueryString/TestRulesRejectsQueryString/...Is401/...Unchanged pass locally; openapi.yaml rules path declares 400"
+    - id: G4
+      truth: "Alerts page only announces new alerts that arrived after load"
+      closed_by: [04-20]
+      evidence: "live-alerts.ts:92 initial flag; Alerts.tsx:193-203 returns before setArrivals when initial; Vitest cases live-alerts.test.ts:310-399 and Alerts.test.tsx:348; e2e phase4.spec.ts:731-733 asserts banner absent after catch-up; 174/174 Vitest locally; hosted phase4-browser success"
+    - id: G5
+      truth: "OpenAPI documents the delivered resolve transition"
+      closed_by: [04-19]
+      evidence: "openapi.yaml:343 'Allowed transitions: open->acknowledged and acknowledged->resolved; skip, reopen and no-op return 409.'; stale text absent; schema.d.ts is generated by gen:api pre-hooks"
+    - id: G6
+      truth: "Phase planning artifacts reflect the accepted state"
+      closed_by: [04-19]
+      evidence: "04-07-STACK-RECOVERY-PLAN.md:3 'Status: SUPERSEDED by 04-07-STACK-RECOVERY.md (status PASS, 04-07 accepted 2026-10-24)'"
+    - id: G7
+      truth: "The end-to-end live alert flow survives an idle stack"
+      closed_by: [04-22, 04-23, 04-24]
+      evidence: "User-chosen option-a (offline audited same-group re-pin). detection/repin.go (PlanHistoryRecovery, RepinExpiredCheckpoint max(log_start, processed_next), domain-separated Digest); tools/detector-recover/main.go (471 lines, dry-run default, digest+operator+reason to apply); migration 009 append-only audit; detector_consumer.go:471 error names the runbook; Makefile:95 detector-recover-history; ADR 0012 + operations.md runbook; compose KAFKA_OFFSETS_RETENTION_MINUTES=525600; native TestDetectorHistoryRecovery (idle retention recovery, append-only audit, missing metadata with fences) run as its own nonempty CI step ci.yml:191, hosted integration success"
+    - id: G8
+      truth: "Integration lifecycle tests start query-api healthy"
+      closed_by: [04-26, 04-25]
+      evidence: "backend/test/lifecycle_test.go:92-102 query-api case appends SENTINEL_DETECTOR.RULES_PATH; hosted integration success"
+    - id: G9
+      truth: "TestAlertReservationsSchema tracks the latest migration"
+      closed_by: [04-26, 04-25]
+      evidence: "alert_reservations_schema_test.go:45 latestPostgresMigration from embedded migrations.Postgres(), used at :96 and :173; no hard-coded 6; hosted phase3 (core) success with migration 009 present"
+  gaps_remaining: []
+  regressions: []
+watch_items:
+  - id: W1
+    severity: non-blocking
+    item: "TestDetectorCooldownOwners hosted flake"
+    detail: "Integration attempt 1 of run 43714363178 failed: 'missing actual per-process incorporated-nine checkpoint observations' (broker pins 0 within 20s). Passed on the attempt-2 re-run and 5/5 locally. Not root-caused. Do not raise the 20s window; on recurrence diagnose pin-observation timing on slow runners. Phase 3 detector test, not a Phase 4 must-have."
+  - id: W2
+    severity: non-blocking
+    item: "golangci-lint --build-tags=phase4 ./testphase4/... reports 22 issues in tenant_matrix_test.go"
+    detail: "Reproduced by verifier (lll 17, musttag 1, nolintlint 1, perfsprint 2, govet unusedwrite 1). Not a CI gate (ci.yml lints ./... and the integration tag only, both 0 issues). Recorded in .planning/phases/05-observability-resilience-scale/deferred-items.md. Clean up or add the phase4 tag to the lint gate in a follow-up."
+  - id: W3
+    severity: info
+    item: "HEAD 491beb0 is 5 commits past the proven 7b15a68"
+    detail: "Post-proof commits are Phase 5 (05-07) only: chaos tests, testing/containers.go, test/main_test.go list short-circuit, compose stop_grace_period 40s, resource gate scripts. None touch Phase 4 product code, testphase4, web, openapi or the browser script. Local build/vet (all tags), unit tests, 26 guards and 174 Vitest pass at HEAD."
 deferred:
   - truth: "Overview shows consumer lag (UI-01)"
     addressed_in: "Phase 5"
@@ -132,7 +72,7 @@ deferred:
 **Phase Goal:** Analysts can sign in, investigate events and alerts within their own tenant, triage alerts, and see new alerts appear live in the browser.
 **Mode:** mvp. The user-story outcome is "an analyst triages their tenant's alerts and sees new ones live".
 **Verified:** 2026-11-14T23:08Z, HEAD b764e24
-**Status:** gaps_found
+**Status:** gaps_found (initial). Superseded: see "Re-verification (2026-11-16)" at the end, status passed
 **Re-verification:** No. This is the initial verification.
 
 ## User Flow Coverage (MVP)
@@ -294,3 +234,87 @@ Two further gaps found in the jobs still running when this report was written:
 - **G8 (blocker for green CI):** integration `TestHealthz/query-api`, `TestReadyzDraining/query-api`, `TestReadyzDependencies` fail ("/healthz did not return 200"). `backend/test/lifecycle_test.go` starts query-api without `SENTINEL_DETECTOR.RULES_PATH` (the detector case sets it), required by query-api since 04-10. Fix: supply it in the query-api case. Plan 04-26.
 - **G9 (blocker for green CI):** phase3 (core) `TestAlertReservationsSchema` fails `expected: 6, actual: 8` at `alert_reservations_schema_test.go:70`; the test hard-codes the latest migration, and Phase 4 added 007/008. Fix: derive the expected version from `backend/migrations/postgres`. Plan 04-26.
 - phase4 (auth) also failed on the hosted run; it is in the G1 family set covered by 04-18.
+
+## Re-verification (2026-11-16)
+
+**Verified:** 2026-11-16T13:10Z, working tree HEAD 491beb0 (hosted proof at 7b15a68, an ancestor of HEAD)
+**Status:** passed (previous: gaps_found, 5/6)
+**Score:** 6/6 must-haves verified. All gaps G1-G9 are closed, and none remain.
+**Mode:** goal-backward. Every SUMMARY claim was checked against source, git and the live GitHub API. Docker and compose were not run, and no stack was touched.
+
+### Hosted CI evidence (confirmed independently)
+
+`timeout 60 gh run view 43714363178 -R chocopie247/Sentinel --json conclusion,headSha,attempt,jobs` returned `conclusion=success`, `headSha=7b15a68458719c735ffd9198af031c328c4d99cb`, `attempt=2` and 19 jobs, all `success`:
+
+- go, web, python, schema, secrets, hygiene, compose-smoke
+- integration
+- phase3 (core), phase3 (scenarios)
+- phase4 (auth, alerts, events, triage, summary, delivery, stream, tenant)
+- phase4-browser
+
+`.local/ci-mirror-43714363178/run.json` agrees: success, 7b15a68, attempt 2, 19 jobs, and the only conclusion present is `success`. `git merge-base --is-ancestor 7b15a68 HEAD` holds.
+
+The 5 commits after the proof (6c842d5..491beb0) are 05-07 Phase 5 work plus the 04-25 doc commit. They touch:
+
+- chaos tests and `internal/testing/containers.go`
+- the `test/main_test.go` `-list` short-circuit
+- compose `stop_grace_period: 40s`
+- the resource-gate scripts
+
+None of them touch Phase 4 product code, `testphase4`, `web/`, `api/openapi.yaml` or `check-phase4-browser.sh` (diff-stat checked).
+
+### Per-gap verdict
+
+| Gap | Severity | Closing plan(s) | Verdict | Evidence verified in source |
+|---|---|---|---|---|
+| G1 harness depended on launcher env | blocker | 04-18, 04-25 | CLOSED | **Shared helper:** `testphase4/harness_env_test.go:66-80` `phase4ConfigFrom` sets `PRIMARY.ENV=local` and `ENV_FILE`, then calls `config.Load`. **All 8 families call it:** auth:45, alerts:60, events:50, triage:43, stream:93, tenant_matrix:97, delivery:105, summary_rules:63, the last one before `startQueryAPI` at :64. **Browser seeder:** `check-phase4-browser.sh:111,140` gets keyctl's env from `scripts/phase4_pg_env.py` `keyctl_env`, and the compose calls use `cwd=ROOT`. **Guards:** `ci.yml:56-57` runs `TestHarnessEnvBootstrap` under `env -i`, and there are 26 guards (up from 15). **Hosted:** all 8 phase4 jobs and phase4-browser are green |
+| G2 phase3 scenarios `current_event_rows` | blocker | 04-21, 04-25 | CLOSED | **Root cause (date, not code):** the 7-day events TTL (`002_events.sql:20`) expires the 2026-10-17 fixtures. **Fix:** `scenarios_pipeline_test.go:36,146` sets the TTL of the private static DB to 3650 days. **Regression test:** subtest `static-history-retained` (:52) forces the merge with `OPTIMIZE TABLE events FINAL` (:180). The production schema and the verifier are unchanged. **Hosted:** phase3 (scenarios) and integration are green |
+| G3 summary/rules accept query strings | minor | 04-19 | CLOSED | **Handlers:** `query/summary.go:92-97` and `query/rules.go:54-58` call RequirePrincipal first, then return 400 `queryNotAccepted()` when a query string is present. **Tests:** `query/summary_rules_test.go` has 4 tests, including 401 ordering and the unchanged no-query path, and they pass locally. **Contract:** OpenAPI `/api/v1/rules` now declares 400 |
+| G4 banner on first load | minor | 04-20 | CLOSED | **Client:** `live-alerts.ts:92` adds an `initial` flag, and `Alerts.tsx:201` returns before `setArrivals(true)` while it is set. **Unit tests:** Vitest `live-alerts.test.ts:310-399` and `Alerts.test.tsx:348` cover it. **Browser test:** the e2e spec at :731-733 now asserts the banner and button are absent after catch-up, which closes D-04-18-01. 174/174 Vitest pass locally. **Hosted:** phase4-browser is green |
+| G5 stale OpenAPI resolve text | minor | 04-19 | CLOSED | `openapi.yaml:343` now reads "Allowed transitions: open->acknowledged and acknowledged->resolved; skip, reopen and no-op return 409." The old text is gone (grep). `schema.d.ts` is regenerated by the gen:api pre-hooks |
+| G6 stale STACK-RECOVERY-PLAN header | minor | 04-19 | CLOSED | `04-07-STACK-RECOVERY-PLAN.md:3` has a SUPERSEDED line that points to the PASS record |
+| G7 detector dead after >24h idle | major | 04-22, 04-23, 04-24 | CLOSED | **Decision:** the user chose option-a plus one-year offsets retention (recorded verbatim in 04-22). **Core:** `detection/repin.go` (174 lines) re-pins to max(log_start, processed_next) with a domain-separated digest. **Tool:** `tools/detector-recover/main.go` (471 lines) is dry-run by default, and apply needs digest, operator and reason. **Audit:** migration `009` table is append-only, behind `DetectionRecoveryStore`. **Operator path:** the detector error at `kafkax/detector_consumer.go:471` names the runbook; `Makefile:95` has `detector-recover-history`; ADR 0012 and the `docs/operations.md` runbook document it; compose sets `KAFKA_OFFSETS_RETENTION_MINUTES: "525600"`. **Tests:** native `TestDetectorHistoryRecovery` covers idle retention recovery (it deletes all history, asserts fail-closed, then recovers), the append-only audit, and missing metadata with fences. It runs as its own nonempty CI step (`ci.yml:191`), and hosted integration is green. Unit tests for detection and detector-recover pass locally. Safety is kept: the detector still fails closed, and recovery is explicit and audited |
+| G8 query-api lifecycle missing RULES_PATH | blocker (CI) | 04-26, 04-25 | CLOSED | `test/lifecycle_test.go:92-102`: the `query-api` case appends `SENTINEL_DETECTOR.RULES_PATH`. Hosted integration (TestHealthz/TestReadyz*) is green |
+| G9 hard-coded schema version 6 | blocker (CI) | 04-26, 04-25 | CLOSED | `alert_reservations_schema_test.go:45` `latestPostgresMigration` reads the embedded `migrations.Postgres()`, is used at :96 and :173, and has a guard of at least 6. No literal 6 remains. Hosted phase3 (core) is green with migration 009 present, so the test now tracks the latest migration |
+
+### Observable truths (updated)
+
+| # | Truth | Previous | Now |
+|---|---|---|---|
+| 1 | SC1 auth, roles, cross-tenant matrix | VERIFIED (local) | VERIFIED (hosted phase4 auth + tenant green) |
+| 2 | SC2 filters, cursors, details, rules, summary | VERIFIED (local) | VERIFIED (hosted alerts, events, summary green; G3 closed) |
+| 3 | SC3 triage CAS + same-tx audit | VERIFIED (local) | VERIFIED (hosted triage green) |
+| 4 | SC4 live SSE, reconnect/backfill, every replica, real proxy | VERIFIED (local) | VERIFIED (hosted stream, delivery, phase4-browser green; G7 idle-stack recovery available) |
+| 5 | SC5 dashboard pages, typed client, safe JSON, a11y | VERIFIED | VERIFIED (G4, G5 closed; 174 Vitest; hosted web + browser green) |
+| 6 | DoD: CI green / 04-16 fail-closed acceptance | FAILED | VERIFIED (run 43714363178, 19/19) |
+
+### Verifier spot-checks at HEAD 491beb0
+
+| Check | Result |
+|---|---|
+| `cd backend && go build ./...` | exit 0 |
+| `go vet ./...`; `go vet -tags=phase4 ./testphase4/`; `go vet -tags=integration ./test/...` | exit 0 / 0 / 0 |
+| `go test -count=1 ./internal/query/... ./internal/detection/... ./tools/detector-recover/...` | ok / ok / ok |
+| `python3 -B -m unittest discover -s scripts -p test_phase4_guards.py` | 26 tests OK |
+| `cd web && npx vitest run src` | 174/174 passed |
+| TBD/FIXME/XXX in gap-closure files | none |
+| `gh run view 43714363178` | success, 19/19, attempt 2, headSha 7b15a68 |
+| `golangci-lint run --build-tags=phase4 ./testphase4/...` | 22 issues, all in `tenant_matrix_test.go` (W2, not a CI gate) |
+
+### Watch items (non-blocking)
+
+- **W1: `TestDetectorCooldownOwners` hosted flake.** Integration attempt 1 of run 43714363178 failed with "missing actual per-process incorporated-nine checkpoint observations": the broker reported 0 pins within 20 s. It passed on the attempt-2 re-run and 5/5 times locally (about 9.5 s each). It is not root-caused. This is a Phase 3 detector test, not a Phase 4 must-have, so it does not block. If it recurs, diagnose the pin-observation timing on slow runners rather than widening the 20 s window.
+- **W2: phase4-tag lint debt.** `golangci-lint --build-tags=phase4 ./testphase4/...` reports 22 issues in `backend/testphase4/tenant_matrix_test.go`: lll 17, perfsprint 2, govet 1, musttag 1, nolintlint 1. CI lints only `./...` and the integration tag, and both report 0 issues, so CI is green. The finding is already logged in `.planning/phases/05-observability-resilience-scale/deferred-items.md`. Fix the file or add the phase4 tag to the lint gate in a follow-up.
+- **W3: HEAD is ahead of the proven SHA.** The extra commits are Phase 5 only (see above). The next hosted run will cover them.
+- The integration job is the longest at about 37 min, but it is still within its cap.
+
+### Human verification
+
+None required. The browser UX checks (banner absent on first load, live reconnect across replicas, viewer controls hidden) are automated in Playwright, and they ran green in hosted phase4-browser.
+
+### Conclusion
+
+The phase goal is achieved. Analysts sign in, investigate events and alerts within their tenant, triage with CAS and audit, and see new alerts live. The hosted CI that 04-16 made fail-closed is now green end to end. G1-G9 are each closed by code or tests present in source, and the hosted run confirms them. The only remaining items are the non-blocking watch items W1-W3 and the Phase 5 consumer-lag deferral.
+
+_Re-verified: 2026-11-16T13:10Z_
+_Verifier: Claude (gsd-verifier)_
