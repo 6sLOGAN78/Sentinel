@@ -525,7 +525,7 @@ func TestDetectorCommitMetadata(t *testing.T) {
 			FetchMaxBytes: 1 << 20, FetchMaxPartitionBytes: 512 << 10, MaxConcurrentFetches: 2}
 		c, err := NewDetectorConsumer(context.Background(), config.KafkaConfig{
 			Brokers: "127.0.0.1:1", EventsTopic: "events", DetectorGroup: "detector-test",
-		}, settings, nil, nil)
+		}, settings, nil, nil, nil)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
