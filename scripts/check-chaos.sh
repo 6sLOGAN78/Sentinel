@@ -8,7 +8,10 @@
 #        CHAOS_FAMILIES=chaos-broker,dlq bash scripts/check-chaos.sh
 #
 # sse-reconnect runs backend/testphase4 (phase4 tag), which needs a healthy dev
-# stack (make dev-up), exactly like scripts/check-phase4-tests.sh.
+# stack (make dev-up), exactly like scripts/check-phase4-tests.sh. It must be an
+# isolated compose project: COMPOSE_PROJECT_NAME=sentinel-chaoscheck make dev-up,
+# then run this script with the same COMPOSE_PROJECT_NAME. The protected
+# projects sentinel and sentinel-p4-demo-* are refused (exit 6).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,6 +65,65 @@ is_selected() {
 regex_for() {
   printf '^(%s)$' "$(tr ' ' '|' <<<"$1")"
 }
+
+# Compose-backed families reach the dev stack through the host ports in the root
+# .env. The compose file is named "sentinel", so without an override they would
+# hit the protected stack. Require an explicit, unprotected COMPOSE_PROJECT_NAME
+# and prove every dependency port is published by that project's containers.
+compose_families=(sse-reconnect)
+readonly guard_exit=6
+
+project_guard() {
+  local project="${COMPOSE_PROJECT_NAME:-}"
+  if [[ -z "$project" ]]; then
+    echo "check-chaos: $1 needs a dev stack on an isolated project; set COMPOSE_PROJECT_NAME" \
+      "(for example sentinel-chaoscheck) and run make dev-up with it" >&2
+    exit "$guard_exit"
+  fi
+  if [[ "$project" == sentinel || "$project" == sentinel-p4-demo-* ]]; then
+    echo "check-chaos: refusing protected compose project '$project'; use an isolated one" >&2
+    exit "$guard_exit"
+  fi
+  local env_file="$root/.env"
+  if [[ "${CHECK_RESOURCES_TEST:-}" == 1 && -n "${CHECK_CHAOS_ENV_FILE:-}" ]]; then
+    env_file="$CHECK_CHAOS_ENV_FILE"
+  fi
+  if [[ ! -f "$env_file" ]]; then
+    echo "check-chaos: $env_file missing; run make dev-up with COMPOSE_PROJECT_NAME=$project" >&2
+    exit "$guard_exit"
+  fi
+  local key value port owner ports=()
+  for key in SENTINEL_DATABASE.PORT SENTINEL_REDIS.ADDRESS SENTINEL_KAFKA.BROKERS \
+    SENTINEL_CLICKHOUSE.NATIVE_ADDRESS; do
+    value="$(grep -E "^${key//./\\.}=" "$env_file" | tail -n 1 | cut -d= -f2-)"
+    port="${value##*:}"
+    if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+      echo "check-chaos: cannot read a port for $key from $env_file" >&2
+      exit "$guard_exit"
+    fi
+    ports+=("$port")
+  done
+  for port in "${ports[@]}"; do
+    owner="$(docker ps --filter "publish=$port" --filter status=running \
+      --format '{{.Label "com.docker.compose.project"}}' | sort -u)"
+    if [[ -z "$owner" ]]; then
+      echo "check-chaos: no running container publishes port $port;" \
+        "run make dev-up with COMPOSE_PROJECT_NAME=$project" >&2
+      exit "$guard_exit"
+    fi
+    if [[ "$owner" != "$project" ]]; then
+      echo "check-chaos: port $port is published by project '${owner//$'\n'/,}', not '$project'" >&2
+      exit "$guard_exit"
+    fi
+  done
+  echo "check-chaos: $1 targets compose project '$project' (ports ${ports[*]})"
+}
+
+for name in "${compose_families[@]}"; do
+  if is_selected "$name"; then
+    project_guard "$name"
+  fi
+done
 
 # Per-name nonempty guard: every alternative must list at least one test.
 # (backend/test's TestMain skips its fixtures under -list.)

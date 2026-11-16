@@ -110,7 +110,10 @@ class CheckChaosProjectGuardTests(unittest.TestCase):
         calls = self.docker_calls()
         for port in ("15432", "16379", "29092", "19000"):
             self.assertIn(f"publish={port}", calls)
-        self.assertNotIn("compose", calls)
+        self.assertFalse(
+            [line for line in calls.splitlines() if line.split()[:1] == ["compose"]],
+            "the guard must never invoke docker compose",
+        )
 
     def test_testcontainer_families_need_no_project(self):
         result = self.run_chaos("dlq")
