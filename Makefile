@@ -16,7 +16,7 @@ PG_HOST ?= 127.0.0.1
 PG_PORT ?= 15432
 CH_ADDR ?= http://127.0.0.1:18123
 
-.PHONY: help dev-up dev-down reset migrate test test-integ test-phase3 test-phase4 lint seed seed-scenarios bench run detector-recover-history
+.PHONY: help dev-up dev-down reset migrate test test-integ test-phase3 test-phase4 test-chaos lint seed seed-scenarios bench bench-up bench-down bench-purge run detector-recover-history
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
@@ -69,6 +69,10 @@ test-phase3: ## Run each exact Phase 3 acceptance family (needs healthy dev stac
 test-phase4: ## Run each exact Phase 4 native family (needs healthy dev stack)
 	bash scripts/check-phase4-tests.sh
 
+# Named spec 15 failure families (testcontainers only); runs the resource gate first.
+test-chaos: ## Run named failure suites (needs Docker)
+	bash scripts/check-chaos.sh
+
 lint: web/node_modules generator/.venv ## Run linters for backend, web and generator
 	cd backend && go tool -modfile=tools.mod golangci-lint run ./...
 	cd web && npm run lint && npm run typecheck
@@ -111,3 +115,15 @@ seed-scenarios: dev-up ## Verify exact current-run scenario alerts in Kafka, CH 
 bench: ## Not available yet
 	@echo "bench is available from Phase 5" >&2
 	@exit 1
+
+# Isolated sentinel-bench-$(RUN) project with its own ports, volumes and private
+# generated env (.local/bench/$(RUN)/env). Never $(COMPOSE), never the root .env,
+# never prune. bench/run.py validates RUN before any docker call.
+bench-up: generator/.venv ## Start an isolated sentinel-bench-<RUN> stack
+	cd generator && uv run --locked python ../bench/run.py up --run "$(RUN)"
+
+bench-down: generator/.venv ## Stop the sentinel-bench-<RUN> stack (volumes kept)
+	cd generator && uv run --locked python ../bench/run.py down --run "$(RUN)"
+
+bench-purge: generator/.venv ## Remove sentinel-bench-<RUN> volumes and images (requires CONFIRM=1)
+	cd generator && uv run --locked python ../bench/run.py purge --run "$(RUN)" $(if $(filter 1,$(CONFIRM)),--confirm)

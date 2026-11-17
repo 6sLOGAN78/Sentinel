@@ -1,0 +1,144 @@
+# Sentinel bench overlay (05-17, BENCH-01): disposable multi-replica stack.
+#
+#   bench/run.py up --run <id>   (make bench-up RUN=<id>) renders exactly:
+#   docker compose -p sentinel-bench-<id> -f docker-compose.yml \
+#     -f docker-compose.observability.yml -f docker-compose.bench.yml \
+#     --env-file .local/bench/<id>/env ...
+#
+# - No top-level name: the project always comes from -p sentinel-bench-<id>,
+#   which bench/stack.py validates (never sentinel or sentinel-p4-demo-*).
+# - Host ports never collide with the dev or demo stacks. Every bind is
+#   127.0.0.1. Published: PostgreSQL 35432, ClickHouse HTTP 38123, ingest
+#   38080-38081, query-api 38090-38091, Prometheus 39090, Grafana 33000,
+#   Jaeger UI 36686. Kafka, Redis, ClickHouse native and every ops port
+#   (9101-9105) stay on the Compose network; Prometheus scrapes the ops ports.
+# - Replicas: ingest 2, event-writer 2, detector 3, alert-writer 1, query-api 2.
+# - App images are built per project from the base build (named
+#   sentinel-bench-<id>-<service>, labelled with the git SHA) and removed by
+#   `bench/run.py purge --confirm` (down -v --remove-orphans --rmi local).
+# - Migrations run on the host (tern + chmigrate against 35432/38123), so the
+#   base postgres-migrate service is parked behind an unused profile.
+# - Bounded resources (spec 11.1): mem_limit/cpus on every service and
+#   json-file log rotation. Caps are limits, not measurements, sized for the
+#   15 GiB / 16-CPU host: infra 3.6 GiB + apps 3.0 GiB + observability
+#   1.5 GiB = 8.1 GiB of limits in total.
+# - No literal secrets; the generated private env file supplies them.
+
+x-bench-logging: &bench-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+x-bench-build: &bench-build
+  context: ../..
+  dockerfile: deployments/docker/Dockerfile
+  labels:
+    org.opencontainers.image.revision: "${BENCH_GIT_SHA:?set in the bench env}"
+
+services:
+  kafka:
+    ports: !reset []
+    mem_limit: 1g
+    cpus: 2.0
+    environment:
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+    logging: *bench-logging
+
+  topic-init:
+    environment:
+      EVENTS_PARTITIONS: ${EVENTS_PARTITIONS:-6}
+    logging: *bench-logging
+
+  clickhouse:
+    ports: !override ["127.0.0.1:38123:8123"]
+    mem_limit: 2g
+    cpus: 2.0
+    logging: *bench-logging
+
+  postgres:
+    ports: !override ["127.0.0.1:35432:5432"]
+    mem_limit: 512m
+    cpus: 1.0
+    logging: *bench-logging
+
+  redis:
+    ports: !reset []
+    mem_limit: 128m
+    cpus: 0.5
+    logging: *bench-logging
+
+  # Host tern replaces the containerized migrator (no stale migrator image).
+  postgres-migrate:
+    profiles: [bench-unused]
+
+  ingest:
+    build: *bench-build
+    deploy:
+      replicas: ${BENCH_INGEST_REPLICAS:-2}
+    ports: !override ["127.0.0.1:38080-38081:8080"]
+    mem_limit: 384m
+    cpus: 1.0
+    environment:
+      SENTINEL_RATELIMIT.CAPACITY: "${BENCH_RATE_LIMIT_CAPACITY:-10000}"
+      SENTINEL_RATELIMIT.REFILL_RATE: "${BENCH_RATE_LIMIT_REFILL:-2000}"
+    logging: *bench-logging
+
+  detector:
+    build: *bench-build
+    deploy:
+      replicas: ${BENCH_DETECTOR_REPLICAS:-3}
+    ports: !reset []
+    depends_on: !override
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+    logging: *bench-logging
+
+  event-writer:
+    build: *bench-build
+    deploy:
+      replicas: 2
+    ports: !reset []
+    mem_limit: 384m
+    cpus: 1.0
+    logging: *bench-logging
+
+  alert-writer:
+    build: *bench-build
+    deploy:
+      replicas: 1
+    ports: !reset []
+    depends_on: !override
+      kafka:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+    logging: *bench-logging
+
+  # The System-page readiness env (SENTINEL_OBSERVABILITY.SYSTEM.*) is added
+  # here by 05-21, which owns those config keys.
+  query-api:
+    build: *bench-build
+    deploy:
+      replicas: 2
+    ports: !override ["127.0.0.1:38090-38091:8081"]
+    mem_limit: 256m
+    cpus: 1.0
+    logging: *bench-logging
+
+  prometheus:
+    ports: !override ["127.0.0.1:39090:9090"]
+
+  grafana:
+    ports: !override ["127.0.0.1:33000:3000"]
+
+  jaeger:
+    ports: !override ["127.0.0.1:36686:16686"]

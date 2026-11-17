@@ -160,8 +160,8 @@ def _makefile_compose() -> str:
     raise AssertionError("Makefile COMPOSE variable not found")
 
 
-def _settings(stack: ModuleType, run_id: str = RUN_ID) -> Any:
-    return stack.BenchSettings(app_image=f"sentinel-bench-{run_id}-app:{SHA[:12]}")
+def _settings(stack: ModuleType) -> Any:
+    return stack.BenchSettings(git_sha=SHA)
 
 
 def _env_values(path: Path) -> dict[str, str]:
@@ -244,7 +244,8 @@ def test_up_flow_argv_is_isolated_and_mutates_only_after_preflight(
     runner = FakeRunner()
     info = stack.up(RUN_ID, root=tmp_path, runner=runner, probes=_probes(stack))
     assert info["project"] == PROJECT
-    assert info["app_image"] == f"sentinel-bench-{RUN_ID}-app:{SHA[:12]}"
+    assert info["git_sha"] == SHA
+    assert info["app_images"][0] == f"{PROJECT}-ingest"
     compose_calls = runner.compose_project_calls()
     assert compose_calls, "up must drive the bench project"
     for call in compose_calls:
@@ -255,7 +256,8 @@ def test_up_flow_argv_is_isolated_and_mutates_only_after_preflight(
     _assert_isolated(runner.argvs(), _makefile_compose())
     tails = [call.argv[len(_prefix()) :] for call in compose_calls]
     mutating = [i for i, tail in enumerate(tails) if any(x in tail for x in ("up", "run", "build"))]
-    build = tails.index(["--progress", "plain", "build", "ingest"])
+    apps_built = ["ingest", "detector", "event-writer", "alert-writer", "query-api"]
+    build = tails.index(["--progress", "plain", "build", *apps_built])
     infra = next(i for i, tail in enumerate(tails) if tail[:1] == ["up"] and "kafka" in tail)
     topic = tails.index(["run", "--rm", "topic-init"])
     apps = next(i for i, tail in enumerate(tails) if tail[:1] == ["up"] and "detector" in tail)
@@ -395,11 +397,11 @@ def test_create_env_is_private_random_and_complete(stack: ModuleType, tmp_path: 
     assert values["BENCH_DETECTOR_REPLICAS"] == "3"
     assert values["BENCH_RATE_LIMIT_CAPACITY"] == "10000"
     assert values["BENCH_RATE_LIMIT_REFILL"] == "2000"
-    assert values["BENCH_APP_IMAGE"] == f"sentinel-bench-{RUN_ID}-app:{SHA[:12]}"
+    assert values["BENCH_GIT_SHA"] == SHA
     assert "SENTINEL_TRACING_SAMPLE_RATIO" in values
     other = tmp_path / "other"
     other.mkdir()
-    again = stack.create_env("20261030b", _settings(stack, "20261030b"), root=other)
+    again = stack.create_env("20261030b", _settings(stack), root=other)
     assert (
         _env_values(Path(again))["SENTINEL_POSTGRES_PASSWORD"]
         != values["SENTINEL_POSTGRES_PASSWORD"]
@@ -424,7 +426,6 @@ def test_create_env_refuses_symlinked_run_dir(stack: ModuleType, tmp_path: Path)
 
 
 def test_create_env_rejects_unbounded_settings(stack: ModuleType, tmp_path: Path) -> None:
-    image = f"sentinel-bench-{RUN_ID}-app:{SHA[:12]}"
     for kwargs in (
         {"ingest_replicas": 3},
         {"detector_replicas": 0},
@@ -435,10 +436,10 @@ def test_create_env_rejects_unbounded_settings(stack: ModuleType, tmp_path: Path
         {"tracing_sample_ratio": 1.5},
     ):
         with pytest.raises(stack.BenchError):
-            stack.create_env(RUN_ID, stack.BenchSettings(app_image=image, **kwargs), root=tmp_path)
-    for other_image in ("sentinel:latest", f"sentinel-bench-other-app:{SHA[:12]}"):
+            stack.create_env(RUN_ID, stack.BenchSettings(git_sha=SHA, **kwargs), root=tmp_path)
+    for bad_sha in ("latest", SHA[:12], "../" + SHA[3:]):
         with pytest.raises(stack.BenchError):
-            stack.create_env(RUN_ID, stack.BenchSettings(app_image=other_image), root=tmp_path)
+            stack.create_env(RUN_ID, stack.BenchSettings(git_sha=bad_sha), root=tmp_path)
 
 
 def test_never_opens_a_dotenv_file(
@@ -502,8 +503,7 @@ def test_purge_with_confirm_removes_project_volumes_image_and_dir(
     runner = FakeRunner()
     stack.purge(RUN_ID, True, root=tmp_path, runner=runner)
     assert runner.argvs() == [
-        [*_prefix(), "down", "-v", "--remove-orphans"],
-        ["docker", "image", "rm", f"sentinel-bench-{RUN_ID}-app:{SHA[:12]}"],
+        [*_prefix(), "down", "-v", "--remove-orphans", "--rmi", "local"],
     ]
     assert not (tmp_path / ".local/bench" / RUN_ID).exists()
     assert (tmp_path / ".local/bench").exists()
@@ -649,7 +649,7 @@ def test_overlay_renders_replicas_ports_and_limits(stack: ModuleType, tmp_path: 
     )
     if probe.returncode != 0:
         pytest.skip("docker compose is unavailable")
-    env_path = Path(stack.create_env("render", _settings(stack, "render"), root=tmp_path))
+    env_path = Path(stack.create_env("render", _settings(stack), root=tmp_path))
     clean = {key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_HOST") if key in os.environ}
     argv = [*_prefix("render"), "config", "--format", "json"]
     argv[argv.index("--env-file") + 1] = str(env_path)
@@ -688,12 +688,12 @@ def test_overlay_renders_replicas_ports_and_limits(stack: ModuleType, tmp_path: 
         assert services[name]["logging"]["driver"] == "json-file", name
     for name in ("ingest", "detector", "event-writer", "alert-writer", "query-api"):
         assert services[name]["logging"]["options"] == {"max-size": "20m", "max-file": "3"}
-        assert services[name]["image"] == f"sentinel-bench-render-app:{SHA[:12]}"
         assert "postgres-migrate" not in services[name].get("depends_on", {})
-    assert "build" in services["ingest"]
-    for name in ("detector", "event-writer", "alert-writer", "query-api"):
-        assert "build" not in services[name], name
-        assert services[name]["pull_policy"] == "never", name
+        # Project-scoped built image (removed by purge --rmi local), labelled with the SHA.
+        assert "image" not in services[name] or services[name]["image"].startswith(
+            "sentinel-bench-render-"
+        )
+        assert services[name]["build"]["labels"]["org.opencontainers.image.revision"] == SHA
     ingest_env = services["ingest"]["environment"]
     assert ingest_env["SENTINEL_RATELIMIT.CAPACITY"] == "10000"
     assert ingest_env["SENTINEL_RATELIMIT.REFILL_RATE"] == "2000"
