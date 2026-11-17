@@ -1,0 +1,86 @@
+# Sentinel Prometheus alert examples (OBS-05, spec 11.2: "alert examples for
+# sustained consumer lag, ingest error rate, write errors, and restart loops";
+# spec 11.1: "alert on capacity limits").
+#
+# Every threshold is an example. Each description states where its value comes
+# from (code default, spec, or a placeholder) and carries the marker
+# "example threshold, tune per deployment". Expressions use only metrics
+# registered in backend/internal/telemetry plus the standard process_* family,
+# and only ADR 0004 labels (group, topic, partition, status, result) plus the
+# scrape target label job. scripts/test_observability_config.py enforces both.
+# alerts_test.yml holds one firing and one non-firing promtool case per alert.
+groups:
+  - name: sentinel-examples
+    rules:
+      - alert: SentinelConsumerLagSustained
+        expr: max by (group) (sentinel_kafka_consumer_lag) > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Consumer group {{ $labels.group }} has a sustained position-based lag
+          description: >-
+            A partition of {{ $labels.group }} has been more than 10000 records behind the broker end offset for 5m (lag is end offset minus the next durably processed offset, ADR 0004).
+            10000 is two full default event-writer batches (SENTINEL_WRITER.BATCH_SIZE=5000), so the group is not draining.
+            example threshold, tune per deployment
+
+      - alert: SentinelIngestErrorRate
+        expr: >-
+          sum(rate(sentinel_ingest_requests_total{status=~"5.."}[5m]))
+          / clamp_min(sum(rate(sentinel_ingest_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Ingest is answering more than 5% of batch requests with 5xx
+          description: >-
+            500/503 responses exceeded 5% of ingest batch requests for 5m. 503 is the deliberate load-shedding response (spec 11.1, producer buffer full or in-flight cap), so short bursts are expected and only a sustained ratio alerts.
+            5% is a placeholder: the spec defines no ingest error SLO; replace it with a value from the 05-20 benchmark.
+            example threshold, tune per deployment
+
+      - alert: SentinelClickHouseWriteErrors
+        expr: sum by (job) (rate(sentinel_clickhouse_write_duration_seconds_count{result="error"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} keeps failing ClickHouse inserts"
+          description: >-
+            ClickHouse insert attempts from {{ $labels.job }} have failed continuously for 5m. One batch retries at most SENTINEL_WRITER.MAX_ATTEMPTS=5 times with 100ms-5s backoff and a 10s operation timeout, so a transient failure clears in about a minute; 5m of errors means ClickHouse is unreachable or rejecting writes and offsets are not advancing.
+            example threshold, tune per deployment
+
+      - alert: SentinelRestartLoop
+        expr: changes(process_start_time_seconds[15m]) > 2
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} target {{ $labels.instance }} restarted more than twice in 15m"
+          description: >-
+            The process start time of one scrape target changed 3 or more times in 15m. A deploy or a manual restart is one change; Compose restart: unless-stopped restarts a crashed worker, so repeated changes mean a crash loop (for example detector capacity refusal or a fatal config error).
+            example threshold, tune per deployment
+
+      - alert: SentinelDetectorCapacityHigh
+        expr: >-
+          max(sentinel_detector_state_ledger_entries / sentinel_detector_state_ledger_entries_limit) > 0.8
+          or max(sentinel_detector_state_windows / sentinel_detector_state_windows_limit) > 0.8
+          or max(sentinel_detector_state_bytes / sentinel_detector_state_bytes_limit) > 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: A detector replica is above 80% of a state admission ceiling
+          description: >-
+            Detector state (windows, prefix ledger entries or accounted bytes) has been above 80% of its effective admission ceiling for 2m. At 100% the detector refuses admission and terminates before unsafe progress (docs/operations.md, Capacity and bounded failures), so this is the warning before a restart loop (spec 11.1: alert on capacity limits).
+            example threshold, tune per deployment
+
+      - alert: SentinelPinRetentionLow
+        expr: min by (topic, partition) (sentinel_detector_pin_retention_margin_offsets) < 100000
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Detector pin on {{ $labels.topic }}/{{ $labels.partition }} is close to Kafka log start
+          description: >-
+            The committed detector pin is less than 100000 offsets ahead of the partition log start offset for 10m (20 consecutive 30s polls). At 0 Kafka retention has deleted records the detector needs to rebuild window state: checkpoint history lost, recovery needs the ADR 0012 procedure. Usually caused by an idle or stuck detector group while retention advances.
+            100000 is a placeholder: size it to the events one partition receives during your response time.
+            example threshold, tune per deployment

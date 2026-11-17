@@ -1,0 +1,15 @@
+# Grafana datasource provisioning (05-13). Dashboards reference the fixed uid
+# sentinel-prom, never the display name. Prometheus is reached on the Compose
+# network only; it is not exposed beyond 127.0.0.1 on the host.
+apiVersion: 1
+
+datasources:
+  - name: Sentinel Prometheus
+    type: prometheus
+    uid: sentinel-prom
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s

@@ -15,30 +15,45 @@ env_file="${ENV_FILE:-.env.example}"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
-check_images() {
-  [ -f "$compose" ] || fail "images: $compose does not exist"
-  local count=0 line
+check_compose_file() {
+  local file="$1" count=0 line p
   while IFS= read -r line; do
     count=$((count + 1))
     case "$line" in
       *@sha256:*) ;;
-      *) fail "images: image without sha256 digest: $line" ;;
+      *) fail "images: $file: image without sha256 digest: $line" ;;
     esac
     case "$line" in
-      *:latest*) fail "images: :latest tag used: $line" ;;
+      *:latest*) fail "images: $file: :latest tag used: $line" ;;
     esac
-  done < <(grep -E '^[[:space:]]*image:' "$compose")
-  [ "$count" -ge 4 ] || fail "images: expected at least 4 image lines, found $count"
-  # every published port mapping (quoted host:container) must bind 127.0.0.1
-  local p
+  done < <(grep -E '^[[:space:]]*image:' "$file" || true)
+  # The minimum applies to the base stack only; overlays may add one image.
+  if [ "$file" = "$compose" ]; then
+    [ "$count" -ge 4 ] || fail "images: expected at least 4 image lines in $file, found $count"
+  fi
+  # every published port mapping (quoted host:container, including host port
+  # ranges such as "127.0.0.1:38080-38082:8080") must bind 127.0.0.1
   while IFS= read -r p; do
     [ -z "$p" ] && continue
     case "$p" in
       '"127.0.0.1:'*) ;;
-      *) fail "images: published port not bound to 127.0.0.1: $p" ;;
+      *) fail "images: $file: published port not bound to 127.0.0.1: $p" ;;
     esac
-  done < <(grep -oE '"([0-9.]+:)?[0-9]+:[0-9]+"' "$compose")
-  pass "images pinned by digest, ports bound to 127.0.0.1"
+  done < <(grep -oE '"([0-9.]+:)?[0-9]+(-[0-9]+)?:[0-9]+"' "$file" || true)
+  pass "images: $(basename "$file") pinned by digest, ports bound to 127.0.0.1"
+}
+
+check_images() {
+  [ -f "$compose" ] || fail "images: $compose does not exist"
+  local file found=0
+  # shellcheck disable=SC2086 # the glob must expand
+  for file in $compose_glob; do
+    [ -f "$file" ] || continue
+    found=$((found + 1))
+    check_compose_file "$file"
+  done
+  [ "$found" -ge 1 ] || fail "images: no compose files match $compose_glob"
+  pass "images pinned by digest, ports bound to 127.0.0.1 in $found compose file(s)"
 }
 
 check_env() {

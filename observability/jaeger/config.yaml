@@ -1,0 +1,55 @@
+# Jaeger v2 (2.22.0) all-in-one for the observability overlay (05-13).
+#
+# - OTLP/HTTP receiver on 4318, reachable only on the Compose network (the
+#   overlay publishes the UI, never 4317/4318). Services export with
+#   SENTINEL_OBSERVABILITY.TRACING.OTLP_ENDPOINT=http://jaeger:4318.
+# - In-memory trace store bounded by max_traces (spec 11.1: no unbounded
+#   buffering); the overlay's mem_limit (512m) is the hard ceiling. Traces are
+#   lost on restart by design: this is a dev/bench backend, not durable trace
+#   storage.
+# - Sizing: one sampled ingest request is one trace holding the server and
+#   publish spans, one detect span per event (05-12) and the store/store_alert
+#   spans. With SENTINEL_INGEST.MAX_BATCH_SIZE=500 a worst-case trace has about
+#   504 spans. At an ESTIMATED ~1 KiB per stored span (not measured; 05-18 must
+#   measure Jaeger RSS) 1000 worst-case traces need about 0.5 GiB, which fits
+#   the 512m limit. At sample ratio r and q requests/s, 1000 traces hold about
+#   1000 / (r x q) seconds of history.
+service:
+  extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    logs:
+      level: info
+
+extensions:
+  healthcheckv2:
+    use_v2: true
+    http:
+      endpoint: 0.0.0.0:13133
+  jaeger_query:
+    storage:
+      traces: sentinel_memory
+    http:
+      endpoint: 0.0.0.0:16686
+  jaeger_storage:
+    backends:
+      sentinel_memory:
+        memory:
+          max_traces: 1000
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: sentinel_memory

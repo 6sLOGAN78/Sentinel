@@ -1,0 +1,247 @@
+# promtool unit tests for alerts.yml (run by scripts/check-observability.sh
+# inside the pinned prom/prometheus image). Each alert has at least one firing
+# and one non-firing case. Series use only the labels the services export
+# plus the job/instance target labels Prometheus attaches.
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- SentinelConsumerLagSustained ---
+  - interval: 1m
+    input_series:
+      - series: 'sentinel_kafka_consumer_lag{job="event-writer",instance="10.0.0.5:9103",group="sentinel-event-writer",topic="security.events.v1",partition="0"}'
+        values: '20000x10'
+      - series: 'sentinel_kafka_consumer_lag{job="event-writer",instance="10.0.0.5:9103",group="sentinel-event-writer",topic="security.events.v1",partition="1"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SentinelConsumerLagSustained
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              group: sentinel-event-writer
+            exp_annotations:
+              summary: Consumer group sentinel-event-writer has a sustained position-based lag
+              description: >-
+                A partition of sentinel-event-writer has been more than 10000 records behind the broker end offset for 5m (lag is end offset minus the next durably processed offset, ADR 0004).
+                10000 is two full default event-writer batches (SENTINEL_WRITER.BATCH_SIZE=5000), so the group is not draining.
+                example threshold, tune per deployment
+
+  - interval: 1m
+    input_series:
+      # Below threshold the whole time.
+      - series: 'sentinel_kafka_consumer_lag{job="detector",instance="10.0.0.6:9102",group="sentinel-detector",topic="security.events.v1",partition="0"}'
+        values: '9000x10'
+      # Above threshold, but drains after 3m.
+      - series: 'sentinel_kafka_consumer_lag{job="event-writer",instance="10.0.0.5:9103",group="sentinel-event-writer",topic="security.events.v1",partition="0"}'
+        values: '20000 20000 20000 20000 0x7'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SentinelConsumerLagSustained
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: SentinelConsumerLagSustained
+        exp_alerts: []
+
+  # --- SentinelIngestErrorRate ---
+  - interval: 1m
+    input_series:
+      - series: 'sentinel_ingest_requests_total{job="ingest",instance="10.0.0.2:9101",status="202"}'
+        values: '0+100x15'
+      # 500 and 503 together exceed 5% (about 7.4%); neither alone does.
+      - series: 'sentinel_ingest_requests_total{job="ingest",instance="10.0.0.2:9101",status="500"}'
+        values: '0+4x15'
+      - series: 'sentinel_ingest_requests_total{job="ingest",instance="10.0.0.2:9101",status="503"}'
+        values: '0+4x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SentinelIngestErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: Ingest is answering more than 5% of batch requests with 5xx
+              description: >-
+                500/503 responses exceeded 5% of ingest batch requests for 5m. 503 is the deliberate load-shedding response (spec 11.1, producer buffer full or in-flight cap), so short bursts are expected and only a sustained ratio alerts.
+                5% is a placeholder: the spec defines no ingest error SLO; replace it with a value from the 05-20 benchmark.
+                example threshold, tune per deployment
+
+  - interval: 1m
+    input_series:
+      # About 2% 5xx (and 4xx never counts).
+      - series: 'sentinel_ingest_requests_total{job="ingest",instance="10.0.0.2:9101",status="202"}'
+        values: '0+100x15'
+      - series: 'sentinel_ingest_requests_total{job="ingest",instance="10.0.0.2:9101",status="500"}'
+        values: '0+2x15'
+      - series: 'sentinel_ingest_requests_total{job="ingest",instance="10.0.0.2:9101",status="429"}'
+        values: '0+50x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SentinelIngestErrorRate
+        exp_alerts: []
+
+  # --- SentinelClickHouseWriteErrors ---
+  - interval: 1m
+    input_series:
+      - series: 'sentinel_clickhouse_write_duration_seconds_count{job="event-writer",instance="10.0.0.5:9103",result="error"}'
+        values: '0+1x15'
+      - series: 'sentinel_clickhouse_write_duration_seconds_count{job="event-writer",instance="10.0.0.5:9103",result="ok"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SentinelClickHouseWriteErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: event-writer
+            exp_annotations:
+              summary: event-writer keeps failing ClickHouse inserts
+              description: >-
+                ClickHouse insert attempts from event-writer have failed continuously for 5m. One batch retries at most SENTINEL_WRITER.MAX_ATTEMPTS=5 times with 100ms-5s backoff and a 10s operation timeout, so a transient failure clears in about a minute; 5m of errors means ClickHouse is unreachable or rejecting writes and offsets are not advancing.
+                example threshold, tune per deployment
+
+  - interval: 1m
+    input_series:
+      # One transient failed attempt, then only successes.
+      - series: 'sentinel_clickhouse_write_duration_seconds_count{job="alert-writer",instance="10.0.0.8:9104",result="error"}'
+        values: '0 1x15'
+      - series: 'sentinel_clickhouse_write_duration_seconds_count{job="alert-writer",instance="10.0.0.8:9104",result="ok"}'
+        values: '0+20x15'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SentinelClickHouseWriteErrors
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: SentinelClickHouseWriteErrors
+        exp_alerts: []
+
+  # --- SentinelRestartLoop ---
+  - interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="detector",instance="10.0.0.6:9102"}'
+        values: '100 100 220 220 340 340 460 460x8'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SentinelRestartLoop
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: detector
+              instance: 10.0.0.6:9102
+            exp_annotations:
+              summary: detector target 10.0.0.6:9102 restarted more than twice in 15m
+              description: >-
+                The process start time of one scrape target changed 3 or more times in 15m. A deploy or a manual restart is one change; Compose restart: unless-stopped restarts a crashed worker, so repeated changes mean a crash loop (for example detector capacity refusal or a fatal config error).
+                example threshold, tune per deployment
+
+  - interval: 1m
+    input_series:
+      # A single deploy/restart.
+      - series: 'process_start_time_seconds{job="ingest",instance="10.0.0.2:9101"}'
+        values: '100 100 220x14'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SentinelRestartLoop
+        exp_alerts: []
+
+  # --- SentinelDetectorCapacityHigh ---
+  - interval: 1m
+    input_series:
+      - series: 'sentinel_detector_state_ledger_entries{job="detector",instance="10.0.0.6:9102"}'
+        values: '90000x10'
+      - series: 'sentinel_detector_state_ledger_entries_limit{job="detector",instance="10.0.0.6:9102"}'
+        values: '100000x10'
+      - series: 'sentinel_detector_state_windows{job="detector",instance="10.0.0.6:9102"}'
+        values: '100x10'
+      - series: 'sentinel_detector_state_windows_limit{job="detector",instance="10.0.0.6:9102"}'
+        values: '10000x10'
+      - series: 'sentinel_detector_state_bytes{job="detector",instance="10.0.0.6:9102"}'
+        values: '1048576x10'
+      - series: 'sentinel_detector_state_bytes_limit{job="detector",instance="10.0.0.6:9102"}'
+        values: '67108864x10'
+    alert_rule_test:
+      # Still pending: above 80% for less than the 2m hold.
+      - eval_time: 1m
+        alertname: SentinelDetectorCapacityHigh
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SentinelDetectorCapacityHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations: &capacity_annotations
+              summary: A detector replica is above 80% of a state admission ceiling
+              description: >-
+                Detector state (windows, prefix ledger entries or accounted bytes) has been above 80% of its effective admission ceiling for 2m. At 100% the detector refuses admission and terminates before unsafe progress (docs/operations.md, Capacity and bounded failures), so this is the warning before a restart loop (spec 11.1: alert on capacity limits).
+                example threshold, tune per deployment
+
+  - interval: 1m
+    input_series:
+      # Only the window ceiling is near full, on the second of two replicas.
+      - series: 'sentinel_detector_state_windows{job="detector",instance="10.0.0.6:9102"}'
+        values: '100x10'
+      - series: 'sentinel_detector_state_windows_limit{job="detector",instance="10.0.0.6:9102"}'
+        values: '10000x10'
+      - series: 'sentinel_detector_state_windows{job="detector",instance="10.0.0.9:9102"}'
+        values: '9500x10'
+      - series: 'sentinel_detector_state_windows_limit{job="detector",instance="10.0.0.9:9102"}'
+        values: '10000x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SentinelDetectorCapacityHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations: *capacity_annotations
+
+  - interval: 1m
+    input_series:
+      - series: 'sentinel_detector_state_ledger_entries{job="detector",instance="10.0.0.6:9102"}'
+        values: '50000x10'
+      - series: 'sentinel_detector_state_ledger_entries_limit{job="detector",instance="10.0.0.6:9102"}'
+        values: '100000x10'
+      - series: 'sentinel_detector_state_windows{job="detector",instance="10.0.0.6:9102"}'
+        values: '7000x10'
+      - series: 'sentinel_detector_state_windows_limit{job="detector",instance="10.0.0.6:9102"}'
+        values: '10000x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SentinelDetectorCapacityHigh
+        exp_alerts: []
+
+  # --- SentinelPinRetentionLow ---
+  - interval: 1m
+    input_series:
+      - series: 'sentinel_detector_pin_retention_margin_offsets{job="detector",instance="10.0.0.6:9102",topic="security.events.v1",partition="2"}'
+        values: '50000x15'
+      - series: 'sentinel_detector_pin_retention_margin_offsets{job="detector",instance="10.0.0.6:9102",topic="security.events.v1",partition="3"}'
+        values: '900000x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: SentinelPinRetentionLow
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              topic: security.events.v1
+              partition: "2"
+            exp_annotations:
+              summary: Detector pin on security.events.v1/2 is close to Kafka log start
+              description: >-
+                The committed detector pin is less than 100000 offsets ahead of the partition log start offset for 10m (20 consecutive 30s polls). At 0 Kafka retention has deleted records the detector needs to rebuild window state: checkpoint history lost, recovery needs the ADR 0012 procedure. Usually caused by an idle or stuck detector group while retention advances.
+                100000 is a placeholder: size it to the events one partition receives during your response time.
+                example threshold, tune per deployment
+
+  - interval: 1m
+    input_series:
+      # Briefly low (pin advanced after 5m), never for 10m.
+      - series: 'sentinel_detector_pin_retention_margin_offsets{job="detector",instance="10.0.0.6:9102",topic="security.events.v1",partition="2"}'
+        values: '50000x5 400000x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SentinelPinRetentionLow
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: SentinelPinRetentionLow
+        exp_alerts: []

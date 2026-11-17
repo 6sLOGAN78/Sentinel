@@ -108,6 +108,9 @@ jobs:
       - name: five application stack configuration guards
         working-directory: .
         run: python3 -B -m unittest discover -s scripts -p test_stack_config.py
+      - name: observability rules, dashboard and overlay guards
+        working-directory: .
+        run: bash scripts/check-observability.sh
 
   schema:
     runs-on: ubuntu-24.04

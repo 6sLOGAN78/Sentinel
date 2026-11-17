@@ -1,0 +1,354 @@
+{
+  "uid": "sentinel-pipeline",
+  "title": "Sentinel pipeline",
+  "description": "OBS-05 pipeline health. Every expression uses metrics registered in backend/internal/telemetry (checked by scripts/test_observability_config.py) and only ADR 0004 labels plus the job target label.",
+  "tags": ["sentinel"],
+  "schemaVersion": 42,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "timezone": "utc",
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Ingest events/s by result",
+      "description": "sentinel_ingest_events_total by result (accepted, rejected, rate_limited, shed, unavailable), summed over ingest replicas.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum by (result) (rate(sentinel_ingest_events_total[1m]))",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP error ratio",
+      "description": "Share of ingest batch requests answered 5xx or 4xx. 503 is deliberate load shedding (producer buffer full or in-flight cap); 429 is rate limiting. Alert: SentinelIngestErrorRate.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum(rate(sentinel_ingest_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(sentinel_ingest_requests_total[5m])), 1e-9)",
+          "legendFormat": "5xx"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "B",
+          "expr": "sum(rate(sentinel_ingest_requests_total{status=~\"4..\"}[5m])) / clamp_min(sum(rate(sentinel_ingest_requests_total[5m])), 1e-9)",
+          "legendFormat": "4xx"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Ingest request p95",
+      "description": "p95 of sentinel_ingest_request_duration_seconds across ingest replicas.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sentinel_ingest_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Producer buffer saturation",
+      "description": "Highest ingest replica ratio of sentinel_kafka_producer_buffered_records (admitted, not yet acknowledged or failed) to its limit. It never exceeds 1.0; at 1.0 the next batch is shed with 503.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "max(sentinel_kafka_producer_buffered_records / sentinel_kafka_producer_buffered_records_limit)",
+          "legendFormat": "max replica"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Consumer lag by group",
+      "description": "Position-based lag (broker end offset minus next durably processed offset, ADR 0004) per group and partition. Each partition is exported only by its current owner. Alert: SentinelConsumerLagSustained.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "max by (group, partition) (sentinel_kafka_consumer_lag)",
+          "legendFormat": "{{group}} p{{partition}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Detection delay p50/p95/p99",
+      "description": "Detector wall clock at alert publish ack minus the trigger event occurred_at (sentinel_detection_delay_seconds).",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(sentinel_detection_delay_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sentinel_detection_delay_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(sentinel_detection_delay_seconds_bucket[5m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Alert publications/s by rule",
+      "description": "sentinel_detection_alerts_total by rule_id and severity. Replays after a crash count again; unique alerts come from PostgreSQL/ClickHouse. Do not count alerts from logs.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum by (rule_id, severity) (rate(sentinel_detection_alerts_total[5m]))",
+          "legendFormat": "{{rule_id}} ({{severity}})"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Late events/s",
+      "description": "Valid inputs classified below the event-time watermark (sentinel_detection_late_events_total). Replay may count an input again.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum(rate(sentinel_detection_late_events_total[5m]))",
+          "legendFormat": "late"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "ClickHouse write p95",
+      "description": "p95 duration of ClickHouse insert attempts (sentinel_clickhouse_write_duration_seconds) per writer service, all outcomes.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, job) (rate(sentinel_clickhouse_write_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "ClickHouse write errors/s",
+      "description": "Failed ClickHouse insert attempts per writer service. Alert: SentinelClickHouseWriteErrors.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "fieldConfig": { "defaults": { "unit": "ops", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum by (job) (rate(sentinel_clickhouse_write_duration_seconds_count{result=\"error\"}[5m]))",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "DLQ events/s by reason",
+      "description": "Records acknowledged by the DLQ topic (sentinel_dlq_events_total), by stable reason.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "fieldConfig": { "defaults": { "unit": "ops", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum by (reason) (rate(sentinel_dlq_events_total[5m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "SSE clients",
+      "description": "Connected dashboard SSE clients across query-api replicas. sentinel_sse_clients is registered by query-api in 05-14; this panel shows no data until then.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "none", "graphMode": "area", "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum(sentinel_sse_clients)",
+          "legendFormat": "clients"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Detector capacity %",
+      "description": "Highest detector replica usage of each state admission ceiling. At 100% the detector refuses admission and terminates. Alert: SentinelDetectorCapacityHigh.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "max(sentinel_detector_state_windows / sentinel_detector_state_windows_limit)",
+          "legendFormat": "windows"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "B",
+          "expr": "max(sentinel_detector_state_ledger_entries / sentinel_detector_state_ledger_entries_limit)",
+          "legendFormat": "ledger entries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "C",
+          "expr": "max(sentinel_detector_state_bytes / sentinel_detector_state_bytes_limit)",
+          "legendFormat": "bytes"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Pin retention margin",
+      "description": "Committed detector pin offset minus partition log start offset. 0 means checkpoint history is lost. Polled every 30s. Alert: SentinelPinRetentionLow.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "asc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "min by (topic, partition) (sentinel_detector_pin_retention_margin_offsets)",
+          "legendFormat": "{{topic}}/{{partition}}"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Restarts (15m)",
+      "description": "Process start-time changes per service over 15m. Alert: SentinelRestartLoop.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 56 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum by (job) (changes(process_start_time_seconds[15m]))",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Scrape targets up",
+      "description": "Scraped replicas per service that answered /metrics. query-api reports 0 until it serves /metrics (05-14).",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 56 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "sum by (job) (up)",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Resident memory by service",
+      "description": "Largest process_resident_memory_bytes among the replicas of each service.",
+      "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 64 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "sentinel-prom" },
+          "refId": "A",
+          "expr": "max by (job) (process_resident_memory_bytes)",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    }
+  ]
+}

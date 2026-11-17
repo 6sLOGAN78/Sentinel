@@ -1,0 +1,117 @@
+# Sentinel observability overlay (05-13, OBS-05): Prometheus, Grafana, Jaeger.
+#
+#   docker compose [-p <project>] -f docker-compose.yml \
+#     -f docker-compose.observability.yml up -d
+#
+# - Strictly additive: it adds three backends and only appends environment
+#   keys (JSON logs, tracing) to the five app services. It sets no top-level
+#   name; the project name comes from the base file or -p (bench: 05-17).
+# - All images are pinned by tag AND sha256 digest (D-21, check-pins.sh).
+# - All published ports bind 127.0.0.1 only: Prometheus 19090, Grafana 13000,
+#   Jaeger UI 16686. The Jaeger OTLP receiver (4318) stays on the Compose
+#   network and is never published.
+# - Bounded resources (spec 11.1): Prometheus TSDB retention 2d / 1GB, Jaeger
+#   max_traces (observability/jaeger/config.yaml), json-file log rotation and
+#   mem_limit on every backend (512m each; 1.5 GiB total).
+# - Secrets come from .env via ${VAR:?}; there are no literal secrets here.
+#   Grafana anonymous access and sign-up are disabled.
+# - Tracing: every app service gets the same sample ratio
+#   (SENTINEL_TRACING_SAMPLE_RATIO, default 0.01). Workers follow the edge
+#   sampling decision (ParentBased), but the ratio is kept identical anyway.
+
+x-bounded-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app-observability: &app-observability
+  SENTINEL_OBSERVABILITY.LOGGING.FORMAT: json
+  SENTINEL_OBSERVABILITY.TRACING.ENABLED: "true"
+  SENTINEL_OBSERVABILITY.TRACING.SAMPLE_RATIO: "${SENTINEL_TRACING_SAMPLE_RATIO:-0.01}"
+  SENTINEL_OBSERVABILITY.TRACING.OTLP_ENDPOINT: http://jaeger:4318
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    restart: unless-stopped
+    mem_limit: 512m
+    # Lifecycle (/-/reload, /-/quit) and admin APIs stay at their disabled
+    # defaults; v3.15.1 rejects "--web.enable-lifecycle=false", so the flag is
+    # simply not passed.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+      - --storage.tsdb.retention.size=1GB
+    volumes:
+      - "../../observability/prometheus:/etc/prometheus:ro"
+      - "prometheus-data:/prometheus"
+    ports:
+      - "127.0.0.1:19090:9090"
+    logging: *bounded-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  grafana:
+    image: grafana/grafana:13.2.5@sha256:9f7aa1e1e3246aade5792d35a738049f7f32f89cd51d1956cf426a4e86268a84
+    restart: unless-stopped
+    # Measured with this image and these mounts (05-13): 222 MiB right after
+    # boot under a 256m limit, 335 MiB a few seconds later under 512m.
+    mem_limit: 512m
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      # No background plugin downloads from grafana.com at startup.
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_SECURITY_ADMIN_PASSWORD: ${SENTINEL_GRAFANA_ADMIN_PASSWORD:?set in .env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/sentinel-pipeline.json
+    volumes:
+      - "../../observability/grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "../../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro"
+      - "grafana-data:/var/lib/grafana"
+    ports:
+      - "127.0.0.1:13000:3000"
+    logging: *bounded-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0@sha256:836b967b5abcf1f7758066aa6b348619267a2f1459f72d472840570f9bd88a17
+    restart: unless-stopped
+    mem_limit: 512m
+    command: ["--config=/etc/jaeger/config.yaml"]
+    volumes:
+      - "../../observability/jaeger/config.yaml:/etc/jaeger/config.yaml:ro"
+    ports:
+      - "127.0.0.1:16686:16686"
+    logging: *bounded-logging
+    # No healthcheck: the image has no shell HTTP client (no wget/curl). The
+    # healthcheckv2 extension listens on 13133 inside the network only.
+
+  ingest:
+    environment: *app-observability
+  detector:
+    environment: *app-observability
+  event-writer:
+    environment: *app-observability
+  alert-writer:
+    environment: *app-observability
+  query-api:
+    environment: *app-observability
+
+volumes:
+  prometheus-data: {}
+  grafana-data: {}

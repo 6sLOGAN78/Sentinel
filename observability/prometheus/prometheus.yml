@@ -1,0 +1,53 @@
+# Prometheus scrape config for the observability overlay (05-13, OBS-05).
+#
+# Each app job resolves its Compose service name with a type A DNS lookup, so
+# every replica of a scaled service (--scale / deploy.replicas) is scraped on
+# its ops listener. Ops ports are the service defaults from .env.example:
+# ingest 9101, detector 9102, event-writer 9103, alert-writer 9104,
+# query-api 9105. /metrics is served only on the ops listener.
+#
+# Targets carry only job and instance (container IP:port). No relabeling adds
+# tenant, IP-of-client or other high-cardinality labels (ADR 0004).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
+
+  - job_name: ingest
+    dns_sd_configs:
+      - names: [ingest]
+        type: A
+        port: 9101
+
+  - job_name: detector
+    dns_sd_configs:
+      - names: [detector]
+        type: A
+        port: 9102
+
+  - job_name: event-writer
+    dns_sd_configs:
+      - names: [event-writer]
+        type: A
+        port: 9103
+
+  - job_name: alert-writer
+    dns_sd_configs:
+      - names: [alert-writer]
+        type: A
+        port: 9104
+
+  # query-api serves /metrics from 05-14 on. Until then this job reports
+  # up == 0 (404), which is expected and not covered by any alert.
+  - job_name: query-api
+    dns_sd_configs:
+      - names: [query-api]
+        type: A
+        port: 9105
