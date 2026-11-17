@@ -7,13 +7,18 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -513,4 +518,150 @@ func TestWorkerWithoutMetricsOrPositionsIsSafe(t *testing.T) {
 	w.publisher = &ackPublisher{}
 	w.decisions = allowAllDecisions{}
 	require.NoError(t, w.process(t.Context(), alertBatch(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))))
+}
+
+const (
+	traceParentTraceID = "0af7651916cd43dd8448eb211c80319c"
+	traceParentSpanID  = "b7ad6b7169203331"
+)
+
+func detectorTracing(t *testing.T) (*telemetry.Tracing, *tracetest.InMemoryExporter) {
+	t.Helper()
+	exporter := tracetest.NewInMemoryExporter()
+	// Ratio 1: a root span would be sampled, so an exported span for a record
+	// without a sampled parent can only come from the worker starting one.
+	tr, err := telemetry.NewTracing(t.Context(),
+		config.TracingConfig{Enabled: true, SampleRatio: 1, OTLPEndpoint: "http://127.0.0.1:4318"},
+		config.ServiceDetector, telemetry.WithExporter(exporter))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tr.Shutdown(context.Background())) })
+	return tr, exporter
+}
+
+type spanPublisher struct{ contexts []trace.SpanContext }
+
+func (p *spanPublisher) PublishCanonical(ctx context.Context, _ []byte) error {
+	p.contexts = append(p.contexts, trace.SpanContextFromContext(ctx))
+	return nil
+}
+
+func withTraceparent(records []*kgo.Record, flags string) []*kgo.Record {
+	for _, r := range records {
+		r.Headers = append(r.Headers, kgo.RecordHeader{Key: "traceparent",
+			Value: []byte("00-" + traceParentTraceID + "-" + traceParentSpanID + "-" + flags)})
+	}
+	return records
+}
+
+func spanAttributes(attrs []attribute.KeyValue) map[attribute.Key]attribute.Value {
+	out := make(map[attribute.Key]attribute.Value, len(attrs))
+	for _, kv := range attrs {
+		out[kv.Key] = kv.Value
+	}
+	return out
+}
+
+func logLines(t *testing.T, buf *strings.Builder, message string) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for _, raw := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		if raw == "" {
+			continue
+		}
+		var line map[string]any
+		require.NoError(t, json.Unmarshal([]byte(raw), &line))
+		if line["message"] == message {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func tracedDetectorWorker(t *testing.T) (*Worker, *spanPublisher, *tracetest.InMemoryExporter, *telemetry.Tracing,
+	*strings.Builder) {
+	t.Helper()
+	w, _ := poisonWorker(t)
+	publisher := &spanPublisher{}
+	w.publisher = publisher
+	w.decisions = allowAllDecisions{}
+	tr, exporter := detectorTracing(t)
+	logs := &strings.Builder{}
+	require.Same(t, w, w.WithTracing(tr.Provider(), tr.Propagator()).WithLogger(zerolog.New(logs)))
+	return w, publisher, exporter, tr, logs
+}
+
+// A sampled record header makes every record a detect child of the ingest
+// publish span; the firing record carries rule_id and the alert publish runs
+// under its detect span.
+func TestWorkerDetectSpanFollowsSampledRecord(t *testing.T) {
+	w, publisher, exporter, tr, logs := tracedDetectorWorker(t)
+	records := withTraceparent(alertBatch(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)), "01")
+
+	require.NoError(t, w.process(t.Context(), records))
+	require.NoError(t, tr.ForceFlush(t.Context()))
+
+	spans := exporter.GetSpans()
+	require.Len(t, spans, len(records), "one detect span per sampled record")
+	var fired []tracetest.SpanStub
+	offsets := map[int64]bool{}
+	for _, span := range spans {
+		require.Equal(t, "detect", span.Name)
+		require.Equal(t, traceParentTraceID, span.SpanContext.TraceID().String())
+		require.Equal(t, traceParentSpanID, span.Parent.SpanID().String(), "detect is a child of the record header")
+		attrs := spanAttributes(span.Attributes)
+		require.Equal(t, int64(0), attrs["partition"].AsInt64())
+		offsets[attrs["offset"].AsInt64()] = true
+		for key := range attrs {
+			require.Contains(t, []attribute.Key{"partition", "offset", "rule_id"}, key)
+		}
+		if rule, ok := attrs["rule_id"]; ok {
+			require.Equal(t, "AUTH_BRUTE_FORCE", rule.AsString())
+			fired = append(fired, span)
+		}
+	}
+	require.Len(t, offsets, len(records), "each record's own offset")
+	require.Len(t, fired, 1, "only the threshold-crossing record carries rule_id")
+	require.Equal(t, int64(9), spanAttributes(fired[0].Attributes)["offset"].AsInt64())
+	require.Len(t, publisher.contexts, 1)
+	require.Equal(t, fired[0].SpanContext.SpanID(), publisher.contexts[0].SpanID(),
+		"the alert publish runs under the firing record's detect span")
+
+	lines := logLines(t, logs, "alert published")
+	require.Len(t, lines, 1)
+	require.Equal(t, traceParentTraceID, lines[0]["trace_id"])
+	require.Equal(t, "AUTH_BRUTE_FORCE", lines[0]["rule_id"])
+}
+
+// Unsampled or absent trace context costs no span: bench traffic sampled out
+// at the edge is not traced by workers either.
+func TestWorkerDetectSpanSkipsUnsampledRecords(t *testing.T) {
+	for _, flags := range []string{"00", ""} {
+		t.Run("flags="+flags, func(t *testing.T) {
+			w, publisher, exporter, tr, logs := tracedDetectorWorker(t)
+			records := alertBatch(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+			if flags != "" {
+				records = withTraceparent(records, flags)
+			}
+
+			require.NoError(t, w.process(t.Context(), records))
+			require.NoError(t, tr.ForceFlush(t.Context()))
+
+			require.Empty(t, exporter.GetSpans())
+			require.Len(t, publisher.contexts, 1)
+			require.False(t, publisher.contexts[0].IsSampled(), "no sampled span reaches the alert publish")
+			lines := logLines(t, logs, "alert published")
+			require.Len(t, lines, 1)
+			require.NotContains(t, lines[0], "trace_id")
+		})
+	}
+}
+
+func TestWorkerWithoutTracingStillPublishes(t *testing.T) {
+	w, _ := poisonWorker(t)
+	publisher := &spanPublisher{}
+	w.publisher = publisher
+	w.decisions = allowAllDecisions{}
+	records := withTraceparent(alertBatch(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)), "01")
+	require.NoError(t, w.process(t.Context(), records))
+	require.Len(t, publisher.contexts, 1)
 }

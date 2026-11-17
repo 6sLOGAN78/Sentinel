@@ -192,3 +192,33 @@ func TestTracingExportDropsAttributesOutsideAllowlist(t *testing.T) {
 		"http.request.method": true, "http.route": true, "messaging.system": true, "http.response.status_code": true,
 	}, keys)
 }
+
+// Worker span attributes (05-12) are bounded pipeline coordinates; identity
+// fields on the same spans are still dropped.
+func TestTracingExportKeepsWorkerAttributes(t *testing.T) {
+	t.Parallel()
+
+	tr, exporter := newTestTracing(t, config.TracingConfig{Enabled: true, SampleRatio: 1, OTLPEndpoint: testEndpoint})
+	_, span := tr.Provider().Tracer("test").Start(t.Context(), "detect", trace.WithAttributes(
+		attribute.String("rule_id", "AUTH_BRUTE_FORCE"),
+		attribute.Int("partition", 3),
+		attribute.Int64("offset", 42),
+		attribute.Int("batch.size", 40),
+		attribute.Int("batch.partitions", 2),
+		attribute.String("tenant_id", "demo"),
+		attribute.String("source_ip", "198.51.100.7"),
+		attribute.String("principal", "alice"),
+	))
+	span.End()
+	require.NoError(t, tr.ForceFlush(t.Context()))
+
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	keys := map[attribute.Key]bool{}
+	for _, kv := range spans[0].Attributes {
+		keys[kv.Key] = true
+	}
+	require.Equal(t, map[attribute.Key]bool{
+		"rule_id": true, "partition": true, "offset": true, "batch.size": true, "batch.partitions": true,
+	}, keys)
+}

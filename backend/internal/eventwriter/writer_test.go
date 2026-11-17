@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,11 +15,15 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/eventwriter"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 type scriptedConsumer struct {
@@ -542,4 +547,165 @@ func TestWriterInsertRetryWaitFailureIsTerminalWithoutCommit(t *testing.T) {
 	require.Equal(t, 1, store.attempts)
 	require.Len(t, waiter.ceilings, 1)
 	require.Empty(t, consumer.commits)
+}
+
+func writerTracing(t *testing.T) (*telemetry.Tracing, *tracetest.InMemoryExporter) {
+	t.Helper()
+	exporter := tracetest.NewInMemoryExporter()
+	// Ratio 1: a root span would be sampled, so "no span" proves the writer
+	// starts none without a sampled record.
+	tr, err := telemetry.NewTracing(t.Context(),
+		config.TracingConfig{Enabled: true, SampleRatio: 1, OTLPEndpoint: "http://127.0.0.1:4318"},
+		config.ServiceEventWriter, telemetry.WithExporter(exporter))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tr.Shutdown(context.Background())) })
+	return tr, exporter
+}
+
+func traceparent(traceID int, flags string) string {
+	return fmt.Sprintf("00-%032x-%016x-%s", traceID, traceID, flags)
+}
+
+func setTraceparent(record *kgo.Record, value string) {
+	record.Headers = append(record.Headers, kgo.RecordHeader{Key: "traceparent", Value: []byte(value)})
+}
+
+// tracedBatch spreads count valid records over two partitions; header(i)
+// returns the traceparent of record i, or "" for none.
+func tracedBatch(t *testing.T, count int, header func(int) string) []*kgo.Record {
+	t.Helper()
+	now := time.Now().UTC()
+	records := make([]*kgo.Record, 0, count)
+	for i := range count {
+		r := validRecord(t, int64(i/2), now, now)
+		r.Partition = int32(i % 2)
+		if value := header(i); value != "" {
+			setTraceparent(r, value)
+		}
+		records = append(records, r)
+	}
+	return records
+}
+
+func runTracedWriter(t *testing.T, records []*kgo.Record, store eventwriter.EventStore,
+	settings config.WriterConfig, logs *strings.Builder) ([]tracetest.SpanStub, error) {
+	t.Helper()
+	tr, exporter := writerTracing(t)
+	consumer := &scriptedConsumer{records: records}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	consumer.onCommit = cancel
+	w := eventwriter.New(consumer, store, &recordingDLQ{}, settings, contracts.DefaultLimits(), zerolog.New(logs)).
+		WithRetryWaiter((&recordingWaiter{}).wait)
+	require.Same(t, w, w.WithTracing(tr.Provider(), tr.Propagator()))
+	err := w.Run(ctx)
+	require.NoError(t, tr.ForceFlush(t.Context()))
+	return exporter.GetSpans(), err
+}
+
+func linkTraceIDs(span tracetest.SpanStub) map[string]bool {
+	ids := map[string]bool{}
+	for _, link := range span.Links {
+		ids[link.SpanContext.TraceID().String()] = true
+	}
+	return ids
+}
+
+// One store span per ClickHouse batch, linked to at most 32 sampled record
+// contexts so a sampled request stays reachable without a span per event.
+func TestWriterStoreSpanLinksAtMost32SampledRecords(t *testing.T) {
+	sampled := map[string]bool{}
+	records := tracedBatch(t, 40, func(i int) string {
+		if i >= 35 {
+			return ""
+		}
+		sampled[fmt.Sprintf("%032x", i+1)] = true
+		return traceparent(i+1, "01")
+	})
+	spans, err := runTracedWriter(t, records, &recordingStore{}, writerSettings(40, time.Second), &strings.Builder{})
+	require.NoError(t, err)
+
+	require.Len(t, spans, 1, "one store span for the whole batch")
+	span := spans[0]
+	require.Equal(t, "store", span.Name)
+	require.Len(t, span.Links, 32, "link count is capped at 32")
+	for id := range linkTraceIDs(span) {
+		require.True(t, sampled[id], "only sampled record contexts are linked")
+	}
+	for _, link := range span.Links {
+		require.True(t, link.SpanContext.IsSampled())
+		require.True(t, link.SpanContext.IsRemote())
+	}
+	require.True(t, span.Parent.IsValid(), "a sampled record parents the span so its trace keeps it")
+	require.True(t, sampled[span.Parent.TraceID().String()])
+	require.True(t, linkTraceIDs(span)[span.Parent.TraceID().String()], "the parent trace is also linked")
+	attrs := map[attribute.Key]int64{}
+	for _, kv := range span.Attributes {
+		attrs[kv.Key] = kv.Value.AsInt64()
+	}
+	require.Equal(t, map[attribute.Key]int64{"batch.size": 40, "batch.partitions": 2}, attrs)
+	require.Empty(t, span.Events, "no retry events on a first-attempt success")
+	require.Equal(t, codes.Unset, span.Status.Code)
+}
+
+// Records of one ingest request share a traceparent; they yield one link.
+func TestWriterStoreSpanDeduplicatesLinks(t *testing.T) {
+	records := tracedBatch(t, 5, func(int) string { return traceparent(7, "01") })
+	spans, err := runTracedWriter(t, records, &recordingStore{}, writerSettings(5, time.Second), &strings.Builder{})
+	require.NoError(t, err)
+	require.Len(t, spans, 1)
+	require.Len(t, spans[0].Links, 1)
+}
+
+func TestWriterStoreSpanSkipsUnsampledBatch(t *testing.T) {
+	records := tracedBatch(t, 4, func(i int) string {
+		if i%2 == 0 {
+			return traceparent(i+1, "00")
+		}
+		return ""
+	})
+	store := &recordingStore{}
+	spans, err := runTracedWriter(t, records, store, writerSettings(4, time.Second), &strings.Builder{})
+	require.NoError(t, err)
+	require.Equal(t, 1, store.attempts)
+	require.Empty(t, spans, "a batch without a sampled record exports no span")
+}
+
+// Retries are events on the one store span, never extra spans; the retry log
+// line carries the span's trace_id.
+func TestWriterStoreSpanRecordsRetriesAsEvents(t *testing.T) {
+	t.Run("recovered", func(t *testing.T) {
+		records := tracedBatch(t, 2, func(int) string { return traceparent(9, "01") })
+		logs := &strings.Builder{}
+		store := &flakyStore{failures: 2, fail: errors.New("clickhouse recovering")}
+		spans, err := runTracedWriter(t, records, store, jitterSettings(), logs)
+		require.NoError(t, err)
+		require.Equal(t, 3, store.attempts)
+		require.Len(t, spans, 1)
+		require.Len(t, spans[0].Events, 2, "one event per retry")
+		for _, event := range spans[0].Events {
+			require.Equal(t, "retry", event.Name)
+		}
+		require.Equal(t, codes.Unset, spans[0].Status.Code)
+		retries := 0
+		for _, raw := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+			var line map[string]any
+			require.NoError(t, json.Unmarshal([]byte(raw), &line))
+			if line["message"] == "event insert failed; retrying" {
+				retries++
+				require.Equal(t, spans[0].SpanContext.TraceID().String(), line["trace_id"])
+			}
+		}
+		require.Equal(t, 2, retries)
+	})
+	t.Run("terminal", func(t *testing.T) {
+		records := tracedBatch(t, 2, func(int) string { return traceparent(9, "01") })
+		store := &flakyStore{failures: 3, fail: errors.New("clickhouse down")}
+		spans, err := runTracedWriter(t, records, store, jitterSettings(), &strings.Builder{})
+		require.ErrorContains(t, err, "clickhouse down")
+		require.Len(t, spans, 1)
+		require.Len(t, spans[0].Events, 2)
+		require.Equal(t, codes.Error, spans[0].Status.Code)
+		require.Equal(t, "store failed", spans[0].Status.Description, "driver error text stays off the span")
+	})
 }

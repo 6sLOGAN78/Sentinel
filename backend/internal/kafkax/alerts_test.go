@@ -2,6 +2,7 @@ package kafkax //nolint:testpackage // inject the external transport while exerc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -91,5 +94,65 @@ func TestAlertPublisherBounds(t *testing.T) {
 		invalid := alertFixture()
 		invalid.RuleVersion = 0
 		require.Error(t, p.Publish(context.Background(), []*contracts.Alert{invalid}))
+	})
+}
+
+func capturingAlertProducer(captured *[]*kgo.Record) *AlertProducer {
+	return &AlertProducer{topic: "alerts-test", timeout: time.Second, client: alertDriver{
+		produce: func(_ context.Context, records ...*kgo.Record) kgo.ProduceResults {
+			*captured = append(*captured, records...)
+			results := make(kgo.ProduceResults, 0, len(records))
+			for _, r := range records {
+				results = append(results, kgo.ProduceResult{Record: r})
+			}
+			return results
+		},
+	}}
+}
+
+// The detect span context travels on the alert record so the alert-writer's
+// store_alert span joins the same trace.
+func TestAlertPublisherInjectsTraceContext(t *testing.T) {
+	canonical, err := json.Marshal(alertFixture())
+	require.NoError(t, err)
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+	ctx, span := provider.Tracer("test").Start(t.Context(), "detect")
+	defer span.End()
+	want := "00-" + span.SpanContext().TraceID().String() + "-" + span.SpanContext().SpanID().String() + "-01"
+
+	t.Run("canonical publish carries the span context", func(t *testing.T) {
+		var captured []*kgo.Record
+		p := capturingAlertProducer(&captured)
+		require.Same(t, p, p.WithPropagator(propagation.TraceContext{}))
+		require.NoError(t, p.PublishCanonical(ctx, canonical))
+		require.Len(t, captured, 1)
+		require.Equal(t, []kgo.RecordHeader{{Key: "traceparent", Value: []byte(want)}}, captured[0].Headers)
+		require.Equal(t, canonical, captured[0].Value, "trace context never alters the canonical bytes")
+	})
+	t.Run("batch publish carries the span context", func(t *testing.T) {
+		var captured []*kgo.Record
+		p := capturingAlertProducer(&captured).WithPropagator(propagation.TraceContext{})
+		require.NoError(t, p.Publish(ctx, []*contracts.Alert{alertFixture(), alertFixture()}))
+		require.Len(t, captured, 2)
+		for _, r := range captured {
+			require.Equal(t, []kgo.RecordHeader{{Key: "traceparent", Value: []byte(want)}}, r.Headers)
+		}
+	})
+	t.Run("default propagator is W3C trace context", func(t *testing.T) {
+		var captured []*kgo.Record
+		require.NoError(t, capturingAlertProducer(&captured).PublishCanonical(ctx, canonical))
+		require.Len(t, captured, 1)
+		require.Equal(t, []kgo.RecordHeader{{Key: "traceparent", Value: []byte(want)}}, captured[0].Headers)
+	})
+	t.Run("no span adds no header", func(t *testing.T) {
+		var captured []*kgo.Record
+		p := capturingAlertProducer(&captured).WithPropagator(propagation.TraceContext{})
+		require.NoError(t, p.PublishCanonical(context.Background(), canonical))
+		require.NoError(t, p.Publish(context.Background(), []*contracts.Alert{alertFixture()}))
+		require.Len(t, captured, 2)
+		for _, r := range captured {
+			require.Empty(t, r.Headers)
+		}
 	})
 }

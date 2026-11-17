@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,12 +12,16 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/6sLOGAN78/sentinel/internal/alertwriter"
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	storage "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 type orderConsumer struct {
@@ -499,4 +504,109 @@ func TestAlertWriterRetryUsesJitteredWaiter(t *testing.T) {
 		require.Len(t, waiter.ceilings, 1)
 		require.Empty(t, c.committed)
 	})
+}
+
+const (
+	alertTraceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+	alertSpanID  = "00f067aa0ba902b7"
+)
+
+func alertTracing(t *testing.T) (*telemetry.Tracing, *tracetest.InMemoryExporter) {
+	t.Helper()
+	exporter := tracetest.NewInMemoryExporter()
+	// Ratio 1: a root span would be sampled, so "no span" proves the writer
+	// starts none without a sampled alert record.
+	tr, err := telemetry.NewTracing(t.Context(),
+		config.TracingConfig{Enabled: true, SampleRatio: 1, OTLPEndpoint: "http://127.0.0.1:4318"},
+		config.ServiceAlertWriter, telemetry.WithExporter(exporter))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tr.Shutdown(context.Background())) })
+	return tr, exporter
+}
+
+func tracedAlertRecord(t *testing.T, flags string) *kgo.Record {
+	t.Helper()
+	record := orderingRecord(t)
+	if flags != "" {
+		record.Headers = []kgo.RecordHeader{{Key: "traceparent",
+			Value: []byte("00-" + alertTraceID + "-" + alertSpanID + "-" + flags)}}
+	}
+	return record
+}
+
+func runTracedAlertWriter(t *testing.T, record *kgo.Record) []tracetest.SpanStub {
+	t.Helper()
+	tr, exporter := alertTracing(t)
+	order := []string{}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	consumer := &orderConsumer{order: &order, record: record, cancel: cancel}
+	settings := config.WriterConfig{BatchSize: 1, FlushInterval: time.Millisecond, MaxAttempts: 1,
+		RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
+		OperationTimeout: 25 * time.Millisecond, ShutdownTimeout: time.Second}
+	writer := alertwriter.New(consumer, &orderDetections{order: &order},
+		&orderWorkflows{tx: &orderTx{t: t, order: &order}}, settings, zerolog.Nop())
+	require.Same(t, writer, writer.WithTracing(tr.Provider(), tr.Propagator()))
+	require.NoError(t, writer.Run(ctx))
+	require.Equal(t, []*kgo.Record{record}, consumer.committed)
+	require.NoError(t, tr.ForceFlush(t.Context()))
+	return exporter.GetSpans()
+}
+
+// The alert record's header (injected under the detect span) makes
+// store_alert a child in the same trace.
+func TestAlertWriterStoreAlertSpanFollowsSampledRecord(t *testing.T) {
+	spans := runTracedAlertWriter(t, tracedAlertRecord(t, "01"))
+	require.Len(t, spans, 1)
+	span := spans[0]
+	require.Equal(t, "store_alert", span.Name)
+	require.Equal(t, alertTraceID, span.SpanContext.TraceID().String())
+	require.Equal(t, alertSpanID, span.Parent.SpanID().String())
+	attrs := map[attribute.Key]int64{}
+	for _, kv := range span.Attributes {
+		attrs[kv.Key] = kv.Value.AsInt64()
+	}
+	require.Equal(t, map[attribute.Key]int64{"partition": 0, "offset": 4}, attrs)
+	require.Equal(t, codes.Unset, span.Status.Code)
+}
+
+func TestAlertWriterStoreAlertSpanSkipsUnsampledRecord(t *testing.T) {
+	for _, flags := range []string{"00", ""} {
+		t.Run("flags="+flags, func(t *testing.T) {
+			require.Empty(t, runTracedAlertWriter(t, tracedAlertRecord(t, flags)))
+		})
+	}
+}
+
+// Retry warnings emitted while handling a sampled alert record carry trace_id.
+func TestAlertWriterRetryLogCarriesTraceID(t *testing.T) {
+	tr, exporter := alertTracing(t)
+	logs := &strings.Builder{}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	poison := &kgo.Record{Topic: "alerts", Offset: 0, Value: []byte("{"), Headers: []kgo.RecordHeader{
+		{Key: "traceparent", Value: []byte("00-" + alertTraceID + "-" + alertSpanID + "-01")}}}
+	c := &poisonBatchConsumer{records: []*kgo.Record{poison}, cancel: cancel}
+	order := []string{}
+	settings := config.WriterConfig{BatchSize: 500, FlushInterval: time.Millisecond, MaxAttempts: 2,
+		RetryMinBackoff: time.Millisecond, RetryMaxBackoff: time.Millisecond,
+		OperationTimeout: 50 * time.Millisecond, ShutdownTimeout: time.Second}
+	calls := 0
+	w := alertwriter.New(c, &orderDetections{order: &order}, &orderWorkflows{tx: &orderTx{t: t, order: &order}},
+		settings, zerolog.New(logs)).WithQuarantine(poisonDLQ{func(context.Context, *kgo.Record, kafkax.DLQReason) error {
+		calls++
+		if calls == 1 {
+			return errors.New("dlq recovering")
+		}
+		return nil
+	}}).WithRetryWaiter((&recordingWaiter{}).wait).WithTracing(tr.Provider(), tr.Propagator())
+	require.NoError(t, w.Run(ctx))
+	require.Len(t, c.committed, 1)
+	require.NoError(t, tr.ForceFlush(t.Context()))
+	require.Len(t, exporter.GetSpans(), 1)
+
+	var line map[string]any
+	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(logs.String())), &line))
+	require.Equal(t, "alert effect failed; retrying", line["message"])
+	require.Equal(t, alertTraceID, line["trace_id"])
 }
