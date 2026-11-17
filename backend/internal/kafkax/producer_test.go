@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ func tracedProducer(
 	t.Cleanup(func() { require.NoError(t, tr.Shutdown(context.Background())) })
 
 	captured := &[]*kgo.Record{}
-	producer := &Producer{topic: "events-test", timeout: time.Second}
+	producer := &Producer{topic: "events-test", timeout: time.Second, maxBuffered: 100}
 	producer.produce = func(_ context.Context, records []*kgo.Record) error {
 		*captured = records
 
@@ -188,7 +189,7 @@ func TestPublishBatchWithoutTracingInjectsIncomingContext(t *testing.T) {
 	t.Parallel()
 
 	var captured []*kgo.Record
-	producer := &Producer{topic: "events-test", timeout: time.Second}
+	producer := &Producer{topic: "events-test", timeout: time.Second, maxBuffered: 100}
 	producer.produce = func(_ context.Context, records []*kgo.Record) error {
 		captured = records
 
@@ -208,4 +209,56 @@ func TestPublishBatchWithoutTracingInjectsIncomingContext(t *testing.T) {
 	require.NoError(t, producer.PublishBatch(trace.ContextWithSpanContext(t.Context(), sc), tracedEvents(1), "request-1"))
 	require.Equal(t, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
 		headerValue(captured[0].Headers, "traceparent"))
+}
+
+func TestPublishBatchShedsWhenBatchDoesNotFitTheBuffer(t *testing.T) {
+	t.Parallel()
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	producer := &Producer{topic: "events-test", timeout: time.Second, maxBuffered: 10}
+	producer.produce = func(context.Context, []*kgo.Record) error {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return nil
+	}
+	first := make(chan error, 1)
+	go func() { first <- producer.PublishBatch(context.Background(), tracedEvents(6), "first") }()
+	<-entered
+
+	started := time.Now()
+	err := producer.PublishBatch(t.Context(), tracedEvents(6), "over")
+	require.ErrorIs(t, err, ErrBufferFull)
+	require.Less(t, time.Since(started), producer.timeout/2, "a full buffer sheds at once, not after the timeout")
+	require.Equal(t, int32(1), calls.Load(), "a rejected batch must not reach the client")
+	require.NoError(t, producer.PublishBatch(t.Context(), tracedEvents(4), "fits"), "6 + 4 fits a limit of 10")
+
+	close(release)
+	require.NoError(t, <-first)
+	require.NoError(t, producer.PublishBatch(t.Context(), tracedEvents(10), "after"), "finished batches release space")
+	require.Equal(t, int32(3), calls.Load())
+}
+
+func TestPublishBatchReleasesReservationOnFailure(t *testing.T) {
+	t.Parallel()
+
+	producer := &Producer{topic: "events-test", timeout: time.Second, maxBuffered: 5}
+	producer.produce = func(context.Context, []*kgo.Record) error { return errors.New("broker down") }
+	require.Error(t, producer.PublishBatch(t.Context(), tracedEvents(5), "fails"))
+	producer.produce = func(context.Context, []*kgo.Record) error { return nil }
+	require.NoError(t, producer.PublishBatch(t.Context(), tracedEvents(5), "after"), "a failed batch released its space")
+}
+
+func TestNewProducerReservesUpToMaxBufferedRecords(t *testing.T) {
+	t.Parallel()
+
+	producer, err := NewProducer(t.Context(), config.KafkaConfig{
+		Brokers: "127.0.0.1:1", EventsTopic: "events-test", ProduceTimeout: time.Second,
+		MaxBufferedRecords: 7, MaxBufferedBytes: 1 << 20,
+	})
+	require.NoError(t, err)
+	t.Cleanup(producer.client.Close)
+	require.Equal(t, int64(7), producer.maxBuffered)
 }

@@ -121,6 +121,33 @@ class CheckChaosProjectGuardTests(unittest.TestCase):
         self.assertNotIn("COMPOSE_PROJECT_NAME", result.stderr)
         self.assertNotIn("publish=", self.docker_calls())
 
+    def test_selector_covers_every_spec_family(self):
+        result = self.run_chaos("no-such-family")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        known = result.stderr.split("known:", 1)[1].split()
+        self.assertEqual(
+            known,
+            [
+                "chaos-broker",
+                "chaos-clickhouse",
+                "chaos-shutdown",
+                "writer-restart",
+                "dlq",
+                "rate-limit",
+                "sse-reconnect",
+                "slow-consumer",
+                "overload",
+            ],
+        )
+
+    def test_slow_consumer_and_overload_list_nonempty_without_a_project(self):
+        for family in ("slow-consumer", "overload"):
+            with self.subTest(family=family):
+                result = self.run_chaos(family)
+                self.assertEqual(result.returncode, SEAM_EXIT, result.stderr)
+                self.assertNotIn("COMPOSE_PROJECT_NAME", result.stderr)
+                self.assertNotIn("publish=", self.docker_calls())
+
 
 if __name__ == "__main__":
     unittest.main()
