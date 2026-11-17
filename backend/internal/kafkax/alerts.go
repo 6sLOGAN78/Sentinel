@@ -59,7 +59,7 @@ func NewAlertProducer(ctx context.Context, cfg config.KafkaConfig) (*AlertProduc
 	}
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...), kgo.DefaultProduceTopic(cfg.AlertsTopic), kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.AllowIdempotentProduceCancellation(), kgo.RecordDeliveryTimeout(cfg.ProduceTimeout),
+		kgo.DisableIdempotentWrite(), kgo.RecordDeliveryTimeout(cfg.ProduceTimeout),
 		kgo.RecordRetries(cfg.RecordRetries), kgo.MaxBufferedRecords(cfg.MaxBufferedRecords),
 		kgo.MaxBufferedBytes(cfg.MaxBufferedBytes),
 	)

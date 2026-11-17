@@ -54,7 +54,7 @@ type DLQPublisher struct {
 	metrics       *telemetry.ConsumerMetrics
 }
 
-// NewDLQPublisher configures an independent all-ISR, idempotent producer. A
+// NewDLQPublisher configures an independent all-ISR, non-idempotent producer (ADR 0013). A
 // blank topic selects DefaultDLQTopic; tests and isolated deployments may pass
 // an explicit topic.
 func NewDLQPublisher(
@@ -84,7 +84,7 @@ func NewDLQPublisher(
 		kgo.SeedBrokers(brokers...),
 		kgo.DefaultProduceTopic(topic),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.AllowIdempotentProduceCancellation(),
+		kgo.DisableIdempotentWrite(), // ADR 0013
 		kgo.RecordDeliveryTimeout(cfg.ProduceTimeout),
 		kgo.RecordRetries(cfg.RecordRetries),
 		kgo.MaxBufferedRecords(cfg.MaxBufferedRecords),

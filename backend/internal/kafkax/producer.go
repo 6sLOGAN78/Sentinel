@@ -51,7 +51,7 @@ type Producer struct {
 	reserved    atomic.Int64
 }
 
-// NewProducer configures an all-ISR, idempotent producer with finite buffers,
+// NewProducer configures an all-ISR, non-idempotent producer (ADR 0013) with finite buffers,
 // retries, and delivery time.
 func NewProducer(_ context.Context, cfg config.KafkaConfig) (*Producer, error) {
 	brokers, err := config.ParseBrokers(cfg.Brokers)
@@ -63,7 +63,8 @@ func NewProducer(_ context.Context, cfg config.KafkaConfig) (*Producer, error) {
 		kgo.SeedBrokers(brokers...),
 		kgo.DefaultProduceTopic(cfg.EventsTopic),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.AllowIdempotentProduceCancellation(),
+		// ADR 0013: idempotence plus cancellation can lose acknowledged records.
+		kgo.DisableIdempotentWrite(),
 		kgo.RecordDeliveryTimeout(cfg.ProduceTimeout),
 		kgo.RecordRetries(cfg.RecordRetries),
 		kgo.MaxBufferedRecords(cfg.MaxBufferedRecords),
