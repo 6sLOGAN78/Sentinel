@@ -43,6 +43,12 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 
 		return opsServer.Shutdown(closeCtx)
 	})
+	// Registered right after ops-http so LIFO closes it after the worker and
+	// the Kafka clients have stopped, flushing their final spans.
+	tr, err := openTracing(ctx, cfg, lc)
+	if err != nil {
+		return err
+	}
 	pgBudgets, err := config.ComputeDetectorPGBudgets(cfg.Detector.PG, cfg.Detector.Writer)
 	if err != nil {
 		return err
@@ -68,12 +74,8 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	startPoller(ctx, lc, draining, "pin-margins", func(pollCtx context.Context) error {
 		return consumer.RunPinMargins(pollCtx, detectorMetrics, pinMarginInterval)
 	})
-	publisher, err := detector.NewAlertProducer(ctx, cfg.Kafka)
+	publisher, err := openPublisher(ctx, cfg, lc, tr)
 	if err != nil {
-		return err
-	}
-	lc.Add("kafka-alerts", publisher.Close)
-	if err = publisher.Ping(ctx); err != nil {
 		return err
 	}
 	dlq, err := openQuarantine(ctx, cfg, lc)
@@ -83,7 +85,8 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 	dlq.WithMetrics(consumerMetrics)
 	worker := detector.New(consumer, publisher, rules, cfg.Detector.Writer,
 		contracts.LimitsFromConfig(cfg.Contracts), db.Pool, pgBudgets).
-		WithQuarantine(dlq).WithMetrics(detectorMetrics).WithPositions(tracker)
+		WithQuarantine(dlq).WithMetrics(detectorMetrics).WithPositions(tracker).
+		WithTracing(tr.Provider(), tr.Propagator()).WithLogger(log)
 	limits := worker.Limits()
 	detectorMetrics.SetLimits(limits.Windows, limits.Ledger, limits.Bytes)
 	startWorker(ctx, lc, worker, fail)
@@ -167,6 +170,33 @@ func openConsumer(ctx context.Context, cfg *config.Config, rules *detection.Rule
 		return nil, fmt.Errorf("kafka: %w", err)
 	}
 	return consumer, nil
+}
+
+// openTracing builds the process tracer provider and registers its flushing
+// closer; callers register it before the worker and Kafka clients.
+func openTracing(ctx context.Context, cfg *config.Config, lc *app.Lifecycle) (*telemetry.Tracing, error) {
+	tr, err := telemetry.NewTracing(ctx, cfg.Observability.Tracing, config.ServiceDetector)
+	if err != nil {
+		return nil, fmt.Errorf("tracing: %w", err)
+	}
+	lc.Add("tracing", tr.Shutdown)
+	return tr, nil
+}
+
+// openPublisher opens the alert producer that carries the detect span context
+// into alert record headers.
+func openPublisher(ctx context.Context, cfg *config.Config, lc *app.Lifecycle,
+	tr *telemetry.Tracing) (*detector.AlertProducer, error) {
+	publisher, err := detector.NewAlertProducer(ctx, cfg.Kafka)
+	if err != nil {
+		return nil, err
+	}
+	publisher.WithPropagator(tr.Propagator())
+	lc.Add("kafka-alerts", publisher.Close)
+	if err = publisher.Ping(ctx); err != nil {
+		return nil, err
+	}
+	return publisher, nil
 }
 
 func openQuarantine(ctx context.Context, cfg *config.Config, lc *app.Lifecycle) (*kafkax.DLQPublisher, error) {

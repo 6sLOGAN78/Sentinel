@@ -10,8 +10,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/rs/zerolog"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -114,6 +119,25 @@ type Worker struct {
 	restored   atomic.Pointer[kafkax.DetectorReadiness]
 	dlq        QuarantinePublisher
 	wait       retry.Waiter
+	tracer     trace.Tracer
+	propagator propagation.TextMapPropagator
+	log        zerolog.Logger
+}
+
+// WithTracing makes the worker start a "detect" span for every record whose
+// header carries a sampled trace context, and publish alerts under it so the
+// alert record continues the trace. Unsampled records start no span.
+func (w *Worker) WithTracing(tp trace.TracerProvider, prop propagation.TextMapPropagator) *Worker {
+	w.tracer = tp.Tracer("sentinel/detector")
+	w.propagator = prop
+	return w
+}
+
+// WithLogger binds the worker logger before Run. Lines emitted while handling
+// a sampled record carry its trace_id.
+func (w *Worker) WithLogger(log zerolog.Logger) *Worker {
+	w.log = log
+	return w
 }
 
 // WithMetrics binds the detector metrics before Run. Nil disables them.
@@ -149,8 +173,11 @@ func New(
 		consumer: consumer, publisher: publisher, rules: rules, settings: settings, limits: limits,
 		partitions: make(map[detection.TopicPartition]partition),
 		pool:       pool, pg: pg,
-		bounds: detection.NewBounds(detection.StateLimits{}),
-		now:    time.Now,
+		bounds:     detection.NewBounds(detection.StateLimits{}),
+		now:        time.Now,
+		tracer:     noop.NewTracerProvider().Tracer("sentinel/detector"),
+		propagator: propagation.TraceContext{},
+		log:        zerolog.Nop(),
 	}
 }
 
@@ -283,13 +310,34 @@ func (w *Worker) processCheckpoint(ctx context.Context, record *kgo.Record, tp d
 	if err != nil {
 		return detection.Checkpoint{}, err
 	}
-	if err = w.processRecord(ctx, state, record, retries); err != nil {
+	if err = w.processTraced(ctx, state, record, retries); err != nil {
 		return detection.Checkpoint{}, err
 	}
 	if err = reachBoundary(ctx, "after-record", tp, record.Offset); err != nil {
 		return detection.Checkpoint{}, err
 	}
 	return state.Checkpoint()
+}
+
+// processTraced wraps processRecord in a "detect" child of the record's
+// header context only when that context is sampled. Otherwise ctx is used
+// unchanged, so nothing is exported or injected downstream. Trace context is
+// observability-only and never influences detection, ordering or commits.
+func (w *Worker) processTraced(ctx context.Context, state *detection.PartitionState,
+	record *kgo.Record, retries *poisonRetries) error {
+	parent, sampled := kafkax.SampledRecordContext(ctx, w.propagator, record)
+	if !sampled {
+		return w.processRecord(ctx, state, record, retries)
+	}
+	spanCtx, span := w.tracer.Start(trace.ContextWithRemoteSpanContext(ctx, parent), "detect",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(attribute.Int("partition", int(record.Partition)), attribute.Int64("offset", record.Offset)))
+	defer span.End()
+	err := w.processRecord(spanCtx, state, record, retries)
+	if err != nil {
+		span.SetStatus(codes.Error, "detect failed")
+	}
+	return err
 }
 
 func (w *Worker) syncAssignments(ctx context.Context, assigned map[detection.TopicPartition]Assignment) error {
@@ -464,7 +512,12 @@ func (w *Worker) applyEvent(ctx context.Context, state *detection.PartitionState
 	}
 	w.recordLateness(outcome.Late)
 	owner := w.partitions[source].owner
+	span := trace.SpanFromContext(ctx)
 	for _, candidate := range outcome.Candidates {
+		if span.IsRecording() {
+			rule, _ := canonicalLabels(candidate.CanonicalBytes())
+			span.SetAttributes(attribute.String("rule_id", rule))
+		}
 		if err = w.validateOwnership(owner); err != nil {
 			return err
 		}
@@ -496,25 +549,34 @@ func (w *Worker) publishAllowed(ctx context.Context, canonical []byte, trigger c
 	if err := w.publisher.PublishCanonical(ctx, canonical); err != nil {
 		return err
 	}
-	w.recordPublication(canonical, trigger)
+	rule, severity := canonicalLabels(canonical)
+	w.recordPublication(rule, severity, trigger)
+	log := telemetry.SampledTraceLogger(ctx, w.log)
+	log.Info().Str("rule_id", rule).Int32("partition", tp.Partition).Int64("offset", offset).
+		Msg("alert published")
 	return reachBoundary(ctx, "after-ack-before-checkpoint", tp, offset)
 }
 
-// recordPublication counts an acknowledged publication. A replay after a crash
-// publishes again and is counted again; unique alerts come from PG/CH.
-func (w *Worker) recordPublication(canonical []byte, trigger contracts.Timestamp) {
-	if w.metrics == nil {
-		return
-	}
+// canonicalLabels reads the bounded rule_id and severity of a frozen
+// canonical alert, which this reducer produced and validated.
+func canonicalLabels(canonical []byte) (string, string) {
 	var alert struct {
 		RuleID   string `json:"rule_id"`
 		Severity string `json:"severity"`
 	}
-	// The frozen canonical alert was produced and validated by this reducer.
 	if err := json.Unmarshal(canonical, &alert); err != nil {
+		return "", ""
+	}
+	return alert.RuleID, alert.Severity
+}
+
+// recordPublication counts an acknowledged publication. A replay after a crash
+// publishes again and is counted again; unique alerts come from PG/CH.
+func (w *Worker) recordPublication(rule, severity string, trigger contracts.Timestamp) {
+	if w.metrics == nil || rule == "" {
 		return
 	}
-	w.metrics.Published(alert.RuleID, alert.Severity, w.now().Sub(trigger.Time))
+	w.metrics.Published(rule, severity, w.now().Sub(trigger.Time))
 }
 
 func (w *Worker) recordLateness(late bool) {

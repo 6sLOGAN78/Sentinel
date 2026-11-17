@@ -17,6 +17,7 @@ const (
 	labelResult    = "result"
 	labelTopic     = "topic"
 	labelPartition = "partition"
+	labelRuleID    = "rule_id"
 )
 
 // ConsumerMetrics holds the spec 11.2 storage-writer metrics: position-based

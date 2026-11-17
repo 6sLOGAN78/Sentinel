@@ -11,6 +11,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -64,6 +69,34 @@ type Writer struct {
 	log        zerolog.Logger
 	dlq        QuarantinePublisher
 	wait       retry.Waiter
+	tracer     trace.Tracer
+	propagator propagation.TextMapPropagator
+}
+
+// WithTracing makes each alert record whose header carries a sampled trace
+// context (injected under the detector's detect span) start a "store_alert"
+// child around its CH and PG effects. Unsampled records start no span.
+func (w *Writer) WithTracing(tp trace.TracerProvider, prop propagation.TextMapPropagator) *Writer {
+	w.tracer = tp.Tracer("sentinel/alertwriter")
+	w.propagator = prop
+	return w
+}
+
+// persistTraced wraps persistRecord in store_alert for sampled records only.
+func (w *Writer) persistTraced(ctx context.Context, record *kgo.Record, retries *effectRetries) error {
+	parent, sampled := kafkax.SampledRecordContext(ctx, w.propagator, record)
+	if !sampled {
+		return w.persistRecord(ctx, record, retries)
+	}
+	spanCtx, span := w.tracer.Start(trace.ContextWithRemoteSpanContext(ctx, parent), "store_alert",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(attribute.Int("partition", int(record.Partition)), attribute.Int64("offset", record.Offset)))
+	defer span.End()
+	err := w.persistRecord(spanCtx, record, retries)
+	if err != nil {
+		span.SetStatus(codes.Error, "store_alert failed")
+	}
+	return err
 }
 
 // WithQuarantine binds the publisher before Run. Without it permanent failures
@@ -98,7 +131,8 @@ func (o observedDetections) InsertBatch(ctx context.Context, alerts []*contracts
 // New binds explicit dependencies without creating alternate persistence paths.
 func New(consumer Consumer, detections DetectionStore, workflows WorkflowStore,
 	settings config.WriterConfig, log zerolog.Logger) *Writer {
-	return &Writer{consumer: consumer, detections: detections, workflows: workflows, settings: settings, log: log}
+	return &Writer{consumer: consumer, detections: detections, workflows: workflows, settings: settings, log: log,
+		tracer: noop.NewTracerProvider().Tracer("sentinel/alertwriter"), propagator: propagation.TraceContext{}}
 }
 
 // Run processes each poll under one aggregate deadline, releasing ownership on
@@ -185,7 +219,7 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record, budgets con
 	for _, key := range keys {
 		var last *kgo.Record
 		for _, record := range partitions[key] {
-			if err = w.persistRecord(effectsCtx, record, retries); err != nil {
+			if err = w.persistTraced(effectsCtx, record, retries); err != nil {
 				effectErr = errors.Join(effectErr, err)
 				break
 			}

@@ -35,6 +35,14 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return opsServer.Shutdown(closeCtx)
 	})
 
+	// Registered right after ops-http so LIFO closes it after the worker and
+	// the Kafka clients have stopped, flushing their final spans.
+	tr, err := telemetry.NewTracing(ctx, cfg.Observability.Tracing, config.ServiceEventWriter)
+	if err != nil {
+		return fmt.Errorf("tracing: %w", err)
+	}
+	lc.Add("tracing", tr.Shutdown)
+
 	conn, err := storageclickhouse.Open(ctx, cfg.ClickHouse)
 	if err != nil {
 		return fmt.Errorf("clickhouse: %w", err)
@@ -66,7 +74,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		cfg.Writer,
 		contracts.LimitsFromConfig(cfg.Contracts),
 		log,
-	).WithMetrics(consumerMetrics)
+	).WithMetrics(consumerMetrics).WithTracing(tr.Provider(), tr.Propagator())
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	workerDone := make(chan error, 1)
 	go func() {

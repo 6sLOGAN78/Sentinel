@@ -11,6 +11,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/kafkax"
 	"github.com/6sLOGAN78/sentinel/internal/retry"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 type effectRetries struct {
@@ -46,7 +47,8 @@ func (w *Writer) retry(ctx context.Context, retries *effectRetries, effect func(
 			return err
 		}
 		retries.remaining--
-		w.log.Warn().Msg("alert effect failed; retrying")
+		log := telemetry.SampledTraceLogger(ctx, w.log)
+		log.Warn().Msg("alert effect failed; retrying")
 		// Full jitter in [0, backoff] desynchronizes replicas hitting the same
 		// recovering store; the shared backoff ceiling still doubles per batch.
 		if waitErr := w.waitRetry(ctx, retries.backoff); waitErr != nil {

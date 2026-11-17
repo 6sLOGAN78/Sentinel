@@ -11,6 +11,11 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -18,6 +23,10 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/retry"
 	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
+
+// maxStoreLinks caps the sampled record contexts linked from one store span,
+// bounding span size however large the ClickHouse batch is.
+const maxStoreLinks = 32
 
 // Consumer is the manual offset lifecycle required by the writer.
 type Consumer interface {
@@ -48,6 +57,8 @@ type Writer struct {
 	log      zerolog.Logger
 	wait     retry.Waiter
 	metrics  *telemetry.ConsumerMetrics
+	tracer   trace.Tracer
+	prop     propagation.TextMapPropagator
 }
 
 // New creates a writer from explicit dependencies and validated settings.
@@ -59,7 +70,19 @@ func New(
 	limits contracts.Limits,
 	log zerolog.Logger,
 ) *Writer {
-	return &Writer{consumer: consumer, store: store, dlq: dlq, settings: settings, limits: limits, log: log}
+	return &Writer{
+		consumer: consumer, store: store, dlq: dlq, settings: settings, limits: limits, log: log,
+		tracer: noop.NewTracerProvider().Tracer("sentinel/eventwriter"), prop: propagation.TraceContext{},
+	}
+}
+
+// WithTracing makes each ClickHouse batch that holds at least one sampled
+// record start one "store" span linked to at most maxStoreLinks sampled
+// record contexts. Batches without a sampled record start no span.
+func (w *Writer) WithTracing(tp trace.TracerProvider, prop propagation.TextMapPropagator) *Writer {
+	w.tracer = tp.Tracer("sentinel/eventwriter")
+	w.prop = prop
+	return w
 }
 
 // WithRetryWaiter replaces the full-jitter retry wait before Run, chiefly so
@@ -222,7 +245,7 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 	classified, events := w.classifyPartitions(partitions, len(records))
 	if len(events) > 0 {
 		insertCtx, cancelInsert := context.WithTimeout(processingCtx, budgets.Retry)
-		err = w.insertWithRetry(insertCtx, events)
+		err = w.insertTraced(insertCtx, classified, sortedPartitionKeys(partitions), events)
 		cancelInsert()
 		if err != nil {
 			return err
@@ -252,6 +275,63 @@ func (w *Writer) process(ctx context.Context, records []*kgo.Record) error {
 	}
 
 	return effectErr
+}
+
+// insertTraced wraps insertWithRetry in one "store" span when the batch holds
+// a sampled record. The first sampled context parents the span, so the
+// ParentBased sampler keeps it whatever the root ratio, and every collected
+// context (the parent included) is a link. Retries become span events.
+func (w *Writer) insertTraced(
+	ctx context.Context, classified map[topicPartition][]recordEffect, keys []topicPartition,
+	events []*contracts.Event,
+) error {
+	links := w.storeLinks(ctx, classified, keys)
+	if len(links) == 0 {
+		return w.insertWithRetry(ctx, events)
+	}
+	storeCtx, span := w.tracer.Start(trace.ContextWithRemoteSpanContext(ctx, links[0].SpanContext), "store",
+		trace.WithSpanKind(trace.SpanKindConsumer), trace.WithLinks(links...),
+		trace.WithAttributes(attribute.Int("batch.size", len(events)), attribute.Int("batch.partitions", len(keys))))
+	defer span.End()
+	err := w.insertWithRetry(storeCtx, events)
+	if err != nil {
+		span.SetStatus(codes.Error, "store failed")
+	}
+	return err
+}
+
+// storeLinks collects up to maxStoreLinks distinct sampled contexts from the
+// records being inserted, in partition/offset order.
+func (w *Writer) storeLinks(
+	ctx context.Context, classified map[topicPartition][]recordEffect, keys []topicPartition,
+) []trace.Link {
+	links := make([]trace.Link, 0, maxStoreLinks)
+	seen := make(map[linkKey]struct{}, maxStoreLinks)
+	for _, key := range keys {
+		for _, effect := range classified[key] {
+			if len(links) == maxStoreLinks {
+				break
+			}
+			if effect.event == nil {
+				continue
+			}
+			sc, sampled := kafkax.SampledRecordContext(ctx, w.prop, effect.record)
+			id := linkKey{traceID: sc.TraceID(), spanID: sc.SpanID()}
+			if _, dup := seen[id]; !sampled || dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			links = append(links, trace.Link{SpanContext: sc})
+		}
+	}
+	return links
+}
+
+// linkKey identifies a linked span context; records of one ingest request
+// share it and are linked once.
+type linkKey struct {
+	traceID trace.TraceID
+	spanID  trace.SpanID
 }
 
 func (w *Writer) classifyPartitions(
@@ -425,7 +505,9 @@ func (w *Writer) insertWithRetry(ctx context.Context, events []*contracts.Event)
 			break
 		}
 
-		w.log.Warn().Int("attempt", attempt).Msg("event insert failed; retrying")
+		trace.SpanFromContext(ctx).AddEvent("retry", trace.WithAttributes(attribute.Int("attempt", attempt)))
+		log := telemetry.SampledTraceLogger(ctx, w.log)
+		log.Warn().Int("attempt", attempt).Msg("event insert failed; retrying")
 		if err := w.waitRetry(ctx, policy.Ceiling(attempt)); err != nil {
 			return fmt.Errorf("insert event batch: %w", errors.Join(lastErr, err))
 		}

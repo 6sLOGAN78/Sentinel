@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
@@ -123,14 +124,28 @@ func (t *Tracing) Shutdown(ctx context.Context) error {
 	return t.shutdownErr
 }
 
+// SampledTraceLogger returns log with trace_id when ctx carries a sampled span
+// context, so worker lines join an exported trace; otherwise log unchanged.
+func SampledTraceLogger(ctx context.Context, log zerolog.Logger) zerolog.Logger {
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsSampled() {
+		return log
+	}
+
+	return log.With().Str("trace_id", sc.TraceID().String()).Logger()
+}
+
 // spanAttributeAllowed lists the only span attribute keys that may leave the
 // process. Client address, user agent, raw URL path, Host and any identity
-// field are dropped whatever instrumentation recorded them.
+// field are dropped whatever instrumentation recorded them. Worker spans add
+// only bounded pipeline coordinates: rule_id (a fixed rule set), Kafka
+// partition and offset, and batch size and partition count.
 func spanAttributeAllowed(key attribute.Key) bool {
 	switch key {
 	case "http.request.method", "http.response.status_code", "http.route", "url.scheme",
 		"network.protocol.version", "error.type",
-		"messaging.system", "messaging.destination.name", "messaging.batch.message_count":
+		"messaging.system", "messaging.destination.name", "messaging.batch.message_count",
+		labelRuleID, labelPartition, "offset", "batch.size", "batch.partitions":
 		return true
 	default:
 		return false

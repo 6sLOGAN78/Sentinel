@@ -36,6 +36,14 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 		return opsServer.Shutdown(closeCtx)
 	})
 
+	// Registered right after ops-http so LIFO closes it after the worker and
+	// the Kafka clients have stopped, flushing their final spans.
+	tr, err := telemetry.NewTracing(ctx, cfg.Observability.Tracing, config.ServiceAlertWriter)
+	if err != nil {
+		return fmt.Errorf("tracing: %w", err)
+	}
+	lc.Add("tracing", tr.Shutdown)
+
 	// NewAlertConsumer binds its own kadm client as the tracker's end-offset source.
 	tracker := kafkax.NewLagTracker(nil, consumerMetrics, cfg.Kafka.AlertWriterGroup, cfg.Kafka.AlertsTopic, 0)
 	consumer, err := kafkax.NewAlertConsumer(ctx, cfg.Kafka, cfg.Writer, kafkax.WithLagTracker(tracker))
@@ -70,7 +78,7 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 
 		return nil
 	})
-	startWriter(ctx, cfg, log, lc, consumer, clickhouse, db, dlq, consumerMetrics)
+	startWriter(ctx, cfg, log, lc, consumer, clickhouse, db, dlq, consumerMetrics, tr)
 
 	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
 		{Name: "kafka", Fn: consumer.Ping},
@@ -93,10 +101,10 @@ func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.
 
 func startWriter(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle,
 	consumer *kafkax.Consumer, conn storageclickhouse.Conn, db *database.Database, dlq *kafkax.DLQPublisher,
-	metrics *telemetry.ConsumerMetrics) {
+	metrics *telemetry.ConsumerMetrics, tr *telemetry.Tracing) {
 	worker := alertwriter.New(consumer, storageclickhouse.NewAlertStore(conn),
 		storagepostgres.NewAlertStore(db.Pool, cfg.Writer.OperationTimeout), cfg.Writer, log).
-		WithQuarantine(dlq).WithMetrics(metrics)
+		WithQuarantine(dlq).WithMetrics(metrics).WithTracing(tr.Provider(), tr.Propagator())
 	workerCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() {

@@ -35,7 +35,7 @@ func Handler(reg *prometheus.Registry) http.Handler {
 // AllowedLabelNames returns the label dimensions permitted by ADR 0004.
 func AllowedLabelNames() []string {
 	return []string{
-		labelResult, "status", "rule_id", "severity", "reason", "group", labelTopic, labelPartition, "service",
+		labelResult, "status", labelRuleID, "severity", "reason", "group", labelTopic, labelPartition, "service",
 	}
 }
 

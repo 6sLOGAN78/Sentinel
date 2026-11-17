@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
@@ -28,6 +30,7 @@ func (p *AlertProducer) PublishCanonical(ctx context.Context, canonical []byte) 
 	publishCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 	record := &kgo.Record{Topic: p.topic, Key: []byte(alert.TenantID + "|" + alert.AlertID), Value: bytes.Clone(canonical)}
+	p.inject(ctx, record)
 	if err = p.client.ProduceSync(publishCtx, record).FirstErr(); err != nil {
 		return errors.New("publish detector alerts failed")
 	}
@@ -45,10 +48,32 @@ type alertClient interface {
 // AlertProducer owns a separate bounded all-ISR client. Its readiness check
 // reuses the established topic-leader check, including after broker outages.
 type AlertProducer struct {
-	client    alertClient
-	readiness *Producer
-	topic     string
-	timeout   time.Duration
+	client     alertClient
+	readiness  *Producer
+	topic      string
+	timeout    time.Duration
+	propagator propagation.TextMapPropagator
+}
+
+// WithPropagator sets how the caller's span context (the detector's detect
+// span) is written into alert record headers. The producer starts no span of
+// its own. Without it, W3C trace context is used.
+func (p *AlertProducer) WithPropagator(prop propagation.TextMapPropagator) *AlertProducer {
+	p.propagator = prop
+	return p
+}
+
+// inject writes ctx's span context into record only when one is valid, so an
+// untraced publish leaves the record headers unchanged.
+func (p *AlertProducer) inject(ctx context.Context, record *kgo.Record) {
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		return
+	}
+	prop := p.propagator
+	if prop == nil {
+		prop = propagation.TraceContext{}
+	}
+	prop.Inject(ctx, HeaderCarrier{Record: record})
 }
 
 // NewAlertProducer creates the bounded canonical alert publisher.
@@ -93,7 +118,9 @@ func (p *AlertProducer) Publish(ctx context.Context, alerts []*contracts.Alert) 
 		if len(b) > 64<<10 {
 			return errors.New("alert exceeds size bound")
 		}
-		records = append(records, &kgo.Record{Topic: p.topic, Key: []byte(alert.TenantID + "|" + alert.AlertID), Value: b})
+		record := &kgo.Record{Topic: p.topic, Key: []byte(alert.TenantID + "|" + alert.AlertID), Value: b}
+		p.inject(ctx, record)
+		records = append(records, record)
 	}
 	publishCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()

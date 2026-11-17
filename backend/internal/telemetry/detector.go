@@ -38,7 +38,7 @@ func NewDetectorMetrics(reg prometheus.Registerer) *DetectorMetrics {
 		alerts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "sentinel_detection_alerts_total",
 			Help: "Allowed alert publications (replays after a crash count again; unique alerts come from PG/CH).",
-		}, []string{"rule_id", "severity"}),
+		}, []string{labelRuleID, "severity"}),
 		delay: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "sentinel_detection_delay_seconds",
 			Help:    "Detector wall clock at publish ack minus trigger occurred_at.",

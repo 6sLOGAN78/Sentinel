@@ -1,6 +1,27 @@
 package kafkax
 
-import "github.com/twmb/franz-go/pkg/kgo"
+import (
+	"context"
+
+	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+)
+
+// SampledRecordContext extracts the record's W3C trace context with prop and
+// reports whether it is a valid, sampled parent. Workers start spans only
+// for sampled parents, so unsampled traffic costs no span. A nil prop uses
+// propagation.TraceContext.
+func SampledRecordContext(
+	ctx context.Context, prop propagation.TextMapPropagator, record *kgo.Record,
+) (trace.SpanContext, bool) {
+	if prop == nil {
+		prop = propagation.TraceContext{}
+	}
+	sc := trace.SpanContextFromContext(prop.Extract(ctx, HeaderCarrier{Record: record}))
+
+	return sc, sc.IsValid() && sc.IsSampled()
+}
 
 // HeaderCarrier adapts a Kafka record's headers to
 // propagation.TextMapCarrier so W3C trace context travels with the record.
