@@ -28,9 +28,10 @@ OVERLAY = ROOT / "deployments/compose/docker-compose.observability.yml"
 CHECK_PINS = ROOT / "scripts/check-pins.sh"
 
 # Names a dashboard may reference before the owning plan registers them.
-# 05-14 registers sentinel_sse_clients on query-api and must then delete it
-# here (test_pending_metrics_are_not_yet_registered enforces the removal).
-PENDING_METRICS = frozenset({"sentinel_sse_clients"})
+# 05-14 registered sentinel_sse_clients on query-api, the last pending name.
+# A new entry must be removed as soon as its owner registers it
+# (test_pending_metrics_are_not_yet_registered enforces the removal).
+PENDING_METRICS: set[str] = set()
 # Exported by the standard Go/process collectors (telemetry.NewRegistry) and
 # by Prometheus itself for every target.
 STANDARD_PREFIXES = ("process_", "go_")
@@ -220,6 +221,11 @@ class MetricInventoryTests(unittest.TestCase):
     def test_pending_metrics_are_not_yet_registered(self):
         # Once 05-14 registers a pending name it must leave PENDING_METRICS.
         self.assertFalse(PENDING_METRICS & registered_metrics())
+
+    def test_sse_clients_registered_and_nothing_pending(self):
+        # All spec 11.2 metrics exist, so no dashboard name may stay pending.
+        self.assertEqual(PENDING_METRICS, set())
+        self.assertIn("sentinel_sse_clients", registered_metrics())
 
     def test_promql_parser_finds_names_and_labels(self):
         expr = (
