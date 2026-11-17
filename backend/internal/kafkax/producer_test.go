@@ -262,3 +262,30 @@ func TestNewProducerReservesUpToMaxBufferedRecords(t *testing.T) {
 	t.Cleanup(producer.client.Close)
 	require.Equal(t, int64(7), producer.maxBuffered)
 }
+
+func TestBufferedRecordsReportsAdmittedRecordsWithinTheLimit(t *testing.T) {
+	t.Parallel()
+
+	producer, err := NewProducer(t.Context(), config.KafkaConfig{
+		Brokers: "127.0.0.1:1", EventsTopic: "events-test", ProduceTimeout: time.Second,
+		MaxBufferedRecords: 10, MaxBufferedBytes: 1 << 20,
+	})
+	require.NoError(t, err)
+	t.Cleanup(producer.client.Close)
+	entered, release := make(chan struct{}), make(chan struct{})
+	producer.produce = func(context.Context, []*kgo.Record) error {
+		close(entered)
+		<-release
+		return nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- producer.PublishBatch(context.Background(), tracedEvents(6), "held") }()
+	<-entered
+
+	require.Equal(t, int64(6), producer.BufferedRecords(), "an unresolved batch counts as buffered")
+	require.ErrorIs(t, producer.PublishBatch(t.Context(), tracedEvents(5), "over"), ErrBufferFull)
+	require.Equal(t, int64(6), producer.BufferedRecords(), "a shed batch is never counted")
+	close(release)
+	require.NoError(t, <-done)
+	require.Zero(t, producer.BufferedRecords())
+}
