@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"net/http"
@@ -63,11 +64,26 @@ const (
 // number of concurrent publishes (all inside the in-flight gate) plus the IDs
 // of batches whose publish failed (ambiguous: they may still land).
 type overloadPublisher struct {
-	inner   kafkax.Publisher
-	current atomic.Int64
-	peak    atomic.Int64
-	mu      sync.Mutex
-	failed  map[string]struct{}
+	inner      kafkax.Publisher
+	current    atomic.Int64
+	peak       atomic.Int64
+	bufferFull atomic.Int64
+	mu         sync.Mutex
+	failed     map[string]struct{}
+}
+
+// countingVerifier counts requests that passed the in-flight gate: the
+// handler authenticates exactly once, right after acquiring a slot.
+type countingVerifier struct {
+	inner interface {
+		Authenticate(ctx context.Context, key string) (apikeys.Principal, error)
+	}
+	calls atomic.Int64
+}
+
+func (v *countingVerifier) Authenticate(ctx context.Context, key string) (apikeys.Principal, error) {
+	v.calls.Add(1)
+	return v.inner.Authenticate(ctx, key)
 }
 
 func (p *overloadPublisher) PublishBatch(ctx context.Context, events []*contracts.Event, requestID string) error {
@@ -80,6 +96,10 @@ func (p *overloadPublisher) PublishBatch(ctx context.Context, events []*contract
 		}
 	}
 	err := p.inner.PublishBatch(ctx, events, requestID)
+	if errors.Is(err, kafkax.ErrBufferFull) {
+		p.bufferFull.Add(1) // shed before any record reached the client
+		return err
+	}
 	if err != nil {
 		p.mu.Lock()
 		for _, event := range events {
@@ -94,6 +114,7 @@ type overloadFixture struct {
 	server    *httptest.Server
 	producer  *kafkax.Producer
 	publisher *overloadPublisher
+	verifier  *countingVerifier
 	reg       *prometheus.Registry
 	kafka     config.KafkaConfig
 	handle    *sentineltesting.FaultContainer
@@ -143,12 +164,13 @@ func newOverloadFixture(t *testing.T) *overloadFixture {
 	t.Cleanup(func() { require.NoError(t, redisClient.Close()) })
 	e := echo.New()
 	middleware.Apply(e, &logger, nil)
-	ingest.NewHandler(apikeys.NewVerifier(store, 32, time.Second, nil), publisher,
+	verifier := &countingVerifier{inner: apikeys.NewVerifier(store, 32, time.Second, nil)}
+	ingest.NewHandler(verifier, publisher,
 		ratelimit.New(redisClient, cfg.RateLimit, logger), cfg, logger).WithMetrics(metrics).Register(e)
 	server := httptest.NewServer(e)
 	t.Cleanup(server.Close)
 
-	return &overloadFixture{server: server, producer: producer, publisher: publisher, reg: reg,
+	return &overloadFixture{server: server, producer: producer, publisher: publisher, verifier: verifier, reg: reg,
 		kafka: cfg.Kafka, handle: handle, key: key}
 }
 
@@ -393,9 +415,12 @@ func TestChaosOverloadBounded(t *testing.T) {
 	require.NoError(t, sample.gatherErr)
 	require.InDelta(t, float64(overloadBufferLimit), sample.limit, 0, "buffered_records_limit gauge")
 	require.LessOrEqual(t, sample.maxBuffered, sample.limit, "producer buffer exceeded its limit")
-	require.GreaterOrEqual(t, sample.maxBuffered, float64(overloadBatch), "the pause never built up the buffer")
-	require.Equal(t, int64(overloadMaxInFlight), f.publisher.peak.Load(),
-		"concurrent publishes must reach but never exceed max_in_flight")
+	require.Greater(t, sample.maxBuffered, float64(overloadBufferLimit-overloadBatch),
+		"the pause never filled the buffer to within one batch of its limit")
+	require.Positive(t, f.publisher.bufferFull.Load(), "a full producer buffer never shed a batch")
+	require.LessOrEqual(t, f.publisher.peak.Load(), int64(overloadMaxInFlight), "publishes exceeded max_in_flight")
+	gateSheds := int64(sumCounts(statuses)) - f.verifier.calls.Load()
+	require.Positive(t, gateSheds, "the max_in_flight gate never shed a request")
 	require.Less(t, sample.maxHeap, uint64(overloadHeapBound), "HeapInuse exceeded the bound")
 
 	// /metrics agrees with what clients saw.
@@ -408,11 +433,12 @@ func TestChaosOverloadBounded(t *testing.T) {
 		gatheredCounters(t, f.reg, overloadEventsMetric)[telemetry.ResultAccepted], 0)
 
 	unique, extra := drainOverloadTopic(ctx, t, f, tally.accepted)
-	t.Logf("overload: statuses=%v requests=%d accepted events=%d max buffered=%.0f/%.0f peak publishes=%d/%d "+
-		"max HeapInuse=%.1f MiB (bound %d MiB) samples=%d CH unique=%d ambiguous landed=%d",
-		statuses, sumCounts(statuses), len(tally.accepted), sample.maxBuffered, sample.limit,
-		f.publisher.peak.Load(), overloadMaxInFlight, float64(sample.maxHeap)/(1<<20), overloadHeapBound>>20,
-		sample.samples, unique, extra)
+	t.Logf("overload: statuses=%v requests=%d gate sheds=%d buffer-full sheds=%d accepted events=%d "+
+		"max buffered=%.0f/%.0f peak publishes=%d/%d max HeapInuse=%.1f MiB (bound %d MiB) samples=%d "+
+		"CH unique=%d ambiguous landed=%d",
+		statuses, sumCounts(statuses), gateSheds, f.publisher.bufferFull.Load(), len(tally.accepted),
+		sample.maxBuffered, sample.limit, f.publisher.peak.Load(), overloadMaxInFlight,
+		float64(sample.maxHeap)/(1<<20), overloadHeapBound>>20, sample.samples, unique, extra)
 }
 
 func sumCounts(statuses map[int]int) int {

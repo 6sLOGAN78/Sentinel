@@ -4,8 +4,10 @@ package kafkax
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -29,6 +31,11 @@ type Publisher interface {
 // publishSpanName names the span wrapping one batch produce.
 const publishSpanName = "publish"
 
+// ErrBufferFull reports a batch that does not fit the remaining producer
+// buffer. It is returned before any record reaches the client, so callers
+// shed the request (503) instead of waiting for space.
+var ErrBufferFull = errors.New("kafka producer buffer full")
+
 // Producer owns one long-lived bounded franz-go client.
 type Producer struct {
 	client     *kgo.Client
@@ -37,6 +44,11 @@ type Producer struct {
 	propagator propagation.TextMapPropagator
 	topic      string
 	timeout    time.Duration
+	// maxBuffered is MaxBufferedRecords. reserved counts the records of every
+	// batch currently inside publish, so franz-go's buffer (including callers
+	// it would block in Produce) never exceeds the limit.
+	maxBuffered int64
+	reserved    atomic.Int64
 }
 
 // NewProducer configures an all-ISR, idempotent producer with finite buffers,
@@ -66,8 +78,9 @@ func NewProducer(_ context.Context, cfg config.KafkaConfig) (*Producer, error) {
 		produce: func(ctx context.Context, records []*kgo.Record) error {
 			return client.ProduceSync(ctx, records...).FirstErr()
 		},
-		topic:   cfg.EventsTopic,
-		timeout: cfg.ProduceTimeout,
+		topic:       cfg.EventsTopic,
+		timeout:     cfg.ProduceTimeout,
+		maxBuffered: int64(cfg.MaxBufferedRecords),
 	}, nil
 }
 
@@ -94,8 +107,11 @@ func (p *Producer) tracing() (trace.Tracer, propagation.TextMapPropagator) {
 	return tracer, prop
 }
 
-// BufferedRecords reports the number of records currently buffered for produce.
-func (p *Producer) BufferedRecords() int64 { return p.client.BufferedProduceRecords() }
+// BufferedRecords reports the records admitted to publish and not yet
+// acknowledged or failed. The reservation caps it at MaxBufferedRecords.
+// franz-go's BufferedProduceRecords is not used: it also counts callers
+// blocked in Produce and decrements only after a record's promise runs.
+func (p *Producer) BufferedRecords() int64 { return p.reserved.Load() }
 
 // Ping verifies that a broker is reachable and the producer topic has usable
 // partition leaders. A broker-only metadata response is not sufficient for
@@ -173,6 +189,10 @@ func (p *Producer) publish(
 	if err != nil {
 		return err
 	}
+	if !p.reserve(int64(len(records))) {
+		return fmt.Errorf("publish event batch: %w", ErrBufferFull)
+	}
+	defer p.reserved.Add(-int64(len(records)))
 
 	produceCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
@@ -189,6 +209,21 @@ func (p *Producer) publish(
 	}
 
 	return nil
+}
+
+// reserve admits a whole batch only if it fits the remaining buffer, so a
+// batch is either fully handed to franz-go or shed before any record is sent.
+// The reservation is released once ProduceSync has resolved every record.
+func (p *Producer) reserve(n int64) bool {
+	for {
+		current := p.reserved.Load()
+		if current+n > p.maxBuffered {
+			return false
+		}
+		if p.reserved.CompareAndSwap(current, current+n) {
+			return true
+		}
+	}
 }
 
 type wireEvent struct {

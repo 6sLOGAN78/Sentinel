@@ -95,7 +95,7 @@ func statusLabel(status int) string {
 func RegisterProducerBuffer(reg prometheus.Registerer, buffered func() int64, limit int) {
 	reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "sentinel_kafka_producer_buffered_records",
-		Help: "Records currently buffered in the Kafka producer.",
+		Help: "Records admitted to the Kafka producer and not yet acknowledged or failed.",
 	}, func() float64 { return float64(buffered()) }))
 
 	limitGauge := prometheus.NewGauge(prometheus.GaugeOpts{

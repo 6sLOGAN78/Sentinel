@@ -29,6 +29,8 @@ families=(
   "dlq|./test/|TestWriterPoisonToDLQ TestWriterDLQFailureNoCommit TestDetectorPoison TestAlertWriterPoison|integration|10m"
   "rate-limit|./test/|TestRateLimit.* TestIngestShedsUnderLoad|integration|8m"
   "sse-reconnect|./testphase4/...|TestPhase4Stream TestPhase4Delivery|phase4|10m"
+  "slow-consumer|./test/|TestChaosSlowConsumerLag TestChaosLagAfterRebalance|integration|10m"
+  "overload|./test/|TestChaosOverloadBounded|integration|6m"
 )
 
 known=()
