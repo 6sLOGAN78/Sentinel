@@ -298,7 +298,7 @@ def test_up_refuses_invalid_run_without_any_command(stack: ModuleType, tmp_path:
 def test_makefile_bench_targets_never_use_default_compose() -> None:
     text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     phony = next(line for line in text.splitlines() if line.startswith(".PHONY:"))
-    for target in ("bench-up", "bench-down", "bench-purge", "test-chaos"):
+    for target in ("bench", "bench-up", "bench-down", "bench-purge", "test-chaos"):
         assert f" {target}" in phony
     recipes: dict[str, str] = {}
     for match in re.finditer(r"^([a-z-]+):[^\n]*\n((?:\t[^\n]*\n?)*)", text, re.MULTILINE):
@@ -309,7 +309,10 @@ def test_makefile_bench_targets_never_use_default_compose() -> None:
         assert "$(COMPOSE)" not in recipe and "--env-file .env" not in recipe
     assert "--confirm" in recipes["bench-purge"] and "CONFIRM" in recipes["bench-purge"]
     assert "bash scripts/check-chaos.sh" in recipes["test-chaos"]
-    assert "bench is available from Phase 5" in recipes["bench"]
+    # 05-18: make bench runs a scenario on the isolated stack, never $(COMPOSE).
+    assert "bench is available from Phase 5" not in recipes["bench"]
+    assert "bench/run.py run --scenario" in recipes["bench"]
+    assert "$(COMPOSE)" not in recipes["bench"] and "--env-file .env" not in recipes["bench"]
     assert _makefile_compose() not in STACK_PATH.read_text(encoding="utf-8")
 
 

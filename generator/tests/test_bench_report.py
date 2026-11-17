@@ -11,7 +11,7 @@ import hashlib
 import importlib.util
 import json
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -527,3 +527,148 @@ def test_selftest_returns_zero() -> None:
     before = _results_snapshot()
     assert _report().main(["--selftest"]) == 0
     assert _results_snapshot() == before
+
+
+# --- 05-18: overload equations, drain state and optional raw keys ------------------------
+
+OVERLOAD_STEM = "2026-11-14-overload"
+
+
+def _overload_raw() -> dict[str, Any]:
+    raw = _raw()
+    raw["run"]["scenario"] = "overload"
+    raw["run"]["drained"] = True
+    raw["restart"] = None
+    counts: dict[str, int] = {}
+    for request in raw["client"]["requests"]:
+        counts[str(request["status"])] = counts.get(str(request["status"]), 0) + 1
+    raw["client"]["status_counts"] = counts
+    raw["prometheus"]["producer_buffered_max"] = 2000
+    raw["prometheus"]["producer_buffered_limit"] = 2000
+    raw["prometheus"]["ingest_requests_by_status"] = {"202": 30, "429": 5, "503": 10}
+    raw["prometheus"]["pin_retention_margin_min"] = 4_000_000
+    raw["resources"]["oom_killed"] = {
+        "sentinel-bench-fixture0001-ingest-1": False,
+        "sentinel-bench-fixture0001-detector-1": False,
+    }
+    raw["resources"]["restart_delta"] = {"ingest": 0, "detector": 0, "event-writer": 0}
+    raw["preflight"] = {"overload": {"accept_bound_events": 130000}}
+    return raw
+
+
+def _refusal_ids(tmp_path: Path, raw: dict[str, Any], stem: str = OVERLOAD_STEM) -> set[str]:
+    report = _report()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    out = tmp_path / "out"
+    assert report.main(["--raw", str(_write_raw(tmp_path, raw)), "--out", str(out)]) == 1
+    assert not (out / f"{stem}.md").exists()
+    failed = json.loads((out / f"{stem}.FAILED.json").read_text(encoding="utf-8"))
+    return {failure["id"] for failure in failed["failures"]}
+
+
+def test_overload_with_every_bound_held_is_reported(tmp_path: Path) -> None:
+    report = _report()
+    raw_path = _write_raw(tmp_path, _overload_raw())
+    out = tmp_path / "out"
+    assert report.main(["--raw", str(raw_path), "--out", str(out)]) == 0
+    summary = json.loads((out / f"{OVERLOAD_STEM}.json").read_text(encoding="utf-8"))
+    markdown = (out / f"{OVERLOAD_STEM}.md").read_text(encoding="utf-8")
+    overload = summary["overload"]
+    assert overload["status_counts"] == _overload_raw()["client"]["status_counts"]
+    assert overload["producer_buffered_max"] == 2000
+    assert overload["producer_buffered_limit"] == 2000
+    assert overload["oom_killed"] == []
+    assert overload["restart_delta"]["ingest"] == 0
+    assert "## Overload" in markdown
+    # Optional 05-18 keys are part of the contract, not "unknown keys".
+    assert not any("not in format_version 1" in item for item in summary["limitations"])
+
+
+@pytest.mark.parametrize(
+    ("mutate", "failure_id"),
+    [
+        (lambda r: r["client"]["requests"][0].update(status=500), "overload_status"),
+        (lambda r: r["client"]["requests"][1].update(status=0), "overload_status"),
+        (lambda r: r["prometheus"].update(producer_buffered_max=2001), "overload_buffer"),
+        (
+            lambda r: r["resources"]["oom_killed"].update(
+                {"sentinel-bench-fixture0001-detector-1": True}
+            ),
+            "overload_oom",
+        ),
+        (lambda r: r["resources"]["restart_delta"].update(ingest=1), "overload_ingest_restart"),
+    ],
+)
+def test_overload_refuses_when_a_bound_breaks(tmp_path: Path, mutate: Any, failure_id: str) -> None:
+    raw = _overload_raw()
+    mutate(raw)
+    counts: dict[str, int] = {}
+    for request in raw["client"]["requests"]:
+        counts[str(request["status"])] = counts.get(str(request["status"]), 0) + 1
+    raw["client"]["status_counts"] = counts
+    assert failure_id in _refusal_ids(tmp_path, raw)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("client", "status_counts"),
+        ("prometheus", "producer_buffered_max"),
+        ("prometheus", "producer_buffered_limit"),
+        ("resources", "oom_killed"),
+        ("resources", "restart_delta"),
+    ],
+)
+def test_overload_refuses_when_its_measurements_are_missing(
+    tmp_path: Path, path: tuple[str, str]
+) -> None:
+    raw = _overload_raw()
+    del raw[path[0]][path[1]]
+    assert "overload_recorded" in _refusal_ids(tmp_path, raw)
+
+
+def test_status_counts_must_match_the_recorded_requests(tmp_path: Path) -> None:
+    raw = _overload_raw()
+    raw["client"]["status_counts"]["202"] += 1
+    assert "status_counts" in _refusal_ids(tmp_path, raw)
+
+
+def test_undrained_run_is_refused_for_every_scenario(tmp_path: Path) -> None:
+    raw = _raw()
+    raw["run"]["drained"] = False
+    assert "drained" in _refusal_ids(tmp_path / "a", raw, REPORT_STEM)
+    overload = _overload_raw()
+    overload["run"]["drained"] = False
+    assert "drained" in _refusal_ids(tmp_path / "b", overload)
+
+
+def test_optional_keys_have_types_checked(tmp_path: Path) -> None:
+    report = _report()
+    mutations: list[Callable[[dict[str, Any]], object]] = [
+        lambda r: r["run"].update(drained="yes"),
+        lambda r: r["client"].update(status_counts={"202": -1}),
+        lambda r: r["resources"].update(oom_killed={"x": 1}),
+        lambda r: r["run"].update(warmup={"partition_share_max": "high", "rate_eps": 1}),
+    ]
+    for mutate in mutations:
+        raw = _overload_raw()
+        mutate(raw)
+        out = tmp_path / "out"
+        code = report.main(["--raw", str(_write_raw(tmp_path, raw)), "--out", str(out)])
+        assert code == 1
+        assert not out.exists() or not any(out.iterdir())
+
+
+def test_threshold_inputs_are_reported_for_alert_tuning(tmp_path: Path) -> None:
+    raw = _raw()
+    raw["run"]["drained"] = True
+    raw["run"]["warmup"] = {"partition_share_max": 0.2, "rate_eps": 400.0}
+    raw["prometheus"]["ingest_requests_by_status"] = {"202": 900, "503": 100}
+    raw["prometheus"]["pin_retention_margin_min"] = 4_000_000
+    summary, markdown = _run_ok(tmp_path, raw)
+    inputs = summary["threshold_inputs"]
+    assert inputs["ingest_requests_by_status"] == {"202": 900, "503": 100}
+    assert inputs["ingest_5xx_ratio"] == 0.1
+    assert inputs["pin_retention_margin_min"] == 4_000_000
+    assert inputs["warmup_partition_share_max"] == 0.2
+    assert "Alert threshold inputs" in markdown
