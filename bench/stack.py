@@ -292,13 +292,33 @@ class DryRunRunner:
         return ""
 
 
+# 05-18 collectors: `compose exec -T <service> <program>` pairs that only read.
+_READ_ONLY_EXEC = frozenset(
+    {
+        ("clickhouse", "clickhouse-client"),
+        ("postgres", "psql"),
+        ("kafka", "/opt/kafka/bin/kafka-get-offsets.sh"),
+    }
+)
+
+
+def _read_only_exec(args: list[str]) -> bool:
+    if args[:2] != ["docker", "compose"] or "--env-file" not in args:
+        return False
+    tail = args[args.index("--env-file") + 2 :]
+    return len(tail) >= 4 and tail[:2] == ["exec", "-T"] and (tail[2], tail[3]) in _READ_ONLY_EXEC
+
+
 def _read_only(argv: Sequence[str]) -> bool:
     args = list(argv)
     return (
         args[:5] == ["docker", "compose", "ls", "--format", "json"]
         or args[:3] == ["docker", "compose", "version"]
         or args[:2] in (["docker", "version"], ["docker", "info"])
+        or args[:2] in (["docker", "ps"], ["docker", "inspect"])
+        or args[:3] == ["docker", "stats", "--no-stream"]
         or args[:2] in (["git", "rev-parse"], ["git", "status"])
+        or _read_only_exec(args)
     )
 
 
