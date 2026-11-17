@@ -11,7 +11,10 @@ import (
 
 	driverclickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/6sLOGAN78/sentinel/internal/alertstream"
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
@@ -28,6 +31,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/redisx"
 	storageclickhouse "github.com/6sLOGAN78/sentinel/internal/storage/clickhouse"
 	storagepostgres "github.com/6sLOGAN78/sentinel/internal/storage/postgres"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 func main() {
@@ -70,6 +74,12 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 		return opsServer.Shutdown(closeCtx)
 	})
 
+	reg := telemetry.NewRegistry()
+	tr, err := openTracing(ctx, cfg, lc)
+	if err != nil {
+		return err
+	}
+
 	db, err := database.New(ctx, cfg.Database, log)
 	if err != nil {
 		return fmt.Errorf("postgres: %w", err)
@@ -104,27 +114,21 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 
 	lc.Add("redis", app.CloseRedis(client))
 	deliveries := alertstream.NewStore(db.Pool)
-	streams, listener, err := startAlertListener(ctx, cfg, deliveries, lc)
+	streams, listener, err := startAlertListener(ctx, cfg, deliveries, telemetry.NewSSEMetrics(reg), lc)
 	if err != nil {
 		return err
 	}
 
 	draining := &opshttp.Draining{}
-	opsServer, err = opshttp.Start(cfg.Ops, draining, []opshttp.Check{
+	opsServer, err = startOps(cfg.Ops, draining, []opshttp.Check{
 		{Name: "postgres", Fn: db.Pool.Ping},
 		{Name: "redis", Fn: func(checkCtx context.Context) error { return client.Ping(checkCtx).Err() }},
 		{Name: "clickhouse", Fn: clickhouseConn.Ping},
 		{Name: "alert-listener", Fn: listener.Ready},
-	})
+	}, reg, lc)
 	if err != nil {
-		return fmt.Errorf("ops http: %w", err)
+		return err
 	}
-	go func() {
-		<-opsServer.Done()
-		if serveErr := opsServer.Err(); serveErr != nil {
-			lc.Fail(fmt.Errorf("ops http: %w", serveErr))
-		}
-	}()
 
 	verifier := apikeys.NewVerifier(apikeys.NewStore(db.Pool), 0, 0, nil)
 	e := echo.New()
@@ -140,7 +144,7 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	query.NewRulesHandler(rules, jwtVerifier).Register(e)
 	query.NewSummaryHandler(storageclickhouse.NewQueryEventStore(clickhouseConn), alerts, jwtVerifier, nil).Register(e)
 
-	if err = startQueryHTTP(ctx, cfg.Server, e, lc); err != nil {
+	if err = startQueryHTTP(ctx, cfg.Server, tracedHandler(e, tr), lc); err != nil {
 		return err
 	}
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
@@ -150,10 +154,40 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	return nil
 }
 
+// openTracing is registered right after ops-http so LIFO closes it after the
+// HTTP server, the streams and the projector have stopped, flushing their
+// final spans.
+func openTracing(ctx context.Context, cfg *config.Config, lc *app.Lifecycle) (*telemetry.Tracing, error) {
+	tr, err := telemetry.NewTracing(ctx, cfg.Observability.Tracing, config.ServiceQueryAPI)
+	if err != nil {
+		return nil, fmt.Errorf("tracing: %w", err)
+	}
+	lc.Add("tracing", tr.Shutdown)
+	return tr, nil
+}
+
+// startOps serves health, readiness and the process registry on the internal
+// ops listener and fails the lifecycle if that listener stops serving.
+func startOps(cfg config.OpsConfig, draining *opshttp.Draining, checks []opshttp.Check,
+	reg *prometheus.Registry, lc *app.Lifecycle,
+) (*opshttp.Server, error) {
+	opsServer, err := opshttp.Start(cfg, draining, checks, opshttp.WithMetricsHandler(telemetry.Handler(reg)))
+	if err != nil {
+		return nil, fmt.Errorf("ops http: %w", err)
+	}
+	go func() {
+		<-opsServer.Done()
+		if serveErr := opsServer.Err(); serveErr != nil {
+			lc.Fail(fmt.Errorf("ops http: %w", serveErr))
+		}
+	}()
+	return opsServer, nil
+}
+
 func startAlertListener(ctx context.Context, cfg *config.Config, deliveries *alertstream.Store,
-	lc *app.Lifecycle,
+	sse *telemetry.SSEMetrics, lc *app.Lifecycle,
 ) (*alertstream.Handler, *alertstream.Listener, error) {
-	streams := alertstream.NewHandler(ctx, deliveries, cfg.Stream)
+	streams := alertstream.NewHandler(ctx, deliveries, cfg.Stream).WithMetrics(sse)
 	listener, err := alertstream.NewListener(database.ConnString(cfg.Database), streams)
 	if err != nil {
 		return nil, nil, err
@@ -178,8 +212,21 @@ func startAlertListener(ctx context.Context, cfg *config.Config, deliveries *ale
 	return streams, listener, nil
 }
 
-func startQueryHTTP(ctx context.Context, cfg config.ServerConfig, e *echo.Echo, lc *app.Lifecycle) error {
-	server := httpx.New(cfg, e)
+// tracedHandler wraps the public Echo router with the query-api server span,
+// using the ingest options: explicit provider and propagator, no OTel globals,
+// and a public endpoint so a client traceparent can never force sampling
+// (T-05-14-04). middleware.TraceRename names spans by route template.
+func tracedHandler(e *echo.Echo, tr *telemetry.Tracing) http.Handler {
+	return otelhttp.NewHandler(e, config.ServiceQueryAPI,
+		otelhttp.WithTracerProvider(tr.Provider()),
+		otelhttp.WithPropagators(tr.Propagator()),
+		otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()),
+		otelhttp.WithPublicEndpointFn(func(*http.Request) bool { return true }),
+	)
+}
+
+func startQueryHTTP(ctx context.Context, cfg config.ServerConfig, handler http.Handler, lc *app.Lifecycle) error {
+	server := httpx.New(cfg, handler)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", server.HTTPServer().Addr)
 	if err != nil {
 		return fmt.Errorf("http listen: %w", err)

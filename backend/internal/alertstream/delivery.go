@@ -17,6 +17,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/auth"
 	"github.com/6sLOGAN78/sentinel/internal/errs"
 	"github.com/6sLOGAN78/sentinel/internal/query"
+	"github.com/6sLOGAN78/sentinel/internal/retry"
 )
 
 const (
@@ -28,6 +29,7 @@ const (
 	minBackoff       = 100 * time.Millisecond
 	maxBackoff       = 5 * time.Second
 	backoffFactor    = 2
+	idlePoll         = time.Second
 )
 
 // ErrOverflow is terminal: continuing would make positive delivery IDs invalid.
@@ -48,10 +50,36 @@ type BackfillPage struct {
 }
 
 // Store shares only PostgreSQL with other replicas; it does no foreign I/O.
-type Store struct{ pool *pgxpool.Pool }
+type Store struct {
+	pool *pgxpool.Pool
+	wait retry.Waiter
+}
 
 // NewStore binds the projector and backfill to the managed application pool.
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
+
+// WithRetryWaiter replaces the full-jitter projector failure wait before Run,
+// chiefly so tests can observe ceilings without sleeping. Nil restores
+// retry.Wait. The idle poll interval is not a retry and is unaffected.
+func (s *Store) WithRetryWaiter(waiter retry.Waiter) *Store {
+	s.wait = waiter
+	return s
+}
+
+// waitRetry sleeps a full-jitter delay in [0, ceiling] through wait, or
+// retry.Wait when wait is nil. It returns an error only when ctx ended.
+func waitRetry(ctx context.Context, wait retry.Waiter, ceiling time.Duration) error {
+	var err error
+	if wait == nil {
+		err = retry.Wait(ctx, ceiling)
+	} else {
+		err = wait(ctx, ceiling)
+	}
+	if err != nil {
+		return err
+	}
+	return ctx.Err()
+}
 
 // Project locks the counter BEFORE discovering pending committed work, and
 // holds it through COMMIT. Rollback (including an uncertain ACK) is retry safe.
@@ -142,6 +170,7 @@ func commitProjection(ctx context.Context, tx pgx.Tx, inserted bool) error {
 }
 
 // Run drains finite batches, polls even without notifications, and bounds retry.
+// Failures wait a full-jitter delay whose ceiling doubles from 100ms to 5s.
 // Its owner must join it before closing the pool and fail lifecycle on overflow.
 func (s *Store) Run(ctx context.Context) error {
 	backoff := minBackoff
@@ -153,9 +182,8 @@ func (s *Store) Run(ctx context.Context) error {
 		if errors.Is(err, ErrOverflow) {
 			return err
 		}
-		delay := time.Second
+		ceiling := backoff
 		if err != nil {
-			delay = backoff
 			backoff = min(backoff*backoffFactor, maxBackoff)
 		} else {
 			backoff = minBackoff
@@ -163,13 +191,26 @@ func (s *Store) Run(ctx context.Context) error {
 				continue
 			}
 		}
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		if !s.pause(ctx, err != nil, ceiling) {
 			return nil
-		case <-timer.C:
 		}
+	}
+}
+
+// pause waits a full-jitter retry delay after a failure, or the fixed idle
+// poll interval after an empty batch. It reports false once ctx has ended.
+func (s *Store) pause(ctx context.Context, failed bool, ceiling time.Duration) bool {
+	if failed {
+		return waitRetry(ctx, s.wait, ceiling) == nil
+	}
+	// Unconditional idle poll: recovery must not depend on notifications.
+	timer := time.NewTimer(idlePoll)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

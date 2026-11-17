@@ -104,13 +104,12 @@ func TestQueryTracedHandlerKeepsStreamWriterControls(t *testing.T) {
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().WriteHeader(http.StatusOK)
 		if _, err := c.Response().Writer.Write([]byte(": connected\n\n")); err != nil {
-			return nil
+			return err
 		}
 		if err := controller.Flush(); err != nil {
-			return nil
+			return err
 		}
-		_ = controller.SetWriteDeadline(time.Time{})
-		return nil
+		return controller.SetWriteDeadline(time.Time{})
 	})
 	server := httptest.NewServer(tracedHandler(e, tr))
 	t.Cleanup(server.Close)

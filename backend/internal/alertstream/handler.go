@@ -15,6 +15,7 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/errs"
 	"github.com/6sLOGAN78/sentinel/internal/query"
+	"github.com/6sLOGAN78/sentinel/internal/telemetry"
 )
 
 const (
@@ -37,6 +38,7 @@ type Handler struct {
 	active      sync.WaitGroup
 	settings    config.StreamConfig
 	subscribers map[chan struct{}]context.CancelFunc
+	sse         *telemetry.SSEMetrics
 }
 
 // NewHandler binds streams to the service lifetime and existing delivery store.
@@ -62,6 +64,13 @@ func NewHandler(ctx context.Context, store *Store, options ...config.StreamConfi
 	}
 	return &Handler{store: store, ctx: lifetime, cancel: cancel, clients: make(chan struct{}, settings.Clients),
 		settings: settings, subscribers: make(map[chan struct{}]context.CancelFunc)}
+}
+
+// WithMetrics counts admitted streams in sentinel_sse_clients. Call it before
+// Register; nil disables counting. It observes only and changes no limit.
+func (h *Handler) WithMetrics(sse *telemetry.SSEMetrics) *Handler {
+	h.sse = sse
+	return h
 }
 
 func (h *Handler) subscribe(cancel context.CancelFunc) (<-chan struct{}, func()) {
@@ -123,6 +132,7 @@ func (h *Handler) admit() bool {
 	select {
 	case h.clients <- struct{}{}:
 		h.active.Add(1)
+		h.sse.Inc()
 		return true
 	default:
 		return false
@@ -162,7 +172,8 @@ func (h *Handler) stream(c echo.Context) error {
 	if !h.admit() {
 		return errs.NewTooManyRequestsError(http.StatusText(http.StatusTooManyRequests), 1)
 	}
-	defer func() { <-h.clients; h.active.Done() }()
+	// Dec before Done: once Close has joined every stream the gauge reads 0.
+	defer func() { <-h.clients; h.sse.Dec(); h.active.Done() }()
 	deadline := h.deadline(time.Now(), p.ExpiresAt)
 	ctx, cancel := context.WithDeadline(c.Request().Context(), deadline)
 	defer cancel()

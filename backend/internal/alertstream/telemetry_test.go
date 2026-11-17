@@ -32,10 +32,13 @@ const (
 	recordedWaits  = 8
 	jitterFraction = 0.95
 	jitterProbes   = 4
+	attemptGap     = 5 * time.Millisecond
 )
 
 // streamBackoff is the 100 ms..5 s doubling policy the stream loops must keep.
-var streamBackoff = retry.Policy{Min: 100 * time.Millisecond, Max: 5 * time.Second, Attempts: 1}
+func streamBackoff() retry.Policy {
+	return retry.Policy{Min: 100 * time.Millisecond, Max: 5 * time.Second, Attempts: 1}
+}
 
 // fakePostgres accepts TCP connections and either holds them silently (so a
 // stream stays admitted inside its first durable read) or closes them at once
@@ -290,7 +293,7 @@ func (r *ceilingRecorder) recorded() []time.Duration {
 func expectedCeilings() []time.Duration {
 	want := make([]time.Duration, 0, recordedWaits)
 	for attempt := 1; attempt <= recordedWaits; attempt++ {
-		want = append(want, streamBackoff.Ceiling(attempt))
+		want = append(want, streamBackoff().Ceiling(attempt))
 	}
 	return want
 }
@@ -340,30 +343,45 @@ func TestDeliveryProjectorBackoffUsesInjectedJitteredWaiter(t *testing.T) {
 	require.Equal(t, expectedCeilings(), recorder.recorded())
 }
 
+// attemptStarts groups accept times into connect attempts. pgx v5.11 opens a
+// second TCP connection within a millisecond when the first is reset, so
+// accepts closer than attemptGap belong to the same attempt. Grouping can only
+// hide a short jittered interval, never invent one: under a fixed backoff every
+// group interval is still at least its ceiling.
+func attemptStarts(accepted []time.Time) []time.Time {
+	starts := make([]time.Time, 0, len(accepted))
+	for i, at := range accepted {
+		if i == 0 || at.Sub(accepted[i-1]) >= attemptGap {
+			starts = append(starts, at)
+		}
+	}
+	return starts
+}
+
 // requireJitteredIntervals proves the default waiter is not a fixed sleep. A
 // fixed backoff makes every reconnect interval at least its ceiling. With full
 // jitter each interval is uniform in [0, ceiling], so the chance that all
-// probed intervals stay above 95% of their ceiling is 0.05^4, about 6e-6.
+// probed intervals stay above 95% of their ceiling is about 0.05^4 (6e-6).
 func requireJitteredIntervals(t *testing.T, server *fakePostgres) {
 	t.Helper()
 	deadline := time.Now().Add(4 * time.Second)
 	for time.Now().Before(deadline) {
-		accepted := server.acceptTimes()
-		for k := 1; k < len(accepted) && k <= jitterProbes; k++ {
-			interval := accepted[k].Sub(accepted[k-1])
-			if float64(interval) < jitterFraction*float64(streamBackoff.Ceiling(k)) {
+		starts := attemptStarts(server.acceptTimes())
+		for k := 1; k < len(starts) && k <= jitterProbes; k++ {
+			interval := starts[k].Sub(starts[k-1])
+			if float64(interval) < jitterFraction*float64(streamBackoff().Ceiling(k)) {
 				return
 			}
 		}
-		if len(accepted) > jitterProbes {
+		if len(starts) > jitterProbes {
 			break
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(time.Millisecond)
 	}
-	intervals := make([]string, 0, jitterProbes)
-	accepted := server.acceptTimes()
-	for k := 1; k < len(accepted); k++ {
-		intervals = append(intervals, strconv.FormatInt(accepted[k].Sub(accepted[k-1]).Milliseconds(), 10)+"ms")
+	starts := attemptStarts(server.acceptTimes())
+	intervals := make([]string, 0, len(starts))
+	for k := 1; k < len(starts); k++ {
+		intervals = append(intervals, strconv.FormatInt(starts[k].Sub(starts[k-1]).Milliseconds(), 10)+"ms")
 	}
 	t.Fatalf("every reconnect waited its full ceiling (fixed backoff): %s", strings.Join(intervals, ", "))
 }

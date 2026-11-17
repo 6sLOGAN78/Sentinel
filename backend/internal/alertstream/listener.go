@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"sync/atomic"
-	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/6sLOGAN78/sentinel/internal/retry"
 )
 
 // Listener owns one dedicated connection, independent of the query pool and
@@ -15,6 +16,7 @@ type Listener struct {
 	config    *pgx.ConnConfig
 	streams   *Handler
 	connected atomic.Bool
+	wait      retry.Waiter
 }
 
 // NewListener validates trusted startup configuration without opening a socket.
@@ -28,6 +30,13 @@ func NewListener(connectionString string, streams *Handler) (*Listener, error) {
 	return &Listener{config: cfg, streams: streams}, nil
 }
 
+// WithRetryWaiter replaces the full-jitter reconnect wait before Run, chiefly
+// so tests can observe ceilings without sleeping. Nil restores retry.Wait.
+func (l *Listener) WithRetryWaiter(waiter retry.Waiter) *Listener {
+	l.wait = waiter
+	return l
+}
+
 // Ready reports actual LISTEN state, including the disconnected retry interval.
 func (l *Listener) Ready(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
@@ -39,8 +48,10 @@ func (l *Listener) Ready(ctx context.Context) error {
 	return nil
 }
 
-// Run reconnects and re-LISTENs with cancellable 100ms..5s backoff. Its owner
-// joins this goroutine before the database pool closes.
+// Run reconnects and re-LISTENs with cancellable full-jitter backoff whose
+// ceiling doubles from 100ms to 5s, so replicas that lost PostgreSQL together
+// do not reconnect together. Its owner joins this goroutine before the
+// database pool closes.
 func (l *Listener) Run(ctx context.Context) error {
 	defer l.connected.Store(false)
 	backoff := minBackoff
@@ -52,12 +63,8 @@ func (l *Listener) Run(ctx context.Context) error {
 		if connected {
 			backoff = minBackoff
 		}
-		timer := time.NewTimer(backoff)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		if waitRetry(ctx, l.wait, backoff) != nil {
 			return nil
-		case <-timer.C:
 		}
 		backoff = min(backoff*backoffFactor, maxBackoff)
 	}
