@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-11-16T09:00:00Z"
+last_updated: "2026-11-18T00:00:00Z"
 progress:
   total_phases: 6
   completed_phases: 4
@@ -22,7 +22,7 @@ Current focus: Phase 5 (Observability, Resilience & Scale). Phase 4 COMPLETE 202
 
 ## Current Position
 
-> 2026-11-16: Phase 4 closed. Phase 5 in progress: 05-01..05-06, 05-08 done; 05-07 code committed, chaos run blocked on host RAM (<3 GiB MemAvailable); 05-09 executing (code/unit; real-container gate deferred until RAM allows). Watch item: TestDetectorCooldownOwners hosted flake (1 failure, passed on rerun). Older notes below are historical.
+> 2026-11-18: Phase 4 closed (2026-11-16). Phase 5 waves 1-4 complete: 05-01..05-13 all done incl. real-container gates; full 9-family chaos suite green. User decision 2026-11-17: Option A (DisableIdempotentWrite on all producers, ADR 0013, amends D-11) after 05-11 found acked-event loss. Next: wave 5 (05-14, 05-17). Open: 05-13 placeholder alert thresholds (ingest 5xx 5%, pin margin 100000) must be replaced with 05-20 bench data; test_seed_scenarios.py py3.10 datetime.UTC; 22 phase4-tag lint findings; TestDetectorCooldownOwners hosted flake watch. Old sentinel_* and p4-demo docker volumes found missing 2026-11-17 (cause unknown, after host reboot). Older notes below are historical.
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
 Plan: 04-14 executing after9-pathA1PASS0atab89caa and PLANsynchronization;13acceptedfeature14+UTC2/reviewsclean/rootgates. SeparateNEWdetectorholdunresolved.
