@@ -2,12 +2,14 @@
 # FND-06 verification: pinned images, placeholder-only env, lockfiles, CI hygiene.
 # Usage: check-pins.sh [images|env|lockfiles|ci ...]   (no argument runs all)
 # Optional: ENV_FILE=<path> checks a different env template than .env.example.
+# Optional: COMPOSE_GLOB=<glob> selects the compose files (test seam).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-compose="deployments/compose/docker-compose.yml"
+compose_glob="${COMPOSE_GLOB:-deployments/compose/*.yml}"
+compose="$(dirname "$compose_glob")/docker-compose.yml"
 env_file="${ENV_FILE:-.env.example}"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
