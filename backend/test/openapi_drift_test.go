@@ -3,6 +3,7 @@ package test_test
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -314,4 +315,101 @@ func sortedStrings(v any) []string {
 	sort.Strings(out)
 
 	return out
+}
+
+// TestOpenAPIConsumerLagContract pins the lag-only response shape: one row per
+// pipeline consumer group and nothing else (no tenant, volume or partition).
+func TestOpenAPIConsumerLagContract(t *testing.T) {
+	t.Parallel()
+
+	doc := loadOpenAPI(t)
+	op := operations(doc)["GET "+pathConsumerLag]
+	require.NotNil(t, op, "GET %s must be documented", pathConsumerLag)
+	assert.Empty(t, op.Parameters, "the PromQL is a server constant; no parameters are accepted")
+
+	for _, code := range []string{"200", "400", "401", "403", "503"} {
+		require.NotNil(t, op.Responses.Value(code), "missing response %s", code)
+	}
+
+	ok := op.Responses.Value("200").Value.Content.Get("application/json").Schema
+	assert.Equal(t, "#/components/schemas/ConsumerLag", ok.Ref)
+
+	body := doc.Components.Schemas["ConsumerLag"].Value
+	require.NotNil(t, body)
+	assert.ElementsMatch(t, []string{"observed_at", "consumer_lag"}, body.Required)
+	assert.Len(t, body.Properties, 2)
+	require.NotNil(t, body.AdditionalProperties.Has)
+	assert.False(t, *body.AdditionalProperties.Has)
+
+	rows := body.Properties["consumer_lag"].Value
+	require.NotNil(t, rows.MaxItems)
+	assert.Equal(t, uint64(3), rows.MinItems)
+	assert.Equal(t, uint64(3), *rows.MaxItems)
+	row := rows.Items.Value
+	assert.ElementsMatch(t, []string{"group", "lag"}, row.Required)
+	assert.Len(t, row.Properties, 2)
+	require.NotNil(t, row.AdditionalProperties.Has)
+	assert.False(t, *row.AdditionalProperties.Has)
+	assert.ElementsMatch(t, []any{"event-writer", "detector", "alert-writer"}, row.Properties["group"].Value.Enum)
+	assert.Equal(t, "#/components/schemas/SystemMetric", row.Properties["lag"].Ref)
+
+	summary := operations(doc)["GET /api/v1/metrics/summary"]
+	require.NotNil(t, summary)
+	assert.NotContains(t, summary.Description, "unavailable until Phase 5")
+	assert.Contains(t, summary.Description, "Consumer lag is served by GET /api/v1/metrics/lag.")
+}
+
+// TestOpenAPIConsumerLagDrift validates real handler bodies for every
+// availability state against the documented schema, and proves the schema
+// itself rejects a fabricated zero for an unavailable value.
+func TestOpenAPIConsumerLagDrift(t *testing.T) {
+	t.Parallel()
+
+	schema := standaloneSchema(t, loadOpenAPI(t), "ConsumerLag")
+
+	for name, result := range consumerLagResults() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newConsumerLagFixture(t, result)
+			status, raw := f.get(t, "analyst")
+			require.Equal(t, http.StatusOK, status, string(raw))
+
+			var body any
+			require.NoError(t, json.Unmarshal(raw, &body))
+			require.NoError(t, schema.VisitJSON(body, visitOptions()...), string(raw))
+		})
+	}
+
+	valid := func(lag string) string {
+		return `{"observed_at":"2026-11-17T12:00:00Z","consumer_lag":[` +
+			`{"group":"event-writer","lag":` + lag + `},` +
+			`{"group":"detector","lag":{"state":"available","value":1}},` +
+			`{"group":"alert-writer","lag":{"state":"available","value":2}}]}`
+	}
+	require.NoError(t, schema.VisitJSON(decodeAny(t, valid(`{"state":"available","value":0}`)), visitOptions()...),
+		"a measured zero lag is a real value")
+
+	for name, raw := range map[string]string{
+		"unavailable_with_zero": valid(`{"state":"unavailable","reason":"no_data","value":0}`),
+		"available_no_value":    valid(`{"state":"available"}`),
+		"unavailable_no_reason": valid(`{"state":"unavailable"}`),
+		"unknown_reason":        valid(`{"state":"unavailable","reason":"boom"}`),
+		"unknown_state":         valid(`{"state":"stale","value":1}`),
+		"tenant_leak":           strings.Replace(valid(`{"state":"available","value":0}`), "{", `{"tenant_id":"a",`, 1),
+		"extra_row_key":         valid(`{"state":"available","value":0},"partition":3`),
+		"unknown_group":         strings.Replace(valid(`{"state":"available","value":0}`), "event-writer", "ingest", 1),
+		"missing_row":           `{"observed_at":"2026-11-17T12:00:00Z","consumer_lag":[]}`,
+		"non_utc_observed_at":   strings.Replace(valid(`{"state":"available","value":0}`), "12:00:00Z", "12:00:00+01:00", 1),
+	} {
+		assert.Error(t, schema.VisitJSON(decodeAny(t, raw), visitOptions()...), "%s should be rejected", name)
+	}
+}
+
+func decodeAny(t *testing.T, raw string) any {
+	t.Helper()
+
+	var v any
+	require.NoError(t, json.Unmarshal([]byte(raw), &v), raw)
+
+	return v
 }

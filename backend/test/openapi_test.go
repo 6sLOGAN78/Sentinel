@@ -14,12 +14,13 @@ import (
 const openAPIPath = "../../api/openapi.yaml"
 
 const (
-	errorSchemaRef = "#/components/schemas/Error"
-	pathBatch      = "/api/v1/events:batch"
-	pathAlertByID  = "/api/v1/alerts/{alert_id}"
-	pathStream     = "/api/v1/alerts/stream"
-	maxBatchEvents = 500
-	maxPageLimit   = 200
+	errorSchemaRef  = "#/components/schemas/Error"
+	pathBatch       = "/api/v1/events:batch"
+	pathAlertByID   = "/api/v1/alerts/{alert_id}"
+	pathStream      = "/api/v1/alerts/stream"
+	pathConsumerLag = "/api/v1/metrics/lag"
+	maxBatchEvents  = 500
+	maxPageLimit    = 200
 )
 
 // loadOpenAPI loads and resolves the OpenAPI document without allowing external refs.
@@ -74,6 +75,7 @@ func TestOpenAPIRoutes(t *testing.T) {
 		"GET /api/v1/alerts/stream",
 		"GET /api/v1/rules",
 		"GET /api/v1/metrics/summary",
+		"GET /api/v1/metrics/lag",
 		"GET /healthz",
 		"GET /readyz",
 		"GET /metrics",
@@ -152,6 +154,11 @@ func TestOpenAPISecurity(t *testing.T) {
 				{"ApiKeyAuth": []string{}}, {"BearerAuth": []string{}},
 			}, *op.Security)
 			assert.Contains(t, op.Description, "events:read")
+		case "GET " + pathConsumerLag:
+			assert.Equal(t, []string{"BearerAuth"}, names, key)
+			assert.Equal(t, "getConsumerLag", op.OperationID)
+			assert.Contains(t, op.Description, "analyst or admin", "the role rule must be documented")
+			assert.Contains(t, op.Description, "viewers receive 403")
 		case "GET /healthz", "GET /readyz":
 			assert.Empty(t, names, key)
 		case "GET /metrics":

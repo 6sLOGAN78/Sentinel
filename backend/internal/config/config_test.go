@@ -826,6 +826,43 @@ func TestLoadTracingRejectsInvalidSettings(t *testing.T) {
 	}
 }
 
+func TestLoadPrometheusURLDefaultsEmpty(t *testing.T) {
+	setCompleteEnv(t)
+	cfg, err := config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	require.Empty(t, cfg.Observability.PrometheusURL, "unset means explicitly not configured, never a guessed host")
+}
+
+func TestLoadPrometheusURLFromEnv(t *testing.T) {
+	for _, value := range []string{"http://prometheus:9090", "https://prom.internal:9443/prometheus"} {
+		t.Run(value, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv("SENTINEL_OBSERVABILITY.PROMETHEUS_URL", value)
+			cfg, err := config.Load(config.ServiceQueryAPI)
+			require.NoError(t, err)
+			require.Equal(t, value, cfg.Observability.PrometheusURL)
+		})
+	}
+}
+
+func TestLoadPrometheusURLRejectsInvalid(t *testing.T) {
+	for name, value := range map[string]string{
+		"scheme_not_http": "ftp://prometheus:9090",
+		"no_scheme":       "prometheus:9090",
+		"userinfo":        "http://user:secret@prometheus:9090",
+		"empty_host":      "http:///api",
+		"unparseable":     "http://[::1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv("SENTINEL_OBSERVABILITY.PROMETHEUS_URL", value)
+			_, err := config.Load(config.ServiceQueryAPI)
+			require.ErrorContains(t, err, "prometheus_url")
+			require.NotContains(t, err.Error(), "secret", "the raw value may hold credentials")
+		})
+	}
+}
+
 func TestTracingConfigValidate(t *testing.T) {
 	t.Parallel()
 

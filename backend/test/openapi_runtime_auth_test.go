@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -17,9 +19,11 @@ import (
 
 	"github.com/6sLOGAN78/sentinel/internal/apikeys"
 	"github.com/6sLOGAN78/sentinel/internal/auth"
+	"github.com/6sLOGAN78/sentinel/internal/config"
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
 	"github.com/6sLOGAN78/sentinel/internal/eventquery"
 	"github.com/6sLOGAN78/sentinel/internal/middleware"
+	"github.com/6sLOGAN78/sentinel/internal/query"
 )
 
 type contractLookupVerifier struct{}
@@ -162,4 +166,92 @@ func checkLookupSecurityAlternative(t *testing.T, scheme *openapi3.SecuritySchem
 	var got contracts.Event
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, event, &got)
+}
+
+// consumerLagMetrics is a func-type query.SystemMetrics fake.
+type consumerLagMetrics func() (map[string]float64, error)
+
+func (f consumerLagMetrics) Query(context.Context, string, time.Time) (map[string]float64, error) {
+	return f()
+}
+
+func consumerLagResults() map[string]consumerLagMetrics {
+	return map[string]consumerLagMetrics{
+		"available": func() (map[string]float64, error) {
+			return map[string]float64{
+				"sentinel-event-writer": 12, "sentinel-detector": 0, "sentinel-alert-writer": 3,
+			}, nil
+		},
+		"prometheus_unavailable": func() (map[string]float64, error) { return nil, errors.New("refused") },
+		"not_configured":         func() (map[string]float64, error) { return nil, query.ErrPrometheusNotConfigured },
+		"no_data":                func() (map[string]float64, error) { return map[string]float64{}, nil },
+	}
+}
+
+type consumerLagFixture struct {
+	e      *echo.Echo
+	secret []byte
+}
+
+func newConsumerLagFixture(t *testing.T, metrics consumerLagMetrics) consumerLagFixture {
+	t.Helper()
+	secret := make([]byte, 48)
+	_, err := rand.Read(secret)
+	require.NoError(t, err)
+	verifier, err := auth.NewVerifier(secret, "sentinel-dev", "sentinel-dashboard")
+	require.NoError(t, err)
+	e := echo.New()
+	logger := zerolog.Nop()
+	middleware.Apply(e, &logger, nil)
+	groups := config.KafkaConfig{
+		EventWriterGroup: "sentinel-event-writer", DetectorGroup: "sentinel-detector",
+		AlertWriterGroup: "sentinel-alert-writer",
+	}
+	query.NewLagHandler(metrics, verifier, groups, nil).Register(e)
+	return consumerLagFixture{e: e, secret: secret}
+}
+
+// get calls the lag route with a signed token for role, or without a
+// credential when role is empty.
+func (f consumerLagFixture) get(t *testing.T, role string) (int, []byte) {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, pathConsumerLag, nil)
+	if role != "" {
+		now := time.Now().UTC().Truncate(time.Second)
+		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "contract-" + role, "tenant": "demo",
+			"role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
+		}).SignedString(f.secret)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	f.e.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.Bytes()
+}
+
+// TestOpenAPIConsumerLagRuntimeSecurity proves the advertised BearerAuth
+// requirement and the documented role rule hold at runtime.
+func TestOpenAPIConsumerLagRuntimeSecurity(t *testing.T) {
+	t.Parallel()
+
+	op := operations(loadOpenAPI(t))["GET "+pathConsumerLag]
+	require.NotNil(t, op)
+	require.NotNil(t, op.Security)
+	require.Equal(t, openapi3.SecurityRequirements{{"BearerAuth": []string{}}}, *op.Security)
+
+	f := newConsumerLagFixture(t, consumerLagResults()["available"])
+	for _, tc := range []struct {
+		role   string
+		status int
+	}{
+		{role: "", status: http.StatusUnauthorized},
+		{role: "viewer", status: http.StatusForbidden},
+		{role: "analyst", status: http.StatusOK},
+		{role: "admin", status: http.StatusOK},
+	} {
+		status, raw := f.get(t, tc.role)
+		require.Equal(t, tc.status, status, "role %q: %s", tc.role, raw)
+		require.NotNil(t, op.Responses.Value(strconv.Itoa(status)), "status %d must be documented", status)
+	}
 }
