@@ -22,7 +22,7 @@ completed: 2026-11-13
 
 # Phase 4 Plan 16: Closed Phase 4 runner and CI coverage Summary
 
-**Tasks 1-2 are done locally. Task 3 (push and hosted CI) is pending explicit user approval. This is not a claim that Phase 4 is complete or that any remote gate passed.**
+**Update 2026-11-16: all three tasks are done. Task 3 passed on the mirror (hosted run 43714363178, 19/19 green; see the Task 3 section at the end and 04-25-SUMMARY). Phase 4 was re-verified as passed (04-VERIFICATION, cdae189).** The original note follows: Tasks 1-2 were done locally, and Task 3 was pending approval.
 
 ## Commits
 
@@ -77,7 +77,7 @@ No hosted evidence, no whole-phase verification, no independent final review in 
 
 ## Task 3
 
-Pending. It needs explicit user approval to push the Phase 4 commits and run hosted CI. Phase 4 is NOT marked complete.
+Superseded. See the "Task 3 (hosted CI), 2026-11-16" section below.
 
 ## Self-Check: PASSED
 
