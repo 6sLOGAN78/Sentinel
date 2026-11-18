@@ -22,6 +22,33 @@ type ObservabilityConfig struct {
 	Environment string        `koanf:"environment"`
 	Logging     LoggingConfig `koanf:"logging"`
 	Tracing     TracingConfig `koanf:"tracing"`
+	// PrometheusURL is the query API base URL used by query-api for the
+	// consumer lag endpoint. Empty means not configured.
+	PrometheusURL string `koanf:"prometheus_url"`
+}
+
+// validatePrometheusURL accepts an empty value or an http(s) URL with a host
+// and no credentials. The parse error is not wrapped because it would echo
+// the raw value, which may hold credentials.
+func validatePrometheusURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+
+	u, err := url.Parse(raw)
+
+	switch {
+	case err != nil:
+		return errors.New("prometheus_url is not a valid URL")
+	case u.Scheme != "http" && u.Scheme != "https":
+		return errors.New("prometheus_url scheme must be http or https")
+	case u.User != nil:
+		return errors.New("prometheus_url must not contain credentials")
+	case u.Hostname() == "":
+		return errors.New("prometheus_url host is required")
+	}
+
+	return nil
 }
 
 // TracingConfig controls OpenTelemetry span export. The zero value disables
@@ -110,6 +137,10 @@ func (c *ObservabilityConfig) Validate() error {
 
 	if c.Logging.SlowQueryThreshold < 0 {
 		return errors.New("logging slow_query_threshold must be non-negative")
+	}
+
+	if err := validatePrometheusURL(c.PrometheusURL); err != nil {
+		return err
 	}
 
 	return c.Tracing.Validate()
