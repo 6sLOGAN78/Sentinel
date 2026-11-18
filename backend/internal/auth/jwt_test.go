@@ -97,3 +97,27 @@ func TestRequireAdmin(t *testing.T) {
 		require.ErrorIs(t, err, auth.ErrForbidden, "role %q", role)
 	}
 }
+
+func TestOperatorTenantsFailClosed(t *testing.T) {
+	t.Parallel()
+	for name, set := range map[string]auth.OperatorTenants{
+		"zero":  {},
+		"nil":   auth.NewOperatorTenants(nil),
+		"empty": auth.NewOperatorTenants([]string{}),
+	} {
+		for _, tenant := range []string{"demo", "tenant-a", ""} {
+			require.False(t, set.Includes(auth.Principal{Subject: "a", TenantID: tenant, Role: "admin"}),
+				"%s allowlist must include no tenant (%q)", name, tenant)
+		}
+	}
+}
+
+func TestOperatorTenantsIncludesOnlyListedTenants(t *testing.T) {
+	t.Parallel()
+	// Malformed entries never match even if a caller skipped config validation.
+	set := auth.NewOperatorTenants([]string{"demo", "Demo2", "", " ops ", "a/b"})
+	require.True(t, set.Includes(auth.Principal{Subject: "a", TenantID: "demo", Role: "admin"}))
+	for _, tenant := range []string{"demo2", "Demo2", "", "ops", " ops ", "a/b", "demo "} {
+		require.False(t, set.Includes(auth.Principal{Subject: "a", TenantID: tenant, Role: "admin"}), tenant)
+	}
+}

@@ -42,6 +42,10 @@ const (
 	wantDelayP95    = `histogram_quantile(0.95, sum by (le) (rate(sentinel_detection_delay_seconds_bucket[5m])))`
 	wantWriteP95    = `histogram_quantile(0.95, sum by (le) (rate(sentinel_clickhouse_write_duration_seconds_bucket[5m])))`
 	systemTimeBound = 2 * time.Second
+	// systemOperatorMessage is the refusal for admins outside the operator
+	// allowlist; it differs from the role refusal on purpose.
+	systemOperatorMessage = "System status is limited to operator administrators."
+	systemRoleMessage     = "System health requires the admin role."
 )
 
 func wantSystemQueries() []string {
@@ -174,6 +178,13 @@ func newSystemFixture(t *testing.T, cfg config.ObservabilityConfig, metrics *sys
 	probes map[string]probeResult,
 ) *systemFixture {
 	t.Helper()
+	return newSystemFixtureWith(t, cfg, metrics, probes, []string{operatorTenant})
+}
+
+func newSystemFixtureWith(t *testing.T, cfg config.ObservabilityConfig, metrics *systemMetrics,
+	probes map[string]probeResult, operators []string,
+) *systemFixture {
+	t.Helper()
 	key := make([]byte, 48)
 	_, err := rand.Read(key)
 	require.NoError(t, err)
@@ -191,8 +202,8 @@ func newSystemFixture(t *testing.T, cfg config.ObservabilityConfig, metrics *sys
 			return next(c)
 		}
 	})
-	query.NewSystemHandler(f.metrics, f.prober, verifier, cfg, lagGroups(), func() time.Time { return f.now }).
-		Register(f.e)
+	query.NewSystemHandler(f.metrics, f.prober, verifier, cfg, lagGroups(), auth.NewOperatorTenants(operators),
+		func() time.Time { return f.now }).Register(f.e)
 	return f
 }
 
@@ -203,11 +214,16 @@ func defaultSystemFixture(t *testing.T) *systemFixture {
 
 func (f *systemFixture) get(t *testing.T, target, role string) *httptest.ResponseRecorder {
 	t.Helper()
+	return f.getAs(t, target, role, operatorTenant)
+}
+
+func (f *systemFixture) getAs(t *testing.T, target, role, tenant string) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
 	if role != "" {
 		now := time.Now().UTC().Truncate(time.Second)
 		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": role + "-1", "tenant": "tenant-a",
+			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": role + "-1", "tenant": tenant,
 			"role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
 		}).SignedString(f.key)
 		require.NoError(t, err)
@@ -775,4 +791,82 @@ func TestDNSProberBoundedConcurrency(t *testing.T) {
 	defer mu.Unlock()
 	assert.LessOrEqual(t, peak, 8, "probes share one bound of 8 across services")
 	assert.Greater(t, peak, 1, "probes run concurrently")
+}
+
+func TestSystemOperatorAdminAllowed(t *testing.T) {
+	t.Parallel()
+	f := newSystemFixtureWith(t, systemObservability(), &systemMetrics{results: allSeries()}, allReady(),
+		[]string{"ops", operatorTenant})
+	body := decodeSystem(t, f.getAs(t, systemPath, "admin", operatorTenant))
+	assert.Len(t, body.Services, 5)
+	assert.Len(t, f.metrics.recorded(), len(wantSystemQueries()))
+	assert.Empty(t, f.audits(t))
+}
+
+// assertOperatorRefusal checks one non-operator refusal: the distinct
+// message, no Prometheus or probe traffic and an operator_forbidden audit.
+func assertOperatorRefusal(t *testing.T, f *systemFixture, rec *httptest.ResponseRecorder, tenant string) {
+	t.Helper()
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	assert.Equal(t, "FORBIDDEN", errorCode(t, rec))
+	assert.Contains(t, rec.Body.String(), systemOperatorMessage)
+	assert.NotContains(t, rec.Body.String(), systemRoleMessage, "the operator refusal is not the role refusal")
+	assert.Empty(t, f.metrics.recorded(), "a non-operator admin must not reach Prometheus")
+	assert.Empty(t, f.prober.called(), "a non-operator admin must not trigger probes")
+	events := f.audits(t)
+	require.Len(t, events, 1, "the refusal must produce exactly one security_audit event")
+	assert.Equal(t, "system_status", events[0]["action"])
+	assert.Equal(t, "denied", events[0]["outcome"])
+	assert.Equal(t, "operator_forbidden", events[0]["reason"], "the audit tells operator and role refusals apart")
+	assert.Equal(t, "admin", events[0]["role"])
+	assert.Equal(t, "admin-1", events[0]["actor"])
+	assert.Equal(t, tenant, events[0]["tenant_id"])
+}
+
+func TestSystemNonOperatorAdminForbiddenAndAudited(t *testing.T) {
+	t.Parallel()
+	f := defaultSystemFixture(t)
+	assertOperatorRefusal(t, f, f.getAs(t, systemPath, "admin", otherTenant), otherTenant)
+}
+
+func TestSystemEmptyAllowlistDeniesEveryone(t *testing.T) {
+	t.Parallel()
+	for name, operators := range map[string][]string{"nil": nil, "empty": {}} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newSystemFixtureWith(t, systemObservability(), &systemMetrics{results: allSeries()}, allReady(),
+				operators)
+			assertOperatorRefusal(t, f, f.getAs(t, systemPath, "admin", operatorTenant), operatorTenant)
+			for _, role := range []string{"viewer", "analyst"} {
+				rec := f.getAs(t, systemPath, role, operatorTenant)
+				require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+				assert.Contains(t, rec.Body.String(), systemRoleMessage)
+			}
+			assert.Empty(t, f.metrics.recorded())
+		})
+	}
+}
+
+func TestSystemOperatorTenantNonAdminKeepsRoleRefusal(t *testing.T) {
+	t.Parallel()
+	f := defaultSystemFixture(t)
+	rec := f.getAs(t, systemPath, "analyst", otherTenant)
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), systemRoleMessage)
+	events := f.audits(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "role_forbidden", events[0]["reason"])
+}
+
+// TestSystemCheckOrder pins 401, then 400 for any query string, then the
+// operator 403; the role 403 still precedes the query check.
+func TestSystemCheckOrder(t *testing.T) {
+	t.Parallel()
+	f := defaultSystemFixture(t)
+	rec := f.getAs(t, systemPath+"?q=up", "", otherTenant)
+	require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
+	rec = f.getAs(t, systemPath+"?q=up", "admin", otherTenant)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Empty(t, f.audits(t), "a malformed request is rejected before the operator rule")
+	assertOperatorRefusal(t, f, f.getAs(t, systemPath, "admin", otherTenant), otherTenant)
 }

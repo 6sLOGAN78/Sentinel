@@ -161,10 +161,11 @@ func TestOpenAPISecurity(t *testing.T) {
 			assert.Equal(t, "getConsumerLag", op.OperationID)
 			assert.Contains(t, op.Description, "analyst or admin", "the role rule must be documented")
 			assert.Contains(t, op.Description, "viewers receive 403")
+			assert.Contains(t, op.Description, "operator tenant", "the operator rule must be documented")
 		case "GET " + pathSystem:
 			assert.Equal(t, []string{"BearerAuth"}, names, key)
 			assert.Equal(t, "getSystemStatus", op.OperationID)
-			assert.Contains(t, op.Description, "Admin only", "the role rule must be documented")
+			assert.Contains(t, op.Description, "Operator admins only", "the role rule must be documented")
 			assert.Contains(t, op.Description, "never zero")
 		case "GET /healthz", "GET /readyz":
 			assert.Empty(t, names, key)

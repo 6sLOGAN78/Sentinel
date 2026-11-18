@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -207,19 +208,32 @@ func newConsumerLagFixture(t *testing.T, metrics consumerLagMetrics) consumerLag
 		EventWriterGroup: "sentinel-event-writer", DetectorGroup: "sentinel-detector",
 		AlertWriterGroup: "sentinel-alert-writer",
 	}
-	query.NewLagHandler(metrics, verifier, groups, nil).Register(e)
+	query.NewLagHandler(metrics, verifier, groups, auth.NewOperatorTenants([]string{contractOperatorTenant}), nil).
+		Register(e)
 	return consumerLagFixture{e: e, secret: secret}
 }
 
-// get calls the lag route with a signed token for role, or without a
-// credential when role is empty.
+// contractOperatorTenant is the only operator tenant of the contract
+// fixtures; contractOtherTenant is a tenant that is never an operator.
+const (
+	contractOperatorTenant = "demo"
+	contractOtherTenant    = "demo2"
+)
+
+// get calls the lag route with a signed token for role in the operator
+// tenant, or without a credential when role is empty.
 func (f consumerLagFixture) get(t *testing.T, role string) (int, []byte) {
+	t.Helper()
+	return f.getAs(t, role, contractOperatorTenant)
+}
+
+func (f consumerLagFixture) getAs(t *testing.T, role, tenant string) (int, []byte) {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, pathConsumerLag, nil)
 	if role != "" {
 		now := time.Now().UTC().Truncate(time.Second)
 		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "contract-" + role, "tenant": "demo",
+			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "contract-" + role, "tenant": tenant,
 			"role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
 		}).SignedString(f.secret)
 		require.NoError(t, err)
@@ -242,17 +256,28 @@ func TestOpenAPIConsumerLagRuntimeSecurity(t *testing.T) {
 
 	f := newConsumerLagFixture(t, consumerLagResults()["available"])
 	for _, tc := range []struct {
-		role   string
-		status int
+		role, tenant string
+		status       int
+		operatorOnly bool
 	}{
-		{role: "", status: http.StatusUnauthorized},
-		{role: "viewer", status: http.StatusForbidden},
-		{role: "analyst", status: http.StatusOK},
-		{role: "admin", status: http.StatusOK},
+		{role: "", tenant: contractOperatorTenant, status: http.StatusUnauthorized},
+		{role: "viewer", tenant: contractOperatorTenant, status: http.StatusForbidden},
+		{role: "analyst", tenant: contractOperatorTenant, status: http.StatusOK},
+		{role: "admin", tenant: contractOperatorTenant, status: http.StatusOK},
+		{role: "viewer", tenant: contractOtherTenant, status: http.StatusForbidden},
+		{role: "analyst", tenant: contractOtherTenant, status: http.StatusOK, operatorOnly: true},
+		{role: "admin", tenant: contractOtherTenant, status: http.StatusOK, operatorOnly: true},
 	} {
-		status, raw := f.get(t, tc.role)
-		require.Equal(t, tc.status, status, "role %q: %s", tc.role, raw)
+		status, raw := f.getAs(t, tc.role, tc.tenant)
+		require.Equal(t, tc.status, status, "role %q tenant %q: %s", tc.role, tc.tenant, raw)
 		require.NotNil(t, op.Responses.Value(strconv.Itoa(status)), "status %d must be documented", status)
+		if status != http.StatusOK {
+			continue
+		}
+		require.Equal(t, tc.operatorOnly, strings.Contains(string(raw), `"operator_only"`),
+			"role %q tenant %q: %s", tc.role, tc.tenant, raw)
+		require.Equal(t, !tc.operatorOnly, strings.Contains(string(raw), `"value"`),
+			"only operator tenants see lag values: %s", raw)
 	}
 }
 
@@ -360,17 +385,23 @@ func newSystemFixture(t *testing.T, tc systemCase) systemFixture {
 			// query-api left unconfigured: readiness reports not_configured.
 		},
 	}
-	query.NewSystemHandler(tc.metrics, tc.prober, verifier, obs, groups, nil).Register(e)
+	query.NewSystemHandler(tc.metrics, tc.prober, verifier, obs, groups,
+		auth.NewOperatorTenants([]string{contractOperatorTenant}), nil).Register(e)
 	return systemFixture{e: e, secret: secret}
 }
 
 func (f systemFixture) get(t *testing.T, role string) (int, []byte) {
 	t.Helper()
+	return f.getAs(t, role, contractOperatorTenant)
+}
+
+func (f systemFixture) getAs(t *testing.T, role, tenant string) (int, []byte) {
+	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, pathSystem, nil)
 	if role != "" {
 		now := time.Now().UTC().Truncate(time.Second)
 		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "contract-" + role, "tenant": "demo",
+			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "contract-" + role, "tenant": tenant,
 			"role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
 		}).SignedString(f.secret)
 		require.NoError(t, err)
@@ -382,7 +413,7 @@ func (f systemFixture) get(t *testing.T, role string) (int, []byte) {
 }
 
 // TestOpenAPISystemRuntimeSecurity proves the advertised BearerAuth
-// requirement and the admin-only rule hold at runtime.
+// requirement and the operator-admin rule hold at runtime.
 func TestOpenAPISystemRuntimeSecurity(t *testing.T) {
 	t.Parallel()
 
@@ -393,16 +424,21 @@ func TestOpenAPISystemRuntimeSecurity(t *testing.T) {
 
 	f := newSystemFixture(t, systemCases()["available"])
 	for _, tc := range []struct {
-		role   string
-		status int
+		role, tenant string
+		status       int
 	}{
-		{role: "", status: http.StatusUnauthorized},
-		{role: "viewer", status: http.StatusForbidden},
-		{role: "analyst", status: http.StatusForbidden},
-		{role: "admin", status: http.StatusOK},
+		{role: "", tenant: contractOperatorTenant, status: http.StatusUnauthorized},
+		{role: "viewer", tenant: contractOperatorTenant, status: http.StatusForbidden},
+		{role: "analyst", tenant: contractOperatorTenant, status: http.StatusForbidden},
+		{role: "admin", tenant: contractOperatorTenant, status: http.StatusOK},
+		{role: "analyst", tenant: contractOtherTenant, status: http.StatusForbidden},
+		{role: "admin", tenant: contractOtherTenant, status: http.StatusForbidden},
 	} {
-		status, raw := f.get(t, tc.role)
-		require.Equal(t, tc.status, status, "role %q: %s", tc.role, raw)
+		status, raw := f.getAs(t, tc.role, tc.tenant)
+		require.Equal(t, tc.status, status, "role %q tenant %q: %s", tc.role, tc.tenant, raw)
 		require.NotNil(t, op.Responses.Value(strconv.Itoa(status)), "status %d must be documented", status)
+		if tc.role == "admin" && tc.tenant == contractOtherTenant {
+			require.Contains(t, string(raw), "System status is limited to operator administrators.")
+		}
 	}
 }

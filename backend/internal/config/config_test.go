@@ -3,6 +3,7 @@ package config_test
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -957,6 +958,59 @@ func TestLoadSystemRejectsInvalidTargets(t *testing.T) {
 			if name != "expected_not_number" {
 				require.ErrorContains(t, err, "system")
 			}
+		})
+	}
+}
+
+func TestLoadOperatorTenantsDefaultsEmpty(t *testing.T) {
+	setCompleteEnv(t)
+	cfg, err := config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	require.Empty(t, cfg.Auth.OperatorTenants, "an unset allowlist makes no tenant an operator")
+
+	t.Setenv("SENTINEL_AUTH.OPERATOR_TENANTS", "")
+	cfg, err = config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	require.Empty(t, cfg.Auth.OperatorTenants, "an empty allowlist makes no tenant an operator")
+}
+
+func TestLoadOperatorTenantsList(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_AUTH.OPERATOR_TENANTS", " demo, ops_1 ,,")
+	cfg, err := config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	require.Equal(t, []string{"demo", "ops_1"}, cfg.Auth.OperatorTenants)
+
+	sixteen := make([]string, 16)
+	for i := range sixteen {
+		sixteen[i] = fmt.Sprintf("ops-%02d", i)
+	}
+	t.Setenv("SENTINEL_AUTH.OPERATOR_TENANTS", strings.Join(sixteen, ","))
+	cfg, err = config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	require.Len(t, cfg.Auth.OperatorTenants, 16)
+}
+
+func TestLoadOperatorTenantsRejectsInvalid(t *testing.T) {
+	seventeen := make([]string, 17)
+	for i := range seventeen {
+		seventeen[i] = fmt.Sprintf("ops-%02d", i)
+	}
+	for name, value := range map[string]string{
+		"uppercase":    "Demo",
+		"leading dash": "-demo",
+		"slash":        "demo/2",
+		"space inside": "de mo",
+		"wildcard":     "*",
+		"too long":     strings.Repeat("a", 64),
+		"duplicate":    "demo,demo",
+		"too many":     strings.Join(seventeen, ","),
+	} {
+		t.Run(name, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv("SENTINEL_AUTH.OPERATOR_TENANTS", value)
+			_, err := config.Load(config.ServiceQueryAPI)
+			require.ErrorContains(t, err, "operator tenants")
 		})
 	}
 }

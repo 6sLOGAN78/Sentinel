@@ -164,6 +164,10 @@ func TestPhase4TenantMatrix(t *testing.T) {
 	tenants := []*matrixTenant{seed("p4mxa-"+uuid.NewString(), 0), seed("p4mxb-"+uuid.NewString(), 1)}
 	other := func(i int) *matrixTenant { return tenants[1-i] }
 
+	// Only tenant 0 is an operator, so the global System/lag views are
+	// checked across the tenant boundary (ADR 0014).
+	t.Setenv("SENTINEL_AUTH.OPERATOR_TENANTS", tenants[0].name)
+
 	binary := filepath.Join(t.TempDir(), "query-api")
 	build := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/query-api")
 	build.Dir, build.Stdout, build.Stderr = filepath.Join(root, "backend"), io.Discard, io.Discard
@@ -312,6 +316,30 @@ func TestPhase4TenantMatrix(t *testing.T) {
 				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/metrics/summary?tenant_id="+foreign.name, credential, "", nil)
 				require.Equal(t, 400, status, "tenant query tampering is rejected")
 				require.NotContains(t, string(raw), foreign.name, "tenant query tampering cannot select another tenant")
+
+				// global pipeline views: only an operator tenant's admin sees System;
+				// a non-operator tenant's lag rows carry operator_only and no value.
+				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/system", credential, "", nil)
+				switch {
+				case role != "admin":
+					require.Equal(t, 403, status)
+					require.Contains(t, string(raw), "requires the admin role")
+				case i == 0:
+					require.Equal(t, 200, status, string(raw))
+				default:
+					require.Equal(t, 403, status)
+					require.Contains(t, string(raw), "limited to operator administrators")
+				}
+				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/metrics/lag", credential, "", nil)
+				if role == "viewer" {
+					require.Equal(t, 403, status)
+				} else {
+					require.Equal(t, 200, status, string(raw))
+					require.Equal(t, i != 0, strings.Contains(string(raw), `"operator_only"`), string(raw))
+					if i != 0 {
+						require.NotContains(t, string(raw), `"value"`)
+					}
+				}
 
 				// rules are one global read-only policy, identical for every tenant and role.
 				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/rules", credential, "", nil)

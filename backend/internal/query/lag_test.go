@@ -32,7 +32,11 @@ const (
 	// here instead of read from the package so a changed constant fails.
 	wantLagQuery     = `max by (group) (sentinel_kafka_consumer_lag)`
 	lagViewerMessage = "Consumer lag requires the analyst role."
-	lagTimeoutBound  = 2 * time.Second
+	// operatorTenant is the fixtures' default operator allowlist entry;
+	// otherTenant is a tenant that is never an operator.
+	operatorTenant  = "tenant-a"
+	otherTenant     = "tenant-b"
+	lagTimeoutBound = 2 * time.Second
 	// principalContextKey mirrors the auth package's unexported key. If it
 	// ever changes, the unknown-role test gets 401 instead of 403 and fails.
 	principalContextKey = "sentinel.verified-principal"
@@ -101,6 +105,11 @@ func (b *syncBuffer) lines() [][]byte {
 
 func newLagFixture(t *testing.T, result func() (map[string]float64, error)) *lagFixture {
 	t.Helper()
+	return newLagFixtureWith(t, result, []string{operatorTenant})
+}
+
+func newLagFixtureWith(t *testing.T, result func() (map[string]float64, error), operators []string) *lagFixture {
+	t.Helper()
 	key := make([]byte, 48)
 	_, err := rand.Read(key)
 	require.NoError(t, err)
@@ -118,15 +127,16 @@ func newLagFixture(t *testing.T, result func() (map[string]float64, error)) *lag
 			return next(c)
 		}
 	})
-	query.NewLagHandler(f.metrics, verifier, lagGroups(), func() time.Time { return f.now }).Register(f.e)
+	query.NewLagHandler(f.metrics, verifier, lagGroups(), auth.NewOperatorTenants(operators),
+		func() time.Time { return f.now }).Register(f.e)
 	return f
 }
 
-func (f *lagFixture) token(t *testing.T, role string) string {
+func (f *lagFixture) token(t *testing.T, role, tenant string) string {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": role + "-1", "tenant": "tenant-a",
+		"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": role + "-1", "tenant": tenant,
 		"role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
 	}).SignedString(f.key)
 	require.NoError(t, err)
@@ -135,9 +145,16 @@ func (f *lagFixture) token(t *testing.T, role string) string {
 
 func (f *lagFixture) get(t *testing.T, target, role string) *httptest.ResponseRecorder {
 	t.Helper()
+	return f.getAs(t, target, role, operatorTenant)
+}
+
+// getAs calls target with a token for role in tenant, or without a
+// credential when role is empty.
+func (f *lagFixture) getAs(t *testing.T, target, role, tenant string) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
 	if role != "" {
-		req.Header.Set("Authorization", "Bearer "+f.token(t, role))
+		req.Header.Set("Authorization", "Bearer "+f.token(t, role, tenant))
 	}
 	rec := httptest.NewRecorder()
 	f.e.ServeHTTP(rec, req)
@@ -214,7 +231,7 @@ func TestLagUnknownRoleForbiddenAndAudited(t *testing.T) {
 	f := newLagFixture(t, available())
 	verifier, err := auth.NewVerifier(f.key, "sentinel-dev", "sentinel-dashboard")
 	require.NoError(t, err)
-	handler := query.NewLagHandler(f.metrics, verifier, lagGroups(), nil)
+	handler := query.NewLagHandler(f.metrics, verifier, lagGroups(), auth.NewOperatorTenants([]string{operatorTenant}), nil)
 	// The verifier rejects unknown roles in tokens, so inject a principal the
 	// way the middleware would to prove the handler fails closed on its own.
 	f.e.GET("/unknown-role", handler.GetLag, func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -380,4 +397,73 @@ func sortedRawKeys(m map[string]json.RawMessage) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// assertOperatorOnly checks every row is unavailable for operator_only with
+// no value and that Prometheus was never asked.
+func assertOperatorOnly(t *testing.T, f *lagFixture, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	body := decodeLag(t, rec)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	require.Len(t, body.Rows, 3, "the panel still gets one row per pipeline group")
+	for i, group := range []string{"event-writer", "detector", "alert-writer"} {
+		assert.Equal(t, group, body.Rows[i].Group)
+		assert.Equal(t, map[string]any{"state": "unavailable", "reason": "operator_only"}, body.Rows[i].Lag, group)
+	}
+	assert.NotContains(t, rec.Body.String(), `"value"`, "a non-operator tenant never sees a lag number")
+	assert.Empty(t, f.metrics.recorded(), "a non-operator tenant must not reach Prometheus")
+}
+
+func TestLagOperatorTenantAnalystGetsValues(t *testing.T) {
+	t.Parallel()
+	f := newLagFixtureWith(t, available(), []string{"ops", operatorTenant})
+	body := decodeLag(t, f.getAs(t, lagPath, "analyst", operatorTenant))
+	require.Len(t, body.Rows, 3)
+	assert.Equal(t, map[string]any{"state": "available", "value": float64(12345)}, body.Rows[0].Lag)
+	assert.Len(t, f.metrics.recorded(), 1)
+}
+
+func TestLagNonOperatorTenantRowsOperatorOnly(t *testing.T) {
+	t.Parallel()
+	for _, role := range []string{"analyst", "admin"} {
+		t.Run(role, func(t *testing.T) {
+			t.Parallel()
+			f := newLagFixture(t, available())
+			assertOperatorOnly(t, f, f.getAs(t, lagPath, role, otherTenant))
+			assert.Empty(t, f.audits(t), "a redacted read is an allowed read, not a refusal")
+		})
+	}
+}
+
+func TestLagEmptyAllowlistIsOperatorOnlyForEveryone(t *testing.T) {
+	t.Parallel()
+	for name, operators := range map[string][]string{"nil": nil, "empty": {}} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newLagFixtureWith(t, available(), operators)
+			for _, role := range []string{"analyst", "admin"} {
+				assertOperatorOnly(t, f, f.getAs(t, lagPath, role, operatorTenant))
+			}
+		})
+	}
+}
+
+func TestLagNonOperatorViewerStillForbidden(t *testing.T) {
+	t.Parallel()
+	f := newLagFixture(t, available())
+	rec := f.getAs(t, lagPath, "viewer", otherTenant)
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), lagViewerMessage)
+	events := f.audits(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "role_forbidden", events[0]["reason"])
+	assert.Equal(t, otherTenant, events[0]["tenant_id"])
+}
+
+func TestLagNonOperatorQueryStringIs400(t *testing.T) {
+	t.Parallel()
+	f := newLagFixture(t, available())
+	rec := f.getAs(t, lagPath+"?group=x", "analyst", otherTenant)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Empty(t, f.metrics.recorded())
 }

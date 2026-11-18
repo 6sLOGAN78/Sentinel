@@ -352,6 +352,10 @@ func TestOpenAPIConsumerLagContract(t *testing.T) {
 	assert.False(t, *row.AdditionalProperties.Has)
 	assert.ElementsMatch(t, []any{"event-writer", "detector", "alert-writer"}, row.Properties["group"].Value.Enum)
 	assert.Equal(t, "#/components/schemas/SystemMetric", row.Properties["lag"].Ref)
+	metric, err := json.Marshal(doc.Components.Schemas["SystemMetric"].Value)
+	require.NoError(t, err)
+	assert.Contains(t, string(metric), `"operator_only"`, "non-operator tenants get the operator_only reason")
+	assert.Contains(t, op.Description, "operator_only", "the operator rule must be documented")
 
 	summary := operations(doc)["GET /api/v1/metrics/summary"]
 	require.NotNil(t, summary)
@@ -380,6 +384,13 @@ func TestOpenAPIConsumerLagDrift(t *testing.T) {
 		})
 	}
 
+	// A non-operator tenant's real body (every row operator_only) is valid.
+	f := newConsumerLagFixture(t, consumerLagResults()["available"])
+	status, raw := f.getAs(t, "analyst", contractOtherTenant)
+	require.Equal(t, http.StatusOK, status, string(raw))
+	require.Contains(t, string(raw), `"operator_only"`)
+	require.NoError(t, schema.VisitJSON(decodeAny(t, string(raw)), visitOptions()...), string(raw))
+
 	valid := func(lag string) string {
 		return `{"observed_at":"2026-11-17T12:00:00Z","consumer_lag":[` +
 			`{"group":"event-writer","lag":` + lag + `},` +
@@ -390,16 +401,18 @@ func TestOpenAPIConsumerLagDrift(t *testing.T) {
 		"a measured zero lag is a real value")
 
 	for name, raw := range map[string]string{
-		"unavailable_with_zero": valid(`{"state":"unavailable","reason":"no_data","value":0}`),
-		"available_no_value":    valid(`{"state":"available"}`),
-		"unavailable_no_reason": valid(`{"state":"unavailable"}`),
-		"unknown_reason":        valid(`{"state":"unavailable","reason":"boom"}`),
-		"unknown_state":         valid(`{"state":"stale","value":1}`),
-		"tenant_leak":           strings.Replace(valid(`{"state":"available","value":0}`), "{", `{"tenant_id":"a",`, 1),
-		"extra_row_key":         valid(`{"state":"available","value":0},"partition":3`),
-		"unknown_group":         strings.Replace(valid(`{"state":"available","value":0}`), "event-writer", "ingest", 1),
-		"missing_row":           `{"observed_at":"2026-11-17T12:00:00Z","consumer_lag":[]}`,
-		"non_utc_observed_at":   strings.Replace(valid(`{"state":"available","value":0}`), "12:00:00Z", "12:00:00+01:00", 1),
+		"unavailable_with_zero":    valid(`{"state":"unavailable","reason":"no_data","value":0}`),
+		"operator_only_with_value": valid(`{"state":"unavailable","reason":"operator_only","value":5}`),
+		"available_operator_only":  valid(`{"state":"available","reason":"operator_only","value":5}`),
+		"available_no_value":       valid(`{"state":"available"}`),
+		"unavailable_no_reason":    valid(`{"state":"unavailable"}`),
+		"unknown_reason":           valid(`{"state":"unavailable","reason":"boom"}`),
+		"unknown_state":            valid(`{"state":"stale","value":1}`),
+		"tenant_leak":              strings.Replace(valid(`{"state":"available","value":0}`), "{", `{"tenant_id":"a",`, 1),
+		"extra_row_key":            valid(`{"state":"available","value":0},"partition":3`),
+		"unknown_group":            strings.Replace(valid(`{"state":"available","value":0}`), "event-writer", "ingest", 1),
+		"missing_row":              `{"observed_at":"2026-11-17T12:00:00Z","consumer_lag":[]}`,
+		"non_utc_observed_at":      strings.Replace(valid(`{"state":"available","value":0}`), "12:00:00Z", "12:00:00+01:00", 1),
 	} {
 		assert.Error(t, schema.VisitJSON(decodeAny(t, raw), visitOptions()...), "%s should be rejected", name)
 	}
@@ -430,6 +443,7 @@ func TestOpenAPISystemStatusContract(t *testing.T) {
 
 	ok := op.Responses.Value("200").Value.Content.Get("application/json").Schema
 	assert.Equal(t, "#/components/schemas/SystemStatus", ok.Ref)
+	assert.Contains(t, op.Description, "SENTINEL_AUTH.OPERATOR_TENANTS", "the operator rule must be documented")
 
 	body := doc.Components.Schemas["SystemStatus"].Value
 	require.NotNil(t, body)
