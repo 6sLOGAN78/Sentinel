@@ -21,8 +21,7 @@ import json
 import os
 import stat
 import sys
-from collections import Counter
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -506,11 +505,6 @@ async def _collect(
     }
 
 
-def _status_counts(log: ClientLog) -> dict[str, int]:
-    counts = Counter(str(record.status) for record in log.requests)
-    return dict(sorted(counts.items()))
-
-
 def _assemble(
     h: _Harness,
     *,
@@ -581,7 +575,7 @@ def _assemble(
             "compose_version": str(info["compose_version"]),
             "host_load_note": host_note,
         },
-        "client": {**client_section(log, schedule), "status_counts": _status_counts(log)},
+        "client": client_section(log, schedule),
         "attack_plan": {
             "rules": {rule: {"expected": n} for rule, n in schedule.plan.expected().items()},
             "expected_dlq": 0,
@@ -967,7 +961,7 @@ async def overload(ctx: RunContext) -> ScenarioResult:
         return ScenarioResult(list(h.phases), raw, path)
 
 
-SCENARIOS: dict[str, Callable[[RunContext], Awaitable[ScenarioResult]]] = {
+SCENARIOS: dict[str, Callable[[RunContext], Coroutine[Any, Any, ScenarioResult]]] = {
     SUSTAINED: sustained_restart,
     OVERLOAD: overload,
 }

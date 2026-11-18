@@ -21,6 +21,7 @@ import re
 import stat
 import sys
 import tempfile
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -82,6 +83,11 @@ _STR = "str"
 _HEX = "hex16"
 _MAP = "map"
 _NULLABLE = "nullable"
+_BOOL = "bool"
+_OBJECT = "object"  # opaque JSON object, reported verbatim, read by no equation
+_OPTIONAL = "optional"  # 05-18 keys: type-checked when present, never "unknown"
+OVERLOAD = "overload"
+OVERLOAD_STATUSES = (202, 429, 503)
 
 _REQUEST = {
     "batch_seq": _INT,
@@ -106,6 +112,8 @@ SCHEMA: dict[str, Any] = {
         "git_sha": _STR,
         "image_tag": _STR,
         "compose_project": _STR,
+        "drained": (_OPTIONAL, _BOOL),
+        "warmup": (_OPTIONAL, {"partition_share_max": _NUM, "rate_eps": _NUM}),
     },
     "config": {
         "events_partitions": _INT,
@@ -145,6 +153,7 @@ SCHEMA: dict[str, Any] = {
         "unaccepted_final": _INT,
         "schedule_slip_ms_max": _NUM,
         "harness_cpu_percent_max": _NUM,
+        "status_counts": (_OPTIONAL, (_MAP, _INT)),
     },
     "attack_plan": {
         "rules": (_MAP, {"expected": _INT}),
@@ -168,6 +177,10 @@ SCHEMA: dict[str, Any] = {
         "late_total_after": _INT,
         "detector_state_peak": {"windows": _INT, "ledger_entries": _INT, "bytes": _INT},
         "lag_samples": [{"t_ns": _INT, "group": _STR, "max_lag": _NUM}],
+        "producer_buffered_max": (_OPTIONAL, _INT),
+        "producer_buffered_limit": (_OPTIONAL, _INT),
+        "ingest_requests_by_status": (_OPTIONAL, (_MAP, _INT)),
+        "pin_retention_margin_min": (_OPTIONAL, (_NULLABLE, _INT)),
     },
     "sse": {
         "arrivals": [
@@ -193,7 +206,9 @@ SCHEMA: dict[str, Any] = {
                 "rss_bytes": _INT,
                 "cpu_percent": _NUM,
             }
-        ]
+        ],
+        "oom_killed": (_OPTIONAL, (_MAP, _BOOL)),
+        "restart_delta": (_OPTIONAL, (_MAP, _INT)),
     },
     "restart": (
         _NULLABLE,
@@ -206,7 +221,15 @@ SCHEMA: dict[str, Any] = {
         },
     ),
     "limitations": [_STR],
+    "preflight": (_OPTIONAL, _OBJECT),
 }
+OVERLOAD_KEYS = (
+    ("client", "status_counts"),
+    ("prometheus", "producer_buffered_max"),
+    ("prometheus", "producer_buffered_limit"),
+    ("resources", "oom_killed"),
+    ("resources", "restart_delta"),
+)
 
 
 class ReportError(Exception):
@@ -281,11 +304,21 @@ def _check_leaf(value: object, kind: str, where: str) -> None:
             raise ReportError(f"{where} must be a string of at most {MAX_TEXT_CHARS} chars")
         if any(ord(char) < ord(" ") for char in value):
             raise ReportError(f"{where} must not contain control characters")
+    elif kind == _BOOL:
+        if not isinstance(value, bool):
+            raise ReportError(f"{where} must be a boolean")
+    elif kind == _OBJECT:
+        if not isinstance(value, dict):
+            raise ReportError(f"{where} must be an object")
     elif kind == _HEX:
         if not isinstance(value, str) or not HEX16_RE.match(value):
             raise ReportError(f"{where} must be 16 lowercase hex characters")
     else:  # pragma: no cover - schema programming error
         raise ReportError(f"unknown schema kind for {where}")
+
+
+def _is_optional(spec: object) -> bool:
+    return isinstance(spec, tuple) and spec[0] == _OPTIONAL
 
 
 def _check(value: object, spec: object, where: str, unknown: set[str]) -> None:
@@ -296,6 +329,8 @@ def _check(value: object, spec: object, where: str, unknown: set[str]) -> None:
             raise ReportError(f"{where} must be an object")
         for key, sub in spec.items():
             if key not in value:
+                if _is_optional(sub):
+                    continue
                 raise ReportError(f"{where}.{key} is missing")
             _check(value[key], sub, f"{where}.{key}", unknown)
         unknown.update(f"{where}.{key}" for key in value if key not in spec)
@@ -309,6 +344,8 @@ def _check(value: object, spec: object, where: str, unknown: set[str]) -> None:
             raise ReportError(f"{where} must be an object")
         for key, item in value.items():
             _check(item, spec[1], f"{where}[{key}]", unknown)
+    elif isinstance(spec, tuple) and spec[0] == _OPTIONAL:
+        _check(value, spec[1], where, unknown)
     elif isinstance(spec, tuple) and spec[0] == _NULLABLE:
         if value is not None:
             _check(value, spec[1], where, unknown)
@@ -413,6 +450,8 @@ def load_raw(path: Path) -> dict[str, Any]:
         unknown: set[str] = set()
         for key, spec in SCHEMA.items():
             if key not in raw:
+                if _is_optional(spec):
+                    continue
                 raise ReportError(f"{key} is missing")
             _check(raw[key], spec, key, unknown)
         unknown.update(key for key in raw if key not in SCHEMA)
@@ -774,6 +813,80 @@ def _recovery_failures(raw: Mapping[str, Any]) -> list[Failure]:
     return []
 
 
+def _recomputed_statuses(raw: Mapping[str, Any]) -> dict[str, int]:
+    counts = Counter(str(request["status"]) for request in raw["client"]["requests"])
+    return dict(sorted(counts.items()))
+
+
+def _state_failures(raw: Mapping[str, Any]) -> list[Failure]:
+    """Drain state (every scenario) and recorded status counts (when present)."""
+    failures: list[Failure] = []
+    if raw["run"].get("drained") is False:
+        failures.append(
+            Failure("drained", "consumer lag did not drain to 0 before collection", True, False)
+        )
+    recorded = raw["client"].get("status_counts")
+    if recorded is not None:
+        nonzero = {key: int(value) for key, value in recorded.items() if value}
+        recomputed = _recomputed_statuses(raw)
+        if dict(sorted(nonzero.items())) != recomputed:
+            failures.append(
+                Failure(
+                    "status_counts",
+                    "recorded status counts differ from the request records",
+                    recomputed,
+                    dict(sorted(nonzero.items())),
+                )
+            )
+    return failures
+
+
+def _overload_failures(raw: Mapping[str, Any]) -> list[Failure]:
+    """REL-04: statuses 202/429/503 only, bounded producer buffer, no OOM, no ingest restart."""
+    if raw["run"]["scenario"] != OVERLOAD:
+        return []
+    missing = [".".join(path) for path in OVERLOAD_KEYS if path[1] not in raw[path[0]]]
+    if not missing and "ingest" not in raw["resources"]["restart_delta"]:
+        missing.append("resources.restart_delta.ingest")
+    if missing:
+        return [
+            Failure("overload_recorded", "overload measurements are missing", "recorded", missing)
+        ]
+    failures: list[Failure] = []
+    bad = sorted({int(r["status"]) for r in raw["client"]["requests"]} - set(OVERLOAD_STATUSES))
+    if bad:
+        failures.append(
+            Failure(
+                "overload_status",
+                "overload produced a status other than 202, 429 or 503",
+                list(OVERLOAD_STATUSES),
+                bad,
+            )
+        )
+    buffered = int(raw["prometheus"]["producer_buffered_max"])
+    limit = int(raw["prometheus"]["producer_buffered_limit"])
+    if buffered > limit:
+        failures.append(
+            Failure("overload_buffer", "producer buffer exceeded its limit", limit, buffered)
+        )
+    killed = sorted(name for name, flag in raw["resources"]["oom_killed"].items() if flag)
+    if killed:
+        failures.append(
+            Failure("overload_oom", "a container was OOM-killed under overload", [], killed)
+        )
+    restarts = int(raw["resources"]["restart_delta"]["ingest"])
+    if restarts > 0:
+        failures.append(
+            Failure(
+                "overload_ingest_restart",
+                "an ingest container restarted under overload",
+                0,
+                restarts,
+            )
+        )
+    return failures
+
+
 def reconcile(raw: Mapping[str, Any]) -> list[Failure]:
     """Every RAW_FORMAT.md equation; an empty list means the report may be written."""
     version = raw.get("format_version")
@@ -790,6 +903,8 @@ def reconcile(raw: Mapping[str, Any]) -> list[Failure]:
     if histogram is not None:
         failures.append(histogram)
     failures += _recovery_failures(raw)
+    failures += _state_failures(raw)
+    failures += _overload_failures(raw)
     return failures
 
 
@@ -940,10 +1055,50 @@ def _limitations(raw: Mapping[str, Any], latency: Mapping[str, Any]) -> list[str
         items.append("API latency was not measured in this scenario.")
     if raw["restart"] is None:
         items.append("No detector kill in this scenario; recovery not measured.")
+    if "drained" not in raw["run"]:
+        items.append("Drain state was not recorded in the raw file.")
     unknown = raw.get("_unknown_keys", [])
     if unknown:
         items.append(f"Raw file has keys not in format_version 1: {', '.join(unknown)}.")
     return items
+
+
+def _overload_summary(raw: Mapping[str, Any]) -> dict[str, Any] | None:
+    if raw["run"]["scenario"] != OVERLOAD:
+        return None
+    prometheus = raw["prometheus"]
+    limit = int(prometheus["producer_buffered_limit"])
+    buffered = int(prometheus["producer_buffered_max"])
+    return {
+        "status_counts": _recomputed_statuses(raw),
+        "producer_buffered_max": buffered,
+        "producer_buffered_limit": limit,
+        "producer_buffered_ratio": _rounded(buffered / limit) if limit else None,
+        "oom_killed": sorted(n for n, flag in raw["resources"]["oom_killed"].items() if flag),
+        "restart_delta": dict(sorted(raw["resources"]["restart_delta"].items())),
+    }
+
+
+def _threshold_inputs(raw: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Measured inputs for the 05-13 placeholder alert thresholds (tuned in 05-20)."""
+    prometheus = raw["prometheus"]
+    warmup = raw["run"].get("warmup")
+    keys = ("ingest_requests_by_status", "pin_retention_margin_min")
+    if warmup is None and not any(key in prometheus for key in keys):
+        return None
+    statuses = prometheus.get("ingest_requests_by_status")
+    ratio = None
+    if statuses:
+        total = sum(int(value) for value in statuses.values())
+        errors = sum(int(v) for k, v in statuses.items() if k.startswith("5"))
+        ratio = _rounded(errors / total) if total else None
+    return {
+        "ingest_requests_by_status": dict(sorted(statuses.items())) if statuses else None,
+        "ingest_5xx_ratio": ratio,
+        "pin_retention_margin_min": prometheus.get("pin_retention_margin_min"),
+        "warmup_partition_share_max": warmup["partition_share_max"] if warmup else None,
+        "warmup_rate_eps": warmup["rate_eps"] if warmup else None,
+    }
 
 
 def build_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -981,6 +1136,9 @@ def build_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
         "recovery": rec,
         "reconciliation": _reconciliation_summary(raw),
         "rules": _rule_counts(raw),
+        "overload": _overload_summary(raw),
+        "threshold_inputs": _threshold_inputs(raw),
+        "preflight": raw.get("preflight"),
         "limitations": _limitations(raw, latency),
         "reproduction": {
             "git_sha": run["git_sha"],
@@ -1240,6 +1398,39 @@ def _md_counts(summary: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _md_overload_thresholds(summary: Mapping[str, Any]) -> list[str]:
+    lines: list[str] = []
+    overload = summary.get("overload")
+    if overload is not None:
+        lines += ["## Overload", ""]
+        lines += _table(["status", "requests"], sorted(overload["status_counts"].items()))
+        lines += [
+            "",
+            f"- Producer buffer max / limit: {overload['producer_buffered_max']} / "
+            f"{overload['producer_buffered_limit']} "
+            f"(ratio {_fmt(overload['producer_buffered_ratio'])})",
+            f"- OOM-killed containers: {', '.join(overload['oom_killed']) or 'none'}",
+            "- Restarts during the run: "
+            + (", ".join(f"{k} {v}" for k, v in overload["restart_delta"].items()) or "none"),
+            "",
+        ]
+    inputs = summary.get("threshold_inputs")
+    if inputs is not None:
+        lines += ["## Alert threshold inputs", ""]
+        lines += _table(
+            ["input", "value"],
+            [
+                ["ingest requests by status", _fmt(inputs["ingest_requests_by_status"])],
+                ["ingest 5xx ratio", _fmt(inputs["ingest_5xx_ratio"])],
+                ["min pin retention margin (offsets)", _fmt(inputs["pin_retention_margin_min"])],
+                ["warm-up max partition share", _fmt(inputs["warmup_partition_share_max"])],
+                ["warm-up rate (events/s)", _fmt(inputs["warmup_rate_eps"])],
+            ],
+        )
+        lines.append("")
+    return lines
+
+
 def render_markdown(summary: Mapping[str, Any]) -> str:
     lines = _md_header(summary)
     lines += _md_hardware_config(summary)
@@ -1247,6 +1438,7 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
     lines += _md_latency(summary)
     lines += _md_resources_recovery(summary)
     lines += _md_counts(summary)
+    lines += _md_overload_thresholds(summary)
     lines += ["## Limitations", ""]
     lines += [f"- {_fmt(item)}" for item in summary["limitations"]]
     repro = summary["reproduction"]

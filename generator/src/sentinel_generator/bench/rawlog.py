@@ -87,6 +87,8 @@ def client_section(log: ClientLog, schedule: BatchSource) -> dict[str, Any]:
         "unaccepted_final": unaccepted,
         "schedule_slip_ms_max": max(0, slip_ns) / NS_PER_MS,
         "harness_cpu_percent_max": float(log.harness_cpu_percent_max),
+        # Final status per request (0 = no HTTP response); report.py re-derives and compares.
+        "status_counts": dict(sorted(Counter(str(r.status) for r in requests).items())),
     }
 
 

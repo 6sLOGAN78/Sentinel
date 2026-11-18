@@ -112,9 +112,12 @@ SCENARIO_PRESERVE ?=
 seed-scenarios: dev-up ## Verify exact current-run scenario alerts in Kafka, CH and PG
 	timeout 16m python3 -B scripts/seed_scenarios.py --output "$(SCENARIO_OUTPUT)" $(if $(SCENARIO_PRESERVE),--preserve-manifest "$(SCENARIO_PRESERVE)")
 
-bench: ## Not available yet
-	@echo "bench is available from Phase 5" >&2
-	@exit 1
+# One scenario on the isolated sentinel-bench-$(RUN) stack (reused from bench-up or
+# started), then bench/report.py writes benchmarks/results or refuses. The stack is
+# stopped afterwards unless KEEP_UP=1. Never $(COMPOSE), never the root .env.
+bench: generator/.venv ## Run a bench scenario: make bench SCENARIO=<sustained-restart|overload> RUN=<id> [KEEP_UP=1]
+	@if [ -z "$(RUN)" ]; then echo "refusing: set RUN=<id> (e.g. make bench SCENARIO=overload RUN=20261030a)" >&2; exit 1; fi
+	cd generator && uv run --locked python ../bench/run.py run --scenario "$(or $(SCENARIO),sustained-restart)" --run "$(RUN)" $(if $(KEEP_UP),--keep-up)
 
 # Isolated sentinel-bench-$(RUN) project with its own ports, volumes and private
 # generated env (.local/bench/$(RUN)/env). Never $(COMPOSE), never the root .env,
