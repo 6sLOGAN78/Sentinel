@@ -15,3 +15,4 @@ Short MADR-style records. Each has Status, Context, Decision and Consequences se
 | [0009](0009-gap-safe-alert-delivery.md) | Gap-safe alert delivery projection |
 | [0012](0012-detector-history-recovery.md) | Detector expired-history recovery |
 | [0013](0013-non-idempotent-bounded-producers.md) | Non-idempotent bounded Kafka producers |
+| [0014](0014-operator-tenant-allowlist.md) | Operator tenant allowlist for platform-wide views |

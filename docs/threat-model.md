@@ -131,6 +131,28 @@ returns409 without adding a second row. Existing generic HTTP logs are distinct
 from this security-event contract. This increment does not audit every endpoint
 or certify production log retention, transport or access policy.
 
+## Phase 5 platform-wide views (operator tenants)
+
+`GET /api/v1/system` and `GET /api/v1/metrics/lag` return pipeline-wide data
+with no tenant label: throughput, ingest outcomes, error ratios, DLQ rate,
+consumer lag, latency and replica readiness. Gating them by role alone let an
+admin (System) or analyst (lag) of any tenant observe other tenants' traffic
+and backlog. [ADR 0014](decisions/0014-operator-tenant-allowlist.md) adds a
+fail-closed operator allowlist, `SENTINEL_AUTH.OPERATOR_TENANTS`:
+
+| Threat | Control | Verification |
+| --- | --- | --- |
+| Non-operator admin reads global System data | 403 "System status is limited to operator administrators."; audit `system_status`/`denied`/`operator_forbidden`; no Prometheus or probe traffic | `system_test.go`, OpenAPI runtime auth, phase4 tenant matrix |
+| Non-operator analyst/admin reads global lag values | 200 with every row `unavailable`/`operator_only` and no value; Prometheus not queried | `lag_test.go`, OpenAPI runtime auth and drift, phase4 tenant matrix |
+| Caller claims operator status | Membership uses only the verified token's tenant; headers, query strings and extra claims are ignored; malformed allowlist entries never match | `jwt_test.go`, matrix spoofing cases |
+| Misconfigured allowlist widens access | Startup validation: at most 16 entries, tenant-slug format, no duplicates, no wildcard; empty or unset admits nobody | `config_test.go` |
+
+The check order on System is 401, role 403, 400 for any query string, then
+the operator 403. Residual limits: the allowlist is static config (changes
+need a query-api restart), and operator status is per tenant, so every admin
+of an operator tenant is a platform operator. The local stacks make `demo` the
+only operator tenant; `demo2` is deliberately not one.
+
 ## Phase 4 acceptance gates (T04-35, T04-36)
 
 **T04-35, false green or dropped selector (high).** A broad regex, an empty

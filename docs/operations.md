@@ -127,6 +127,30 @@ empty source can have an acknowledged empty format-2 checkpoint with offset and
 `processed_next` zero; that is different from missing/pending restoration.
 Readiness retains sixteen-worker admission and independently bounded responses.
 
+## Operator tenants (System page and consumer lag)
+
+`GET /api/v1/system` and the lag values from `GET /api/v1/metrics/lag` are
+platform-wide, so query-api shows them only to operator tenants listed in
+`SENTINEL_AUTH.OPERATOR_TENANTS` ([ADR 0014](decisions/0014-operator-tenant-allowlist.md)):
+
+- Format: comma-separated tenant ids, at most 16, each a tenant slug
+  (`^[a-z0-9][a-z0-9_-]{0,62}$`), no duplicates. Anything else stops
+  query-api (and dev-jwt) at startup.
+- Empty or unset means no tenant is an operator. An older local `.env`
+  without the key therefore gets 403 on System for every admin and
+  `operator_only` lag rows until `SENTINEL_AUTH.OPERATOR_TENANTS=demo` is
+  added (see `.env.example`).
+- System: admin of an operator tenant gets 200. Admins of other tenants get
+  403 "System status is limited to operator administrators." (audit reason
+  `operator_forbidden`); viewers and analysts keep the role 403
+  (`role_forbidden`).
+- Lag: viewers get 403. Analysts and admins of other tenants get 200 with all
+  rows `unavailable`/`operator_only` and no value.
+- The dev, observability and bench Compose stacks set `demo` as the only
+  operator tenant; `demo2` is deliberately not one. Mint
+  `--tenant demo --role admin` to open the System page and
+  `--tenant demo2 --role admin` to see the refusal.
+
 ## Failure, replay and retention
 
 The pipeline is at-least-once. A crash after publication can publish the same
