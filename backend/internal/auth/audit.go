@@ -11,7 +11,8 @@ import (
 // An allowlist keeps request bodies, credentials and arbitrary error strings
 // out of the security event even if a caller accidentally supplies one.
 func Audit(c echo.Context, action, outcome, reason string, p Principal) {
-	if action != "producer_auth" && action != "alert_transition" && action != "consumer_lag" {
+	if action != "producer_auth" && action != "alert_transition" && action != "consumer_lag" &&
+		action != "system_status" {
 		return
 	}
 	if outcome != "allowed" && outcome != "denied" && outcome != "unavailable" {

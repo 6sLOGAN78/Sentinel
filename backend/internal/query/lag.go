@@ -30,6 +30,7 @@ const (
 	ReasonPrometheusUnavailable = "prometheus_unavailable"
 	ReasonNoData                = "no_data"
 	ReasonNotConfigured         = "not_configured"
+	ReasonNotReachable          = "not_reachable"
 )
 
 // SystemMetric is one global metric value with explicit availability.
@@ -73,11 +74,17 @@ func NewLagHandler(metrics SystemMetrics, verifier *auth.Verifier, groups config
 	if now == nil {
 		now = time.Now
 	}
-	return &LagHandler{metrics: metrics, auth: verifier, now: now, groups: []lagGroup{
+	return &LagHandler{metrics: metrics, auth: verifier, now: now, groups: pipelineGroups(groups)}
+}
+
+// pipelineGroups maps the configured consumer group names to their fixed
+// display names, in the fixed pipeline order.
+func pipelineGroups(groups config.KafkaConfig) []lagGroup {
+	return []lagGroup{
 		{display: "event-writer", configured: groups.EventWriterGroup},
 		{display: "detector", configured: groups.DetectorGroup},
 		{display: "alert-writer", configured: groups.AlertWriterGroup},
-	}}
+	}
 }
 
 // Register authenticates every lag read; the role rule runs in GetLag.
@@ -105,21 +112,33 @@ func (h *LagHandler) GetLag(c echo.Context) error {
 	series, err := h.metrics.Query(ctx, qLag, now)
 	rows := make([]ConsumerLagRow, len(h.groups))
 	for i, g := range h.groups {
-		rows[i] = ConsumerLagRow{Group: g.display, Lag: lagMetric(series, err, g.configured)}
+		rows[i] = ConsumerLagRow{Group: g.display, Lag: seriesMetric(series, err, g.configured)}
 	}
 	return c.JSON(http.StatusOK, ConsumerLag{ObservedAt: now, Rows: rows})
 }
 
-func lagMetric(series map[string]float64, err error, group string) SystemMetric {
-	switch {
-	case errors.Is(err, ErrPrometheusNotConfigured):
-		return SystemMetric{State: MetricUnavailable, Reason: ReasonNotConfigured}
-	case err != nil:
-		return SystemMetric{State: MetricUnavailable, Reason: ReasonPrometheusUnavailable}
+// seriesMetric reads one label value of a query result. A failed query is
+// unavailable with the failure reason; an absent series is no_data.
+func seriesMetric(series map[string]float64, err error, key string) SystemMetric {
+	if err != nil {
+		return unavailableFor(err)
 	}
-	value, ok := series[group]
+	value, ok := series[key]
 	if !ok {
-		return SystemMetric{State: MetricUnavailable, Reason: ReasonNoData}
+		return unavailableMetric(ReasonNoData)
 	}
 	return SystemMetric{State: MetricAvailable, Value: &value}
+}
+
+// unavailableFor maps a Prometheus failure to its reason; the error text is
+// never exposed.
+func unavailableFor(err error) SystemMetric {
+	if errors.Is(err, ErrPrometheusNotConfigured) {
+		return unavailableMetric(ReasonNotConfigured)
+	}
+	return unavailableMetric(ReasonPrometheusUnavailable)
+}
+
+func unavailableMetric(reason string) SystemMetric {
+	return SystemMetric{State: MetricUnavailable, Reason: reason}
 }

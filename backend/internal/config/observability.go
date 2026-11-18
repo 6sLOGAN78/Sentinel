@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -23,14 +25,79 @@ type ObservabilityConfig struct {
 	Logging     LoggingConfig `koanf:"logging"`
 	Tracing     TracingConfig `koanf:"tracing"`
 	// PrometheusURL is the query API base URL used by query-api for the
-	// consumer lag endpoint. Empty means not configured.
+	// consumer lag and System endpoints. Empty means not configured.
 	PrometheusURL string `koanf:"prometheus_url"`
+	// GrafanaURL is the optional dashboard link shown on the System page.
+	// Empty means no link is offered.
+	GrafanaURL string `koanf:"grafana_url"`
+	// System lists the internal ops address and expected replica count of
+	// every pipeline service for the System page readiness probes.
+	System SystemConfig `koanf:"system"`
 }
 
-// validatePrometheusURL accepts an empty value or an http(s) URL with a host
-// and no credentials. The parse error is not wrapped because it would echo
-// the raw value, which may hold credentials.
-func validatePrometheusURL(raw string) error {
+// maxExpectedReplicas bounds the declared replica count per service.
+const maxExpectedReplicas = 64
+
+// SystemConfig holds one readiness target per pipeline service.
+type SystemConfig struct {
+	Ingest      ServiceTarget `koanf:"ingest"`
+	EventWriter ServiceTarget `koanf:"event_writer"`
+	Detector    ServiceTarget `koanf:"detector"`
+	AlertWriter ServiceTarget `koanf:"alert_writer"`
+	QueryAPI    ServiceTarget `koanf:"query_api"`
+}
+
+// ServiceTarget is a service's internal ops host:port (resolved to every
+// replica) and its declared replica count. An empty address means not
+// configured; an expected count of 0 means not declared.
+type ServiceTarget struct {
+	Address  string `koanf:"address"`
+	Expected int    `koanf:"expected"`
+}
+
+// Validate requires each configured address to be host:port and each
+// expected count to be within [0, 64].
+func (c SystemConfig) Validate() error {
+	for _, entry := range []struct {
+		name   string
+		target ServiceTarget
+	}{
+		{"ingest", c.Ingest}, {"event_writer", c.EventWriter}, {"detector", c.Detector},
+		{"alert_writer", c.AlertWriter}, {"query_api", c.QueryAPI},
+	} {
+		name, target := entry.name, entry.target
+		if target.Expected < 0 || target.Expected > maxExpectedReplicas {
+			return fmt.Errorf("system.%s.expected must be within [0, %d]", name, maxExpectedReplicas)
+		}
+
+		if target.Address == "" {
+			continue
+		}
+
+		if !validHostPort(target.Address) {
+			return fmt.Errorf("system.%s.address must be host:port", name)
+		}
+	}
+
+	return nil
+}
+
+// validHostPort reports whether addr is a nonempty host and a port in 1..65535.
+func validHostPort(addr string) bool {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return false
+	}
+
+	n, err := strconv.ParseUint(port, 10, 16)
+
+	return err == nil && n != 0
+}
+
+// validateHTTPURL accepts an empty value or an http(s) URL with a host and no
+// credentials. The parse error is not wrapped because it would echo the raw
+// value, which may hold credentials.
+func validateHTTPURL(field, raw string) error {
 	if raw == "" {
 		return nil
 	}
@@ -39,13 +106,13 @@ func validatePrometheusURL(raw string) error {
 
 	switch {
 	case err != nil:
-		return errors.New("prometheus_url is not a valid URL")
+		return fmt.Errorf("%s is not a valid URL", field)
 	case u.Scheme != "http" && u.Scheme != "https":
-		return errors.New("prometheus_url scheme must be http or https")
+		return fmt.Errorf("%s scheme must be http or https", field)
 	case u.User != nil:
-		return errors.New("prometheus_url must not contain credentials")
+		return fmt.Errorf("%s must not contain credentials", field)
 	case u.Hostname() == "":
-		return errors.New("prometheus_url host is required")
+		return fmt.Errorf("%s host is required", field)
 	}
 
 	return nil
@@ -139,7 +206,15 @@ func (c *ObservabilityConfig) Validate() error {
 		return errors.New("logging slow_query_threshold must be non-negative")
 	}
 
-	if err := validatePrometheusURL(c.PrometheusURL); err != nil {
+	if err := validateHTTPURL("prometheus_url", c.PrometheusURL); err != nil {
+		return err
+	}
+
+	if err := validateHTTPURL("grafana_url", c.GrafanaURL); err != nil {
+		return err
+	}
+
+	if err := c.System.Validate(); err != nil {
 		return err
 	}
 

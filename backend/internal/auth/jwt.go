@@ -19,6 +19,7 @@ const (
 	principalKey   = "sentinel.verified-principal"
 	minSecretBytes = 32
 	tokenLeeway    = 30 * time.Second
+	roleAdmin      = "admin"
 )
 
 // Authentication errors never contain supplied credentials or parser details.
@@ -81,7 +82,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 		return Principal{}, ErrInvalid
 	}
 	if strings.TrimSpace(c.Subject) == "" || !tenantPattern.MatchString(c.Tenant) ||
-		(c.Role != "viewer" && c.Role != "analyst" && c.Role != "admin") || c.IssuedAt == nil ||
+		(c.Role != "viewer" && c.Role != "analyst" && c.Role != roleAdmin) || c.IssuedAt == nil ||
 		c.ExpiresAt == nil || c.NotBefore == nil || !c.ExpiresAt.After(c.IssuedAt.Time) ||
 		c.ExpiresAt.Sub(c.IssuedAt.Time) > 15*time.Minute || c.NotBefore.After(c.ExpiresAt.Time) {
 		return Principal{}, ErrInvalid
@@ -124,7 +125,7 @@ func RequirePrincipal(c echo.Context) (Principal, error) {
 
 // RequireTriage permits only the two roles allowed to transition workflows.
 func RequireTriage(p Principal) error {
-	if p.Role != "analyst" && p.Role != "admin" {
+	if p.Role != "analyst" && p.Role != roleAdmin {
 		return ErrForbidden
 	}
 	return nil
@@ -132,4 +133,13 @@ func RequireTriage(p Principal) error {
 
 func unauthorized() error {
 	return errs.NewUnauthorizedError(http.StatusText(http.StatusUnauthorized), false)
+}
+
+// RequireAdmin permits only admins. It guards global, cross-tenant views such
+// as the System page.
+func RequireAdmin(p Principal) error {
+	if p.Role != roleAdmin {
+		return ErrForbidden
+	}
+	return nil
 }

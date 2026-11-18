@@ -733,7 +733,7 @@ func TestDNSProberBoundedConcurrency(t *testing.T) {
 	require.NoError(t, err)
 	var mu sync.Mutex
 	inFlight, peak := 0, 0
-	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		inFlight++
 		peak = max(peak, inFlight)
@@ -743,7 +743,8 @@ func TestDNSProberBoundedConcurrency(t *testing.T) {
 		inFlight--
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
-	})}
+	})
+	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: handler}
 	listeners := []net.Listener{first}
 	addrs := []string{"127.0.0.1"}
 	for i := 2; i <= 12; i++ {
