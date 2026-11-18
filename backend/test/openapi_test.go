@@ -19,6 +19,7 @@ const (
 	pathAlertByID   = "/api/v1/alerts/{alert_id}"
 	pathStream      = "/api/v1/alerts/stream"
 	pathConsumerLag = "/api/v1/metrics/lag"
+	pathSystem      = "/api/v1/system"
 	maxBatchEvents  = 500
 	maxPageLimit    = 200
 )
@@ -76,6 +77,7 @@ func TestOpenAPIRoutes(t *testing.T) {
 		"GET /api/v1/rules",
 		"GET /api/v1/metrics/summary",
 		"GET /api/v1/metrics/lag",
+		"GET /api/v1/system",
 		"GET /healthz",
 		"GET /readyz",
 		"GET /metrics",
@@ -159,6 +161,11 @@ func TestOpenAPISecurity(t *testing.T) {
 			assert.Equal(t, "getConsumerLag", op.OperationID)
 			assert.Contains(t, op.Description, "analyst or admin", "the role rule must be documented")
 			assert.Contains(t, op.Description, "viewers receive 403")
+		case "GET " + pathSystem:
+			assert.Equal(t, []string{"BearerAuth"}, names, key)
+			assert.Equal(t, "getSystemStatus", op.OperationID)
+			assert.Contains(t, op.Description, "Admin only", "the role rule must be documented")
+			assert.Contains(t, op.Description, "never zero")
 		case "GET /healthz", "GET /readyz":
 			assert.Empty(t, names, key)
 		case "GET /metrics":

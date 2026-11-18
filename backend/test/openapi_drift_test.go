@@ -413,3 +413,120 @@ func decodeAny(t *testing.T, raw string) any {
 
 	return v
 }
+
+// TestOpenAPISystemStatusContract pins the parameterless, admin-only System
+// operation and its closed response shape.
+func TestOpenAPISystemStatusContract(t *testing.T) {
+	t.Parallel()
+
+	doc := loadOpenAPI(t)
+	op := operations(doc)["GET "+pathSystem]
+	require.NotNil(t, op, "GET %s must be documented", pathSystem)
+	assert.Empty(t, op.Parameters, "the PromQL is a server constant; no parameters are accepted")
+
+	for _, code := range []string{"200", "400", "401", "403", "503"} {
+		require.NotNil(t, op.Responses.Value(code), "missing response %s", code)
+	}
+
+	ok := op.Responses.Value("200").Value.Content.Get("application/json").Schema
+	assert.Equal(t, "#/components/schemas/SystemStatus", ok.Ref)
+
+	body := doc.Components.Schemas["SystemStatus"].Value
+	require.NotNil(t, body)
+	assert.ElementsMatch(t, []string{
+		"observed_at", "metrics_source", "services", "ingest", "http_errors", "dlq_rate", "consumer_lag", "latency",
+	}, body.Required)
+	assert.Contains(t, body.Properties, "grafana_url", "grafana_url is documented and optional")
+	require.NotNil(t, body.AdditionalProperties.Has)
+	assert.False(t, *body.AdditionalProperties.Has)
+
+	services := body.Properties["services"].Value
+	require.NotNil(t, services.MaxItems)
+	assert.Equal(t, uint64(5), services.MinItems)
+	assert.Equal(t, uint64(5), *services.MaxItems)
+	assert.Equal(t, "#/components/schemas/SystemService", services.Items.Ref)
+	service := doc.Components.Schemas["SystemService"].Value
+	assert.ElementsMatch(t, []any{"ingest", "event-writer", "detector", "alert-writer", "query-api"},
+		service.Properties["name"].Value.Enum)
+	assert.Equal(t, "#/components/schemas/SystemReadiness", service.Properties["readiness"].Ref)
+
+	raw, err := json.Marshal(doc.Components.Schemas["SystemReadiness"].Value)
+	require.NoError(t, err)
+	for _, state := range []string{"ready", "degraded", "not_ready", "unavailable"} {
+		assert.Contains(t, string(raw), `"`+state+`"`, "readiness state %s", state)
+	}
+}
+
+// TestOpenAPISystemStatusDrift validates real handler bodies for every
+// availability state against the documented schema, and proves the schema
+// rejects fabricated zeros.
+func TestOpenAPISystemStatusDrift(t *testing.T) {
+	t.Parallel()
+
+	schema := standaloneSchema(t, loadOpenAPI(t), "SystemStatus")
+
+	var available map[string]any
+
+	for name, tc := range systemCases() {
+		f := newSystemFixture(t, tc)
+		status, raw := f.get(t, "admin")
+		require.Equal(t, http.StatusOK, status, string(raw))
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(raw, &body))
+		require.NoError(t, schema.VisitJSON(body, visitOptions()...), "%s: %s", name, raw)
+
+		if name == "available" {
+			available = body
+		}
+	}
+
+	require.NotNil(t, available)
+
+	mutate := func(edit func(m map[string]any)) any {
+		raw, err := json.Marshal(available)
+		require.NoError(t, err)
+
+		var copied map[string]any
+		require.NoError(t, json.Unmarshal(raw, &copied))
+		edit(copied)
+
+		return copied
+	}
+	firstService := func(m map[string]any) map[string]any {
+		services, _ := m["services"].([]any)
+		first, _ := services[0].(map[string]any)
+
+		return first
+	}
+
+	for name, body := range map[string]any{
+		"metric_unavailable_with_zero": mutate(func(m map[string]any) {
+			m["dlq_rate"] = map[string]any{"state": "unavailable", "reason": "no_data", "value": 0}
+		}),
+		"readiness_unavailable_with_counts": mutate(func(m map[string]any) {
+			firstService(m)["readiness"] = map[string]any{
+				"state": "unavailable", "reason": "not_reachable", "ready_replicas": 0, "probed_replicas": 0,
+			}
+		}),
+		"readiness_ready_without_counts": mutate(func(m map[string]any) {
+			firstService(m)["readiness"] = map[string]any{"state": "ready"}
+		}),
+		"readiness_unknown_state": mutate(func(m map[string]any) {
+			firstService(m)["readiness"] = map[string]any{"state": "stale", "ready_replicas": 1, "probed_replicas": 1}
+		}),
+		"tenant_leak": mutate(func(m map[string]any) { m["tenant_id"] = "a" }),
+		"unknown_result": mutate(func(m map[string]any) {
+			ingest, _ := m["ingest"].(map[string]any)
+			byResult, _ := ingest["by_result"].(map[string]any)
+			byResult["dropped"] = 1
+		}),
+		"missing_service": mutate(func(m map[string]any) {
+			services, _ := m["services"].([]any)
+			m["services"] = services[1:]
+		}),
+		"non_utc_observed_at": mutate(func(m map[string]any) { m["observed_at"] = "2026-11-18T12:00:00+01:00" }),
+	} {
+		assert.Error(t, schema.VisitJSON(body, visitOptions()...), "%s should be rejected", name)
+	}
+}

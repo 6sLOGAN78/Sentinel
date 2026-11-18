@@ -255,3 +255,154 @@ func TestOpenAPIConsumerLagRuntimeSecurity(t *testing.T) {
 		require.NotNil(t, op.Responses.Value(strconv.Itoa(status)), "status %d must be documented", status)
 	}
 }
+
+// systemProber is a func-type query.ReadinessProber fake.
+type systemProber func(address string) (int, int, error)
+
+func (f systemProber) Probe(_ context.Context, address string) (int, int, error) {
+	return f(address)
+}
+
+// systemMetricsTable answers each fixed System query by its PromQL text.
+type systemMetricsTable struct {
+	series map[string]map[string]float64
+	err    error
+}
+
+func (s systemMetricsTable) Query(_ context.Context, promql string, _ time.Time) (map[string]float64, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.series[promql], nil
+}
+
+func systemAvailableSeries() map[string]map[string]float64 {
+	jobs := map[string]float64{"ingest": 1, "event-writer": 1, "detector": 1, "alert-writer": 1, "query-api": 1}
+	return map[string]map[string]float64{
+		`count by (job) (up == 1)`:                                jobs,
+		`sum by (job) (changes(process_start_time_seconds[15m]))`: jobs,
+		`sum by (result) (rate(sentinel_ingest_events_total[1m]))`: {
+			"accepted": 10, "rejected": 1, "rate_limited": 0, "shed": 0, "unavailable": 0,
+		},
+		`sum(rate(sentinel_ingest_requests_total[5m]))`:                {"": 4},
+		`sum(rate(sentinel_ingest_requests_total{status=~"5.."}[5m]))`: {"": 0},
+		`sum(rate(sentinel_ingest_requests_total{status="429"}[5m]))`:  {"": 1},
+		`sum(rate(sentinel_ingest_requests_total{status="503"}[5m]))`:  {"": 0},
+		`sum(rate(sentinel_dlq_events_total[5m]))`:                     {"": 0},
+		`max by (group) (sentinel_kafka_consumer_lag)`:                 {"sentinel-event-writer": 3},
+		`histogram_quantile(0.95, sum by (le) (rate(sentinel_detection_delay_seconds_bucket[5m])))`: {
+			"": 0.2,
+		},
+		`histogram_quantile(0.95, sum by (le) (rate(sentinel_clickhouse_write_duration_seconds_bucket[5m])))`: {
+			"": 0.01,
+		},
+	}
+}
+
+type systemCase struct {
+	metrics    systemMetricsTable
+	prober     systemProber
+	grafanaURL string
+}
+
+func systemCases() map[string]systemCase {
+	ready := systemProber(func(string) (int, int, error) { return 1, 1, nil })
+	return map[string]systemCase{
+		"available": {
+			metrics: systemMetricsTable{series: systemAvailableSeries()}, prober: ready,
+			grafanaURL: "http://127.0.0.1:13000",
+		},
+		"prometheus_unavailable": {metrics: systemMetricsTable{err: errors.New("refused")}, prober: ready},
+		"not_configured":         {metrics: systemMetricsTable{err: query.ErrPrometheusNotConfigured}, prober: ready},
+		"no_data":                {metrics: systemMetricsTable{series: map[string]map[string]float64{}}, prober: ready},
+		"readiness_mixed": {
+			metrics: systemMetricsTable{series: systemAvailableSeries()},
+			prober: func(address string) (int, int, error) {
+				switch address {
+				case "ingest:9101":
+					return 0, 0, errors.New("no such host")
+				case "detector:9102":
+					return 1, 2, nil
+				default:
+					return 0, 1, nil
+				}
+			},
+		},
+	}
+}
+
+type systemFixture struct {
+	e      *echo.Echo
+	secret []byte
+}
+
+func newSystemFixture(t *testing.T, tc systemCase) systemFixture {
+	t.Helper()
+	secret := make([]byte, 48)
+	_, err := rand.Read(secret)
+	require.NoError(t, err)
+	verifier, err := auth.NewVerifier(secret, "sentinel-dev", "sentinel-dashboard")
+	require.NoError(t, err)
+	e := echo.New()
+	logger := zerolog.Nop()
+	middleware.Apply(e, &logger, nil)
+	groups := config.KafkaConfig{
+		EventWriterGroup: "sentinel-event-writer", DetectorGroup: "sentinel-detector",
+		AlertWriterGroup: "sentinel-alert-writer",
+	}
+	obs := config.ObservabilityConfig{
+		ServiceName: "query-api", GrafanaURL: tc.grafanaURL,
+		System: config.SystemConfig{
+			Ingest:      config.ServiceTarget{Address: "ingest:9101", Expected: 1},
+			EventWriter: config.ServiceTarget{Address: "event-writer:9103", Expected: 1},
+			Detector:    config.ServiceTarget{Address: "detector:9102", Expected: 2},
+			AlertWriter: config.ServiceTarget{Address: "alert-writer:9104", Expected: 1},
+			// query-api left unconfigured: readiness reports not_configured.
+		},
+	}
+	query.NewSystemHandler(tc.metrics, tc.prober, verifier, obs, groups, nil).Register(e)
+	return systemFixture{e: e, secret: secret}
+}
+
+func (f systemFixture) get(t *testing.T, role string) (int, []byte) {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, pathSystem, nil)
+	if role != "" {
+		now := time.Now().UTC().Truncate(time.Second)
+		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"iss": "sentinel-dev", "aud": "sentinel-dashboard", "sub": "contract-" + role, "tenant": "demo",
+			"role": role, "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
+		}).SignedString(f.secret)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	f.e.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.Bytes()
+}
+
+// TestOpenAPISystemRuntimeSecurity proves the advertised BearerAuth
+// requirement and the admin-only rule hold at runtime.
+func TestOpenAPISystemRuntimeSecurity(t *testing.T) {
+	t.Parallel()
+
+	op := operations(loadOpenAPI(t))["GET "+pathSystem]
+	require.NotNil(t, op)
+	require.NotNil(t, op.Security)
+	require.Equal(t, openapi3.SecurityRequirements{{"BearerAuth": []string{}}}, *op.Security)
+
+	f := newSystemFixture(t, systemCases()["available"])
+	for _, tc := range []struct {
+		role   string
+		status int
+	}{
+		{role: "", status: http.StatusUnauthorized},
+		{role: "viewer", status: http.StatusForbidden},
+		{role: "analyst", status: http.StatusForbidden},
+		{role: "admin", status: http.StatusOK},
+	} {
+		status, raw := f.get(t, tc.role)
+		require.Equal(t, tc.status, status, "role %q: %s", tc.role, raw)
+		require.NotNil(t, op.Responses.Value(strconv.Itoa(status)), "status %d must be documented", status)
+	}
+}

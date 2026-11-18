@@ -884,3 +884,79 @@ func TestTracingConfigValidate(t *testing.T) {
 		require.Error(t, bad.Validate(), "%+v", bad)
 	}
 }
+
+func TestLoadSystemDefaultsEmpty(t *testing.T) {
+	setCompleteEnv(t)
+	cfg, err := config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	require.Empty(t, cfg.Observability.GrafanaURL)
+	require.Equal(t, config.SystemConfig{}, cfg.Observability.System, "unset targets are explicitly not configured")
+}
+
+func TestLoadSystemFromEnv(t *testing.T) {
+	setCompleteEnv(t)
+	t.Setenv("SENTINEL_OBSERVABILITY.GRAFANA_URL", "https://grafana.internal:3000/d/sentinel")
+	for key, value := range map[string]string{
+		"INGEST": "ingest:9101", "EVENT_WRITER": "event-writer:9103", "DETECTOR": "detector:9102",
+		"ALERT_WRITER": "alert-writer:9104", "QUERY_API": "query-api:9105",
+	} {
+		t.Setenv("SENTINEL_OBSERVABILITY.SYSTEM."+key+".ADDRESS", value)
+	}
+	t.Setenv("SENTINEL_OBSERVABILITY.SYSTEM.INGEST.EXPECTED", "2")
+	t.Setenv("SENTINEL_OBSERVABILITY.SYSTEM.EVENT_WRITER.EXPECTED", "2")
+	t.Setenv("SENTINEL_OBSERVABILITY.SYSTEM.DETECTOR.EXPECTED", "3")
+	t.Setenv("SENTINEL_OBSERVABILITY.SYSTEM.ALERT_WRITER.EXPECTED", "1")
+	t.Setenv("SENTINEL_OBSERVABILITY.SYSTEM.QUERY_API.EXPECTED", "64")
+	cfg, err := config.Load(config.ServiceQueryAPI)
+	require.NoError(t, err)
+	require.Equal(t, "https://grafana.internal:3000/d/sentinel", cfg.Observability.GrafanaURL)
+	require.Equal(t, config.SystemConfig{
+		Ingest:      config.ServiceTarget{Address: "ingest:9101", Expected: 2},
+		EventWriter: config.ServiceTarget{Address: "event-writer:9103", Expected: 2},
+		Detector:    config.ServiceTarget{Address: "detector:9102", Expected: 3},
+		AlertWriter: config.ServiceTarget{Address: "alert-writer:9104", Expected: 1},
+		QueryAPI:    config.ServiceTarget{Address: "query-api:9105", Expected: 64},
+	}, cfg.Observability.System)
+}
+
+func TestLoadGrafanaURLRejectsInvalid(t *testing.T) {
+	for name, value := range map[string]string{
+		"javascript": "javascript:alert(1)",
+		"no_scheme":  "grafana:3000",
+		"userinfo":   "http://admin:secret@grafana:3000",
+		"empty_host": "https:///d/x",
+		"ftp":        "ftp://grafana",
+	} {
+		t.Run(name, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv("SENTINEL_OBSERVABILITY.GRAFANA_URL", value)
+			_, err := config.Load(config.ServiceQueryAPI)
+			require.ErrorContains(t, err, "grafana_url")
+			require.NotContains(t, err.Error(), "secret", "the raw value may hold credentials")
+		})
+	}
+}
+
+func TestLoadSystemRejectsInvalidTargets(t *testing.T) {
+	for name, tc := range map[string]struct{ key, value string }{
+		"address_no_port":     {"SYSTEM.INGEST.ADDRESS", "ingest"},
+		"address_scheme":      {"SYSTEM.DETECTOR.ADDRESS", "http://detector:9102"},
+		"address_no_host":     {"SYSTEM.EVENT_WRITER.ADDRESS", ":9103"},
+		"address_bad_port":    {"SYSTEM.ALERT_WRITER.ADDRESS", "alert-writer:99999"},
+		"address_zero_port":   {"SYSTEM.QUERY_API.ADDRESS", "query-api:0"},
+		"address_path":        {"SYSTEM.QUERY_API.ADDRESS", "query-api:9105/readyz"},
+		"expected_negative":   {"SYSTEM.INGEST.EXPECTED", "-1"},
+		"expected_above_cap":  {"SYSTEM.DETECTOR.EXPECTED", "65"},
+		"expected_not_number": {"SYSTEM.ALERT_WRITER.EXPECTED", "many"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setCompleteEnv(t)
+			t.Setenv("SENTINEL_OBSERVABILITY."+tc.key, tc.value)
+			_, err := config.Load(config.ServiceQueryAPI)
+			require.Error(t, err)
+			if name != "expected_not_number" {
+				require.ErrorContains(t, err, "system")
+			}
+		})
+	}
+}

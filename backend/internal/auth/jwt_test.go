@@ -88,3 +88,12 @@ func TestVerifierRequiresKey(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestRequireAdmin(t *testing.T) {
+	t.Parallel()
+	require.NoError(t, auth.RequireAdmin(auth.Principal{Subject: "a", TenantID: "t", Role: "admin"}))
+	for _, role := range []string{"analyst", "viewer", "", "Admin", "operator"} {
+		err := auth.RequireAdmin(auth.Principal{Subject: "a", TenantID: "t", Role: role})
+		require.ErrorIs(t, err, auth.ErrForbidden, "role %q", role)
+	}
+}
