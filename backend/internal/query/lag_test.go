@@ -231,7 +231,8 @@ func TestLagUnknownRoleForbiddenAndAudited(t *testing.T) {
 	f := newLagFixture(t, available())
 	verifier, err := auth.NewVerifier(f.key, "sentinel-dev", "sentinel-dashboard")
 	require.NoError(t, err)
-	handler := query.NewLagHandler(f.metrics, verifier, lagGroups(), auth.NewOperatorTenants([]string{operatorTenant}), nil)
+	operators := auth.NewOperatorTenants([]string{operatorTenant})
+	handler := query.NewLagHandler(f.metrics, verifier, lagGroups(), operators, nil)
 	// The verifier rejects unknown roles in tokens, so inject a principal the
 	// way the middleware would to prove the handler fails closed on its own.
 	f.e.GET("/unknown-role", handler.GetLag, func(next echo.HandlerFunc) echo.HandlerFunc {

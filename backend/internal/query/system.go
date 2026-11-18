@@ -51,6 +51,9 @@ const (
 	// systemForbiddenMessage is the refusal for every non-admin role: the
 	// System data is global and would leak other tenants' activity.
 	systemForbiddenMessage = "System health requires the admin role."
+	// systemOperatorMessage is the refusal for admins of tenants outside the
+	// operator allowlist (ADR 0014).
+	systemOperatorMessage = "System status is limited to operator administrators."
 	// readinessBudget bounds all readiness probes of one request. Probes not
 	// finished by then count as not ready.
 	readinessBudget = 2 * time.Second
@@ -143,11 +146,12 @@ type queryResult struct {
 	err    error
 }
 
-// SystemHandler serves GET /api/v1/system to admins only.
+// SystemHandler serves GET /api/v1/system to admins of operator tenants only.
 type SystemHandler struct {
 	metrics    SystemMetrics
 	prober     ReadinessProber
 	auth       *auth.Verifier
+	operators  auth.OperatorTenants
 	services   []systemTarget
 	groups     []lagGroup
 	grafanaURL string
@@ -157,13 +161,14 @@ type SystemHandler struct {
 // NewSystemHandler builds the handler from server configuration only. A nil
 // clock uses the real clock.
 func NewSystemHandler(metrics SystemMetrics, prober ReadinessProber, verifier *auth.Verifier,
-	cfg config.ObservabilityConfig, kafka config.KafkaConfig, now func() time.Time,
+	cfg config.ObservabilityConfig, kafka config.KafkaConfig, operators auth.OperatorTenants,
+	now func() time.Time,
 ) *SystemHandler {
 	if now == nil {
 		now = time.Now
 	}
 	return &SystemHandler{
-		metrics: metrics, prober: prober, auth: verifier, groups: pipelineGroups(kafka),
+		metrics: metrics, prober: prober, auth: verifier, operators: operators, groups: pipelineGroups(kafka),
 		grafanaURL: cfg.GrafanaURL, now: now,
 		// The Prometheus job names equal the display names.
 		services: []systemTarget{
@@ -183,6 +188,7 @@ func (h *SystemHandler) Register(e *echo.Echo) {
 
 // GetSystem returns 200 with per-field availability even when Prometheus or
 // some replicas are down; only query-api's own failures produce errors.
+// Order: 401, role 403, 400 for any query string, operator 403.
 func (h *SystemHandler) GetSystem(c echo.Context) error {
 	p, err := auth.RequirePrincipal(c)
 	if err != nil {
@@ -194,6 +200,10 @@ func (h *SystemHandler) GetSystem(c echo.Context) error {
 	}
 	if c.Request().URL.RawQuery != "" {
 		return queryNotAccepted()
+	}
+	if !h.operators.Includes(p) {
+		auth.Audit(c, "system_status", "denied", "operator_forbidden", p)
+		return errs.NewForbiddenError(systemOperatorMessage, false)
 	}
 	now := h.now().UTC()
 	ctx := c.Request().Context()

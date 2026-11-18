@@ -448,6 +448,10 @@ paths:
         Position-based consumer lag per consumer group (maximum across
         partitions) from a fixed server-side query.
         Requires role analyst or admin; viewers receive 403.
+        Lag is platform-wide, so values are shown only when the verified
+        tenant is an operator tenant (SENTINEL_AUTH.OPERATOR_TENANTS). For
+        any other tenant every row is unavailable with reason operator_only
+        and no value, and Prometheus is not queried.
         Unavailable values carry a reason and are never zero. The response holds exactly one value per pipeline group
         (event-writer, detector, alert-writer) and no throughput, volumes,
         error counts, partitions or tenant data. No query parameters are
@@ -478,12 +482,15 @@ paths:
       operationId: getSystemStatus
       summary: Global pipeline health for the System page
       description: |
-        Admin only. Global pipeline health from fixed server-side Prometheus
-        queries and readiness probes. Unavailable values carry a reason and
-        are never zero.
+        Operator admins only. Global pipeline health from fixed server-side
+        Prometheus queries and readiness probes. Unavailable values carry a
+        reason and are never zero.
         The data spans every tenant, so analysts and viewers receive 403
-        (audited). No query parameters are accepted; any query string returns
-        400. A Prometheus outage returns 200 with every metric unavailable
+        (audited), and admins receive 403 (audited separately) unless their
+        verified tenant is listed in SENTINEL_AUTH.OPERATOR_TENANTS; an empty
+        list admits nobody. Order: 401, the role 403, 400 for any query
+        string (no query parameters are accepted), then the operator 403.
+        A Prometheus outage returns 200 with every metric unavailable
         while readiness from the services' /readyz probes still renders; 503
         means query-api itself cannot answer.
       security:
@@ -1237,6 +1244,8 @@ components:
         One global metric with explicit availability. An available metric
         always has a value; an unavailable metric always has a reason and
         never a value, so a missing source is never rendered as zero.
+        operator_only appears only in GET /api/v1/metrics/lag for tenants
+        outside the operator allowlist.
       oneOf:
         - type: object
           additionalProperties: false
@@ -1253,7 +1262,7 @@ components:
             state:
               const: unavailable
             reason:
-              enum: [prometheus_unavailable, no_data, not_configured, not_reachable]
+              enum: [prometheus_unavailable, no_data, not_configured, not_reachable, operator_only]
 
     ConsumerLag:
       type: object

@@ -401,18 +401,18 @@ func TestOpenAPIConsumerLagDrift(t *testing.T) {
 		"a measured zero lag is a real value")
 
 	for name, raw := range map[string]string{
-		"unavailable_with_zero":    valid(`{"state":"unavailable","reason":"no_data","value":0}`),
-		"operator_only_with_value": valid(`{"state":"unavailable","reason":"operator_only","value":5}`),
-		"available_operator_only":  valid(`{"state":"available","reason":"operator_only","value":5}`),
-		"available_no_value":       valid(`{"state":"available"}`),
-		"unavailable_no_reason":    valid(`{"state":"unavailable"}`),
-		"unknown_reason":           valid(`{"state":"unavailable","reason":"boom"}`),
-		"unknown_state":            valid(`{"state":"stale","value":1}`),
-		"tenant_leak":              strings.Replace(valid(`{"state":"available","value":0}`), "{", `{"tenant_id":"a",`, 1),
-		"extra_row_key":            valid(`{"state":"available","value":0},"partition":3`),
-		"unknown_group":            strings.Replace(valid(`{"state":"available","value":0}`), "event-writer", "ingest", 1),
-		"missing_row":              `{"observed_at":"2026-11-17T12:00:00Z","consumer_lag":[]}`,
-		"non_utc_observed_at":      strings.Replace(valid(`{"state":"available","value":0}`), "12:00:00Z", "12:00:00+01:00", 1),
+		"unavailable_with_zero": valid(`{"state":"unavailable","reason":"no_data","value":0}`),
+		"operator_only_value":   valid(`{"state":"unavailable","reason":"operator_only","value":5}`),
+		"available_operator":    valid(`{"state":"available","reason":"operator_only","value":5}`),
+		"available_no_value":    valid(`{"state":"available"}`),
+		"unavailable_no_reason": valid(`{"state":"unavailable"}`),
+		"unknown_reason":        valid(`{"state":"unavailable","reason":"boom"}`),
+		"unknown_state":         valid(`{"state":"stale","value":1}`),
+		"tenant_leak":           strings.Replace(valid(`{"state":"available","value":0}`), "{", `{"tenant_id":"a",`, 1),
+		"extra_row_key":         valid(`{"state":"available","value":0},"partition":3`),
+		"unknown_group":         strings.Replace(valid(`{"state":"available","value":0}`), "event-writer", "ingest", 1),
+		"missing_row":           `{"observed_at":"2026-11-17T12:00:00Z","consumer_lag":[]}`,
+		"non_utc_observed_at":   strings.Replace(valid(`{"state":"available","value":0}`), "12:00:00Z", "12:00:00+01:00", 1),
 	} {
 		assert.Error(t, schema.VisitJSON(decodeAny(t, raw), visitOptions()...), "%s should be rejected", name)
 	}

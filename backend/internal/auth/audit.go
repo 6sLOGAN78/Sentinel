@@ -20,7 +20,8 @@ func Audit(c echo.Context, action, outcome, reason string, p Principal) {
 	}
 	switch reason {
 	case "invalid_credential", "auth_unavailable", "scope_forbidden", "tenant_forbidden",
-		"role_forbidden", "invalid_request", "conflict", "not_found", "store_unavailable", "committed":
+		"role_forbidden", "operator_forbidden", "invalid_request", "conflict", "not_found", "store_unavailable",
+		"committed":
 	default:
 		return
 	}

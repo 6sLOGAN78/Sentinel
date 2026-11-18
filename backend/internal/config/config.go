@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -136,10 +137,37 @@ type StreamConfig struct {
 }
 
 // AuthConfig has no default signing key. Issuer/audience are fixed by the v1 contract.
+// OperatorTenants lists the tenants whose principals may read platform-wide
+// views (System, consumer lag values); empty or unset means none (ADR 0014).
 type AuthConfig struct {
-	JWTSecret string `koanf:"jwt_secret"`
-	Issuer    string `koanf:"issuer"`
-	Audience  string `koanf:"audience"`
+	JWTSecret       string   `koanf:"jwt_secret"`
+	Issuer          string   `koanf:"issuer"`
+	Audience        string   `koanf:"audience"`
+	OperatorTenants []string `koanf:"operator_tenants"`
+}
+
+// maxOperatorTenants bounds the operator allowlist.
+const maxOperatorTenants = 16
+
+// operatorTenantPattern is the verified tenant slug format (auth, contracts).
+var operatorTenantPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+
+func validateOperatorTenants(ids []string) error {
+	if len(ids) > maxOperatorTenants {
+		return fmt.Errorf("validate auth config: operator tenants allow at most %d entries", maxOperatorTenants)
+	}
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if !operatorTenantPattern.MatchString(id) {
+			return errors.New("validate auth config: operator tenants must be tenant ids matching " +
+				operatorTenantPattern.String())
+		}
+		if _, dup := seen[id]; dup {
+			return errors.New("validate auth config: operator tenants must not repeat")
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
 }
 
 func validateAuth(cfg AuthConfig) error {
@@ -151,7 +179,7 @@ func validateAuth(cfg AuthConfig) error {
 	if cfg.Issuer != "sentinel-dev" || cfg.Audience != "sentinel-dashboard" {
 		return errors.New("validate auth config: issuer and audience must match the dashboard contract")
 	}
-	return nil
+	return validateOperatorTenants(cfg.OperatorTenants)
 }
 
 // DetectorConfig loads immutable startup rules and bounds one owned batch.
@@ -471,6 +499,7 @@ func Load(service string) (*Config, error) {
 func listKeys() map[string]struct{} {
 	return map[string]struct{}{
 		"server.cors_allowed_origins": {},
+		"auth.operator_tenants":       {},
 	}
 }
 

@@ -173,8 +173,10 @@ func registerQueryRoutes(e *echo.Echo, cfg *config.Config, pool *pgxpool.Pool, c
 	query.NewEventHandler(storageclickhouse.NewQueryEventStore(ch), jwtVerifier, cursors).Register(e)
 	query.NewRulesHandler(rules, jwtVerifier).Register(e)
 	query.NewSummaryHandler(storageclickhouse.NewQueryEventStore(ch), alerts, jwtVerifier, nil).Register(e)
-	query.NewLagHandler(prom, jwtVerifier, cfg.Kafka, nil).Register(e)
-	query.NewSystemHandler(prom, newReadinessProber(), jwtVerifier, *cfg.Observability, cfg.Kafka, nil).Register(e)
+	operators := auth.NewOperatorTenants(cfg.Auth.OperatorTenants)
+	query.NewLagHandler(prom, jwtVerifier, cfg.Kafka, operators, nil).Register(e)
+	query.NewSystemHandler(prom, newReadinessProber(), jwtVerifier, *cfg.Observability, cfg.Kafka, operators, nil).
+		Register(e)
 
 	return nil
 }

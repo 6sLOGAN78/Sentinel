@@ -85,6 +85,34 @@ func matrixIDs(t *testing.T, raw []byte, field string) []string {
 	return ids
 }
 
+// matrixGlobalViews checks the platform-wide views across the tenant boundary:
+// only an operator tenant's admin sees System, and a non-operator tenant's lag
+// rows carry operator_only and no value (ADR 0014).
+func matrixGlobalViews(t *testing.T, base, credential, role string, operator bool) {
+	t.Helper()
+	status, _, raw := matrixCall(t, http.MethodGet, base+"/api/v1/system", credential, "", nil)
+	switch {
+	case role != "admin":
+		require.Equal(t, 403, status)
+		require.Contains(t, string(raw), "requires the admin role")
+	case operator:
+		require.Equal(t, 200, status, string(raw))
+	default:
+		require.Equal(t, 403, status)
+		require.Contains(t, string(raw), "limited to operator administrators")
+	}
+	status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/metrics/lag", credential, "", nil)
+	if role == "viewer" {
+		require.Equal(t, 403, status)
+		return
+	}
+	require.Equal(t, 200, status, string(raw))
+	require.Equal(t, !operator, strings.Contains(string(raw), `"operator_only"`), string(raw))
+	if !operator {
+		require.NotContains(t, string(raw), `"value"`)
+	}
+}
+
 //nolint:gocognit,funlen // One exact native family retains the whole surfaces x tenants x roles matrix.
 func TestPhase4TenantMatrix(t *testing.T) {
 	root, err := filepath.Abs("../..")
@@ -317,29 +345,8 @@ func TestPhase4TenantMatrix(t *testing.T) {
 				require.Equal(t, 400, status, "tenant query tampering is rejected")
 				require.NotContains(t, string(raw), foreign.name, "tenant query tampering cannot select another tenant")
 
-				// global pipeline views: only an operator tenant's admin sees System;
-				// a non-operator tenant's lag rows carry operator_only and no value.
-				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/system", credential, "", nil)
-				switch {
-				case role != "admin":
-					require.Equal(t, 403, status)
-					require.Contains(t, string(raw), "requires the admin role")
-				case i == 0:
-					require.Equal(t, 200, status, string(raw))
-				default:
-					require.Equal(t, 403, status)
-					require.Contains(t, string(raw), "limited to operator administrators")
-				}
-				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/metrics/lag", credential, "", nil)
-				if role == "viewer" {
-					require.Equal(t, 403, status)
-				} else {
-					require.Equal(t, 200, status, string(raw))
-					require.Equal(t, i != 0, strings.Contains(string(raw), `"operator_only"`), string(raw))
-					if i != 0 {
-						require.NotContains(t, string(raw), `"value"`)
-					}
-				}
+				// global pipeline views: only tenant 0 is an operator tenant.
+				matrixGlobalViews(t, base, credential, role, i == 0)
 
 				// rules are one global read-only policy, identical for every tenant and role.
 				status, _, raw = matrixCall(t, http.MethodGet, base+"/api/v1/rules", credential, "", nil)

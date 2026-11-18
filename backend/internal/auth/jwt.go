@@ -143,3 +143,29 @@ func RequireAdmin(p Principal) error {
 	}
 	return nil
 }
+
+// OperatorTenants is the fail-closed allowlist of tenants whose principals
+// may see platform-wide (cross-tenant) aggregates. The zero value includes no
+// tenant, so an unset allowlist makes nobody an operator.
+type OperatorTenants struct {
+	ids map[string]struct{}
+}
+
+// NewOperatorTenants copies ids. Entries that are not valid tenant slugs are
+// dropped, so they can never match a verified tenant.
+func NewOperatorTenants(ids []string) OperatorTenants {
+	set := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if tenantPattern.MatchString(id) {
+			set[id] = struct{}{}
+		}
+	}
+	return OperatorTenants{ids: set}
+}
+
+// Includes reports whether the verified tenant of p is an operator tenant.
+// It reads only the principal, never request fields.
+func (o OperatorTenants) Includes(p Principal) bool {
+	_, ok := o.ids[p.TenantID]
+	return ok && p.TenantID != ""
+}

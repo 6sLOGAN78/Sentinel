@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,13 @@ import (
 // connection; only the lag route is exercised, and it never touches PG or CH.
 func routesFixture(t *testing.T, prometheusURL string) (*echo.Echo, []byte, error) {
 	t.Helper()
+	return routesFixtureWith(t, prometheusURL, []string{"tenant-a"})
+}
+
+// routesFixtureWith wires the routes from a config whose operator allowlist
+// is operators, proving main passes cfg.Auth.OperatorTenants through.
+func routesFixtureWith(t *testing.T, prometheusURL string, operators []string) (*echo.Echo, []byte, error) {
+	t.Helper()
 	secret := make([]byte, 48)
 	_, err := rand.Read(secret)
 	require.NoError(t, err)
@@ -33,6 +41,7 @@ func routesFixture(t *testing.T, prometheusURL string) (*echo.Echo, []byte, erro
 	require.NoError(t, err)
 	cfg := &config.Config{
 		Observability: &config.ObservabilityConfig{PrometheusURL: prometheusURL},
+		Auth:          config.AuthConfig{OperatorTenants: operators},
 		Kafka: config.KafkaConfig{
 			EventWriterGroup: "sentinel-event-writer", DetectorGroup: "sentinel-detector",
 			AlertWriterGroup: "sentinel-alert-writer",
@@ -135,5 +144,21 @@ func TestRegisterQueryRoutesMountsSystemAdminOnly(t *testing.T) {
 		// No system targets configured: nothing is probed, nothing is invented.
 		require.Equal(t, map[string]any{"state": "unavailable", "reason": "not_configured"}, s.Readiness, s.Name)
 	}
+	require.NotContains(t, rec.Body.String(), `"value"`)
+}
+
+func TestRegisterQueryRoutesWiresOperatorTenants(t *testing.T) {
+	t.Parallel()
+	// tenant-a is not an operator here: System is refused and lag is withheld.
+	e, secret, err := routesFixtureWith(t, "", []string{"ops"})
+	require.NoError(t, err)
+
+	rec := routeRequest(t, e, secret, "/api/v1/system", "admin")
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "System status is limited to operator administrators.")
+
+	rec = lagRequest(t, e, secret, "analyst")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, 3, strings.Count(rec.Body.String(), `"reason":"operator_only"`), rec.Body.String())
 	require.NotContains(t, rec.Body.String(), `"value"`)
 }

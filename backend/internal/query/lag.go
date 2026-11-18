@@ -31,6 +31,9 @@ const (
 	ReasonNoData                = "no_data"
 	ReasonNotConfigured         = "not_configured"
 	ReasonNotReachable          = "not_reachable"
+	// ReasonOperatorOnly marks lag withheld from a non-operator tenant: the
+	// value is platform-wide, so only operator tenants see it (ADR 0014).
+	ReasonOperatorOnly = "operator_only"
 )
 
 // SystemMetric is one global metric value with explicit availability.
@@ -58,23 +61,27 @@ type lagGroup struct {
 	configured string
 }
 
-// LagHandler serves GET /api/v1/metrics/lag to analysts and admins.
+// LagHandler serves GET /api/v1/metrics/lag to analysts and admins. Values
+// are shown only to operator tenants; other tenants get operator_only rows.
 type LagHandler struct {
-	metrics SystemMetrics
-	auth    *auth.Verifier
-	groups  []lagGroup
-	now     func() time.Time
+	metrics   SystemMetrics
+	auth      *auth.Verifier
+	operators auth.OperatorTenants
+	groups    []lagGroup
+	now       func() time.Time
 }
 
 // NewLagHandler maps the configured consumer group names to their fixed
 // display names. A nil clock uses the real clock.
 func NewLagHandler(metrics SystemMetrics, verifier *auth.Verifier, groups config.KafkaConfig,
-	now func() time.Time,
+	operators auth.OperatorTenants, now func() time.Time,
 ) *LagHandler {
 	if now == nil {
 		now = time.Now
 	}
-	return &LagHandler{metrics: metrics, auth: verifier, now: now, groups: pipelineGroups(groups)}
+	return &LagHandler{
+		metrics: metrics, auth: verifier, operators: operators, now: now, groups: pipelineGroups(groups),
+	}
 }
 
 // pipelineGroups maps the configured consumer group names to their fixed
@@ -107,10 +114,17 @@ func (h *LagHandler) GetLag(c echo.Context) error {
 		return queryNotAccepted()
 	}
 	now := h.now().UTC()
+	rows := make([]ConsumerLagRow, len(h.groups))
+	if !h.operators.Includes(p) {
+		// Prometheus is never asked for a tenant that may not see the value.
+		for i, g := range h.groups {
+			rows[i] = ConsumerLagRow{Group: g.display, Lag: unavailableMetric(ReasonOperatorOnly)}
+		}
+		return c.JSON(http.StatusOK, ConsumerLag{ObservedAt: now, Rows: rows})
+	}
 	ctx, cancel := context.WithTimeout(c.Request().Context(), prometheusTimeout)
 	defer cancel()
 	series, err := h.metrics.Query(ctx, qLag, now)
-	rows := make([]ConsumerLagRow, len(h.groups))
 	for i, g := range h.groups {
 		rows[i] = ConsumerLagRow{Group: g.display, Lag: seriesMetric(series, err, g.configured)}
 	}
