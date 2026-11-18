@@ -112,8 +112,23 @@ services:
   query-api:
     environment:
       <<: *app-observability
-      # Consumer lag endpoint source; query-api readiness never depends on it.
+      # Consumer lag and System endpoint source; query-api readiness never
+      # depends on it.
       SENTINEL_OBSERVABILITY.PROMETHEUS_URL: http://prometheus:9090
+      # System page: optional Grafana link (browser-facing loopback URL) and
+      # the internal ops readiness targets. Service names resolve to every
+      # replica on the Compose network; the ops ports are never published.
+      SENTINEL_OBSERVABILITY.GRAFANA_URL: ${SENTINEL_GRAFANA_PUBLIC_URL:-http://127.0.0.1:13000}
+      SENTINEL_OBSERVABILITY.SYSTEM.INGEST.ADDRESS: ingest:9101
+      SENTINEL_OBSERVABILITY.SYSTEM.INGEST.EXPECTED: "1"
+      SENTINEL_OBSERVABILITY.SYSTEM.EVENT_WRITER.ADDRESS: event-writer:9103
+      SENTINEL_OBSERVABILITY.SYSTEM.EVENT_WRITER.EXPECTED: "1"
+      SENTINEL_OBSERVABILITY.SYSTEM.DETECTOR.ADDRESS: detector:9102
+      SENTINEL_OBSERVABILITY.SYSTEM.DETECTOR.EXPECTED: "1"
+      SENTINEL_OBSERVABILITY.SYSTEM.ALERT_WRITER.ADDRESS: alert-writer:9104
+      SENTINEL_OBSERVABILITY.SYSTEM.ALERT_WRITER.EXPECTED: "1"
+      SENTINEL_OBSERVABILITY.SYSTEM.QUERY_API.ADDRESS: query-api:9105
+      SENTINEL_OBSERVABILITY.SYSTEM.QUERY_API.EXPECTED: "1"
 
 volumes:
   prometheus-data: {}

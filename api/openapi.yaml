@@ -472,6 +472,38 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /api/v1/system:
+    get:
+      tags: [metrics]
+      operationId: getSystemStatus
+      summary: Global pipeline health for the System page
+      description: |
+        Admin only. Global pipeline health from fixed server-side Prometheus
+        queries and readiness probes. Unavailable values carry a reason and
+        are never zero.
+        The data spans every tenant, so analysts and viewers receive 403
+        (audited). No query parameters are accepted; any query string returns
+        400. A Prometheus outage returns 200 with every metric unavailable
+        while readiness from the services' /readyz probes still renders; 503
+        means query-api itself cannot answer.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Pipeline health with explicit per-field availability.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /healthz:
     get:
       tags: [ops]
@@ -1235,14 +1267,157 @@ components:
           minItems: 3
           maxItems: 3
           items:
-            type: object
-            additionalProperties: false
-            required: [group, lag]
-            properties:
-              group:
-                enum: [event-writer, detector, alert-writer]
-              lag:
-                $ref: "#/components/schemas/SystemMetric"
+            $ref: "#/components/schemas/ConsumerLagRow"
+
+    ConsumerLagRow:
+      type: object
+      additionalProperties: false
+      required: [group, lag]
+      properties:
+        group:
+          enum: [event-writer, detector, alert-writer]
+        lag:
+          $ref: "#/components/schemas/SystemMetric"
+
+    SystemReadiness:
+      description: |
+        Readiness of one service from its replicas' /readyz probes. ready:
+        every probed replica is ready and at least expected_replicas are;
+        degraded: some but not all; not_ready: none. Unavailable readiness
+        carries a reason and no counts.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [state, ready_replicas, probed_replicas]
+          properties:
+            state:
+              enum: [ready, degraded, not_ready]
+            ready_replicas:
+              type: integer
+              minimum: 0
+              maximum: 16
+            probed_replicas:
+              type: integer
+              minimum: 0
+              maximum: 16
+        - type: object
+          additionalProperties: false
+          required: [state, reason]
+          properties:
+            state:
+              const: unavailable
+            reason:
+              enum: [not_reachable, not_configured]
+
+    SystemService:
+      type: object
+      additionalProperties: false
+      required: [name, expected_replicas, replicas_up, restarts_15m, readiness]
+      properties:
+        name:
+          enum: [ingest, event-writer, detector, alert-writer, query-api]
+        expected_replicas:
+          description: Declared replica count; 0 means not declared.
+          type: integer
+          minimum: 0
+          maximum: 64
+        replicas_up:
+          $ref: "#/components/schemas/SystemMetric"
+        restarts_15m:
+          $ref: "#/components/schemas/SystemMetric"
+        readiness:
+          $ref: "#/components/schemas/SystemReadiness"
+
+    MetricsSource:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [state]
+          properties:
+            state:
+              const: available
+        - type: object
+          additionalProperties: false
+          required: [state, reason]
+          properties:
+            state:
+              const: unavailable
+            reason:
+              enum: [prometheus_unavailable, not_configured]
+
+    SystemStatus:
+      type: object
+      additionalProperties: false
+      required: [observed_at, metrics_source, services, ingest, http_errors, dlq_rate, consumer_lag, latency]
+      properties:
+        observed_at:
+          $ref: "#/components/schemas/UTCTimestamp"
+        grafana_url:
+          description: Optional server-configured Grafana link (http or https only).
+          type: string
+          pattern: "^https?://"
+        metrics_source:
+          $ref: "#/components/schemas/MetricsSource"
+        services:
+          description: Fixed order ingest, event-writer, detector, alert-writer, query-api.
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/SystemService"
+        ingest:
+          type: object
+          additionalProperties: false
+          required: [total, by_result]
+          properties:
+            total:
+              $ref: "#/components/schemas/SystemMetric"
+            by_result:
+              type: object
+              additionalProperties: false
+              required: [accepted, rejected, rate_limited, shed, unavailable]
+              properties:
+                accepted:
+                  $ref: "#/components/schemas/SystemMetric"
+                rejected:
+                  $ref: "#/components/schemas/SystemMetric"
+                rate_limited:
+                  $ref: "#/components/schemas/SystemMetric"
+                shed:
+                  $ref: "#/components/schemas/SystemMetric"
+                unavailable:
+                  $ref: "#/components/schemas/SystemMetric"
+        http_errors:
+          description: Ingest request rates (requests/s); ratio is (5xx + 429) / all requests.
+          type: object
+          additionalProperties: false
+          required: [ratio, status_5xx, status_429, status_503]
+          properties:
+            ratio:
+              $ref: "#/components/schemas/SystemMetric"
+            status_5xx:
+              $ref: "#/components/schemas/SystemMetric"
+            status_429:
+              $ref: "#/components/schemas/SystemMetric"
+            status_503:
+              $ref: "#/components/schemas/SystemMetric"
+        dlq_rate:
+          $ref: "#/components/schemas/SystemMetric"
+        consumer_lag:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/ConsumerLagRow"
+        latency:
+          type: object
+          additionalProperties: false
+          required: [detection_delay_p95_seconds, clickhouse_write_p95_seconds]
+          properties:
+            detection_delay_p95_seconds:
+              $ref: "#/components/schemas/SystemMetric"
+            clickhouse_write_p95_seconds:
+              $ref: "#/components/schemas/SystemMetric"
 
     HealthStatus:
       type: object

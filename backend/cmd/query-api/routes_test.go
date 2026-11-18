@@ -47,7 +47,12 @@ func routesFixture(t *testing.T, prometheusURL string) (*echo.Echo, []byte, erro
 
 func lagRequest(t *testing.T, e *echo.Echo, secret []byte, role string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/metrics/lag", nil)
+	return routeRequest(t, e, secret, "/api/v1/metrics/lag", role)
+}
+
+func routeRequest(t *testing.T, e *echo.Echo, secret []byte, path, role string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 	if role != "" {
 		now := time.Now().UTC().Truncate(time.Second)
 		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -102,4 +107,33 @@ func TestRegisterQueryRoutesRejectsInvalidPrometheusURL(t *testing.T) {
 	t.Parallel()
 	_, _, err := routesFixture(t, "http://[::1")
 	require.Error(t, err)
+}
+
+func TestRegisterQueryRoutesMountsSystemAdminOnly(t *testing.T) {
+	t.Parallel()
+	e, secret, err := routesFixture(t, "")
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusUnauthorized, routeRequest(t, e, secret, "/api/v1/system", "").Code)
+	require.Equal(t, http.StatusForbidden, routeRequest(t, e, secret, "/api/v1/system", "viewer").Code)
+	require.Equal(t, http.StatusForbidden, routeRequest(t, e, secret, "/api/v1/system", "analyst").Code)
+	require.Equal(t, http.StatusBadRequest, routeRequest(t, e, secret, "/api/v1/system?q=up", "admin").Code)
+
+	rec := routeRequest(t, e, secret, "/api/v1/system", "admin")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var body struct {
+		MetricsSource map[string]any `json:"metrics_source"`
+		Services      []struct {
+			Name      string         `json:"name"`
+			Readiness map[string]any `json:"readiness"`
+		} `json:"services"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, map[string]any{"state": "unavailable", "reason": "not_configured"}, body.MetricsSource)
+	require.Len(t, body.Services, 5)
+	for _, s := range body.Services {
+		// No system targets configured: nothing is probed, nothing is invented.
+		require.Equal(t, map[string]any{"state": "unavailable", "reason": "not_configured"}, s.Readiness, s.Name)
+	}
+	require.NotContains(t, rec.Body.String(), `"value"`)
 }

@@ -428,6 +428,37 @@ class OverlayComposeTests(unittest.TestCase):
                 else:
                     self.assertNotIn("SENTINEL_OBSERVABILITY.PROMETHEUS_URL", env)
 
+    def test_only_query_api_gets_system_targets(self):
+        expected = {
+            "SENTINEL_OBSERVABILITY.GRAFANA_URL": "http://127.0.0.1:13000",
+            "SENTINEL_OBSERVABILITY.SYSTEM.INGEST.ADDRESS": "ingest:9101",
+            "SENTINEL_OBSERVABILITY.SYSTEM.EVENT_WRITER.ADDRESS": "event-writer:9103",
+            "SENTINEL_OBSERVABILITY.SYSTEM.DETECTOR.ADDRESS": "detector:9102",
+            "SENTINEL_OBSERVABILITY.SYSTEM.ALERT_WRITER.ADDRESS": "alert-writer:9104",
+            "SENTINEL_OBSERVABILITY.SYSTEM.QUERY_API.ADDRESS": "query-api:9105",
+        }
+        services = self.services()
+        ops = dict(APP_PORTS)
+        for service, _ in APP_PORTS:
+            env = services[service]["environment"]
+            with self.subTest(service=service):
+                if service != "query-api":
+                    self.assertFalse([k for k in env if k.startswith("SENTINEL_OBSERVABILITY.SYSTEM.")])
+                    self.assertNotIn("SENTINEL_OBSERVABILITY.GRAFANA_URL", env)
+                    continue
+                for key, value in expected.items():
+                    self.assertEqual(env[key], value, key)
+                for key in expected:
+                    if key.endswith(".ADDRESS"):
+                        host, port = expected[key].split(":")
+                        self.assertEqual(int(port), ops[host], "readiness targets use the ops port")
+                        self.assertEqual(env[key.replace(".ADDRESS", ".EXPECTED")], "1")
+        override = self.services("SENTINEL_GRAFANA_PUBLIC_URL=https://grafana.example.test\n")
+        self.assertEqual(
+            override["query-api"]["environment"]["SENTINEL_OBSERVABILITY.GRAFANA_URL"],
+            "https://grafana.example.test",
+        )
+
     def test_env_template_has_grafana_placeholder(self):
         template = (ROOT / ".env.example").read_text()
         self.assertRegex(template, r"(?m)^SENTINEL_GRAFANA_ADMIN_PASSWORD=change-me")

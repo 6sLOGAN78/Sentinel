@@ -46,6 +46,10 @@ const (
 	clickhouseReadTimeout  = 30 * time.Second
 	clickhouseMaxOpenConns = 4
 	clickhouseMaxIdleConns = 2
+	// The readiness prober dials internal ops listeners only; the per-probe
+	// request deadline (1 s) lives in the prober.
+	readinessDialTimeout    = time.Second
+	readinessMaxHeaderBytes = 8 << 10
 )
 
 func setup(ctx context.Context, cfg *config.Config, log zerolog.Logger, lc *app.Lifecycle) error {
@@ -170,8 +174,21 @@ func registerQueryRoutes(e *echo.Echo, cfg *config.Config, pool *pgxpool.Pool, c
 	query.NewRulesHandler(rules, jwtVerifier).Register(e)
 	query.NewSummaryHandler(storageclickhouse.NewQueryEventStore(ch), alerts, jwtVerifier, nil).Register(e)
 	query.NewLagHandler(prom, jwtVerifier, cfg.Kafka, nil).Register(e)
+	query.NewSystemHandler(prom, newReadinessProber(), jwtVerifier, *cfg.Observability, cfg.Kafka, nil).Register(e)
 
 	return nil
+}
+
+// newReadinessProber probes the configured internal ops addresses directly:
+// no proxy from the environment, no keep-alive pool across replicas and a
+// bounded response header.
+func newReadinessProber() *query.DNSReadinessProber {
+	return query.NewDNSReadinessProber(net.DefaultResolver, &http.Client{Transport: &http.Transport{
+		Proxy:                  nil,
+		DialContext:            (&net.Dialer{Timeout: readinessDialTimeout}).DialContext,
+		DisableKeepAlives:      true,
+		MaxResponseHeaderBytes: readinessMaxHeaderBytes,
+	}})
 }
 
 // openTracing is registered right after ops-http so LIFO closes it after the

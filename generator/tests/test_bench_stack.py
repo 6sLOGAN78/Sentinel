@@ -702,3 +702,17 @@ def test_overlay_renders_replicas_ports_and_limits(stack: ModuleType, tmp_path: 
     assert ingest_env["SENTINEL_RATELIMIT.REFILL_RATE"] == "2000"
     assert services["topic-init"]["environment"]["EVENTS_PARTITIONS"] == "6"
     assert "postgres-migrate" not in services
+    query_env = services["query-api"]["environment"]
+    assert query_env["SENTINEL_OBSERVABILITY.PROMETHEUS_URL"] == "http://prometheus:9090"
+    assert query_env["SENTINEL_OBSERVABILITY.GRAFANA_URL"] == "http://127.0.0.1:33000"
+    system = {
+        "INGEST": ("ingest:9101", "2"),
+        "EVENT_WRITER": ("event-writer:9103", "2"),
+        "DETECTOR": ("detector:9102", "3"),
+        "ALERT_WRITER": ("alert-writer:9104", "1"),
+        "QUERY_API": ("query-api:9105", "2"),
+    }
+    for key, (address, expected_replicas) in system.items():
+        prefix = f"SENTINEL_OBSERVABILITY.SYSTEM.{key}"
+        assert query_env[f"{prefix}.ADDRESS"] == address, key
+        assert query_env[f"{prefix}.EXPECTED"] == expected_replicas, key

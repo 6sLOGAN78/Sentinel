@@ -123,8 +123,9 @@ services:
         condition: service_completed_successfully
     logging: *bench-logging
 
-  # The System-page readiness env (SENTINEL_OBSERVABILITY.SYSTEM.*) is added
-  # here by 05-21, which owns those config keys.
+  # System page (05-21): Prometheus source, bench Grafana link and readiness
+  # targets. EXPECTED follows the replica counts above; the ops addresses
+  # resolve to every replica inside the network and stay unpublished.
   query-api:
     build: *bench-build
     deploy:
@@ -132,6 +133,19 @@ services:
     ports: !override ["127.0.0.1:38090-38091:8081"]
     mem_limit: 256m
     cpus: 1.0
+    environment:
+      SENTINEL_OBSERVABILITY.PROMETHEUS_URL: http://prometheus:9090
+      SENTINEL_OBSERVABILITY.GRAFANA_URL: http://127.0.0.1:33000
+      SENTINEL_OBSERVABILITY.SYSTEM.INGEST.ADDRESS: ingest:9101
+      SENTINEL_OBSERVABILITY.SYSTEM.INGEST.EXPECTED: "${BENCH_INGEST_REPLICAS:-2}"
+      SENTINEL_OBSERVABILITY.SYSTEM.EVENT_WRITER.ADDRESS: event-writer:9103
+      SENTINEL_OBSERVABILITY.SYSTEM.EVENT_WRITER.EXPECTED: "2"
+      SENTINEL_OBSERVABILITY.SYSTEM.DETECTOR.ADDRESS: detector:9102
+      SENTINEL_OBSERVABILITY.SYSTEM.DETECTOR.EXPECTED: "${BENCH_DETECTOR_REPLICAS:-3}"
+      SENTINEL_OBSERVABILITY.SYSTEM.ALERT_WRITER.ADDRESS: alert-writer:9104
+      SENTINEL_OBSERVABILITY.SYSTEM.ALERT_WRITER.EXPECTED: "1"
+      SENTINEL_OBSERVABILITY.SYSTEM.QUERY_API.ADDRESS: query-api:9105
+      SENTINEL_OBSERVABILITY.SYSTEM.QUERY_API.EXPECTED: "2"
     logging: *bench-logging
 
   prometheus:
