@@ -313,6 +313,10 @@ services:
     environment:
       # Empty permits read-only config/ps; the actual binary refuses an empty key.
       SENTINEL_AUTH.JWT_SECRET: ${SENTINEL_AUTH_JWT_SECRET:-}
+      # ADR 0014: only the primary demo tenant sees platform-wide System and
+      # consumer lag values. demo2 is deliberately not an operator, so the
+      # cross-tenant refusal is demonstrable. Empty would admit nobody.
+      SENTINEL_AUTH.OPERATOR_TENANTS: demo
       SENTINEL_DETECTOR.RULES_PATH: /etc/sentinel/rules.yaml
       SENTINEL_PRIMARY.ENV: local
       SENTINEL_SERVER.BIND_ADDRESS: 0.0.0.0

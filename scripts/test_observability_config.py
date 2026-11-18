@@ -459,6 +459,45 @@ class OverlayComposeTests(unittest.TestCase):
             "https://grafana.example.test",
         )
 
+    def test_operator_tenant_is_demo_only_in_every_stack(self):
+        # ADR 0014: demo is the operator tenant in the dev, observability and
+        # bench stacks; demo2 must stay a non-operator; only query-api has it.
+        bench = ROOT / "deployments/compose/docker-compose.bench.yml"
+        for files in ((BASE,), (BASE, OVERLAY), (BASE, OVERLAY, bench)):
+            result = self.render_files(files)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            services = json.loads(result.stdout)["services"]
+            for service, _ in APP_PORTS:
+                env = services[service].get("environment") or {}
+                with self.subTest(files=[f.name for f in files], service=service):
+                    if service == "query-api":
+                        self.assertEqual(env["SENTINEL_AUTH.OPERATOR_TENANTS"], "demo")
+                    else:
+                        self.assertNotIn("SENTINEL_AUTH.OPERATOR_TENANTS", env)
+        template = (ROOT / ".env.example").read_text()
+        self.assertRegex(template, r"(?m)^SENTINEL_AUTH\.OPERATOR_TENANTS=demo$")
+
+    def render_files(self, files: tuple[Path, ...]) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / "env"
+            env_file.write_text(
+                f"SENTINEL_POSTGRES_PASSWORD={SYNTHETIC}\n"
+                f"SENTINEL_CLICKHOUSE_PASSWORD={SYNTHETIC}\n"
+                f"SENTINEL_GRAFANA_ADMIN_PASSWORD={SYNTHETIC}\n"
+                f"BENCH_GIT_SHA={'0' * 40}\n"
+            )
+            argv = ["docker", "compose", "-p", PROJECT, "--env-file", str(env_file)]
+            for f in files:
+                argv += ["-f", str(f)]
+            return subprocess.run(  # noqa: S603 - fixed docker compose argv
+                [*argv, "config", "--format", "json"],
+                env=clean_env(),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+
     def test_env_template_has_grafana_placeholder(self):
         template = (ROOT / ".env.example").read_text()
         self.assertRegex(template, r"(?m)^SENTINEL_GRAFANA_ADMIN_PASSWORD=change-me")

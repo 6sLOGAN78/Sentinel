@@ -115,6 +115,9 @@ services:
       # Consumer lag and System endpoint source; query-api readiness never
       # depends on it.
       SENTINEL_OBSERVABILITY.PROMETHEUS_URL: http://prometheus:9090
+      # ADR 0014: the System page and lag values are for the operator tenant
+      # only (demo); demo2 stays a non-operator tenant.
+      SENTINEL_AUTH.OPERATOR_TENANTS: demo
       # System page: optional Grafana link (browser-facing loopback URL) and
       # the internal ops readiness targets. Service names resolve to every
       # replica on the Compose network; the ops ports are never published.
