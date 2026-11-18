@@ -10,6 +10,8 @@ import (
 	"time"
 
 	driverclickhouse "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
@@ -130,19 +132,13 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 		return err
 	}
 
-	verifier := apikeys.NewVerifier(apikeys.NewStore(db.Pool), 0, 0, nil)
 	e := echo.New()
 	middleware.Apply(e, &log, cfg.Server.CORSAllowedOrigins)
 	deliveries.Register(e, jwtVerifier)
 	streams.Register(e, jwtVerifier)
-	eventquery.NewAuthenticatedHandler(verifier, jwtVerifier, storageclickhouse.NewEventStore(clickhouseConn)).Register(e)
-	e.GET("/api/v1/session", getSession, jwtVerifier.Middleware)
-	alerts := storagepostgres.NewAlertStore(db.Pool, alertQueryTimeout)
-	query.NewHandler(query.Dependencies{Alerts: alerts, Workflows: alerts, Triage: alerts,
-		Details: storageclickhouse.NewQueryAlertStore(clickhouseConn), Auth: jwtVerifier, Cursors: cursors}).Register(e)
-	query.NewEventHandler(storageclickhouse.NewQueryEventStore(clickhouseConn), jwtVerifier, cursors).Register(e)
-	query.NewRulesHandler(rules, jwtVerifier).Register(e)
-	query.NewSummaryHandler(storageclickhouse.NewQueryEventStore(clickhouseConn), alerts, jwtVerifier, nil).Register(e)
+	if err = registerQueryRoutes(e, cfg, db.Pool, clickhouseConn, jwtVerifier, cursors, rules); err != nil {
+		return err
+	}
 
 	if err = startQueryHTTP(ctx, cfg.Server, tracedHandler(e, tr), lc); err != nil {
 		return err
@@ -150,6 +146,30 @@ func setupWithRules(ctx context.Context, cfg *config.Config, log zerolog.Logger,
 	lc.Add("draining", opshttp.DrainCloser(draining, cfg.Ops.DrainHold))
 	startDeliveryProjector(ctx, deliveries, draining, lc)
 	lc.Add("alert-streams", streams.Close)
+
+	return nil
+}
+
+// registerQueryRoutes mounts the tenant-scoped read and triage routes plus the
+// lag-only metrics route. Prometheus is deliberately absent from readiness:
+// when it is down only the lag values degrade to unavailable.
+func registerQueryRoutes(e *echo.Echo, cfg *config.Config, pool *pgxpool.Pool, ch driver.Conn,
+	jwtVerifier *auth.Verifier, cursors *query.CursorCodec, rules *detection.Rules,
+) error {
+	prom, err := query.NewPrometheusMetrics(cfg.Observability.PrometheusURL)
+	if err != nil {
+		return err
+	}
+	verifier := apikeys.NewVerifier(apikeys.NewStore(pool), 0, 0, nil)
+	eventquery.NewAuthenticatedHandler(verifier, jwtVerifier, storageclickhouse.NewEventStore(ch)).Register(e)
+	e.GET("/api/v1/session", getSession, jwtVerifier.Middleware)
+	alerts := storagepostgres.NewAlertStore(pool, alertQueryTimeout)
+	query.NewHandler(query.Dependencies{Alerts: alerts, Workflows: alerts, Triage: alerts,
+		Details: storageclickhouse.NewQueryAlertStore(ch), Auth: jwtVerifier, Cursors: cursors}).Register(e)
+	query.NewEventHandler(storageclickhouse.NewQueryEventStore(ch), jwtVerifier, cursors).Register(e)
+	query.NewRulesHandler(rules, jwtVerifier).Register(e)
+	query.NewSummaryHandler(storageclickhouse.NewQueryEventStore(ch), alerts, jwtVerifier, nil).Register(e)
+	query.NewLagHandler(prom, jwtVerifier, cfg.Kafka, nil).Register(e)
 
 	return nil
 }

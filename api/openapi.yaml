@@ -420,7 +420,7 @@ paths:
         cover [end-24 hours,end), with unique canonical events and all PG alerts
         independent of status. CH orphan detections never become alerts. Known
         buckets are filled with zero only after every query succeeds; either
-        dependency failure returns 503. Consumer lag is unavailable until Phase 5.
+        dependency failure returns 503. Consumer lag is served by GET /api/v1/metrics/lag.
       security:
         - BearerAuth: []
       responses:
@@ -430,6 +430,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MetricsSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/metrics/lag:
+    get:
+      tags: [metrics]
+      operationId: getConsumerLag
+      summary: Position-based consumer lag per pipeline consumer group
+      description: |
+        Position-based consumer lag per consumer group (maximum across
+        partitions) from a fixed server-side query.
+        Requires role analyst or admin; viewers receive 403.
+        Unavailable values carry a reason and are never zero. The response holds exactly one value per pipeline group
+        (event-writer, detector, alert-writer) and no throughput, volumes,
+        error counts, partitions or tenant data. No query parameters are
+        accepted; any query string returns 400. A Prometheus outage returns
+        200 with every value unavailable; 503 means query-api itself cannot
+        answer.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Lag per consumer group with explicit availability.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerLag"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1166,6 +1199,50 @@ components:
           maxItems: 288
           items:
             $ref: "#/components/schemas/TrendPoint"
+
+    SystemMetric:
+      description: |
+        One global metric with explicit availability. An available metric
+        always has a value; an unavailable metric always has a reason and
+        never a value, so a missing source is never rendered as zero.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [state, value]
+          properties:
+            state:
+              const: available
+            value:
+              type: number
+        - type: object
+          additionalProperties: false
+          required: [state, reason]
+          properties:
+            state:
+              const: unavailable
+            reason:
+              enum: [prometheus_unavailable, no_data, not_configured, not_reachable]
+
+    ConsumerLag:
+      type: object
+      additionalProperties: false
+      required: [observed_at, consumer_lag]
+      properties:
+        observed_at:
+          $ref: "#/components/schemas/UTCTimestamp"
+        consumer_lag:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: false
+            required: [group, lag]
+            properties:
+              group:
+                enum: [event-writer, detector, alert-writer]
+              lag:
+                $ref: "#/components/schemas/SystemMetric"
 
     HealthStatus:
       type: object

@@ -416,6 +416,18 @@ class OverlayComposeTests(unittest.TestCase):
                         env["SENTINEL_OBSERVABILITY.TRACING.OTLP_ENDPOINT"], "http://jaeger:4318"
                     )
 
+    def test_only_query_api_gets_prometheus_url(self):
+        services = self.services()
+        for service, _ in APP_PORTS:
+            with self.subTest(service=service):
+                env = services[service]["environment"]
+                if service == "query-api":
+                    self.assertEqual(
+                        env["SENTINEL_OBSERVABILITY.PROMETHEUS_URL"], "http://prometheus:9090"
+                    )
+                else:
+                    self.assertNotIn("SENTINEL_OBSERVABILITY.PROMETHEUS_URL", env)
+
     def test_env_template_has_grafana_placeholder(self):
         template = (ROOT / ".env.example").read_text()
         self.assertRegex(template, r"(?m)^SENTINEL_GRAFANA_ADMIN_PASSWORD=change-me")

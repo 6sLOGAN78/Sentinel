@@ -110,7 +110,10 @@ services:
   alert-writer:
     environment: *app-observability
   query-api:
-    environment: *app-observability
+    environment:
+      <<: *app-observability
+      # Consumer lag endpoint source; query-api readiness never depends on it.
+      SENTINEL_OBSERVABILITY.PROMETHEUS_URL: http://prometheus:9090
 
 volumes:
   prometheus-data: {}
