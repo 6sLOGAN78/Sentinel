@@ -213,6 +213,7 @@ class MetricInventoryTests(unittest.TestCase):
         for expected in (
             "sentinel_ingest_requests_total",
             "sentinel_kafka_consumer_lag",
+            "sentinel_kafka_topic_partitions",
             "sentinel_detector_state_windows_limit",
             "sentinel_detector_pin_retention_margin_offsets",
         ):

@@ -65,10 +65,8 @@ func (s *recordingSink) SetTopicPartitions(group, topic string, n int) {
 	defer s.mu.Unlock()
 	s.partitions = append(s.partitions, n)
 	s.keys = append(s.keys, group+"/"+topic)
-	if forward, ok := s.next.(interface {
-		SetTopicPartitions(group, topic string, n int)
-	}); ok {
-		forward.SetTopicPartitions(group, topic, n)
+	if s.next != nil {
+		s.next.SetTopicPartitions(group, topic, n)
 	}
 }
 
@@ -452,12 +450,14 @@ func TestLagTopicPartitionsNeverShrinkOnListingErrors(t *testing.T) {
 	require.Equal(t, []int{6}, sink.partitionCalls())
 	requireTopicPartitions(t, reg, 6)
 
-	// Recovery publishes again.
+	// Recovery publishes again, including a partition increase.
 	ends.mu.Lock()
 	ends.ends = sixPartitions()
+	ends.ends[6] = 100
 	ends.mu.Unlock()
 	require.NoError(t, tracker.Tick(t.Context()))
-	require.Equal(t, []int{6, 6}, sink.partitionCalls())
+	require.Equal(t, []int{6, 7}, sink.partitionCalls())
+	requireTopicPartitions(t, reg, 7)
 }
 
 func TestLagRunSurvivesTransientErrorsAndExitsOnCancel(t *testing.T) {

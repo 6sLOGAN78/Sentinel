@@ -296,6 +296,7 @@ table lists exactly the registered names.
 | `sentinel_kafka_producer_buffered_records` | gauge | none | ingest | Records admitted to the event producer and not yet acknowledged or failed. A batch that does not fit is shed with 503 before it reaches the producer. |
 | `sentinel_kafka_producer_buffered_records_limit` | gauge | none | ingest | Configured `SENTINEL_KAFKA.MAX_BUFFERED_RECORDS`. |
 | `sentinel_kafka_consumer_lag` | gauge | `group`, `topic`, `partition` | event-writer, detector, alert-writer | Position-based lag, see [Consumer lag](#consumer-lag-position-based). |
+| `sentinel_kafka_topic_partitions` | gauge | `group`, `topic` | event-writer, detector, alert-writer | Partitions of the consumed topic as listed by the broker, exported by every member whether or not it owns any. Coverage denominator for `sentinel_kafka_consumer_lag`, see [Consumer lag](#consumer-lag-position-based). |
 | `sentinel_clickhouse_write_duration_seconds` | histogram | `result`: ok, error | event-writer, alert-writer | Duration of each ClickHouse insert attempt; `_count{result="error"}` counts failed attempts. |
 | `sentinel_dlq_events_total` | counter | `reason`: decode_error, validation_error, missing_received_at | event-writer, detector, alert-writer | Records acknowledged by the DLQ topic. |
 | `sentinel_detection_alerts_total` | counter | `rule_id`, `severity` | detector | Acknowledged alert **publications**. A replay after a crash counts the same alert again; unique alerts come from PostgreSQL/ClickHouse. |
@@ -333,6 +334,26 @@ background, and a transient failure keeps the last value.
 
 Dashboards and System use `max by (group)`. The lag endpoint labels the groups
 event-writer, detector and alert-writer.
+
+Lag series exist only for partitions some live process owns with a known
+position, so `max by (group)` alone cannot tell "caught up" from "nobody is
+reporting". Every member also exports `sentinel_kafka_topic_partitions`, the
+partition count of its topic as listed by the broker, even when it owns no
+partitions. Coverage is:
+
+```promql
+count by (group) (sentinel_kafka_consumer_lag)
+  < max by (group) (sentinel_kafka_topic_partitions)
+```
+
+When that comparison returns a series, coverage is incomplete and the max lag
+is not trustworthy. This happens during a rebalance, while a killed member's
+partitions wait out its session timeout (about 45 s) before reassignment, and
+while a newly assigned partition is still unseeded. The count is refreshed
+with each 5 s end-offset listing and is only updated when every partition of
+the topic loads cleanly, so a listing error never shrinks it. The lag endpoint
+and System page do not check coverage yet; plan 05-25 makes them report
+incomplete coverage as unavailable.
 
 ## Logs
 

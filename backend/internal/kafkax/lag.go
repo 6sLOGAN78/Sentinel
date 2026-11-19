@@ -30,11 +30,13 @@ type CommittedOffsetSource interface {
 	ListStartOffsets(ctx context.Context, topics ...string) (kadm.ListedOffsets, error)
 }
 
-// LagSink publishes and removes per-partition lag. *telemetry.ConsumerMetrics
+// LagSink publishes and removes per-partition lag and the topic partition
+// count that is its coverage denominator. *telemetry.ConsumerMetrics
 // satisfies it.
 type LagSink interface {
 	SetLag(group, topic string, partition int32, lag int64)
 	DeleteLag(group, topic string, partition int32)
+	SetTopicPartitions(group, topic string, n int)
 }
 
 // LagTracker exports position-based consumer lag: broker end offset minus the
@@ -170,18 +172,14 @@ func (t *LagTracker) Revoked(partitions []int32) {
 	}
 }
 
-// Tick lists end offsets once (2 s timeout) and publishes max(0, end - next)
-// for each seeded owned partition. On error previous values are left in place.
+// Tick lists end offsets once (2 s timeout), publishes the topic partition
+// count and then max(0, end - next) for each seeded owned partition. It lists
+// even when nothing is owned so every member reports the coverage
+// denominator. On error previous values are left in place.
 func (t *LagTracker) Tick(ctx context.Context) error {
 	lister := t.source()
 	if lister == nil || t.sink == nil {
 		return errors.New("lag tracker has no offset source or sink")
-	}
-	t.mu.Lock()
-	owned := len(t.next)
-	t.mu.Unlock()
-	if owned == 0 {
-		return nil
 	}
 
 	queryCtx, cancel := context.WithTimeout(ctx, lagQueryTimeout)
@@ -189,6 +187,9 @@ func (t *LagTracker) Tick(ctx context.Context) error {
 	cancel()
 	if err != nil {
 		return fmt.Errorf("list end offsets: %w", err)
+	}
+	if count, ok := partitionCount(ends[t.topic]); ok {
+		t.sink.SetTopicPartitions(t.group, t.topic, count)
 	}
 
 	// Publish under the lock so a concurrent Revoked cannot be undone.
@@ -206,6 +207,22 @@ func (t *LagTracker) Tick(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// partitionCount returns the number of listed partitions only when every
+// entry loaded cleanly. Any error, negative offset or missing topic keeps the
+// previous count, so a failed lookup can never shrink the denominator.
+func partitionCount(listed map[int32]kadm.ListedOffset) (int, bool) {
+	if len(listed) == 0 {
+		return 0, false
+	}
+	for _, offset := range listed {
+		if offset.Err != nil || offset.Offset < 0 {
+			return 0, false
+		}
+	}
+
+	return len(listed), true
 }
 
 // Run ticks immediately and then every interval until ctx is done. Transient

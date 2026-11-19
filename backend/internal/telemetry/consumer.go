@@ -14,6 +14,7 @@ const (
 )
 
 const (
+	labelGroup     = "group"
 	labelResult    = "result"
 	labelTopic     = "topic"
 	labelPartition = "partition"
@@ -21,12 +22,14 @@ const (
 )
 
 // ConsumerMetrics holds the spec 11.2 storage-writer metrics: position-based
-// consumer lag, ClickHouse write latency and DLQ counts. A nil
+// consumer lag with its topic partition count (the coverage denominator),
+// ClickHouse write latency and DLQ counts. A nil
 // *ConsumerMetrics is a valid no-op so callers need no guards.
 type ConsumerMetrics struct {
-	lag   *prometheus.GaugeVec
-	write *prometheus.HistogramVec
-	dlq   *prometheus.CounterVec
+	lag        *prometheus.GaugeVec
+	partitions *prometheus.GaugeVec
+	write      *prometheus.HistogramVec
+	dlq        *prometheus.CounterVec
 }
 
 // NewConsumerMetrics registers the consumer metrics on reg.
@@ -35,7 +38,13 @@ func NewConsumerMetrics(reg prometheus.Registerer) *ConsumerMetrics {
 		lag: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "sentinel_kafka_consumer_lag",
 			Help: "Broker end offset minus the next offset this process has durably processed.",
-		}, []string{"group", labelTopic, labelPartition}),
+		}, []string{labelGroup, labelTopic, labelPartition}),
+		// Labels group and topic only (ADR 0004): bounded and already used by lag.
+		partitions: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "sentinel_kafka_topic_partitions",
+			Help: "Partitions of the consumed topic as listed by the broker; " +
+				"coverage denominator for sentinel_kafka_consumer_lag.",
+		}, []string{labelGroup, labelTopic}),
 		write: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "sentinel_clickhouse_write_duration_seconds",
 			Help:    "Duration of each ClickHouse insert attempt, by outcome.",
@@ -46,7 +55,7 @@ func NewConsumerMetrics(reg prometheus.Registerer) *ConsumerMetrics {
 			Help: "Records acknowledged by the DLQ topic, by stable reason.",
 		}, []string{"reason"}),
 	}
-	reg.MustRegister(m.lag, m.write, m.dlq)
+	reg.MustRegister(m.lag, m.partitions, m.write, m.dlq)
 
 	return m
 }
@@ -68,6 +77,17 @@ func (m *ConsumerMetrics) DeleteLag(group, topic string, partition int32) {
 	}
 
 	m.lag.DeleteLabelValues(group, topic, partitionLabel(partition))
+}
+
+// SetTopicPartitions publishes the partition count of the consumed topic,
+// independent of how many partitions this process owns, so
+// count(lag series) < topic partitions exposes an unreported partition.
+func (m *ConsumerMetrics) SetTopicPartitions(group, topic string, n int) {
+	if m == nil {
+		return
+	}
+
+	m.partitions.WithLabelValues(group, topic).Set(float64(n))
 }
 
 // ObserveWrite records one ClickHouse insert attempt.
