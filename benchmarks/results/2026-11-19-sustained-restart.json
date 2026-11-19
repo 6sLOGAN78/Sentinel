@@ -1,0 +1,385 @@
+{
+  "config": {
+    "batch_size": 200,
+    "detector_limits": {
+      "bytes": 67108864,
+      "ledger_entries": 100000,
+      "windows": 10000
+    },
+    "events_partitions": 6,
+    "lateness_seconds": 30,
+    "max_in_flight_requests": 64,
+    "rate_limit": {
+      "capacity": 10000,
+      "refill_per_second": 2000
+    },
+    "replicas": {
+      "alert_writer": 1,
+      "detector": 3,
+      "event_writer": 2,
+      "ingest": 2,
+      "query_api": 2
+    },
+    "replication_factor": 1,
+    "retry_budget_seconds": 15.0,
+    "target_rate_eps": 400
+  },
+  "format_version": 1,
+  "hardware": {
+    "compose_version": "5.6.1",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500H",
+    "docker_version": "29.9.2",
+    "free_space_bytes_start": 19370119168,
+    "host_load_note": "MemAvailable at preflight 7.58 GiB; other running compose projects: none",
+    "kernel": "6.8.0-138-generic",
+    "logical_cpus": 16,
+    "ram_bytes": 16439414784
+  },
+  "latency": {
+    "api_ms": {
+      "/api/v1/alerts": {
+        "n": 150,
+        "non_2xx": 0,
+        "p50": 9647.735036,
+        "p95": 16004.023139
+      },
+      "/api/v1/events": {
+        "n": 150,
+        "non_2xx": 150,
+        "p50": 13419.775459,
+        "p95": 19830.445552
+      }
+    },
+    "detection_delay_seconds": {
+      "n": 125,
+      "p50": {
+        "lower": 0.8,
+        "upper": 1.6,
+        "value": 1.181132
+      },
+      "p95": {
+        "lower": 25.6,
+        "upper": 51.2,
+        "value": 35.2
+      },
+      "p99": {
+        "lower": 102.4,
+        "upper": 204.8,
+        "value": 179.2
+      }
+    },
+    "ingest_batch_size": 200,
+    "ingest_done_minus_intended_ms": {
+      "p50": 29.541705,
+      "p95": 35.253673,
+      "p99": 39.831109
+    },
+    "ingest_done_minus_sent_ms": {
+      "p50": 20.666932,
+      "p95": 25.475063,
+      "p99": 30.916028
+    },
+    "ingest_requests": 5000,
+    "schedule_slip_ms": {
+      "max": 6356.029697,
+      "p99": 12.134595
+    },
+    "sse_notify_ms": {
+      "n": 120,
+      "p50": 732.518766,
+      "p95": 1085.754421,
+      "p99": 1120.485146
+    }
+  },
+  "limitations": [
+    "counter increments on the killed detector between its last scrape (5 s interval) and the SIGKILL are not observable.",
+    "the killed detector was not restarted by its restart policy before collection; recovery ran on the surviving replicas.",
+    "SSE subscriber: 0 malformed frames, 6 reconnects, fatal status None.",
+    "resources.samples rss_bytes is docker stats MemUsage (cgroup memory usage without page cache), the closest per-container RSS docker exposes.",
+    "SSE notification latency is an upper bound on persistence latency: there is no wall-clock persistence column, and PostgreSQL persistence precedes SSE delivery.",
+    "Event size distribution is summarized by the harness; per-event sizes are not stored."
+  ],
+  "overload": null,
+  "preflight": {
+    "benign_maxima": {
+      "AUTH_BRUTE_FORCE": 6,
+      "DENY_SPIKE": 8,
+      "PORT_SCAN": 16,
+      "REQUEST_FLOOD": 36
+    },
+    "recheck": {
+      "attack_windows": 240,
+      "bytes_cap": 67108864,
+      "bytes_limit": 53687091,
+      "bytes_pct": 13.0,
+      "bytes_pred": 8725693,
+      "events_by_rule": {
+        "AUTH_BRUTE_FORCE": 713,
+        "DENY_SPIKE": 972,
+        "PORT_SCAN": 7775,
+        "REQUEST_FLOOD": 5831
+      },
+      "f_proc": 0.5398780487804878,
+      "failed": [],
+      "horizon_seconds": 330,
+      "ledger_cap": 100000,
+      "ledger_limit": 80000,
+      "ledger_pct": 71.26,
+      "ledger_pred": 71264,
+      "partition_share_max": 0.17995934959349594,
+      "r_proc_eps": 215.9512195121951,
+      "windows_by_rule": {
+        "AUTH_BRUTE_FORCE": 216,
+        "DENY_SPIKE": 216,
+        "PORT_SCAN": 432,
+        "REQUEST_FLOOD": 216
+      },
+      "windows_cap": 10000,
+      "windows_limit": 8000,
+      "windows_pct": 13.2,
+      "windows_pred": 1320
+    },
+    "seed": 2411410426,
+    "static": {
+      "attack_windows": 240,
+      "bytes_cap": 67108864,
+      "bytes_limit": 53687091,
+      "bytes_pct": 12.07,
+      "bytes_pred": 8100160,
+      "events_by_rule": {
+        "AUTH_BRUTE_FORCE": 660,
+        "DENY_SPIKE": 900,
+        "PORT_SCAN": 7200,
+        "REQUEST_FLOOD": 5400
+      },
+      "f_proc": 0.5,
+      "failed": [],
+      "horizon_seconds": 330,
+      "ledger_cap": 100000,
+      "ledger_limit": 80000,
+      "ledger_pct": 66.0,
+      "ledger_pred": 66000,
+      "partition_share_max": 0.16666666666666666,
+      "r_proc_eps": 200.0,
+      "windows_by_rule": {
+        "AUTH_BRUTE_FORCE": 200,
+        "DENY_SPIKE": 200,
+        "PORT_SCAN": 400,
+        "REQUEST_FLOOD": 200
+      },
+      "windows_cap": 10000,
+      "windows_limit": 8000,
+      "windows_pct": 12.4,
+      "windows_pred": 1240
+    }
+  },
+  "provenance": "measured",
+  "reconciliation": {
+    "accepted_unique": 1000000,
+    "benign_hits": 0,
+    "ch_physical": 1000000,
+    "ch_unique": 1000000,
+    "dlq_delta": 0,
+    "generated": 1000000,
+    "id_digest_match": true,
+    "kafka_records": 1000000,
+    "late_delta": 0,
+    "loss": 0,
+    "physical_duplicates": 0,
+    "producer_duplicates": 0,
+    "rejected_4xx": 0,
+    "unaccepted_final": 0
+  },
+  "recovery": {
+    "applicable": true,
+    "baseline_p95_lag": 0.0,
+    "baseline_samples": 12,
+    "baseline_window_s": 60,
+    "killed_container": "sentinel-bench-20261119a-detector-1",
+    "peak_lag_after_kill": 0.0,
+    "recovered": true,
+    "recovery_seconds": 0.438352,
+    "stable_window_s": 30,
+    "timeout_s": 600
+  },
+  "reproduction": {
+    "bench_command": "make bench SCENARIO=sustained-restart RUN=20261119a",
+    "compose_project": "sentinel-bench-20261119a",
+    "git_sha": "dec4a7e69fde274319c1be1c2fa9c41441b67273",
+    "image_tag": "sentinel-bench-20261119a-<service> (compose build, revision dec4a7e69fde274319c1be1c2fa9c41441b67273)",
+    "report_command": "python3 bench/report.py --raw <raw.json> --out benchmarks/results"
+  },
+  "resources": {
+    "detector_state_peak": {
+      "bytes": 7836572,
+      "ledger_entries": 67352,
+      "windows": 983
+    },
+    "detector_state_peak_percent": {
+      "bytes": 11.677402,
+      "ledger_entries": 67.352,
+      "max": 67.352,
+      "windows": 9.83
+    },
+    "harness_cpu_percent_max": 3.02,
+    "peaks": {
+      "sentinel-bench-20261119a-alert-writer-1": {
+        "cpu_percent_max": 4.95,
+        "rss_bytes_max": 34812723,
+        "service": "alert-writer"
+      },
+      "sentinel-bench-20261119a-clickhouse-1": {
+        "cpu_percent_max": 42.94,
+        "rss_bytes_max": 1500017328,
+        "service": "clickhouse"
+      },
+      "sentinel-bench-20261119a-detector-1": {
+        "cpu_percent_max": 6.83,
+        "rss_bytes_max": 21296578,
+        "service": "detector"
+      },
+      "sentinel-bench-20261119a-detector-2": {
+        "cpu_percent_max": 8.73,
+        "rss_bytes_max": 24830279,
+        "service": "detector"
+      },
+      "sentinel-bench-20261119a-detector-3": {
+        "cpu_percent_max": 8.23,
+        "rss_bytes_max": 23257415,
+        "service": "detector"
+      },
+      "sentinel-bench-20261119a-event-writer-1": {
+        "cpu_percent_max": 6.17,
+        "rss_bytes_max": 21925724,
+        "service": "event-writer"
+      },
+      "sentinel-bench-20261119a-event-writer-2": {
+        "cpu_percent_max": 7.12,
+        "rss_bytes_max": 45067796,
+        "service": "event-writer"
+      },
+      "sentinel-bench-20261119a-grafana-1": {
+        "cpu_percent_max": 14.85,
+        "rss_bytes_max": 386819686,
+        "service": "grafana"
+      },
+      "sentinel-bench-20261119a-ingest-1": {
+        "cpu_percent_max": 7.36,
+        "rss_bytes_max": 39038484,
+        "service": "ingest"
+      },
+      "sentinel-bench-20261119a-ingest-2": {
+        "cpu_percent_max": 8.74,
+        "rss_bytes_max": 14837350,
+        "service": "ingest"
+      },
+      "sentinel-bench-20261119a-jaeger-1": {
+        "cpu_percent_max": 0.6,
+        "rss_bytes_max": 19954401,
+        "service": "jaeger"
+      },
+      "sentinel-bench-20261119a-kafka-1": {
+        "cpu_percent_max": 174.34,
+        "rss_bytes_max": 732640051,
+        "service": "kafka"
+      },
+      "sentinel-bench-20261119a-postgres-1": {
+        "cpu_percent_max": 9.73,
+        "rss_bytes_max": 99918807,
+        "service": "postgres"
+      },
+      "sentinel-bench-20261119a-prometheus-1": {
+        "cpu_percent_max": 6.82,
+        "rss_bytes_max": 142920908,
+        "service": "prometheus"
+      },
+      "sentinel-bench-20261119a-query-api-1": {
+        "cpu_percent_max": 5.01,
+        "rss_bytes_max": 17154703,
+        "service": "query-api"
+      },
+      "sentinel-bench-20261119a-query-api-2": {
+        "cpu_percent_max": 5.12,
+        "rss_bytes_max": 41628467,
+        "service": "query-api"
+      },
+      "sentinel-bench-20261119a-redis-1": {
+        "cpu_percent_max": 4.98,
+        "rss_bytes_max": 38671482,
+        "service": "redis"
+      }
+    }
+  },
+  "rules": {
+    "AUTH_BRUTE_FORCE": {
+      "expected": 30,
+      "observed_ch": 30,
+      "observed_pg": 30
+    },
+    "DENY_SPIKE": {
+      "expected": 30,
+      "observed_ch": 30,
+      "observed_pg": 30
+    },
+    "PORT_SCAN": {
+      "expected": 30,
+      "observed_ch": 30,
+      "observed_pg": 30
+    },
+    "REQUEST_FLOOD": {
+      "expected": 30,
+      "observed_ch": 30,
+      "observed_pg": 30
+    }
+  },
+  "run": {
+    "compose_project": "sentinel-bench-20261119a",
+    "drained": true,
+    "ended_at": "2026-11-19T11:28:47.482Z",
+    "git_sha": "dec4a7e69fde274319c1be1c2fa9c41441b67273",
+    "image_tag": "sentinel-bench-20261119a-<service> (compose build, revision dec4a7e69fde274319c1be1c2fa9c41441b67273)",
+    "run_id": "20261119a",
+    "scenario": "sustained-restart",
+    "started_at": "2026-11-19T10:43:38.766Z",
+    "tenant": "bench-20261119a",
+    "warmup": {
+      "partition_share_max": 0.17995934959349594,
+      "rate_eps": 410.0
+    }
+  },
+  "threshold_inputs": {
+    "ingest_5xx_ratio": 0.0,
+    "ingest_requests_by_status": {
+      "202": 5000
+    },
+    "pin_retention_margin_min": 0,
+    "warmup_partition_share_max": 0.17995934959349594,
+    "warmup_rate_eps": 410.0
+  },
+  "throughput": {
+    "sustained_accepted_eps": {
+      "p50": 400.0,
+      "p95": 400.0,
+      "windows": 249
+    },
+    "target_rate_eps": 400
+  },
+  "workload": {
+    "batch_size": 200,
+    "duration_seconds": 2708.716,
+    "event_size_bytes": {
+      "max": 415,
+      "min": 389,
+      "p50": 394,
+      "p95": 398
+    },
+    "generated": 1000000,
+    "offered_eps": {
+      "p50": 400.0,
+      "p95": 400.0,
+      "windows": 249
+    },
+    "requests": 5000,
+    "target_rate_eps": 400
+  }
+}

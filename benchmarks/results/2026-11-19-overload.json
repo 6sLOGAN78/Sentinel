@@ -1,0 +1,312 @@
+{
+  "config": {
+    "batch_size": 100,
+    "detector_limits": {
+      "bytes": 67108864,
+      "ledger_entries": 100000,
+      "windows": 10000
+    },
+    "events_partitions": 6,
+    "lateness_seconds": 30,
+    "max_in_flight_requests": 256,
+    "rate_limit": {
+      "capacity": 10000,
+      "refill_per_second": 2000
+    },
+    "replicas": {
+      "alert_writer": 1,
+      "detector": 3,
+      "event_writer": 2,
+      "ingest": 2,
+      "query_api": 2
+    },
+    "replication_factor": 1,
+    "retry_budget_seconds": 15.0,
+    "target_rate_eps": 6000
+  },
+  "format_version": 1,
+  "hardware": {
+    "compose_version": "5.6.1",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500H",
+    "docker_version": "29.9.2",
+    "free_space_bytes_start": 18517630976,
+    "host_load_note": "MemAvailable at preflight 7.39 GiB; other running compose projects: none",
+    "kernel": "6.8.0-138-generic",
+    "logical_cpus": 16,
+    "ram_bytes": 16439414784
+  },
+  "latency": {
+    "api_ms": {},
+    "detection_delay_seconds": {
+      "n": 0,
+      "p50": "n/a (n=0)",
+      "p95": "n/a (n=0)",
+      "p99": "n/a (n=0)"
+    },
+    "ingest_batch_size": 100,
+    "ingest_done_minus_intended_ms": {
+      "p50": 9.166928,
+      "p95": 22.715265,
+      "p99": 24.38884
+    },
+    "ingest_done_minus_sent_ms": {
+      "p50": 4.589238,
+      "p95": 17.194952,
+      "p99": 18.976875
+    },
+    "ingest_requests": 3600,
+    "schedule_slip_ms": {
+      "max": 18.753417,
+      "p99": 7.375424
+    },
+    "sse_notify_ms": {
+      "n": 0,
+      "p50": "n/a (n=0)",
+      "p95": "n/a (n=0)",
+      "p99": "n/a (n=0)"
+    }
+  },
+  "limitations": [
+    "resources.samples rss_bytes is docker stats MemUsage (cgroup memory usage without page cache), the closest per-container RSS docker exposes.",
+    "overload sends one attempt per request (no retries), so client.status_counts are exact per request; whether in-flight 503s occur is measured, not assumed.",
+    "SSE notification latency is an upper bound on persistence latency: there is no wall-clock persistence column, and PostgreSQL persistence precedes SSE delivery.",
+    "Event size distribution is summarized by the harness; per-event sizes are not stored.",
+    "API latency was not measured in this scenario.",
+    "No detector kill in this scenario; recovery not measured."
+  ],
+  "overload": {
+    "oom_killed": [],
+    "producer_buffered_limit": 50000,
+    "producer_buffered_max": 0,
+    "producer_buffered_ratio": 0.0,
+    "restart_delta": {
+      "alert-writer": 0,
+      "clickhouse": 0,
+      "detector": 0,
+      "event-writer": 0,
+      "grafana": 0,
+      "ingest": 0,
+      "jaeger": 0,
+      "kafka": 0,
+      "postgres": 0,
+      "prometheus": 0,
+      "query-api": 0,
+      "redis": 0
+    },
+    "status_counts": {
+      "202": 1299,
+      "429": 2301
+    }
+  },
+  "preflight": {
+    "benign_maxima": {
+      "AUTH_BRUTE_FORCE": 0,
+      "DENY_SPIKE": 11,
+      "PORT_SCAN": 16,
+      "REQUEST_FLOOD": 108
+    },
+    "overload": {
+      "accept_bound_events": 130000,
+      "ingest_in_flight_capacity": 128,
+      "ledger_limit": 80000,
+      "offered_in_flight": 256,
+      "offered_rate_eps": 6000,
+      "per_survivor_bound": 65000,
+      "refill_per_second": 2000
+    },
+    "seed": 2411410426,
+    "static": null
+  },
+  "provenance": "measured",
+  "reconciliation": {
+    "accepted_unique": 129900,
+    "benign_hits": 0,
+    "ch_physical": 129900,
+    "ch_unique": 129900,
+    "dlq_delta": 0,
+    "generated": 360000,
+    "id_digest_match": true,
+    "kafka_records": 129900,
+    "late_delta": 0,
+    "loss": 0,
+    "physical_duplicates": 0,
+    "producer_duplicates": 0,
+    "rejected_4xx": 0,
+    "unaccepted_final": 230100
+  },
+  "recovery": {
+    "applicable": false
+  },
+  "reproduction": {
+    "bench_command": "make bench SCENARIO=overload RUN=20261119a",
+    "compose_project": "sentinel-bench-20261119a",
+    "git_sha": "dec4a7e69fde274319c1be1c2fa9c41441b67273",
+    "image_tag": "sentinel-bench-20261119a-<service> (compose build, revision dec4a7e69fde274319c1be1c2fa9c41441b67273)",
+    "report_command": "python3 bench/report.py --raw <raw.json> --out benchmarks/results"
+  },
+  "resources": {
+    "detector_state_peak": {
+      "bytes": 16689596,
+      "ledger_entries": 68034,
+      "windows": 3696
+    },
+    "detector_state_peak_percent": {
+      "bytes": 24.869436,
+      "ledger_entries": 68.034,
+      "max": 68.034,
+      "windows": 36.96
+    },
+    "harness_cpu_percent_max": 37.52,
+    "peaks": {
+      "sentinel-bench-20261119a-alert-writer-1": {
+        "cpu_percent_max": 2.93,
+        "rss_bytes_max": 29003612,
+        "service": "alert-writer"
+      },
+      "sentinel-bench-20261119a-clickhouse-1": {
+        "cpu_percent_max": 28.71,
+        "rss_bytes_max": 788948582,
+        "service": "clickhouse"
+      },
+      "sentinel-bench-20261119a-detector-2": {
+        "cpu_percent_max": 51.58,
+        "rss_bytes_max": 32170311,
+        "service": "detector"
+      },
+      "sentinel-bench-20261119a-detector-3": {
+        "cpu_percent_max": 53.67,
+        "rss_bytes_max": 32914800,
+        "service": "detector"
+      },
+      "sentinel-bench-20261119a-event-writer-1": {
+        "cpu_percent_max": 17.24,
+        "rss_bytes_max": 30828134,
+        "service": "event-writer"
+      },
+      "sentinel-bench-20261119a-event-writer-2": {
+        "cpu_percent_max": 16.79,
+        "rss_bytes_max": 53540290,
+        "service": "event-writer"
+      },
+      "sentinel-bench-20261119a-grafana-1": {
+        "cpu_percent_max": 1.03,
+        "rss_bytes_max": 368784179,
+        "service": "grafana"
+      },
+      "sentinel-bench-20261119a-ingest-1": {
+        "cpu_percent_max": 22.88,
+        "rss_bytes_max": 36752588,
+        "service": "ingest"
+      },
+      "sentinel-bench-20261119a-ingest-2": {
+        "cpu_percent_max": 40.1,
+        "rss_bytes_max": 11010048,
+        "service": "ingest"
+      },
+      "sentinel-bench-20261119a-jaeger-1": {
+        "cpu_percent_max": 0.27,
+        "rss_bytes_max": 20583546,
+        "service": "jaeger"
+      },
+      "sentinel-bench-20261119a-kafka-1": {
+        "cpu_percent_max": 17.75,
+        "rss_bytes_max": 645713100,
+        "service": "kafka"
+      },
+      "sentinel-bench-20261119a-postgres-1": {
+        "cpu_percent_max": 21.35,
+        "rss_bytes_max": 96091504,
+        "service": "postgres"
+      },
+      "sentinel-bench-20261119a-prometheus-1": {
+        "cpu_percent_max": 4.2,
+        "rss_bytes_max": 144074342,
+        "service": "prometheus"
+      },
+      "sentinel-bench-20261119a-query-api-1": {
+        "cpu_percent_max": 3.38,
+        "rss_bytes_max": 14323548,
+        "service": "query-api"
+      },
+      "sentinel-bench-20261119a-query-api-2": {
+        "cpu_percent_max": 3.7,
+        "rss_bytes_max": 39992688,
+        "service": "query-api"
+      },
+      "sentinel-bench-20261119a-redis-1": {
+        "cpu_percent_max": 5.27,
+        "rss_bytes_max": 10569646,
+        "service": "redis"
+      }
+    }
+  },
+  "rules": {
+    "AUTH_BRUTE_FORCE": {
+      "expected": 0,
+      "observed_ch": 0,
+      "observed_pg": 0
+    },
+    "DENY_SPIKE": {
+      "expected": 0,
+      "observed_ch": 0,
+      "observed_pg": 0
+    },
+    "PORT_SCAN": {
+      "expected": 0,
+      "observed_ch": 0,
+      "observed_pg": 0
+    },
+    "REQUEST_FLOOD": {
+      "expected": 0,
+      "observed_ch": 0,
+      "observed_pg": 0
+    }
+  },
+  "run": {
+    "compose_project": "sentinel-bench-20261119a",
+    "drained": true,
+    "ended_at": "2026-11-19T11:30:16.390Z",
+    "git_sha": "dec4a7e69fde274319c1be1c2fa9c41441b67273",
+    "image_tag": "sentinel-bench-20261119a-<service> (compose build, revision dec4a7e69fde274319c1be1c2fa9c41441b67273)",
+    "run_id": "20261119a",
+    "scenario": "overload",
+    "started_at": "2026-11-19T11:29:03.268Z",
+    "tenant": "bench-20261119a-ovl"
+  },
+  "threshold_inputs": {
+    "ingest_5xx_ratio": 0.0,
+    "ingest_requests_by_status": {
+      "202": 1299,
+      "429": 2301
+    },
+    "pin_retention_margin_min": 114209,
+    "warmup_partition_share_max": null,
+    "warmup_rate_eps": null
+  },
+  "throughput": {
+    "sustained_accepted_eps": {
+      "p50": 2000.0,
+      "p95": 2990.0,
+      "windows": 5
+    },
+    "target_rate_eps": 6000
+  },
+  "workload": {
+    "batch_size": 100,
+    "duration_seconds": 73.122,
+    "event_size_bytes": {
+      "max": 405,
+      "min": 390,
+      "p50": 398,
+      "p95": 402
+    },
+    "generated": 360000,
+    "offered_eps": {
+      "p50": 6000.0,
+      "p95": 6000.0,
+      "windows": 5
+    },
+    "requests": 3600,
+    "target_rate_eps": 6000
+  }
+}
