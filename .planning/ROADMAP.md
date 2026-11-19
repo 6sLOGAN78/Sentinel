@@ -295,7 +295,7 @@ Plans:
   4. Under excess load, memory and queues stay bounded and clients receive the expected 429/503
   5. `make bench` runs a multi-replica run with ≥1,000,000 generated events and writes `benchmarks/results/<date>-<scenario>.md` (hardware, config, throughput, p50/p95/p99 latency, resources, lag, loss/duplicate counts, limitations). Counts reconcile (sent, accepted, rejected, persisted, expected vs observed rule hits), the report refuses to emit when they don't, and a detector restart under load recovers with measured recovery time
 
-**Plans**: 21 plans in 9 waves (revision 1). Waves 1-4 avoid every file owned by pending Phase 4 plans 04-14/04-15/04-16. Plans 05-14..05-21 declare a dependency on 04-16 (Phase 4 closure) because they edit Phase 4 shared surfaces. Real-container runs pass the read-only resource gate `scripts/check-resources.sh` (≥10 GiB free, MemAvailable ≥3 GiB; never prunes). Same-wave Go plans share one module: without worktrees run them sequentially in the noted order.
+**Plans**: 28 plans (21 + gap 05-21a + gap-closure 05-22..05-28) in 11 waves (revision 2: bench run 20261119a gap closure; 05-20 moves to wave 11 and resumes Task 1-2 on a new run id after the gaps). Waves 1-4 avoid every file owned by pending Phase 4 plans 04-14/04-15/04-16. Plans 05-14..05-21 declare a dependency on 04-16 (Phase 4 closure) because they edit Phase 4 shared surfaces. Real-container runs pass the read-only resource gate `scripts/check-resources.sh` (≥10 GiB free, MemAvailable ≥3 GiB; never prunes). Same-wave Go plans share one module: without worktrees run them sequentially in the noted order.
 Plans:
 **Wave 1**
 
@@ -341,9 +341,22 @@ Plans:
 - [ ] 05-16-PLAN.md — Admin-only System page + Overview consumer-lag panel (numbers for analyst/admin, notice for viewers) (05-UI-SPEC)
 - [ ] 05-19-PLAN.md — ADR 0010, operations/architecture docs (metric rename), CI observability checks
 
-**Wave 9** *(human checkpoints: free ≥15 GiB disk; live visual verification)*
+**Wave 9** *(gap closure from run 20261119a)*
 
-- [ ] 05-20-PLAN.md — Real ≥1M-event and overload benchmark runs, live Grafana/Jaeger/System verification, ADR 0011 + results
+- [ ] 05-22-PLAN.md — GAP-1: bounded two-stage ListEvents (candidate keys, then winner dedupe) with exact-prefix proof and a 1M-row scale regression
+- [ ] 05-24-PLAN.md — GAP-2 product: sentinel_kafka_topic_partitions{group,topic} gauge as the lag coverage denominator
+- [ ] 05-27-PLAN.md — GAP-2 bench: coverage-gated recovery time, refusals for missing coverage and API non-2xx
+
+**Wave 10** *(gap closure)*
+
+- [ ] 05-23-PLAN.md — GAP-1: bounded SummarizeEvents (identical-retry fast path + exact conflict correction)
+- [ ] 05-25-PLAN.md — GAP-2 API/UI: lag and System report partial_coverage instead of a false 0 (additive OpenAPI enum)
+- [ ] 05-26-PLAN.md — GAP-3: classify decision tx errors, reproduce the concurrent detector startup crash, fix per user decision (ADR 0007 checkpoint)
+- [ ] 05-28-PLAN.md — GAP-4: restart killed detector, replica snapshots, exercised shed paths, steady-state threshold inputs, same-day supersede
+
+**Wave 11** *(resume; human checkpoints: resources, live verification, threshold policy)*
+
+- [ ] 05-20-PLAN.md — Real ≥1M-event and overload benchmark runs (re-run Task 1-2 on a new RUN id after 05-22..05-28), live Grafana/Jaeger/System verification, threshold decision, ADR 0011 + results
 
 **UI hint**: yes
 **Research flag**: Needs research. Open-loop benchmark method, cost of `FINAL` at the pinned ClickHouse version, detector restart catch-up (horizon × partition rate).
