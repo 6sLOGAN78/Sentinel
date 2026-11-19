@@ -370,3 +370,232 @@ func TestListEventsTenantIsolation(t *testing.T) {
 		}
 	}
 }
+
+// oracleSummarySQL is the pre-05-23 SummarizeEvents query over the
+// whole-tenant dedupe, copied verbatim. SummarizeEvents must equal it.
+const oracleSummarySQL = `SELECT
+	 toStartOfInterval(occurred_at, INTERVAL 5 MINUTE, 'UTC') AS bucket,
+	 count(),countIf(occurred_at >= fromUnixTimestamp64Nano({rate:Int64},'UTC'))
+	 FROM (` + oracleUniqueEventRowsSQL + `) WHERE
+	 occurred_at >= fromUnixTimestamp64Nano({start:Int64},'UTC') AND
+	 occurred_at < fromUnixTimestamp64Nano({now:Int64},'UTC')
+	 GROUP BY bucket ORDER BY bucket`
+
+// summaryCorrectionComment is the log_comment SummarizeEvents attaches to the
+// conflict-correction round trip; every other logged query is the main pass.
+const summaryCorrectionComment = "sentinel.summarize_events.correction"
+
+// summaryMainColumn reports whether the main pass may read column.
+func summaryMainColumn(column string) bool {
+	return column == "tenant_id" || column == "event_id" || column == "occurred_at"
+}
+
+// oracleSummary evaluates the whole-tenant summary exactly like the old code.
+func oracleSummary(
+	ctx context.Context, t *testing.T, conn storageclickhouse.Conn, tenant string, now time.Time,
+) query.EventSummary {
+	t.Helper()
+	end := now.UTC().Truncate(query.SummaryBucketWidth)
+	rows, err := conn.Query(ctx, oracleSummarySQL, driverclickhouse.Named("tenant", tenant),
+		driverclickhouse.Named("rate", now.Add(-time.Minute).UnixNano()),
+		driverclickhouse.Named("start", end.Add(-24*time.Hour).UnixNano()),
+		driverclickhouse.Named("now", now.UnixNano()))
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	result := query.EventSummary{}
+	for rows.Next() {
+		var at time.Time
+		var count, rate uint64
+		require.NoError(t, rows.Scan(&at, &count, &rate))
+		result.RateCount += rate
+		if at.Before(end) {
+			result.Trend = append(result.Trend, query.SummaryCount{Start: at.UTC(), Count: count})
+		}
+	}
+	require.NoError(t, rows.Err())
+	return result
+}
+
+type summaryQueryLog struct {
+	comment             string
+	durationMS, read    uint64
+	memory, resultBytes uint64
+	columns             []string
+}
+
+// summaryQueryLogs returns every finished query logged for prefix (the
+// caller's query id, shared by sequential round trips) in start order.
+func summaryQueryLogs(t *testing.T, conn storageclickhouse.Conn, prefix string) []summaryQueryLog {
+	t.Helper()
+	require.NoError(t, conn.Exec(t.Context(), "SYSTEM FLUSH LOGS"))
+	rows, err := conn.Query(t.Context(), `SELECT toString(log_comment), toUInt64(query_duration_ms),
+	 toUInt64(read_bytes), toUInt64(memory_usage), toUInt64(result_bytes), arrayMap(c -> toString(c), columns)
+	 FROM system.query_log WHERE type = 'QueryFinish'
+	 AND (query_id = {prefix:String} OR query_id LIKE concat({prefix:String}, '-%'))
+	 ORDER BY event_time_microseconds`, driverclickhouse.Named("prefix", prefix))
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	logs := []summaryQueryLog{}
+	for rows.Next() {
+		var entry summaryQueryLog
+		require.NoError(t, rows.Scan(&entry.comment, &entry.durationMS, &entry.read, &entry.memory,
+			&entry.resultBytes, &entry.columns))
+		for i, column := range entry.columns {
+			// query_log qualifies columns as database.table.column.
+			entry.columns[i] = column[strings.LastIndex(column, ".")+1:]
+		}
+		logs = append(logs, entry)
+	}
+	require.NoError(t, rows.Err())
+	require.NotEmpty(t, logs, "no finished query found for id %s", prefix)
+	for _, entry := range logs {
+		t.Logf("SUMMARY_QUERY id=%s comment=%q duration_ms=%d read_bytes=%d memory=%d result_bytes=%d columns=%v",
+			prefix, entry.comment, entry.durationMS, entry.read, entry.memory, entry.resultBytes, entry.columns)
+	}
+	return logs
+}
+
+// splitSummaryLogs asserts every main-pass row reads only the allowed columns
+// and returns the main-pass and correction row counts.
+func splitSummaryLogs(t *testing.T, logs []summaryQueryLog) (int, int) {
+	t.Helper()
+	var mains, corrections int
+	for _, entry := range logs {
+		if entry.comment == summaryCorrectionComment {
+			corrections++
+			continue
+		}
+		mains++
+		for _, column := range entry.columns {
+			require.True(t, summaryMainColumn(column),
+				"main summary pass must read only tenant_id,event_id,occurred_at; read %v", entry.columns)
+		}
+	}
+	return mains, corrections
+}
+
+// timedSummary runs SummarizeEvents under a fresh query id and returns the
+// result, elapsed time and the id.
+func timedSummary(
+	t *testing.T, store *storageclickhouse.QueryEventStore, tenant string, now time.Time,
+) (query.EventSummary, time.Duration, string) {
+	t.Helper()
+	prefix := "summary-" + uuid.NewString()
+	started := time.Now()
+	got, err := store.SummarizeEvents(driverclickhouse.Context(t.Context(), driverclickhouse.WithQueryID(prefix)),
+		tenant, now)
+	elapsed := time.Since(started)
+	t.Logf("SCALE_SUMMARY tenant=%s duration=%s err=%v rate=%d buckets=%d", tenant, elapsed, err,
+		got.RateCount, len(got.Trend))
+	require.NoError(t, err)
+	return got, elapsed, prefix
+}
+
+func TestSummarizeEventsScale(t *testing.T) {
+	_, conn := newDedupeStore(t)
+	store := storageclickhouse.NewQueryEventStore(conn)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	newest := now.Add(-time.Minute / 2)
+	seedScale(t, conn, "scale-a", newest, now, scaleRows, scaleRows)
+	seedScale(t, conn, "scale-a", newest, now, scaleDuplicates, scaleRows)
+
+	got, elapsed, prefix := timedSummary(t, store, "scale-a", now)
+	oracleID := "oracle-" + uuid.NewString()
+	oracleCtx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	oracleStarted := time.Now()
+	want := oracleSummary(driverclickhouse.Context(oracleCtx, driverclickhouse.WithQueryID(oracleID)),
+		t, conn, "scale-a", now)
+	t.Logf("SCALE_SUMMARY_ORACLE duration=%s", time.Since(oracleStarted))
+	summaryQueryLogs(t, conn, oracleID)
+	logs := summaryQueryLogs(t, conn, prefix)
+
+	require.Equal(t, want, got, "scale summary must equal the whole-tenant dedupe summary")
+	var total uint64
+	for _, bucket := range got.Trend {
+		total += bucket.Count
+	}
+	require.LessOrEqual(t, total, uint64(scaleRows))
+	require.Positive(t, got.RateCount)
+	mains, corrections := splitSummaryLogs(t, logs)
+	require.Equal(t, 1, mains, "exactly one main summary pass")
+	require.Zero(t, corrections, "zero conflicting identities must skip the correction round trip")
+	require.Less(t, elapsed, scaleCallBudget, "SummarizeEvents must finish with 5x headroom below queryTimeout")
+}
+
+// summaryBoundaryConflicts adds conflicting representations whose occurrence
+// times straddle the 24 h window start and the 1-minute rate boundary.
+// Alternating received times make either side win.
+func summaryBoundaryConflicts(events []*contracts.Event, start, rate time.Time) []*contracts.Event {
+	extra := []*contracts.Event{}
+	for i := range 25 {
+		for j, target := range []time.Time{start, rate} {
+			conflict := cloneEvent(events[(i*2+j)*19+1])
+			// Offsets -12..12 s around the boundary; offset 0 lands exactly on it.
+			conflict.OccurredAt = contracts.NewTimestamp(target.Add(time.Duration(i-12) * time.Second))
+			shift := time.Minute
+			if i%2 == 0 {
+				shift = -time.Minute
+			}
+			conflict.ReceivedAt = ptr(contracts.NewTimestamp(events[0].ReceivedAt.Add(shift)))
+			conflict.Source = "boundary-conflict"
+			extra = append(extra, conflict)
+		}
+	}
+	return extra
+}
+
+func TestSummarizeEventsOracleEquivalence(t *testing.T) {
+	writer, conn := newDedupeStore(t)
+	store := storageclickhouse.NewQueryEventStore(conn)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	start := now.Truncate(query.SummaryBucketWidth).Add(-24 * time.Hour)
+	events, extra := equivalenceFixture("sum-a", now.Add(-30*time.Second), 5_000)
+	extra = append(extra, summaryBoundaryConflicts(events, start, now.Add(-time.Minute))...)
+	insertFixture(t, writer, events, extra)
+
+	got, _, prefix := timedSummary(t, store, "sum-a", now)
+	t.Run("equal", func(t *testing.T) {
+		want := oracleSummary(t.Context(), t, conn, "sum-a", now)
+		require.Equal(t, want, got)
+		require.Positive(t, got.RateCount)
+		require.NotEmpty(t, got.Trend)
+	})
+	t.Run("correction_logged", func(t *testing.T) {
+		mains, corrections := splitSummaryLogs(t, summaryQueryLogs(t, conn, prefix))
+		require.Equal(t, 1, mains, "exactly one main summary pass")
+		require.Equal(t, 1, corrections, "conflicting identities must run exactly one correction round trip")
+	})
+	t.Run("tenant_isolation", func(t *testing.T) {
+		// Same event_ids, earlier received and moved occurrence times: if the
+		// foreign tenant leaked into either round trip the counts would change.
+		foreign := make([]*contracts.Event, 0, len(events)+len(extra))
+		for _, event := range append(append([]*contracts.Event{}, events...), extra...) {
+			clone := cloneEvent(event)
+			clone.TenantID, clone.Source = "sum-b", "foreign"
+			clone.OccurredAt = contracts.NewTimestamp(start.Add(-time.Hour))
+			clone.ReceivedAt = ptr(contracts.NewTimestamp(now.Add(-48 * time.Hour)))
+			foreign = append(foreign, clone)
+		}
+		require.NoError(t, writer.InsertBatch(t.Context(), foreign))
+		after, _, _ := timedSummary(t, store, "sum-a", now)
+		require.Equal(t, got, after, "foreign tenant rows must not change tenant A summary")
+	})
+}
+
+func TestSummarizeEventsNoConflictsSkipsCorrection(t *testing.T) {
+	writer, conn := newDedupeStore(t)
+	store := storageclickhouse.NewQueryEventStore(conn)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	// 1,500 rows span 300 s, so at least one closed trend bucket and the rate window are covered.
+	events, _ := equivalenceFixture("calm-a", now.Add(-30*time.Second), 1_500)
+	insertFixture(t, writer, events, nil)
+
+	got, _, prefix := timedSummary(t, store, "calm-a", now)
+	require.Equal(t, oracleSummary(t.Context(), t, conn, "calm-a", now), got)
+	require.Positive(t, got.RateCount)
+	require.NotEmpty(t, got.Trend)
+	mains, corrections := splitSummaryLogs(t, summaryQueryLogs(t, conn, prefix))
+	require.Equal(t, 1, mains, "exactly one main summary pass")
+	require.Zero(t, corrections, "no conflicts must skip the correction round trip")
+}
