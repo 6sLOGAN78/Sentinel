@@ -893,3 +893,181 @@ def test_regression_20261119a_shape_refuses(tmp_path: Path) -> None:
     ids = _failure_ids(tmp_path, raw)
     assert {"recovery_coverage_unknown", "api_non_2xx"} <= set(ids)
     assert "recovery_timeout" not in ids
+
+
+# --- 05-28: replica refusal, shed paths, steady threshold inputs, supersede --------------
+
+RUNNING = {"ingest": 2, "event-writer": 2, "detector": 3, "alert-writer": 1, "query-api": 2}
+
+
+def test_degraded_detector_replicas_at_start_refuse_both_scenarios(tmp_path: Path) -> None:
+    overload = _overload_raw()
+    overload["run"]["replicas_running"] = {
+        "start": {**RUNNING, "detector": 2},
+        "end": RUNNING,
+    }
+    assert "replicas_degraded" in _refusal_ids(tmp_path / "a", overload)
+    sustained = _sustained_raw()
+    sustained["run"]["replicas_running"] = {"start": {**RUNNING, "detector": 2}, "end": RUNNING}
+    ids = _failure_ids(tmp_path / "b", sustained)
+    assert ids["replicas_degraded"]["expected"] == 3
+    assert ids["replicas_degraded"]["observed"] == 2
+    missing = _overload_raw()
+    missing["run"]["replicas_running"] = {"start": {"ingest": 2}, "end": RUNNING}
+    assert "replicas_degraded" in _refusal_ids(tmp_path / "c", missing)
+
+
+def test_full_replicas_report_running_counts_in_configuration(tmp_path: Path) -> None:
+    raw = _overload_raw()
+    raw["run"]["replicas_running"] = {"start": RUNNING, "end": {**RUNNING, "detector": 2}}
+    report = _report()
+    out = tmp_path / "out"
+    assert report.main(["--raw", str(_write_raw(tmp_path, raw)), "--out", str(out)]) == 0
+    markdown = (out / f"{OVERLOAD_STEM}.md").read_text(encoding="utf-8")
+    assert "| Running at start/end: detector | 3 / 2 |" in markdown
+    assert "| Running at start/end: ingest | 2 / 2 |" in markdown
+
+
+def test_replicas_running_types_are_checked(tmp_path: Path) -> None:
+    report = _report()
+    raw = _overload_raw()
+    raw["run"]["replicas_running"] = {"start": {"detector": "3"}, "end": RUNNING}
+    out = tmp_path / "out"
+    assert report.main(["--raw", str(_write_raw(tmp_path, raw)), "--out", str(out)]) == 1
+    assert not out.exists() or not any(out.iterdir())
+
+
+def test_overload_states_exercised_shed_paths(tmp_path: Path) -> None:
+    report = _report()
+    out = tmp_path / "out"
+    assert (
+        report.main(["--raw", str(_write_raw(tmp_path, _overload_raw())), "--out", str(out)]) == 0
+    )
+    summary = json.loads((out / f"{OVERLOAD_STEM}.json").read_text(encoding="utf-8"))
+    markdown = (out / f"{OVERLOAD_STEM}.md").read_text(encoding="utf-8")
+    assert summary["overload"]["shed_paths"] == {"429": False, "503": True}
+    assert "Exercised shed paths" in markdown
+    assert "| 429 | no |" in markdown and "| 503 | yes |" in markdown
+    assert "TestChaosOverloadBounded" not in markdown
+
+
+def test_overload_without_503_names_the_chaos_tests(tmp_path: Path) -> None:
+    raw = _overload_raw()
+    for request in raw["client"]["requests"]:
+        if request["status"] == 503:
+            request.update(status=429, accepted_count=0)
+    counts: dict[str, int] = {}
+    for request in raw["client"]["requests"]:
+        counts[str(request["status"])] = counts.get(str(request["status"]), 0) + 1
+    raw["client"]["status_counts"] = counts
+    report = _report()
+    out = tmp_path / "out"
+    assert report.main(["--raw", str(_write_raw(tmp_path, raw)), "--out", str(out)]) == 0
+    summary = json.loads((out / f"{OVERLOAD_STEM}.json").read_text(encoding="utf-8"))
+    markdown = (out / f"{OVERLOAD_STEM}.md").read_text(encoding="utf-8")
+    assert summary["overload"]["shed_paths"] == {"429": True, "503": False}
+    assert "| 503 | no |" in markdown
+    assert "TestChaosOverloadBounded" in markdown
+    assert "TestChaosKafkaBrokerRestart" in markdown
+    assert "backend/test/chaos_overload_test.go" in markdown
+
+
+def test_steady_threshold_inputs_and_partition_rate(tmp_path: Path) -> None:
+    raw = _raw()
+    raw["run"]["drained"] = True
+    raw["prometheus"]["pin_retention_margin_min"] = 0
+    raw["prometheus"]["pin_retention_margin_steady_min"] = 3_500_000
+    raw["kafka"]["main_load"] = {
+        "start_ns": 1_000 * SEC,
+        "end_ns": 1_100 * SEC,
+        "partition_delta": {"0": 4000, "1": 9000, "2": 500},
+    }
+    summary, markdown = _run_ok(tmp_path, raw)
+    inputs = summary["threshold_inputs"]
+    assert inputs["pin_retention_margin_min"] == 0
+    assert inputs["pin_retention_margin_steady_min"] == 3_500_000
+    assert inputs["partition_rate_eps_max"] == 90.0
+    assert "min pin retention margin, whole run incl. fresh topic (offsets)" in markdown
+    assert "| steady-state min pin retention margin (offsets) | 3,500,000 |" in markdown
+    assert "| max per-partition append rate, main load (events/s) | 90 |" in markdown
+
+
+def test_steady_threshold_inputs_are_null_when_absent(tmp_path: Path) -> None:
+    raw = _raw()
+    raw["run"]["drained"] = True
+    raw["prometheus"]["pin_retention_margin_min"] = 10
+    summary, _ = _run_ok(tmp_path, raw)
+    inputs = summary["threshold_inputs"]
+    assert inputs["pin_retention_margin_steady_min"] is None
+    assert inputs["partition_rate_eps_max"] is None
+
+
+def test_main_load_window_must_be_positive(tmp_path: Path) -> None:
+    report = _report()
+    raw = _raw()
+    raw["kafka"]["main_load"] = {"start_ns": 5, "end_ns": 5, "partition_delta": {"0": 1}}
+    out = tmp_path / "out"
+    assert report.main(["--raw", str(_write_raw(tmp_path, raw)), "--out", str(out)]) == 1
+    assert not out.exists() or not any(out.iterdir())
+
+
+def test_restart_rejoined_ns_is_type_checked(tmp_path: Path) -> None:
+    report = _report()
+    raw = _sustained_raw()
+    raw["restart"]["restarted_ns"] = KILL_NS + 100 * SEC
+    raw["restart"]["rejoined_ns"] = "soon"
+    out = tmp_path / "out"
+    assert report.main(["--raw", str(_write_raw(tmp_path, raw)), "--out", str(out)]) == 1
+    assert not out.exists() or not any(out.iterdir())
+    raw["restart"]["rejoined_ns"] = None
+    ids = _failure_ids(tmp_path, raw)
+    assert set(ids) == {"generated_floor"}, "a null rejoined_ns is allowed (a limitation)"
+
+
+def _prior_pair(tmp_path: Path, run_id: str) -> tuple[Path, bytes, bytes]:
+    report = _report()
+    raw = _raw()
+    raw["run"]["run_id"] = run_id
+    out = tmp_path / "out"
+    raw_path = _write_raw(tmp_path, raw, f"raw-{run_id}.json")
+    assert report.main(["--raw", str(raw_path), "--out", str(out)]) == 0
+    md = (out / f"{REPORT_STEM}.md").read_bytes()
+    js = (out / f"{REPORT_STEM}.json").read_bytes()
+    return out, md, js
+
+
+def test_supersede_moves_the_prior_pair_unedited_and_writes_the_new_one(tmp_path: Path) -> None:
+    out, md, js = _prior_pair(tmp_path, "fixture0000")
+    report = _report()
+    raw_path = _write_raw(tmp_path, _raw())
+    assert report.main(["--raw", str(raw_path), "--out", str(out)]) == 3, "no flag: exit 3"
+    assert (out / f"{REPORT_STEM}.md").read_bytes() == md
+    assert report.main(["--raw", str(raw_path), "--out", str(out), "--supersede"]) == 0
+    superseded = out / "superseded"
+    assert (superseded / f"{REPORT_STEM}-fixture0000.md").read_bytes() == md
+    assert (superseded / f"{REPORT_STEM}-fixture0000.json").read_bytes() == js
+    assert oct(superseded.stat().st_mode & 0o777) == oct(0o755)
+    new = json.loads((out / f"{REPORT_STEM}.json").read_text(encoding="utf-8"))
+    assert new["run"]["run_id"] == "fixture0001"
+    assert (out / f"{REPORT_STEM}.md").exists()
+
+
+def test_supersede_refuses_the_same_run_id(tmp_path: Path) -> None:
+    out, md, js = _prior_pair(tmp_path, "fixture0001")
+    report = _report()
+    raw_path = _write_raw(tmp_path, _raw())
+    assert report.main(["--raw", str(raw_path), "--out", str(out), "--supersede"]) == 3
+    assert (out / f"{REPORT_STEM}.md").read_bytes() == md
+    assert (out / f"{REPORT_STEM}.json").read_bytes() == js
+    assert not (out / "superseded").exists()
+
+
+def test_supersede_refuses_a_lone_markdown_without_its_json(tmp_path: Path) -> None:
+    report = _report()
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / f"{REPORT_STEM}.md").write_text("prior result\n", encoding="utf-8")
+    raw_path = _write_raw(tmp_path, _raw())
+    assert report.main(["--raw", str(raw_path), "--out", str(out), "--supersede"]) == 3
+    assert (out / f"{REPORT_STEM}.md").read_text(encoding="utf-8") == "prior result\n"
+    assert not (out / "superseded").exists()

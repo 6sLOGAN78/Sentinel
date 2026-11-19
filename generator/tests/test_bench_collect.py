@@ -598,3 +598,109 @@ def test_lag_queries_are_module_level_literals(collect: ModuleType) -> None:
     assert "LAG_COVERAGE_QUERY = (" in source or "LAG_COVERAGE_QUERY = '" in source
     assert 'LAG_QUERY = "' in source
     assert 'f"count by' not in source and "f'count by" not in source
+
+
+# --- 05-28: replica snapshots, rejoin readiness, steady pin window, main-load offsets ----
+
+
+def test_running_replicas_counts_labelled_running_containers_per_service(
+    collect: ModuleType,
+) -> None:
+    listing = "\n".join(
+        [
+            _ps_line("c1", f"{PROJECT}-detector-1", "detector"),
+            _ps_line("c2", f"{PROJECT}-detector-2", "detector"),
+            _ps_line("c3", f"{PROJECT}-ingest-1", "ingest"),
+            _ps_line("zz", "sentinel-detector-1", "detector"),
+        ]
+    )
+    runner = FakeRunner(answers=[("docker ps", listing + "\n")])
+    assert collect.running_replicas(RUN_ID, runner=runner, root=REPO_ROOT) == {
+        "detector": 2,
+        "ingest": 1,
+    }
+    (argv,) = runner.calls
+    assert argv[:2] == ["docker", "ps"] and "-a" not in argv and "--all" not in argv
+    assert f"label=com.docker.compose.project={PROJECT}" in argv
+
+
+def _inspected(project: str, service: str, state: dict[str, Any]) -> str:
+    return json.dumps(
+        [{"Id": "c9", "Name": f"/{PROJECT}-{service}-1", "RestartCount": 0, "State": state,
+          "Config": {"Labels": {"com.docker.compose.project": project,
+                                "com.docker.compose.service": service}}}]
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("state", "ready"),
+    [
+        ({"Running": True}, True),
+        ({"Running": True, "Health": {"Status": "healthy"}}, True),
+        ({"Running": True, "Health": {"Status": "starting"}}, False),
+        ({"Running": False}, False),
+        ({}, False),
+    ],
+)
+def test_container_ready_requires_running_and_healthy(
+    collect: ModuleType, state: dict[str, Any], ready: bool
+) -> None:
+    runner = FakeRunner(answers=[("docker inspect", _inspected(PROJECT, "detector", state))])
+    assert collect.container_ready(RUN_ID, "c9", "detector", runner=runner, root=REPO_ROOT) is ready
+
+
+def test_container_ready_refuses_foreign_labels(collect: ModuleType) -> None:
+    for project, service in (("sentinel", "detector"), (PROJECT, "ingest")):
+        runner = FakeRunner(
+            answers=[("docker inspect", _inspected(project, service, {"Running": True}))]
+        )
+        with pytest.raises(collect.BenchError, match="refusing"):
+            collect.container_ready(RUN_ID, "c9", "detector", runner=runner, root=REPO_ROOT)
+
+
+def test_docker_start_is_classified_as_mutating(collect: ModuleType) -> None:
+    assert not collect.stack._read_only(["docker", "start", "abc"])
+
+
+def test_steady_pin_margin_query_uses_the_given_window(collect: ModuleType) -> None:
+    queries: list[str] = []
+    answer: list[list[tuple[dict[str, str], float]]] = [[({}, 777.0)]]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        queries.append(request.url.params["query"])
+        assert request.url.params["time"] == f"{(T0_NS + 600 * SEC) / SEC:.3f}"
+        return httpx.Response(200, json=_vector(answer[0], 0.0))
+
+    def factory(_: str) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def scenario() -> tuple[int | None, int | None]:
+        prom = collect.Prometheus(PROM, client_factory=factory)
+        try:
+            first = await collect.pin_margin_steady_min(prom, T0_NS + 100 * SEC, T0_NS + 600 * SEC)
+            answer[0] = []
+            second = await collect.pin_margin_steady_min(prom, T0_NS + 100 * SEC, T0_NS + 600 * SEC)
+            return first, second
+        finally:
+            await prom.aclose()
+
+    first, second = asyncio.run(scenario())
+    assert (first, second) == (777, None), "absent series is null, never invented"
+    expected = "min(min_over_time(sentinel_detector_pin_retention_margin_offsets[500s]))"
+    assert queries == [expected, expected]
+    assert collect.PIN_MARGIN_STEADY_QUERY.format(seconds=500) == expected
+    source = COLLECT_PATH.read_text(encoding="utf-8")
+    assert 'PIN_MARGIN_STEADY_QUERY = "' in source or "PIN_MARGIN_STEADY_QUERY = (" in source
+
+
+def test_main_load_offsets_record_the_per_partition_delta(collect: ModuleType) -> None:
+    section = collect.main_load_offsets(T0_NS, T0_NS + 100 * SEC, {0: 10, 1: 20}, {0: 410, 1: 220})
+    assert section == {
+        "start_ns": T0_NS,
+        "end_ns": T0_NS + 100 * SEC,
+        "partition_delta": {"0": 400, "1": 200},
+    }
+    with pytest.raises(collect.BenchError):
+        collect.main_load_offsets(T0_NS, T0_NS, {0: 1}, {0: 2})
+    with pytest.raises(collect.BenchError):
+        collect.main_load_offsets(T0_NS, T0_NS + SEC, {0: 5}, {0: 2})

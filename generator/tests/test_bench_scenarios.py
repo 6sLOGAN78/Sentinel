@@ -154,6 +154,7 @@ class Container:
     id: str
     service: str
     project: str = PROJECT
+    running: bool = True
 
     @property
     def name(self) -> str:
@@ -172,6 +173,12 @@ class World:
     # 05-27: detector partition coverage of the events topic (6 partitions).
     partial_coverage_until_s: float = 0.0
     coverage_after_kill: int = 4
+    # 05-28: how long the kill disturbs lag and coverage (ends 5 s after a docker start),
+    # whether docker start brings the container back, and a relabel to test the check.
+    kill_effect_s: float = 20.0
+    start_runs: bool = True
+    relabel_after_kill: bool = False
+    start_ns: int | None = None
     drain_ok: bool = True
     status_for: Callable[[int], int] = lambda seq: 202
     accepted: set[str] = field(default_factory=set)
@@ -192,6 +199,7 @@ class World:
     sse_stopped_ns: int | None = None
     sse_urls: list[str] = field(default_factory=list)
     emitted: list[str] = field(default_factory=list)
+    prom_queries: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         for service, count in SERVICES.items():
@@ -217,10 +225,20 @@ class World:
         if args[:2] == ["docker", "inspect"]:
             return self._inspect(args[2:])
         if args[:2] == ["docker", "kill"]:
-            target = args[-1]
+            # docker kill bypasses the restart policy: the container stays exited.
+            target = self._container(args[-1])
             self.kill_ns = self.vc.now_ns
-            self.restarts[target] = self.restarts.get(target, 0) + 1
-            return target + "\n"
+            target.running = False
+            if self.relabel_after_kill:
+                target.project = "sentinel"
+            return target.id + "\n"
+        if args[:2] == ["docker", "start"]:
+            assert len(args) == 3, args
+            target = self._container(args[2])
+            assert target.project == PROJECT and target.service == "detector"
+            self.start_ns = self.vc.now_ns
+            target.running = self.start_runs
+            return target.id + "\n"
         if args[:2] == ["docker", "stats"]:
             rows = [
                 json.dumps({"ID": c.id, "Name": c.name, "MemUsage": "100MiB / 384MiB",
@@ -230,6 +248,17 @@ class World:
             ]  # fmt: skip
             return "\n".join(rows) + "\n"
         raise AssertionError(f"unexpected command {args}")
+
+    def _container(self, cid: str) -> Container:
+        (found,) = [c for c in self.containers if c.id == cid]
+        return found
+
+    def _disturbed(self, now_ns: int) -> bool:
+        if self.kill_ns is None or now_ns < self.kill_ns:
+            return False
+        if self.start_ns is not None and now_ns >= self.start_ns + 5 * SEC:
+            return False
+        return now_ns < self.kill_ns + self.kill_effect_s * SEC
 
     def _exec(self, args: list[str]) -> str:
         if any("kafka-get-offsets" in a for a in args):
@@ -261,7 +290,7 @@ class World:
         rows = [
             f"{c.id}\t{c.name}\t{c.service}"
             for c in self.containers
-            if not wanted or c.service == wanted[0]
+            if c.running and (not wanted or c.service == wanted[0])
         ]
         return "\n".join(rows) + "\n"
 
@@ -273,7 +302,7 @@ class World:
                     "Id": cid,
                     "Name": "/" + by_id[cid].name,
                     "RestartCount": self.restarts.get(cid, 0),
-                    "State": {"OOMKilled": False, "Running": True},
+                    "State": {"OOMKilled": False, "Running": by_id[cid].running},
                     "Config": {
                         "Labels": {
                             "com.docker.compose.project": by_id[cid].project,
@@ -297,7 +326,7 @@ class World:
         elapsed_s = (now_ns - start) / SEC
         if elapsed_s < self.noise_until_s and int(elapsed_s // 5) % 2 == 1:
             detector = 10_000.0
-        if self.kill_ns is not None and self.kill_ns <= now_ns < self.kill_ns + 20 * SEC:
+        if self._disturbed(now_ns):
             detector = 3000.0
         return {"sentinel-detector": detector, "sentinel-event-writer": 10.0,
                 "sentinel-alert-writer": 0.0}  # fmt: skip
@@ -308,13 +337,14 @@ class World:
         start = self.first_due_ns or START_NS
         if (now_ns - start) / SEC < self.partial_coverage_until_s:
             detector = partitions - 1
-        if self.kill_ns is not None and self.kill_ns <= now_ns < self.kill_ns + 20 * SEC:
+        if self._disturbed(now_ns):
             detector = float(self.coverage_after_kill)
         # alert-writer consumes the alerts topic, so it reports no events partition.
         return {"sentinel-detector": detector, "sentinel-event-writer": partitions}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.port == 39090:
+            self.prom_queries.append(request.url.params["query"])
             return self._prometheus(request.url.params["query"])
         assert request.url.port in (38090, 38091), request.url
         self.api_requests.append(request)
@@ -585,7 +615,9 @@ def test_kill_targets_only_a_labelled_bench_detector(scenarios: ModuleType, tmp_
     ]
     assert inspected_before, "the target's labels are inspected right before the kill"
     assert raw["restart"]["killed_container"] == f"{PROJECT}-{target}"
-    assert raw["resources"]["restart_delta"]["detector"] == 1
+    # docker kill bypasses the restart policy and docker start does not count as a
+    # policy restart (05-28), so RestartCount stays 0.
+    assert raw["resources"]["restart_delta"]["detector"] == 0
     assert raw["resources"]["restart_delta"]["ingest"] == 0
 
 
@@ -707,6 +739,124 @@ def test_api_phase_is_open_loop_on_both_query_api_ports(
     assert all(s["status"] == 200 for s in samples)
 
 
+# --- 05-28: restart of the killed detector, replica snapshots, steady windows -------------
+
+
+def _start_index(world: World) -> int:
+    (index,) = _commands(world, "start")
+    return index
+
+
+def test_killed_detector_is_restarted_only_after_live_recovery(
+    scenarios: ModuleType, report: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios)
+    result = _run_sustained(scenarios, tmp_path, world)
+    raw = result.raw
+    restart = raw["restart"]
+    (kill_index,) = _commands(world, "kill")
+    start_index = _start_index(world)
+    target = world.calls[kill_index][-1]
+    assert world.calls[start_index] == ["docker", "start", target]
+    # The label check for exactly this id runs after the kill and before the start.
+    checks = [
+        i for i in _commands(world, "inspect")
+        if kill_index < i < start_index and world.calls[i] == ["docker", "inspect", target]
+    ]  # fmt: skip
+    assert checks, "verify_bench_container runs on the killed id before docker start"
+    rec = report.recovery(report.load_raw(result.raw_path))
+    assert rec["recovered"] is True
+    recovered_at = restart["kill_ns"] + round(rec["recovery_seconds"] * SEC)
+    # docker start happens strictly after the sample that confirmed the stable window.
+    assert restart["restarted_ns"] == world.start_ns
+    assert restart["restarted_ns"] > recovered_at + restart["stable_window_s"] * SEC
+    assert restart["restarted_ns"] < restart["kill_ns"] + restart["timeout_s"] * SEC
+    assert restart["rejoined_ns"] is not None
+    assert restart["rejoined_ns"] >= restart["restarted_ns"]
+    assert result.phases.index("kill") < result.phases.index("drain")
+    assert not any("not restarted by its restart policy" in item for item in raw["limitations"])
+
+
+def test_restart_waits_for_the_recovery_timeout_when_recovery_never_comes(
+    scenarios: ModuleType, report: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios, kill_effect_s=100_000.0)
+    result = _run_sustained(scenarios, tmp_path, world)
+    restart = result.raw["restart"]
+    assert restart["restarted_ns"] >= restart["kill_ns"] + restart["timeout_s"] * SEC
+    assert restart["restarted_ns"] <= restart["kill_ns"] + (restart["timeout_s"] + 10) * SEC
+    assert restart["rejoined_ns"] is not None
+    failures = {f.id for f in report.reconcile(report.load_raw(result.raw_path))}
+    assert "recovery_timeout" in failures
+
+
+def test_restart_refuses_when_the_killed_container_fails_the_label_check(
+    scenarios: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios, relabel_after_kill=True)
+    with pytest.raises(scenarios.BenchError, match="refusing"):
+        _run_sustained(scenarios, tmp_path, world)
+    assert len(_commands(world, "kill")) == 1
+    assert _commands(world, "start") == []
+
+
+def test_rejoin_timeout_records_null_and_a_limitation(
+    scenarios: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios, start_runs=False)
+    raw = _run_sustained(scenarios, tmp_path, world).raw
+    restart = raw["restart"]
+    assert restart["restarted_ns"] is not None
+    assert restart["rejoined_ns"] is None
+    assert any("did not rejoin" in item for item in raw["limitations"])
+    assert raw["run"]["replicas_running"]["end"]["detector"] == 2
+
+
+def test_every_docker_command_stays_inside_the_bench_project(
+    scenarios: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios)
+    _run_sustained(scenarios, tmp_path, world)
+    ids = {c.id for c in world.containers}
+    for argv in world.calls:
+        if argv[:2] == ["docker", "compose"] and argv[2] != "ls":
+            assert argv[2:4] == ["-p", PROJECT], argv
+        if argv[:2] in (["docker", "start"], ["docker", "kill"]):
+            assert argv[-1] in ids and argv[-1].startswith("detector-"), argv
+
+
+def test_sustained_records_running_replicas_at_start_and_end(
+    scenarios: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios)
+    raw = _run_sustained(scenarios, tmp_path, world).raw
+    replicas = raw["run"]["replicas_running"]
+    assert replicas["start"] == SERVICES
+    assert replicas["end"] == SERVICES, "the killed detector is running again at the end"
+
+
+def test_sustained_measures_steady_pin_margin_and_main_load_partition_offsets(
+    scenarios: ModuleType, report: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios)
+    result = _run_sustained(scenarios, tmp_path, world)
+    raw = result.raw
+    assert raw["prometheus"]["pin_retention_margin_steady_min"] == 5_000_000
+    pin = sorted(
+        int(q.rsplit("[", 1)[1].split("s]", 1)[0])
+        for q in world.prom_queries
+        if "sentinel_detector_pin_retention_margin_offsets[" in q
+    )
+    assert len(pin) == 2 and 0 < pin[0] < pin[1], "steady window is shorter than the run"
+    main = raw["kafka"]["main_load"]
+    assert main["end_ns"] > main["start_ns"]
+    first_due = min(r["intended_ns"] for r in raw["client"]["requests"])
+    assert main["start_ns"] >= first_due + 60 * SEC, "main load starts after the warm-up"
+    assert set(main["partition_delta"]) == {str(p) for p in range(6)}
+    assert 0 < sum(main["partition_delta"].values()) < 70_000
+    assert report.reconcile(report.load_raw(result.raw_path))[0].id == "generated_floor"
+
+
 # --- overload ----------------------------------------------------------------------------
 
 
@@ -766,6 +916,24 @@ def test_overload_raw_records_buffer_oom_and_restarts_for_the_report(
     assert report.reconcile(loaded) == []
 
 
+def test_overload_records_replicas_steady_pin_window_and_load_offsets(
+    scenarios: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios, expected={}, status_for=_overload_status)
+    raw = _run_overload(scenarios, tmp_path, world).raw
+    assert raw["run"]["replicas_running"] == {"start": SERVICES, "end": SERVICES}
+    pin = sorted(
+        int(q.rsplit("[", 1)[1].split("s]", 1)[0])
+        for q in world.prom_queries
+        if "sentinel_detector_pin_retention_margin_offsets[" in q
+    )
+    assert len(pin) == 2 and pin[1] - pin[0] in (9, 10, 11), "first 10 s are skipped"
+    assert raw["prometheus"]["pin_retention_margin_steady_min"] == 5_000_000
+    main = raw["kafka"]["main_load"]
+    assert sum(main["partition_delta"].values()) == world.accepted_events
+    assert main["end_ns"] - main["start_ns"] >= 59 * SEC
+
+
 # --- run.py and make bench ---------------------------------------------------------------
 
 
@@ -823,3 +991,22 @@ def test_make_bench_runs_the_scenario_and_requires_run() -> None:
     assert refused.returncode != 0
     assert "RUN" in refused.stderr
     assert "run.py run" not in refused.stdout
+
+
+def test_run_py_forwards_supersede_to_the_report() -> None:
+    run = _load("sentinel_bench_run_for_scenarios", RUN_PATH)
+    args = run._parser().parse_args(["run", "--scenario", "overload", "--run", "t1", "--supersede"])
+    assert args.supersede is True
+    assert run._report_args(Path("/x/raw.json"), supersede=True) == [
+        "--raw", "/x/raw.json", "--out", str(run.RESULTS), "--supersede",
+    ]  # fmt: skip
+    assert "--supersede" not in run._report_args(Path("/x/raw.json"), supersede=False)
+
+
+def test_make_bench_maps_supersede_to_the_flag() -> None:
+    plain = _make("-n", "bench", "SCENARIO=overload", "RUN=t1")
+    assert "--supersede" not in plain.stdout
+    superseding = _make("-n", "bench", "SCENARIO=overload", "RUN=t1", "SUPERSEDE=1")
+    assert superseding.returncode == 0, superseding.stderr
+    assert "--supersede" in superseding.stdout
+    assert "SUPERSEDE=1" in _make("help").stdout
