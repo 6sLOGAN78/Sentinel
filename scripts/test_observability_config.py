@@ -504,6 +504,107 @@ class OverlayComposeTests(unittest.TestCase):
         self.assertRegex(template, r"(?m)^# SENTINEL_TRACING_SAMPLE_RATIO=0\.01$")
 
 
+OPERATIONS = ROOT / "docs/operations.md"
+ARCHITECTURE = ROOT / "docs/architecture.md"
+CI = ROOT / ".github/workflows/ci.yml"
+CHECK_OBSERVABILITY = ROOT / "scripts/check-observability.sh"
+MAKEFILE = ROOT / "Makefile"
+OLD_LATE_METRIC = re.compile(r"(?<![A-Za-z0-9_])detection_late_events_total")
+OLD_NAME_DIRS = ("docs", "backend", "scripts", "observability")
+TEXT_SUFFIXES = frozenset(
+    {".go", ".md", ".yml", ".yaml", ".json", ".py", ".sh", ".sql", ".txt", ".mod", ".ts", ".tsx"}
+)
+MADR_HEADINGS = ("## Status", "## Context", "## Decision", "## Consequences")
+
+
+def doc_section(text: str, heading: str) -> str:
+    """Body of a level-2 markdown section, up to the next level-2 heading."""
+    match = re.search(rf"(?m)^## {re.escape(heading)}\s*$", text)
+    if match is None:
+        return ""
+    rest = text[match.end():]
+    end = re.search(r"(?m)^## ", rest)
+    return rest[: end.start()] if end else rest
+
+
+class DocsDriftTests(unittest.TestCase):
+    """docs/operations.md, ADR 0010 and CI must match the implementation (05-19)."""
+
+    def test_operations_metric_table_lists_exactly_the_registered_metrics(self):
+        section = doc_section(OPERATIONS.read_text(), "Metrics")
+        self.assertTrue(section, "docs/operations.md needs a '## Metrics' section")
+        documented = set(re.findall(r"(?m)^\|\s*`(sentinel_[a-z0-9_]+)`\s*\|", section))
+        registered = registered_metrics()
+        self.assertEqual(
+            documented,
+            registered,
+            f"missing {sorted(registered - documented)}, unknown {sorted(documented - registered)}",
+        )
+
+    def test_old_unprefixed_late_metric_name_is_gone(self):
+        # Test files that assert the old name is rejected (this one included)
+        # are excluded so the guard cannot match itself.
+        hits = []
+        for directory in OLD_NAME_DIRS:
+            for path in sorted((ROOT / directory).rglob("*")):
+                if not path.is_file() or path.suffix not in TEXT_SUFFIXES:
+                    continue
+                if path.parent == ROOT / "scripts" and path.name.startswith("test_"):
+                    continue
+                for number, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
+                    if OLD_LATE_METRIC.search(line):
+                        hits.append(f"{path.relative_to(ROOT)}:{number}")
+        self.assertEqual(hits, [], "use sentinel_detection_late_events_total")
+
+    def test_adr_0010_exists_with_madr_headings_and_index_entry(self):
+        matches = sorted((ROOT / "docs/decisions").glob("0010-*.md"))
+        self.assertEqual(len(matches), 1, "exactly one ADR 0010")
+        text = matches[0].read_text()
+        for heading in MADR_HEADINGS:
+            self.assertRegex(text, rf"(?m)^{re.escape(heading)}\s*$")
+        index = (ROOT / "docs/decisions/README.md").read_text()
+        self.assertIn(f"({matches[0].name})", index)
+
+    def test_ci_runs_check_observability_which_runs_these_tests(self):
+        ci = CI.read_text()
+        steps = [line for line in ci.splitlines() if "check-observability.sh" in line]
+        self.assertTrue(steps, "ci.yml must run scripts/check-observability.sh")
+        for line in steps:
+            self.assertNotIn("|| true", line)
+        self.assertNotRegex(ci, r"(?m)^\s*continue-on-error:\s*true")
+        script = CHECK_OBSERVABILITY.read_text()
+        self.assertIn("-p test_observability_config.py", script)
+        self.assertIn("promtool test rules", script)
+
+    def test_operations_documents_every_overlay_config_key_and_alert(self):
+        ops = OPERATIONS.read_text()
+        keys = set(re.findall(r"(SENTINEL_(?:OBSERVABILITY|AUTH)\.[A-Z_.]+)", OVERLAY.read_text()))
+        self.assertIn("SENTINEL_AUTH.OPERATOR_TENANTS", keys)
+        for key in sorted(keys):
+            with self.subTest(key=key):
+                self.assertIn(f"`{key}`", ops)
+        for name in ALERT_NAMES:
+            with self.subTest(alert=name):
+                self.assertIn(f"`{name}`", ops)
+        for service, port in APP_PORTS:
+            with self.subTest(service=service):
+                self.assertRegex(ops, rf"{re.escape(service)}\D{{1,12}}{port}\b")
+
+    def test_make_targets_named_in_docs_exist(self):
+        targets = set(re.findall(r"(?m)^([a-z][a-z0-9-]*):", MAKEFILE.read_text()))
+        for doc in (OPERATIONS, ARCHITECTURE):
+            # Commands only: inline code or a line that starts with make (not prose).
+            found = re.findall(r"(?m)(?:`|^\s*)make ([a-z][a-z0-9-]*)", doc.read_text())
+            for target in sorted(set(found)):
+                with self.subTest(doc=doc.name, target=target):
+                    self.assertIn(target, targets)
+
+    def test_architecture_describes_telemetry_flow(self):
+        text = ARCHITECTURE.read_text()
+        self.assertIn("sentinel_detection_late_events_total", text)
+        self.assertTrue(doc_section(text, "Telemetry flow"), "architecture needs '## Telemetry flow'")
+
+
 PINNED = "busybox:1.37.0@sha256:" + "a" * 64
 BASE_FIXTURE = """services:
   a:
