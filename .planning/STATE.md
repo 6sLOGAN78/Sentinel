@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-11-19T00:00:00Z"
+last_updated: "2026-11-19T11:40:00Z"
 progress:
   total_phases: 6
   completed_phases: 4
@@ -22,7 +22,7 @@ Current focus: Phase 5 (Observability, Resilience & Scale). Phase 4 COMPLETE 202
 
 ## Current Position
 
-> 2026-11-19: Phase 4 closed (2026-11-16). Phase 5: 20 of 21 plans complete (05-01..05-19, 05-21, plus gap 05-21a operator tenant allowlist, ADR 0014, user-approved). User decisions: Option A producers (ADR 0013, amends D-11); Prometheus API modules approved (json-iterator, modern-go/concurrent, modern-go/reflect2); operator allowlist. Remaining: 05-20 real >=1M bench (non-autonomous; needs >=15 GiB free disk, >=6 GiB MemAvailable, user confirmation + run id + devrag decision), then replace placeholder thresholds (ingest 5xx 5%, pin margin 100000) and fill benchmark docs. Open: test_seed_scenarios.py py3.10 datetime.UTC; 22 phase4-tag lint findings; TestDetectorCooldownOwners hosted flake watch; old sentinel_*/p4-demo volumes missing since 2026-11-17. Older notes below are historical.
+> 2026-11-19: Phase 4 closed (2026-11-16). Phase 5: 20 of 21 plans complete (05-01..05-19, 05-21, plus gap 05-21a operator tenant allowlist, ADR 0014, user-approved). User decisions: Option A producers (ADR 0013, amends D-11); Prometheus API modules approved (json-iterator, modern-go/concurrent, modern-go/reflect2); operator allowlist. Remaining: 05-20 Tasks 1-2 DONE (RUN=20261119a, devrag stopped; both reports written by report.py and committed a05f0c0: 1M events loss 0 dup 0 120/120 alerts; overload 202/429 only; stack torn down + purged). Next: 05-20 Task 3 live check (needs a fresh bench-up), Task 4 ADR 0011 + benchmarks/README. Findings for gaps: GET /api/v1/events 503 at 1M events/tenant (full-tenant dedupe before range, 5 s timeout); recovery 0.438 s is a lag-metric artifact (lost partitions unreported during session timeout); detector-3 startup crash "postgres decision invariant". Placeholder thresholds (5%, 100000) still unchanged. Open: test_seed_scenarios.py py3.10 datetime.UTC; 22 phase4-tag lint findings; TestDetectorCooldownOwners hosted flake watch; old sentinel_*/p4-demo volumes missing since 2026-11-17. Older notes below are historical.
 
 Phase: 4 (Query API & Analyst Dashboard) — EXECUTING
 Plan: 04-14 executing after9-pathA1PASS0atab89caa and PLANsynchronization;13acceptedfeature14+UTC2/reviewsclean/rootgates. SeparateNEWdetectorholdunresolved.
