@@ -169,6 +169,9 @@ class World:
     expected_alerts: dict[str, int]
     shares: tuple[float, ...] = (0.2, 0.2, 0.15, 0.15, 0.15, 0.15)
     noise_until_s: float = 0.0
+    # 05-27: detector partition coverage of the events topic (6 partitions).
+    partial_coverage_until_s: float = 0.0
+    coverage_after_kill: int = 4
     drain_ok: bool = True
     status_for: Callable[[int], int] = lambda seq: 202
     accepted: set[str] = field(default_factory=set)
@@ -299,6 +302,17 @@ class World:
         return {"sentinel-detector": detector, "sentinel-event-writer": 10.0,
                 "sentinel-alert-writer": 0.0}  # fmt: skip
 
+    def coverage(self, now_ns: int) -> dict[str, float]:
+        partitions = float(len(self.shares))
+        detector = partitions
+        start = self.first_due_ns or START_NS
+        if (now_ns - start) / SEC < self.partial_coverage_until_s:
+            detector = partitions - 1
+        if self.kill_ns is not None and self.kill_ns <= now_ns < self.kill_ns + 20 * SEC:
+            detector = float(self.coverage_after_kill)
+        # alert-writer consumes the alerts topic, so it reports no events partition.
+        return {"sentinel-detector": detector, "sentinel-event-writer": partitions}
+
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.port == 39090:
             return self._prometheus(request.url.params["query"])
@@ -321,6 +335,11 @@ class World:
 
         if query == "max by (group) (sentinel_kafka_consumer_lag)":
             return vector([({"group": g}, v) for g, v in self.lag(self.vc.now_ns).items()])
+        if query == (
+            "count by (group) (count by (group, partition) "
+            '(sentinel_kafka_consumer_lag{topic="security.events.v1"}))'
+        ):
+            return vector([({"group": g}, v) for g, v in self.coverage(self.vc.now_ns).items()])
         if query.startswith("sentinel_detection_delay_seconds_bucket["):
             return matrix([({"le": "0.4"}, 1.0), ({"le": "0.8"}, 4.0), ({"le": "+Inf"}, 4.0)])
         if query.startswith(
@@ -517,6 +536,35 @@ def test_kill_waits_for_thirty_percent_sent_and_sixty_seconds_of_stable_lag(
     raw_noisy = _run_sustained(scenarios, tmp_path / "noisy", noisy).raw
     first_due_noisy = min(r["intended_ns"] for r in raw_noisy["client"]["requests"])
     assert raw_noisy["restart"]["kill_ns"] >= first_due_noisy + (900 + 60) * SEC
+
+
+def test_restart_records_partitions_expected_from_kafka(
+    scenarios: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios)
+    raw = _run_sustained(scenarios, tmp_path, world).raw
+    # Measured from kafka-get-offsets (6 partition lines), not assumed from config.
+    assert raw["restart"]["partitions_expected"] == len(world.shares) == 6
+    detector = [s for s in raw["prometheus"]["lag_samples"] if s["group"] == "detector"]
+    assert detector and all(isinstance(s["partitions_reported"], int) for s in detector)
+    kill = raw["restart"]["kill_ns"]
+    assert min(s["partitions_reported"] for s in detector if s["t_ns"] >= kill) == 4
+
+
+def test_kill_waits_for_full_partition_coverage_in_the_steady_window(
+    scenarios: ModuleType, tmp_path: Path
+) -> None:
+    world = _world(scenarios, partial_coverage_until_s=900.0)
+    raw = _run_sustained(scenarios, tmp_path, world).raw
+    first_due = min(r["intended_ns"] for r in raw["client"]["requests"])
+    assert raw["restart"] is not None
+    assert raw["restart"]["kill_ns"] >= first_due + (900 + 60) * SEC
+    window = [
+        s for s in raw["prometheus"]["lag_samples"]
+        if s["group"] == "detector" and raw["restart"]["kill_ns"] - 60 * SEC <= s["t_ns"]
+        < raw["restart"]["kill_ns"]
+    ]  # fmt: skip
+    assert window and all(s["partitions_reported"] == 6 for s in window)
 
 
 def test_kill_targets_only_a_labelled_bench_detector(scenarios: ModuleType, tmp_path: Path) -> None:

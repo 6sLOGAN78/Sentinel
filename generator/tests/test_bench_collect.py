@@ -541,3 +541,59 @@ def test_prometheus_missing_limit_is_refused_not_invented(collect: ModuleType) -
 
     with pytest.raises(collect.BenchError, match="no data"):
         asyncio.run(scenario())
+
+
+def test_lag_sample_merges_events_topic_partition_coverage(collect: ModuleType) -> None:
+    """05-27: max lag and distinct reported partitions per group, as fixed literals."""
+    vc = VirtualClock(T0_NS)
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = request.url.params["query"]
+        seen.append(query)
+        if query == collect.LAG_COVERAGE_QUERY:
+            # alert-writer reports no events-topic partition: it must map to 0.
+            rows = [
+                ({"group": "sentinel-detector"}, 4.0),
+                ({"group": "sentinel-event-writer"}, 6.0),
+            ]
+        else:
+            rows = [
+                ({"group": "sentinel-detector"}, 40.0),
+                ({"group": "sentinel-event-writer"}, 7.0),
+                ({"group": "sentinel-alert-writer"}, 0.0),
+            ]
+        return httpx.Response(200, json=_vector(rows, vc.now_ns / SEC))
+
+    def factory(_: str) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def scenario() -> list[dict[str, Any]]:
+        prom = collect.Prometheus(PROM, client_factory=factory)
+        try:
+            return list(await collect.lag_sample(prom, T0_NS))
+        finally:
+            await prom.aclose()
+
+    samples = vc.run(scenario())
+    assert collect.LAG_COVERAGE_QUERY == (
+        "count by (group) (count by (group, partition) "
+        '(sentinel_kafka_consumer_lag{topic="security.events.v1"}))'
+    )
+    assert set(seen) == {collect.LAG_QUERY, collect.LAG_COVERAGE_QUERY}
+    by_group = {s["group"]: s for s in samples}
+    assert by_group["detector"] == {
+        "t_ns": T0_NS,
+        "group": "detector",
+        "max_lag": 40.0,
+        "partitions_reported": 4,
+    }
+    assert by_group["event-writer"]["partitions_reported"] == 6
+    assert by_group["alert-writer"]["partitions_reported"] == 0
+
+
+def test_lag_queries_are_module_level_literals(collect: ModuleType) -> None:
+    source = COLLECT_PATH.read_text(encoding="utf-8")
+    assert "LAG_COVERAGE_QUERY = (" in source or "LAG_COVERAGE_QUERY = '" in source
+    assert 'LAG_QUERY = "' in source
+    assert 'f"count by' not in source and "f'count by" not in source

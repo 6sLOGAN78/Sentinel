@@ -44,6 +44,16 @@ class ReportModule(Protocol):
 
     def recovery(self, raw: dict[str, Any]) -> dict[str, Any]: ...
 
+    def recovery_from_samples(
+        self,
+        samples: Sequence[dict[str, Any]],
+        kill_ns: int,
+        baseline: float,
+        partitions_expected: int | None,
+        stable_s: int,
+        timeout_s: int,
+    ) -> int | None: ...
+
     def id_digest(self, event_ids: Iterable[str]) -> str: ...
 
 
@@ -672,3 +682,214 @@ def test_threshold_inputs_are_reported_for_alert_tuning(tmp_path: Path) -> None:
     assert inputs["pin_retention_margin_min"] == 4_000_000
     assert inputs["warmup_partition_share_max"] == 0.2
     assert "Alert threshold inputs" in markdown
+
+
+# --- 05-27: coverage-aware recovery and API refusal --------------------------------------
+
+SUSTAINED_STEM = "2026-11-14-sustained-restart"
+PARTITIONS = 6
+KILL_NS = 500 * SEC
+
+
+def _coverage_samples(restart_dip: bool = False) -> list[dict[str, Any]]:
+    """1 s samples: baseline lag 100 at 6/6; after the kill lag 0 but only 4/6 reported
+    for 45 s (orphaned partitions), then 6/6 above baseline for 10 s, then 6/6 under
+    baseline. With restart_dip, a second drop to 3/6 follows the restart at +90 s."""
+    samples = []
+    for second in range(-60, 0):
+        samples.append(
+            {"t_ns": KILL_NS + second * SEC, "group": "detector", "max_lag": 100,
+             "partitions_reported": PARTITIONS}
+        )  # fmt: skip
+    for second in range(0, 120):
+        if second < 45:
+            lag, covered = 0, 4
+        elif second < 55:
+            lag, covered = 500, PARTITIONS
+        else:
+            lag, covered = 50, PARTITIONS
+        if restart_dip and 90 <= second < 100:
+            covered = 3
+        samples.append(
+            {"t_ns": KILL_NS + second * SEC, "group": "detector", "max_lag": lag,
+             "partitions_reported": covered}
+        )  # fmt: skip
+        samples.append(
+            {"t_ns": KILL_NS + second * SEC, "group": "event-writer", "max_lag": 9999,
+             "partitions_reported": PARTITIONS}
+        )  # fmt: skip
+    return samples
+
+
+def _coverage_restart(**extra: Any) -> dict[str, Any]:
+    return {
+        "kill_ns": KILL_NS,
+        "killed_container": "detector-1",
+        "baseline_window_s": 60,
+        "stable_window_s": 30,
+        "timeout_s": 600,
+        "partitions_expected": PARTITIONS,
+        **extra,
+    }
+
+
+def test_recovery_waits_for_full_partition_coverage() -> None:
+    report = _report()
+    raw = {"prometheus": {"lag_samples": _coverage_samples()}, "restart": _coverage_restart()}
+    result = report.recovery(raw)
+    assert result["recovered"] is True
+    # Lag-only would say 0 s; coverage returns at +45 s, lag is under baseline from +55 s.
+    assert result["recovery_seconds"] == pytest.approx(55.0)
+    assert result["partitions_expected"] == PARTITIONS
+    assert result["coverage_lost_s"] == pytest.approx(45.0)
+    assert result["min_partitions_reported_after_kill"] == 4
+
+
+def test_recovery_from_samples_is_the_pure_eligibility_search() -> None:
+    report = _report()
+    samples = _coverage_samples()
+    at = report.recovery_from_samples(samples, KILL_NS, 100.0, PARTITIONS, 30, 600)
+    assert at == KILL_NS + 55 * SEC
+    assert report.recovery_from_samples(samples, KILL_NS, 100.0, PARTITIONS, 30, 40) is None
+
+
+def test_post_restart_coverage_dip_does_not_pollute_coverage_figures() -> None:
+    report = _report()
+    raw = {
+        "prometheus": {"lag_samples": _coverage_samples(restart_dip=True)},
+        "restart": _coverage_restart(restarted_ns=KILL_NS + 90 * SEC),
+    }
+    result = report.recovery(raw)
+    assert result["coverage_lost_s"] == pytest.approx(45.0)
+    assert result["min_partitions_reported_after_kill"] == 4
+    assert result["recovery_seconds"] == pytest.approx(55.0)
+
+
+def test_recovery_must_complete_before_the_restart() -> None:
+    report = _report()
+    raw = {
+        "prometheus": {"lag_samples": _coverage_samples()},
+        "restart": _coverage_restart(restarted_ns=KILL_NS + 70 * SEC),
+    }
+    result = report.recovery(raw)
+    assert result["recovered"] is False
+    assert result["recovery_seconds"] is None
+
+
+def _sustained_raw() -> dict[str, Any]:
+    """The reconciled fixture as a sustained-restart run with full coverage data."""
+    raw = _raw()
+    raw["run"]["scenario"] = "sustained-restart"
+    raw["restart"] = _coverage_restart()
+    raw["prometheus"]["lag_samples"] = _coverage_samples()
+    return raw
+
+
+def _failure_ids(tmp_path: Path, raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    report = _report()
+    out = tmp_path / "out"
+    assert report.main(["--raw", str(_write_raw(tmp_path, raw)), "--out", str(out)]) == 1
+    failed = json.loads((out / f"{SUSTAINED_STEM}.FAILED.json").read_text(encoding="utf-8"))
+    return {failure["id"]: failure for failure in failed["failures"]}
+
+
+def test_sustained_raw_with_coverage_only_fails_the_floor(tmp_path: Path) -> None:
+    ids = _failure_ids(tmp_path, _sustained_raw())
+    assert set(ids) == {"generated_floor"}
+
+
+@pytest.mark.parametrize("missing", ["samples", "expected"])
+def test_missing_coverage_data_refuses_sustained_restart(tmp_path: Path, missing: str) -> None:
+    raw = _sustained_raw()
+    if missing == "samples":
+        for sample in raw["prometheus"]["lag_samples"]:
+            del sample["partitions_reported"]
+    else:
+        del raw["restart"]["partitions_expected"]
+    ids = _failure_ids(tmp_path, raw)
+    assert "recovery_coverage_unknown" in ids
+    assert ids["recovery_coverage_unknown"]["message"]
+
+
+def test_incomplete_baseline_coverage_refuses(tmp_path: Path) -> None:
+    raw = _sustained_raw()
+    raw["prometheus"]["lag_samples"][10]["partitions_reported"] = PARTITIONS - 1
+    ids = _failure_ids(tmp_path, raw)
+    assert "recovery_coverage_baseline" in ids
+    assert "recovery_coverage_unknown" not in ids
+
+
+def test_coverage_that_never_dropped_is_a_limitation(tmp_path: Path) -> None:
+    raw = _raw()
+    raw["restart"] = _coverage_restart()
+    samples = _coverage_samples()
+    for sample in samples:
+        sample["partitions_reported"] = PARTITIONS
+    raw["prometheus"]["lag_samples"] = samples
+    summary, markdown = _run_ok(tmp_path, raw)
+    note = (
+        "coverage did not drop after the kill; the killed member may have owned no "
+        "partitions or the drop was shorter than the 5 s sample interval"
+    )
+    assert any(note in item for item in summary["limitations"])
+    assert summary["recovery"]["min_partitions_reported_after_kill"] == PARTITIONS
+
+
+def test_markdown_shows_coverage_rows(tmp_path: Path) -> None:
+    raw = _raw()
+    raw["restart"] = _coverage_restart()
+    raw["prometheus"]["lag_samples"] = _coverage_samples()
+    summary, markdown = _run_ok(tmp_path, raw)
+    assert summary["recovery"]["recovery_seconds"] == 55.0
+    for row in (
+        "| Partitions expected | 6 |",
+        "| Min partitions reported after kill | 4 |",
+        "| Coverage lost (s) | 45 |",
+    ):
+        assert row in markdown
+    assert "with every events partition reported for 30 consecutive seconds" in markdown
+
+
+def test_api_non_2xx_refuses_sustained_restart(tmp_path: Path) -> None:
+    raw = _sustained_raw()
+    for sample in raw["api"]["samples"]:
+        if sample["endpoint"] == "/api/v1/events":
+            sample["status"] = 503
+    ids = _failure_ids(tmp_path, raw)
+    failure = ids["api_non_2xx"]
+    assert "/api/v1/events" in failure["message"]
+    assert failure["observed"] == {"/api/v1/events": 20}
+    assert failure["expected"] == 0
+
+
+def test_api_non_2xx_does_not_apply_to_other_scenarios(tmp_path: Path) -> None:
+    raw = _raw()
+    raw["api"]["samples"][0]["status"] = 503
+    summary, _ = _run_ok(tmp_path, raw)
+    assert sum(v["non_2xx"] for v in summary["latency"]["api_ms"].values()) == 1
+
+
+def test_regression_20261119a_shape_refuses(tmp_path: Path) -> None:
+    """Synthetic equivalent of run 20261119a: lag-only samples (no coverage), a restart
+    without partitions_expected, and every /api/v1/events request 503. It once reported
+    a 0.438 s recovery; it must now refuse."""
+    raw = _raw()
+    raw["provenance"] = "fixture"
+    raw["run"]["scenario"] = "sustained-restart"
+    raw["restart"] = {
+        "kill_ns": KILL_NS,
+        "killed_container": "sentinel-bench-20261119a-detector-1",
+        "baseline_window_s": 60,
+        "stable_window_s": 30,
+        "timeout_s": 600,
+    }
+    raw["prometheus"]["lag_samples"] = [
+        {"t_ns": KILL_NS + second * 5 * SEC, "group": "detector", "max_lag": 0.0}
+        for second in range(-12, 24)
+    ]
+    for sample in raw["api"]["samples"]:
+        if sample["endpoint"] == "/api/v1/events":
+            sample["status"] = 503
+    ids = _failure_ids(tmp_path, raw)
+    assert {"recovery_coverage_unknown", "api_non_2xx"} <= set(ids)
+    assert "recovery_timeout" not in ids
