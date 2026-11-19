@@ -101,7 +101,7 @@ The existing "Operator tenants" section (05-21a), with the `SENTINEL_AUTH.OPERAT
 | `grep -n sentinel-p4-demo-20261024 docs/operations.md` | matches (protected-stack warning) |
 | actionlint | not installed locally; ci.yml unchanged and parses with PyYAML (11 jobs) |
 | `make lint` | exit 0 (golangci, eslint + tsc, ruff, mypy) |
-| `make test` | exit 2. Go: 40 packages ok. Web: 214/215; the one failure is `Overview.test.tsx` "never fabricates zeros", from 05-16's RED commit e72c409 plus its uncommitted web changes. This plan touches no web file. Generator not reached by make, so run separately: `uv run --locked pytest` 363 passed |
+| `make test` | exit 2. Go: 40 packages ok. Web: 214/215; the one failure is `Overview.test.tsx` "never fabricates zeros", from 05-16's RED commit e72c409 plus its uncommitted web changes. This plan touches no web file. Generator not reached by make, so run separately: `uv run --locked pytest` 363 passed. Rerun after 05-16 GREEN 354e727 landed: web `npm test` 215/215 passed, so all three suites are green |
 
 ## Deviations from Plan
 
