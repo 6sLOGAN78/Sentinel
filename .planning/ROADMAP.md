@@ -341,13 +341,13 @@ Plans:
 - [ ] 05-16-PLAN.md — Admin-only System page + Overview consumer-lag panel (numbers for analyst/admin, notice for viewers) (05-UI-SPEC)
 - [ ] 05-19-PLAN.md — ADR 0010, operations/architecture docs (metric rename), CI observability checks
 
-**Wave 9** *(gap closure from run 20261119a)*
+**Wave 9** *(gap closure from run 20261119a; one Go module, no worktrees: run 05-22 then 05-24; Python-only 05-27 may run alongside)*
 
 - [ ] 05-22-PLAN.md — GAP-1: bounded two-stage ListEvents (candidate keys, then winner dedupe) with exact-prefix proof and a 1M-row scale regression
 - [ ] 05-24-PLAN.md — GAP-2 product: sentinel_kafka_topic_partitions{group,topic} gauge as the lag coverage denominator
 - [ ] 05-27-PLAN.md — GAP-2 bench: coverage-gated recovery time, refusals for missing coverage and API non-2xx
 
-**Wave 10** *(gap closure)*
+**Wave 10** *(gap closure; Go plans in order 05-23, 05-25, 05-26; Python-only 05-28 may run alongside)*
 
 - [ ] 05-23-PLAN.md — GAP-1: bounded SummarizeEvents (identical-retry fast path + exact conflict correction)
 - [ ] 05-25-PLAN.md — GAP-2 API/UI: lag and System report partial_coverage instead of a false 0 (additive OpenAPI enum)
