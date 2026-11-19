@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/6sLOGAN78/sentinel/internal/contracts"
+	"github.com/6sLOGAN78/sentinel/internal/query"
 )
 
 const testdataRoot = "../internal/contracts/testdata"
@@ -356,6 +357,9 @@ func TestOpenAPIConsumerLagContract(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(metric), `"operator_only"`, "non-operator tenants get the operator_only reason")
 	assert.Contains(t, op.Description, "operator_only", "the operator rule must be documented")
+	assert.Contains(t, string(metric), `"`+query.ReasonPartialCoverage+`"`,
+		"a group with an unreported partition gets the partial_coverage reason")
+	assert.Contains(t, op.Description, query.ReasonPartialCoverage, "the coverage rule must be documented")
 
 	summary := operations(doc)["GET /api/v1/metrics/summary"]
 	require.NotNil(t, summary)
@@ -381,6 +385,9 @@ func TestOpenAPIConsumerLagDrift(t *testing.T) {
 			var body any
 			require.NoError(t, json.Unmarshal(raw, &body))
 			require.NoError(t, schema.VisitJSON(body, visitOptions()...), string(raw))
+			if name == query.ReasonPartialCoverage {
+				require.Contains(t, string(raw), `"reason":"partial_coverage"`)
+			}
 		})
 	}
 
@@ -403,6 +410,8 @@ func TestOpenAPIConsumerLagDrift(t *testing.T) {
 	for name, raw := range map[string]string{
 		"unavailable_with_zero": valid(`{"state":"unavailable","reason":"no_data","value":0}`),
 		"operator_only_value":   valid(`{"state":"unavailable","reason":"operator_only","value":5}`),
+		"partial_value":         valid(`{"state":"unavailable","reason":"partial_coverage","value":0}`),
+		"available_partial":     valid(`{"state":"available","reason":"partial_coverage","value":0}`),
 		"available_operator":    valid(`{"state":"available","reason":"operator_only","value":5}`),
 		"available_no_value":    valid(`{"state":"available"}`),
 		"unavailable_no_reason": valid(`{"state":"unavailable"}`),

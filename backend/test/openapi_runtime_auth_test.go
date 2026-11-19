@@ -169,23 +169,57 @@ func checkLookupSecurityAlternative(t *testing.T, scheme *openapi3.SecuritySchem
 	require.Equal(t, event, &got)
 }
 
-// consumerLagMetrics is a func-type query.SystemMetrics fake.
-type consumerLagMetrics func() (map[string]float64, error)
+// consumerLagMetrics is a func-type query.SystemMetrics fake answering by
+// PromQL text.
+type consumerLagMetrics func(promql string) (map[string]float64, error)
 
-func (f consumerLagMetrics) Query(context.Context, string, time.Time) (map[string]float64, error) {
-	return f()
+func (f consumerLagMetrics) Query(_ context.Context, promql string, _ time.Time) (map[string]float64, error) {
+	return f(promql)
+}
+
+// The lag endpoint's coverage queries, spelled out like the System table.
+const (
+	contractLagQuery        = `max by (group) (sentinel_kafka_consumer_lag)`
+	contractLagReported     = `count by (group) (count by (group, topic, partition) (sentinel_kafka_consumer_lag))`
+	contractLagPartitions   = `sum by (group) (max by (group, topic) (sentinel_kafka_topic_partitions))`
+	contractTopicPartitions = 6
+)
+
+// contractFullCoverage reports every pipeline group fully covered.
+func contractFullCoverage() map[string]float64 {
+	return map[string]float64{
+		"sentinel-event-writer": contractTopicPartitions, "sentinel-detector": contractTopicPartitions,
+		"sentinel-alert-writer": contractTopicPartitions,
+	}
+}
+
+// lagTable answers the lag query with lag and the coverage queries with
+// reported and expected.
+func lagTable(lag, reported, expected map[string]float64) consumerLagMetrics {
+	return func(promql string) (map[string]float64, error) {
+		switch promql {
+		case contractLagReported:
+			return reported, nil
+		case contractLagPartitions:
+			return expected, nil
+		default:
+			return lag, nil
+		}
+	}
 }
 
 func consumerLagResults() map[string]consumerLagMetrics {
+	lag := map[string]float64{"sentinel-event-writer": 12, "sentinel-detector": 0, "sentinel-alert-writer": 3}
+	partial := contractFullCoverage()
+	partial["sentinel-detector"] = contractTopicPartitions - 2
 	return map[string]consumerLagMetrics{
-		"available": func() (map[string]float64, error) {
-			return map[string]float64{
-				"sentinel-event-writer": 12, "sentinel-detector": 0, "sentinel-alert-writer": 3,
-			}, nil
+		"available":        lagTable(lag, contractFullCoverage(), contractFullCoverage()),
+		"partial_coverage": lagTable(lag, partial, contractFullCoverage()),
+		"prometheus_unavailable": func(string) (map[string]float64, error) {
+			return nil, errors.New("refused")
 		},
-		"prometheus_unavailable": func() (map[string]float64, error) { return nil, errors.New("refused") },
-		"not_configured":         func() (map[string]float64, error) { return nil, query.ErrPrometheusNotConfigured },
-		"no_data":                func() (map[string]float64, error) { return map[string]float64{}, nil },
+		"not_configured": func(string) (map[string]float64, error) { return nil, query.ErrPrometheusNotConfigured },
+		"no_data":        lagTable(map[string]float64{}, map[string]float64{}, map[string]float64{}),
 	}
 }
 
@@ -314,7 +348,9 @@ func systemAvailableSeries() map[string]map[string]float64 {
 		`sum(rate(sentinel_ingest_requests_total{status="429"}[5m]))`:  {"": 1},
 		`sum(rate(sentinel_ingest_requests_total{status="503"}[5m]))`:  {"": 0},
 		`sum(rate(sentinel_dlq_events_total[5m]))`:                     {"": 0},
-		`max by (group) (sentinel_kafka_consumer_lag)`:                 {"sentinel-event-writer": 3},
+		contractLagQuery:      {"sentinel-event-writer": 3},
+		contractLagReported:   contractFullCoverage(),
+		contractLagPartitions: contractFullCoverage(),
 		`histogram_quantile(0.95, sum by (le) (rate(sentinel_detection_delay_seconds_bucket[5m])))`: {
 			"": 0.2,
 		},

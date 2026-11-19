@@ -51,7 +51,7 @@ const (
 func wantSystemQueries() []string {
 	return []string{
 		wantUp, wantRestarts, wantIngest, wantReqTotal, want5xx, want429, want503, wantDLQ,
-		wantLagQuery, wantDelayP95, wantWriteP95,
+		wantLagQuery, wantLagReportedQuery, wantLagPartitionsQuery, wantDelayP95, wantWriteP95,
 	}
 }
 
@@ -160,6 +160,12 @@ func allSeries() map[string]promResult {
 		want503:      {series: map[string]float64{"": 0.25}},
 		wantDLQ:      {series: map[string]float64{"": 0.1}},
 		wantLagQuery: {series: map[string]float64{"grp-ew": 5, "grp-det": 0, "grp-aw": 1, "other": 9}},
+		wantLagReportedQuery: {series: map[string]float64{
+			"grp-ew": fullCoveragePartitions, "grp-det": fullCoveragePartitions, "grp-aw": 1, "other": 1,
+		}},
+		wantLagPartitionsQuery: {series: map[string]float64{
+			"grp-ew": fullCoveragePartitions, "grp-det": fullCoveragePartitions, "grp-aw": 1, "other": 1,
+		}},
 		wantDelayP95: {series: map[string]float64{"": 0.8}},
 		wantWriteP95: {series: map[string]float64{"": 0.05}},
 	}
@@ -510,6 +516,73 @@ func TestSystemPartialSeries(t *testing.T) {
 	assert.Equal(t, avail(4), body.Ingest.Total)
 	assert.Equal(t, avail(4), body.Ingest.ByResult["accepted"])
 	assert.Equal(t, unavail("no_data"), body.Ingest.ByResult["shed"])
+}
+
+func TestSystemLagCoverage(t *testing.T) {
+	t.Parallel()
+	full := map[string]float64{"grp-ew": 6, "grp-det": 6, "grp-aw": 6}
+	for name, tc := range map[string]struct {
+		override map[string]promResult
+		detector map[string]any
+		others   []map[string]any
+	}{
+		"partial_coverage": {
+			override: map[string]promResult{
+				wantLagReportedQuery:   {series: map[string]float64{"grp-ew": 6, "grp-det": 4, "grp-aw": 6}},
+				wantLagPartitionsQuery: {series: full},
+			},
+			detector: unavail("partial_coverage"), others: []map[string]any{avail(5), avail(1)},
+		},
+		"no_reporter": {
+			override: map[string]promResult{
+				wantLagQuery:           {series: map[string]float64{"grp-ew": 5, "grp-aw": 1}},
+				wantLagReportedQuery:   {series: map[string]float64{"grp-ew": 6, "grp-aw": 6}},
+				wantLagPartitionsQuery: {series: full},
+			},
+			detector: unavail("partial_coverage"), others: []map[string]any{avail(5), avail(1)},
+		},
+		"expected_absent": {
+			override: map[string]promResult{
+				wantLagReportedQuery:   {series: full},
+				wantLagPartitionsQuery: {series: map[string]float64{"grp-ew": 6, "grp-aw": 6}},
+			},
+			detector: unavail("no_data"), others: []map[string]any{avail(5), avail(1)},
+		},
+		"full_coverage": {
+			override: map[string]promResult{
+				wantLagReportedQuery: {series: full}, wantLagPartitionsQuery: {series: full},
+			},
+			detector: avail(0), others: []map[string]any{avail(5), avail(1)},
+		},
+		"reported_failed": {
+			override: map[string]promResult{wantLagReportedQuery: {err: errors.New("timeout")}},
+			detector: unavail("prometheus_unavailable"),
+			others:   []map[string]any{unavail("prometheus_unavailable"), unavail("prometheus_unavailable")},
+		},
+		"expected_failed": {
+			override: map[string]promResult{wantLagPartitionsQuery: {err: errors.New("timeout")}},
+			detector: unavail("prometheus_unavailable"),
+			others:   []map[string]any{unavail("prometheus_unavailable"), unavail("prometheus_unavailable")},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			results := allSeries()
+			for k, v := range tc.override {
+				results[k] = v
+			}
+			f := newSystemFixture(t, systemObservability(), &systemMetrics{results: results}, allReady())
+			body := decodeSystem(t, f.get(t, systemPath, "admin"))
+			require.Len(t, body.ConsumerLag, 3)
+			assert.Equal(t, "event-writer", body.ConsumerLag[0].Group)
+			assert.Equal(t, tc.others[0], body.ConsumerLag[0].Lag)
+			assert.Equal(t, "detector", body.ConsumerLag[1].Group)
+			assert.Equal(t, tc.detector, body.ConsumerLag[1].Lag)
+			assert.Equal(t, "alert-writer", body.ConsumerLag[2].Group)
+			assert.Equal(t, tc.others[1], body.ConsumerLag[2].Lag)
+			assert.Equal(t, avail(0.1), body.DLQRate, "a coverage failure does not hide other fields")
+		})
+	}
 }
 
 func TestSystemReadinessClassification(t *testing.T) {
