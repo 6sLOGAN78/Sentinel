@@ -1,7 +1,8 @@
 # Detection and alert operations
 
 Phase 3 local/hosted acceptance and final 59/59 goal verification passed.
-Phase 4 sign-in and tenant workflow reads are in progress. The scoped
+Phase 4 is complete (re-verified 2026-11-16; hosted run 43714363178 green). Phase 5
+observability, resilience and the bench tooling are implemented; the real benchmark run is pending. The scoped
 [reservation R2 review](../.planning/phases/03-detection-alert-pipeline/03-REVIEW-PRODUCTION-R2.md)
 is clean; it does not establish deployment or current-stack acceptance. Use this
 as the selected operator protocol; the final acceptance record must accompany a
