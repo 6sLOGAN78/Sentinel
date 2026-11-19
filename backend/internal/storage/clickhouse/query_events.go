@@ -31,8 +31,10 @@ const canonicalRowsPrefixSQL = `SELECT event_id,tenant_id,
  destination_port,protocol,principal,action,outcome,attributes_json)) AS retained
  FROM events WHERE tenant_id={tenant:String} `
 
-// uniqueEventRowsSQL is the whole-tenant canonical selection used by
-// SummarizeEvents (unchanged text; 05-23 owns its bounding).
+// uniqueEventRowsSQL is the original whole-tenant canonical selection. Since
+// 05-23 no store query runs it: ListEvents and SummarizeEvents both append an
+// event_id IN scope to canonicalRowsPrefixSQL. It stays as the reference text
+// the oracle tests copy and the unit test pins.
 const uniqueEventRowsSQL = canonicalRowsPrefixSQL + `GROUP BY tenant_id,event_id
  )`
 

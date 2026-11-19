@@ -599,3 +599,29 @@ func TestSummarizeEventsNoConflictsSkipsCorrection(t *testing.T) {
 	require.Equal(t, 1, mains, "exactly one main summary pass")
 	require.Zero(t, corrections, "no conflicts must skip the correction round trip")
 }
+
+func TestSummarizeEventsConflictCap(t *testing.T) {
+	_, conn := newDedupeStore(t)
+	store := storageclickhouse.NewQueryEventStore(conn)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	const conflictCap = 10_000
+	// Two generated passes share event_ids but differ in occurred_at, so every
+	// identity conflicts and both representations lie inside the window.
+	for tenant, count := range map[string]uint64{"cap-at": conflictCap, "cap-over": conflictCap + 1} {
+		seedScale(t, conn, tenant, now.Add(-time.Minute), now, count, count)
+		seedScale(t, conn, tenant, now.Add(-2*time.Minute), now.Add(time.Second), count, count)
+	}
+	t.Run("at_cap", func(t *testing.T) {
+		got, elapsed, prefix := timedSummary(t, store, "cap-at", now)
+		require.Equal(t, oracleSummary(t.Context(), t, conn, "cap-at", now), got)
+		mains, corrections := splitSummaryLogs(t, summaryQueryLogs(t, conn, prefix))
+		require.Equal(t, 1, mains)
+		require.Equal(t, 1, corrections)
+		require.Less(t, elapsed, scaleCallBudget)
+	})
+	t.Run("over_cap", func(t *testing.T) {
+		got, err := store.SummarizeEvents(t.Context(), "cap-over", now)
+		require.ErrorIs(t, err, storageclickhouse.ErrSummaryConflictsExceeded)
+		require.Equal(t, query.EventSummary{}, got, "never a partial summary")
+	})
+}
