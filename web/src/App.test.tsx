@@ -853,3 +853,68 @@ describe("App shell", () => {
     );
   });
 });
+
+describe("System navigation gating", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/alerts");
+  });
+  afterEach(() => {
+    window.history.replaceState(null, "", "/");
+    vi.unstubAllGlobals();
+  });
+  function stubRole(role: string) {
+    const paths: string[] = [];
+    stubFetch(async (request) => {
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      if (path === "/api/v1/session")
+        return Response.json({ ...identity(), role });
+      if (path === "/api/v1/alerts") return Response.json(workflowPage());
+      return new Response("{}", { status: 503 });
+    });
+    return paths;
+  }
+
+  it.each(["viewer", "analyst"])(
+    "never shows the System link to %s",
+    async (role) => {
+      const paths = stubRole(role);
+      render(<App />);
+      signIn();
+      await screen.findByText("Cached tenant alert");
+      const nav = screen.getByRole("navigation", { name: "Main navigation" });
+      expect(
+        [...nav.querySelectorAll("a")].map((a) => a.textContent),
+      ).toEqual(["Overview", "Alerts", "Events", "Rules"]);
+      expect(paths).not.toContain("/api/v1/system");
+    },
+  );
+
+  it("shows System to admins after Rules and navigates in-app with aria-current", async () => {
+    stubRole("admin");
+    render(<App />);
+    signIn();
+    await screen.findByText("Cached tenant alert");
+    const nav = screen.getByRole("navigation", { name: "Main navigation" });
+    expect([...nav.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
+      "Overview",
+      "Alerts",
+      "Events",
+      "Rules",
+      "System",
+    ]);
+    const link = screen.getByRole("link", { name: "System" });
+    expect(link.getAttribute("href")).toBe("/system");
+    expect(link.getAttribute("aria-current")).toBeNull();
+    fireEvent.click(link);
+    expect(window.location.pathname).toBe("/system");
+    expect(
+      await screen.findByRole("heading", { name: "System", level: 2 }),
+    ).toBeTruthy();
+    expect(link.getAttribute("aria-current")).toBe("page");
+    expect(
+      screen.getByRole("link", { name: "Alerts" }).getAttribute("aria-current"),
+    ).toBeNull();
+    expect(document.activeElement?.id).toBe("main-content");
+  });
+});
