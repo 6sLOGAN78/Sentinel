@@ -22,7 +22,8 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/errs"
 )
 
-// The fixed PromQL allowlist of the System endpoint (plus qLag from lag.go).
+// The fixed PromQL allowlist of the System endpoint (plus the lag and
+// coverage queries from lag.go).
 // No request input is ever interpolated into a query, and every result is
 // aggregated so no instance, tenant or other high-cardinality label leaves
 // Prometheus.
@@ -221,7 +222,8 @@ func (h *SystemHandler) GetSystem(c echo.Context) error {
 // systemQueries is the complete allowlist one request evaluates.
 func systemQueries() []string {
 	return []string{
-		qUp, qRestarts, qIngestByResult, qReqTotal, q5xx, q429, q503, qDLQ, qLag, qDelayP95, qWriteP95,
+		qUp, qRestarts, qIngestByResult, qReqTotal, q5xx, q429, q503, qDLQ, qDelayP95, qWriteP95,
+		qLag, qLagReported, qLagPartitions,
 	}
 }
 
@@ -296,7 +298,7 @@ func (h *SystemHandler) assemble(now time.Time, r map[string]queryResult, readin
 	}
 	lag := make([]ConsumerLagRow, len(h.groups))
 	for i, g := range h.groups {
-		lag[i] = ConsumerLagRow{Group: g.display, Lag: r[qLag].metric(g.configured)}
+		lag[i] = ConsumerLagRow{Group: g.display, Lag: lagMetric(r, g.configured)}
 	}
 	ingest := r[qIngestByResult]
 	return SystemStatus{

@@ -580,7 +580,7 @@ func TestLagOperatorTenantAnalystGetsValues(t *testing.T) {
 	body := decodeLag(t, f.getAs(t, lagPath, "analyst", operatorTenant))
 	require.Len(t, body.Rows, 3)
 	assert.Equal(t, map[string]any{"state": "available", "value": float64(12345)}, body.Rows[0].Lag)
-	assert.Len(t, f.metrics.recorded(), 1)
+	assert.Len(t, f.metrics.recorded(), 3, "lag plus its two coverage queries")
 }
 
 func TestLagNonOperatorTenantRowsOperatorOnly(t *testing.T) {

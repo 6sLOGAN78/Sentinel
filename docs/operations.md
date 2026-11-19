@@ -185,6 +185,11 @@ value is either `{"state":"available","value":...}` or
   missing value into 0.
 - `not_reachable`: a readiness target could not be resolved or reached.
 - `operator_only`: the caller's tenant is not an operator tenant (lag only).
+- `partial_coverage`: at least one partition of the group's topic has no live
+  position reporter (rebalance, dead member before session timeout, or
+  unseeded assignment); the maximum of the reported partitions would
+  understate lag (lag only, on both endpoints). See
+  [Consumer lag](#consumer-lag-position-based).
 
 Readiness comes from `GET /readyz` on each configured ops address, never from
 Prometheus, so it still works when Prometheus is down. The address is resolved
@@ -332,8 +337,9 @@ background, and a transient failure keeps the last value.
 - Series for revoked or lost partitions are deleted. A partition whose position
   is not yet known exports nothing rather than a guess.
 
-Dashboards and System use `max by (group)`. The lag endpoint labels the groups
-event-writer, detector and alert-writer.
+Dashboards use `max by (group)`. The lag endpoint and System show that
+maximum only with full coverage (below) and label the groups event-writer,
+detector and alert-writer.
 
 Lag series exist only for partitions some live process owns with a known
 position, so `max by (group)` alone cannot tell "caught up" from "nobody is
@@ -342,18 +348,27 @@ partition count of its topic as listed by the broker, even when it owns no
 partitions. Coverage is:
 
 ```promql
-count by (group) (sentinel_kafka_consumer_lag)
-  < max by (group) (sentinel_kafka_topic_partitions)
+count by (group) (count by (group, topic, partition) (sentinel_kafka_consumer_lag))
+  < sum by (group) (max by (group, topic) (sentinel_kafka_topic_partitions))
 ```
+
+The inner `count by (group, topic, partition)` counts distinct partitions, so
+two processes briefly reporting the same partition during a handover cannot
+hide a missing one.
 
 When that comparison returns a series, coverage is incomplete and the max lag
 is not trustworthy. This happens during a rebalance, while a killed member's
 partitions wait out its session timeout (about 45 s) before reassignment, and
 while a newly assigned partition is still unseeded. The count is refreshed
 with each 5 s end-offset listing and is only updated when every partition of
-the topic loads cleanly, so a listing error never shrinks it. The lag endpoint
-and System page do not check coverage yet; plan 05-25 makes them report
-incomplete coverage as unavailable.
+the topic loads cleanly, so a listing error never shrinks it.
+
+`GET /api/v1/metrics/lag` and `GET /api/v1/system` run the two sides of that
+comparison as fixed queries next to the max. Per group, any failed query makes
+the row `prometheus_unavailable` (or `not_configured`); no partition count
+yet is `no_data`; fewer reported partitions than the topic has is
+`unavailable`/`partial_coverage`; only full coverage returns the maximum. The
+Overview and System pages render `partial_coverage` as "Unavailable", never 0.
 
 ## Logs
 

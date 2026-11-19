@@ -452,6 +452,10 @@ paths:
         tenant is an operator tenant (SENTINEL_AUTH.OPERATOR_TENANTS). For
         any other tenant every row is unavailable with reason operator_only
         and no value, and Prometheus is not queried.
+        partial_coverage: at least one partition of the group's topic has no
+        live position reporter (rebalance, dead member before session
+        timeout, or unseeded assignment); the maximum of the reported
+        partitions would understate lag.
         Unavailable values carry a reason and are never zero. The response holds exactly one value per pipeline group
         (event-writer, detector, alert-writer) and no throughput, volumes,
         error counts, partitions or tenant data. No query parameters are
@@ -492,7 +496,9 @@ paths:
         string (no query parameters are accepted), then the operator 403.
         A Prometheus outage returns 200 with every metric unavailable
         while readiness from the services' /readyz probes still renders; 503
-        means query-api itself cannot answer.
+        means query-api itself cannot answer. A consumer lag row is
+        unavailable with reason partial_coverage while any partition of the
+        group's topic has no live position reporter.
       security:
         - BearerAuth: []
       responses:
@@ -1245,7 +1251,12 @@ components:
         always has a value; an unavailable metric always has a reason and
         never a value, so a missing source is never rendered as zero.
         operator_only appears only in GET /api/v1/metrics/lag for tenants
-        outside the operator allowlist.
+        outside the operator allowlist. partial_coverage appears only on
+        consumer lag (GET /api/v1/metrics/lag and GET /api/v1/system): at
+        least one partition of the group's topic has no live position
+        reporter (rebalance, dead member before session timeout, or unseeded
+        assignment); the maximum of the reported partitions would understate
+        lag.
       oneOf:
         - type: object
           additionalProperties: false
@@ -1262,7 +1273,7 @@ components:
             state:
               const: unavailable
             reason:
-              enum: [prometheus_unavailable, no_data, not_configured, not_reachable, operator_only]
+              enum: [prometheus_unavailable, no_data, not_configured, not_reachable, operator_only, partial_coverage]
 
     ConsumerLag:
       type: object

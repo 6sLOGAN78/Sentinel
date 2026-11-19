@@ -13,10 +13,21 @@ import (
 	"github.com/6sLOGAN78/sentinel/internal/errs"
 )
 
-// qLag is the only PromQL the lag endpoint runs. Position-based lag is
-// published per owned partition; the maximum per group is the one number an
-// analyst may see. No request input is ever interpolated into a query.
-const qLag = `max by (group) (sentinel_kafka_consumer_lag)`
+// The fixed PromQL of the lag endpoint. Position-based lag is published per
+// owned partition; the maximum per group is the one number an analyst may
+// see, and only when every partition of the group's topic has a reporter.
+// No request input is ever interpolated into a query, and every result is
+// aggregated to the group label before it leaves Prometheus.
+const (
+	qLag = `max by (group) (sentinel_kafka_consumer_lag)`
+	// qLagReported counts distinct reported partitions, so two processes
+	// briefly reporting one partition during a handover cannot hide a
+	// missing one.
+	qLagReported = `count by (group) (count by (group, topic, partition) (sentinel_kafka_consumer_lag))`
+	// qLagPartitions is the coverage denominator: the broker-listed
+	// partition count of each group's topic, exported by every member.
+	qLagPartitions = `sum by (group) (max by (group, topic) (sentinel_kafka_topic_partitions))`
+)
 
 // lagForbiddenMessage is the refusal shown to viewers (UI-SPEC copy).
 const lagForbiddenMessage = "Consumer lag requires the analyst role."
@@ -34,6 +45,11 @@ const (
 	// ReasonOperatorOnly marks lag withheld from a non-operator tenant: the
 	// value is platform-wide, so only operator tenants see it (ADR 0014).
 	ReasonOperatorOnly = "operator_only"
+	// ReasonPartialCoverage marks a group lag withheld because at least one
+	// partition of its topic has no live position reporter (rebalance, dead
+	// member before its session timeout, unseeded assignment); the maximum
+	// of the reported partitions would understate lag.
+	ReasonPartialCoverage = "partial_coverage"
 )
 
 // SystemMetric is one global metric value with explicit availability.
@@ -124,11 +140,41 @@ func (h *LagHandler) GetLag(c echo.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(c.Request().Context(), prometheusTimeout)
 	defer cancel()
-	series, err := h.metrics.Query(ctx, qLag, now)
+	results := make(map[string]queryResult, len(lagQueries()))
+	for _, promql := range lagQueries() {
+		series, qerr := h.metrics.Query(ctx, promql, now)
+		results[promql] = queryResult{series: series, err: qerr}
+	}
 	for i, g := range h.groups {
-		rows[i] = ConsumerLagRow{Group: g.display, Lag: seriesMetric(series, err, g.configured)}
+		rows[i] = ConsumerLagRow{Group: g.display, Lag: lagMetric(results, g.configured)}
 	}
 	return c.JSON(http.StatusOK, ConsumerLag{ObservedAt: now, Rows: rows})
+}
+
+// lagQueries is the complete allowlist of one lag read.
+func lagQueries() []string {
+	return []string{qLag, qLagReported, qLagPartitions}
+}
+
+// lagMetric is the coverage-aware lag of one group. Any failed query makes
+// it unavailable with that failure's reason. An unknown denominator is
+// no_data; fewer reported partitions than the topic has is partial_coverage;
+// otherwise it is the maximum lag over the group's partitions.
+func lagMetric(r map[string]queryResult, group string) SystemMetric {
+	lag, reported, expected := r[qLag], r[qLagReported], r[qLagPartitions]
+	for _, q := range []queryResult{lag, reported, expected} {
+		if q.err != nil {
+			return unavailableFor(q.err)
+		}
+	}
+	partitions, ok := expected.series[group]
+	if !ok || !(partitions >= 1) {
+		return unavailableMetric(ReasonNoData)
+	}
+	if covered, found := reported.series[group]; !found || covered < partitions {
+		return unavailableMetric(ReasonPartialCoverage)
+	}
+	return lag.metric(group)
 }
 
 // seriesMetric reads one label value of a query result. A failed query is
