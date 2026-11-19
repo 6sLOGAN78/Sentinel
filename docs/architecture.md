@@ -58,7 +58,7 @@ Windows are epoch-aligned tumbling UTC-millisecond intervals `[start,end)`.
 Traffic straddling a boundary is split even if all events occur within one
 sliding-window duration. A partition watermark is its maximum valid event time
 minus 30s. Equality is accepted; one millisecond older is late and increments
-the internal fixed-label `detection_late_events_total` counter. Windows seal when
+the unlabeled `sentinel_detection_late_events_total` counter. Windows seal when
 their end is at or below the watermark. Valid nonmatching records can advance
 time; poison records, idle polls and wall clock do not.
 
@@ -168,6 +168,45 @@ is invented. Sequence allocation is not commit order: a lower seq may commit
 after a higher one. Phase 4 must design and prove backfill that handles this;
 `seq > last_seen` alone is not a lossless SSE protocol. No stream implementation
 is included here. See [ADR 0008](decisions/0008-alert-list-source-and-conflicts.md).
+
+## Telemetry flow
+
+```mermaid
+flowchart LR
+  subgraph Apps["Five services, ops ports 9101-9105"]
+    I[ingest]
+    D[detector]
+    W[event-writer]
+    AW[alert-writer]
+    Q[query-api]
+  end
+  Apps -->|/metrics| P[(Prometheus)]
+  P --> GF[Grafana dashboard]
+  P -->|fixed PromQL| Q
+  Q -->|/readyz probes| Apps
+  Q -->|System and lag APIs| UI[Dashboard]
+  I -->|traceparent in Kafka headers| D
+  I -->|traceparent in Kafka headers| W
+  D -->|traceparent in alert headers| AW
+  Apps -->|OTLP/HTTP, sampled spans| J[(Jaeger)]
+```
+
+Each binary owns an injected Prometheus registry and serves it on its private
+ops listener. Prometheus (overlay only) scrapes every replica through Compose
+DNS. Grafana and query-api read Prometheus; query-api uses fixed queries for
+`GET /api/v1/system` and `GET /api/v1/metrics/lag`, and probes `/readyz` itself
+so readiness does not depend on Prometheus. Both are limited to operator tenants
+([ADR 0014](decisions/0014-operator-tenant-allowlist.md)). Lag is
+position-based: end offset minus the next durably processed offset, using the
+detector's `processed_next`, not its replay pin.
+
+Ingest makes the sampling decision at the edge
+(`ParentBased(TraceIDRatioBased)`), starts a `publish` span and writes one
+`traceparent` per batch into the Kafka headers. The detector continues sampled
+traces with `detect` spans and forwards the context on alerts. Event-writer
+(`store`) and alert-writer (`store_alert`) close the trace. No OTel global is
+set. See [ADR 0010](decisions/0010-observability-and-tracing.md) and
+[operations](operations.md#observability).
 
 ## Phase 4 acceptance layout
 
