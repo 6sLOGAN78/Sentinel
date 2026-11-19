@@ -415,7 +415,8 @@ def test_lag_sampler_polls_every_5s_and_maps_group_labels(collect: ModuleType) -
         await prom.aclose()
 
     vc.run(scenario())
-    assert set(seen) == {collect.LAG_QUERY}
+    # 05-27: each poll also reads events-topic partition coverage.
+    assert set(seen) == {collect.LAG_QUERY, collect.LAG_COVERAGE_QUERY}
     assert collect.LAG_QUERY == "max by (group) (sentinel_kafka_consumer_lag)"
     times = sorted({s["t_ns"] for s in samples})
     assert times == [T0_NS, T0_NS + 5 * SEC, T0_NS + 10 * SEC]

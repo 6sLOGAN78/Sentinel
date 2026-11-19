@@ -51,6 +51,10 @@ RESULTS_DIR = REPO_ROOT / "benchmarks" / "results"
 SELFTEST_FIXTURE = REPO_ROOT / "generator" / "tests" / "fixtures" / "bench_raw_reconciled.json"
 
 SCENARIO_FLOORED = "sustained-restart"
+COVERAGE_NOT_DROPPED_NOTE = (
+    "coverage did not drop after the kill; the killed member may have owned no "
+    "partitions or the drop was shorter than the 5 s sample interval."
+)
 SCENARIOS = (SCENARIO_FLOORED, "overload", "api-latency")
 PROVENANCE_MEASURED = "measured"
 PROVENANCES = (PROVENANCE_MEASURED, "fixture")
@@ -176,7 +180,14 @@ SCHEMA: dict[str, Any] = {
         "late_total_before": _INT,
         "late_total_after": _INT,
         "detector_state_peak": {"windows": _INT, "ledger_entries": _INT, "bytes": _INT},
-        "lag_samples": [{"t_ns": _INT, "group": _STR, "max_lag": _NUM}],
+        "lag_samples": [
+            {
+                "t_ns": _INT,
+                "group": _STR,
+                "max_lag": _NUM,
+                "partitions_reported": (_OPTIONAL, _INT),
+            }
+        ],
         "producer_buffered_max": (_OPTIONAL, _INT),
         "producer_buffered_limit": (_OPTIONAL, _INT),
         "ingest_requests_by_status": (_OPTIONAL, (_MAP, _INT)),
@@ -218,6 +229,8 @@ SCHEMA: dict[str, Any] = {
             "baseline_window_s": _INT,
             "stable_window_s": _INT,
             "timeout_s": _INT,
+            "partitions_expected": (_OPTIONAL, _INT),
+            "restarted_ns": (_OPTIONAL, _INT),
         },
     ),
     "limitations": [_STR],
@@ -429,6 +442,10 @@ def _validate_semantics(raw: Mapping[str, Any]) -> None:
         for name in ("baseline_window_s", "stable_window_s", "timeout_s"):
             if restart[name] <= 0:
                 raise ReportError(f"restart.{name} must be positive")
+        if restart.get("partitions_expected") == 0:
+            raise ReportError("restart.partitions_expected must be positive")
+        if restart.get("restarted_ns", restart["kill_ns"]) < restart["kill_ns"]:
+            raise ReportError("restart.restarted_ns precedes restart.kill_ns")
 
 
 def load_raw(path: Path) -> dict[str, Any]:
@@ -569,25 +586,103 @@ def id_digest(event_ids: Iterable[str]) -> str:
     return f"{digest:016x}"
 
 
+Series = list[tuple[int, float, int | None]]
+
+
+def _detector_series(samples: Iterable[Mapping[str, Any]]) -> Series:
+    """Detector (t_ns, max lag, reported partitions) by time; duplicates merge
+    conservatively (highest lag, lowest coverage, unknown if either is unknown)."""
+    per_time: dict[int, tuple[float, int | None]] = {}
+    for sample in samples:
+        if sample["group"] != DETECTOR_GROUP:
+            continue
+        t_ns = int(sample["t_ns"])
+        lag = float(sample["max_lag"])
+        covered = sample.get("partitions_reported")
+        if t_ns in per_time:
+            seen_lag, seen_covered = per_time[t_ns]
+            lag = max(lag, seen_lag)
+            if covered is None or seen_covered is None:
+                covered = None
+            else:
+                covered = min(covered, seen_covered)
+        per_time[t_ns] = (lag, covered)
+    return [(t_ns, lag, covered) for t_ns, (lag, covered) in sorted(per_time.items())]
+
+
+def recovery_from_samples(
+    samples: Iterable[Mapping[str, Any]],
+    kill_ns: int,
+    baseline: float,
+    partitions_expected: int | None,
+    stable_s: int,
+    timeout_s: int,
+    *,
+    before_ns: int | None = None,
+) -> int | None:
+    """Pattern 11 search: start of the first run of samples after the kill, lasting
+    stable_s, in which every sample has max detector lag <= baseline and (when
+    partitions_expected is given) every events partition reported. An ineligible sample
+    or a gap > stable_s/2 breaks the run. Only samples before before_ns (the restart of
+    the killed detector) count. None if not recovered within timeout_s."""
+    stable_ns = stable_s * NS_PER_S
+    max_gap = stable_ns // 2
+    run_start: int | None = None
+    previous: int | None = None
+    for t_ns, lag, covered in _detector_series(samples):
+        if t_ns < kill_ns:
+            continue
+        if before_ns is not None and t_ns >= before_ns:
+            break
+        if previous is not None and t_ns - previous > max_gap:
+            run_start = None
+        previous = t_ns
+        complete = partitions_expected is None or covered == partitions_expected
+        if lag > baseline or not complete:
+            run_start = None
+            continue
+        if run_start is None:
+            run_start = t_ns
+        if t_ns - run_start >= stable_ns:
+            return run_start if run_start - kill_ns <= timeout_s * NS_PER_S else None
+    return None
+
+
+def _coverage_after_kill(
+    series: Series, kill: int, end: int | None, expected: int
+) -> dict[str, Any]:
+    """Coverage loss in [kill, end): first incomplete sample to the first complete one."""
+    window = [(t_ns, covered) for t_ns, _, covered in series if t_ns >= kill]
+    if end is not None:
+        window = [(t_ns, covered) for t_ns, covered in window if t_ns < end]
+    known = [covered for _, covered in window if covered is not None]
+    lost_at = next((t_ns for t_ns, covered in window if covered != expected), None)
+    lost_s: float | None = 0.0
+    if lost_at is not None:
+        back = next((t for t, c in window if t > lost_at and c == expected), None)
+        lost_s = None if back is None else _rounded((back - lost_at) / NS_PER_S)
+    return {
+        "coverage_dropped": lost_at is not None,
+        "coverage_lost_s": lost_s,
+        "min_partitions_reported_after_kill": min(known, default=None),
+    }
+
+
 def recovery(raw: Mapping[str, Any]) -> dict[str, Any]:
-    """Pattern 11: first time max detector lag stays <= pre-kill p95 for the stable window."""
+    """Pattern 11 with partition coverage (05-27): first time max detector lag stays <=
+    the pre-kill p95 with every events partition reported for the stable window."""
     restart = raw.get("restart")
     if restart is None:
         return {"applicable": False}
     kill = int(restart["kill_ns"])
     stable_s = int(restart.get("stable_window_s", DEFAULT_STABLE_WINDOW_S))
-    stable_ns = stable_s * NS_PER_S
     timeout_s = int(restart["timeout_s"])
-    per_time: dict[int, float] = {}
-    for sample in raw["prometheus"]["lag_samples"]:
-        if sample["group"] != DETECTOR_GROUP:
-            continue
-        t_ns = int(sample["t_ns"])
-        per_time[t_ns] = max(per_time.get(t_ns, sample["max_lag"]), sample["max_lag"])
-    series = sorted(per_time.items())
+    expected = restart.get("partitions_expected")
+    restarted = restart.get("restarted_ns")
+    series = _detector_series(raw["prometheus"]["lag_samples"])
     baseline_start = kill - int(restart["baseline_window_s"]) * NS_PER_S
-    baseline_values = sorted(lag for t_ns, lag in series if baseline_start <= t_ns < kill)
-    after = [(t_ns, lag) for t_ns, lag in series if t_ns >= kill]
+    in_baseline = [(lag, cov) for t_ns, lag, cov in series if baseline_start <= t_ns < kill]
+    baseline_values = sorted(lag for lag, _ in in_baseline)
     result: dict[str, Any] = {
         "applicable": True,
         "killed_container": restart["killed_container"],
@@ -596,31 +691,30 @@ def recovery(raw: Mapping[str, Any]) -> dict[str, Any]:
         "timeout_s": timeout_s,
         "baseline_samples": len(baseline_values),
         "baseline_p95_lag": None,
-        "peak_lag_after_kill": max((lag for _, lag in after), default=None),
+        "peak_lag_after_kill": max((lag for t, lag, _ in series if t >= kill), default=None),
         "recovered": False,
         "recovery_seconds": None,
+        "restarted_ns": restarted,
+        "partitions_expected": expected,
+        "coverage_checked": expected is not None,
+        "samples_without_coverage": sum(1 for _, _, cov in series if cov is None),
+        "baseline_incomplete_samples": 0,
+        "coverage_dropped": None,
+        "coverage_lost_s": None,
+        "min_partitions_reported_after_kill": None,
     }
+    if expected is not None:
+        result["baseline_incomplete_samples"] = sum(1 for _, cov in in_baseline if cov != expected)
+        result.update(_coverage_after_kill(series, kill, restarted, int(expected)))
     if not baseline_values:
         return result
     baseline = percentile(baseline_values, 95)
     result["baseline_p95_lag"] = baseline
-    max_gap = stable_ns // 2
-    run_start: int | None = None
-    previous: int | None = None
-    recovered_at: int | None = None
-    for t_ns, lag in after:
-        if previous is not None and t_ns - previous > max_gap:
-            run_start = None
-        previous = t_ns
-        if lag > baseline:
-            run_start = None
-            continue
-        if run_start is None:
-            run_start = t_ns
-        if t_ns - run_start >= stable_ns:
-            recovered_at = run_start
-            break
-    if recovered_at is not None and recovered_at - kill <= timeout_s * NS_PER_S:
+    recovered_at = recovery_from_samples(
+        raw["prometheus"]["lag_samples"], kill, baseline, expected, stable_s, timeout_s,
+        before_ns=restarted,
+    )  # fmt: skip
+    if recovered_at is not None:
         result["recovered"] = True
         result["recovery_seconds"] = _rounded((recovered_at - kill) / NS_PER_S)
     return result
@@ -792,6 +886,32 @@ def _recovery_failures(raw: Mapping[str, Any]) -> list[Failure]:
             ]
         return []
     result = recovery(raw)
+    coverage_required = raw["run"]["scenario"] == SCENARIO_FLOORED or result["coverage_checked"]
+    if coverage_required and (
+        not result["coverage_checked"] or result["samples_without_coverage"] > 0
+    ):
+        return [
+            Failure(
+                "recovery_coverage_unknown",
+                "partition coverage is not recorded (restart.partitions_expected or "
+                "prometheus.lag_samples[].partitions_reported missing), so recovery cannot "
+                "count partitions orphaned by the kill",
+                "partitions_expected and partitions_reported on every detector lag sample",
+                {
+                    "partitions_expected": result["partitions_expected"],
+                    "detector_samples_without_coverage": result["samples_without_coverage"],
+                },
+            )
+        ]
+    if result["baseline_incomplete_samples"] > 0:
+        return [
+            Failure(
+                "recovery_coverage_baseline",
+                "pre-kill baseline samples do not report every events partition",
+                f"all {result['partitions_expected']} partitions in every baseline sample",
+                result["baseline_incomplete_samples"],
+            )
+        ]
     if result["baseline_p95_lag"] is None:
         return [
             Failure(
@@ -802,15 +922,39 @@ def _recovery_failures(raw: Mapping[str, Any]) -> list[Failure]:
             )
         ]
     if not result["recovered"]:
+        before_restart = result["restarted_ns"] is not None
         return [
             Failure(
                 "recovery_timeout",
-                "detector lag did not recover within the timeout",
+                "detector lag did not recover with full partition coverage within the "
+                "timeout" + (" and before the killed detector restarted" if before_restart else ""),
                 f"stable for {result['stable_window_s']} s within {result['timeout_s']} s",
-                "not recovered",
+                "not recovered before restart" if before_restart else "not recovered",
             )
         ]
     return []
+
+
+def _api_failures(raw: Mapping[str, Any]) -> list[Failure]:
+    """sustained-restart: every API-phase request must be 2xx (a 503ing API never passes)."""
+    if raw["run"]["scenario"] != SCENARIO_FLOORED:
+        return []
+    samples = raw["api"]["samples"]
+    totals = Counter(str(sample["endpoint"]) for sample in samples)
+    bad = Counter(str(s["endpoint"]) for s in samples if not 200 <= s["status"] <= 299)
+    if not bad:
+        return []
+    detail = ", ".join(
+        f"{endpoint} {bad[endpoint]} of {totals[endpoint]}" for endpoint in sorted(bad)
+    )
+    return [
+        Failure(
+            "api_non_2xx",
+            f"API phase returned non-2xx responses: {detail}",
+            0,
+            dict(sorted(bad.items())),
+        )
+    ]
 
 
 def _recomputed_statuses(raw: Mapping[str, Any]) -> dict[str, int]:
@@ -903,6 +1047,7 @@ def reconcile(raw: Mapping[str, Any]) -> list[Failure]:
     if histogram is not None:
         failures.append(histogram)
     failures += _recovery_failures(raw)
+    failures += _api_failures(raw)
     failures += _state_failures(raw)
     failures += _overload_failures(raw)
     return failures
@@ -1034,7 +1179,9 @@ def _reconciliation_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _limitations(raw: Mapping[str, Any], latency: Mapping[str, Any]) -> list[str]:
+def _limitations(
+    raw: Mapping[str, Any], latency: Mapping[str, Any], rec: Mapping[str, Any]
+) -> list[str]:
     items = list(raw["limitations"])
     items.append(PERSISTENCE_NOTE)
     items.append(EVENT_SIZE_NOTE)
@@ -1055,6 +1202,13 @@ def _limitations(raw: Mapping[str, Any], latency: Mapping[str, Any]) -> list[str
         items.append("API latency was not measured in this scenario.")
     if raw["restart"] is None:
         items.append("No detector kill in this scenario; recovery not measured.")
+    elif not rec["coverage_checked"]:
+        items.append(
+            "recovery did not check events partition coverage (no coverage data in this "
+            "raw); partitions orphaned by the kill are not counted."
+        )
+    elif rec["coverage_dropped"] is False:
+        items.append(COVERAGE_NOT_DROPPED_NOTE)
     if "drained" not in raw["run"]:
         items.append("Drain state was not recorded in the raw file.")
     unknown = raw.get("_unknown_keys", [])
@@ -1139,7 +1293,7 @@ def build_summary(raw: Mapping[str, Any]) -> dict[str, Any]:
         "overload": _overload_summary(raw),
         "threshold_inputs": _threshold_inputs(raw),
         "preflight": raw.get("preflight"),
-        "limitations": _limitations(raw, latency),
+        "limitations": _limitations(raw, latency, rec),
         "reproduction": {
             "git_sha": run["git_sha"],
             "image_tag": run["image_tag"],
@@ -1346,8 +1500,8 @@ def _md_resources_recovery(summary: Mapping[str, Any]) -> list[str]:
         return [*lines, "No detector kill in this scenario.", ""]
     lines.append(
         "Recovery time is t_recovered - t_kill, where t_recovered is the first time the max "
-        f"detector consumer lag stays <= the pre-kill p95 baseline for {rec['stable_window_s']} "
-        "consecutive seconds of samples."
+        "detector consumer lag stays <= the pre-kill p95 baseline with every events partition "
+        f"reported for {rec['stable_window_s']} consecutive seconds of samples."
     )
     lines.append("")
     lines += _table(
@@ -1357,6 +1511,9 @@ def _md_resources_recovery(summary: Mapping[str, Any]) -> list[str]:
             ["Baseline window (s)", rec["baseline_window_s"]],
             ["Baseline p95 lag", rec["baseline_p95_lag"]],
             ["Peak lag after kill", rec["peak_lag_after_kill"]],
+            ["Partitions expected", rec["partitions_expected"]],
+            ["Min partitions reported after kill", rec["min_partitions_reported_after_kill"]],
+            ["Coverage lost (s)", rec["coverage_lost_s"]],
             ["Recovered", rec["recovered"]],
             ["Recovery time (s)", rec["recovery_seconds"]],
             ["Timeout (s)", rec["timeout_s"]],

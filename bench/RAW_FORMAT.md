@@ -76,6 +76,9 @@ missing one refuses with `overload_recorded`. None of them is listed as an unkno
 | `prometheus.pin_retention_margin_min` | int \| null | `min(min_over_time(sentinel_detector_pin_retention_margin_offsets[run]))`; null when the gauge had no samples (alert threshold input) |
 | `resources.oom_killed` | `{container: bool}` *overload* | `docker inspect` `State.OOMKilled` per project container at the end of the run |
 | `resources.restart_delta` | `{service: int}` *overload* | increase of `docker inspect` `RestartCount` summed per compose service over the run |
+| `prometheus.lag_samples[].partitions_reported` | int | 05-27: distinct events-topic partitions with a live `sentinel_kafka_consumer_lag` series for the group at `t_ns` (0 when the group reports none). Required on every detector sample for `sustained-restart` (`recovery_coverage_unknown`) |
+| `restart.partitions_expected` | int > 0 | 05-27: events-topic partition count measured from `kafka-get-offsets` before the run (not assumed from config). Required for `sustained-restart` (`recovery_coverage_unknown`) |
+| `restart.restarted_ns` | int >= `kill_ns` | 05-28: when the killed detector was restarted. When present, recovery and the coverage figures use only samples before it |
 | `preflight` | object | `static` / `recheck` (05-04 `capacity_preflight` output before the run and with the measured warm-up share), `benign_maxima` (`benign_threshold_check`), and for overload `overload{accept_bound_events, ...}`. Reported verbatim; no equation reads it |
 
 ### `run`
@@ -155,7 +158,7 @@ confirms the byte order against a 3-ID fixture on a real ClickHouse before relyi
 | `dlq_total_before` / `dlq_total_after` | DLQ record counter |
 | `late_total_before` / `late_total_after` | `sentinel_detection_late_events_total` |
 | `detector_state_peak{windows, ledger_entries, bytes}` | max per-process detector state gauges during the run |
-| `lag_samples[]` | `{t_ns, group, max_lag}` position-based consumer lag samples |
+| `lag_samples[]` | `{t_ns, group, max_lag, partitions_reported}` position-based consumer lag samples; `partitions_reported` is optional in general and required for `sustained-restart` (05-27) |
 
 ### `sse`
 
@@ -174,8 +177,9 @@ measure the API.
 
 ### `restart`
 
-`{kill_ns, killed_container, baseline_window_s, stable_window_s: 30, timeout_s}` or
-`null`. Required (non-null) for scenario `sustained-restart`.
+`{kill_ns, killed_container, baseline_window_s, stable_window_s: 30, timeout_s,
+partitions_expected, restarted_ns?}` or `null`. Required (non-null) for scenario
+`sustained-restart`, and for that scenario `partitions_expected` is required too (05-27).
 
 ## Reconciliation equations
 
@@ -201,7 +205,10 @@ Every equation is checked on every run. Any failure means exit 1, no `.md` and a
 | `detection_histogram` | bucket deltas are non-negative and cumulative counts are non-decreasing in `le` | detection delay histogram reset or non-cumulative |
 | `restart_missing` | scenario `sustained-restart` ⇒ `restart != null` | sustained-restart has no recorded detector kill |
 | `recovery_baseline` | at least one detector lag sample in the baseline window before the kill | no pre-kill lag baseline samples |
-| `recovery_timeout` | recovery reached with `t_recovered − kill_ns <= timeout_s` | detector lag did not recover within the timeout |
+| `recovery_coverage_unknown` | scenario `sustained-restart` (or any raw with `restart.partitions_expected`) ⇒ `restart.partitions_expected` present and every detector `lag_samples[]` entry has `partitions_reported` | partition coverage is not recorded (restart.partitions_expected or prometheus.lag_samples[].partitions_reported missing), so recovery cannot count partitions orphaned by the kill |
+| `recovery_coverage_baseline` | every detector sample in `[kill − baseline_window_s, kill)` has `partitions_reported == partitions_expected` | pre-kill baseline samples do not report every events partition |
+| `recovery_timeout` | recovery reached with `t_recovered − kill_ns <= timeout_s` (and before `restarted_ns` when present) | detector lag did not recover with full partition coverage within the timeout [and before the killed detector restarted] |
+| `api_non_2xx` | scenario `sustained-restart` ⇒ every `api.samples[].status` is 2xx | API phase returned non-2xx responses: `<endpoint> <n> of <total>`, ... (observed `{endpoint: n}`) |
 | `drained` | `run.drained` is not `false` | consumer lag did not drain to 0 before collection |
 | `status_counts` | `client.status_counts` (when present) equals the counts of `client.requests[].status` | recorded status counts differ from the request records |
 | `overload_recorded` | scenario `overload` ⇒ every *overload* key is present | overload measurements are missing |
@@ -231,9 +238,24 @@ Every equation is checked on every run. Any failure means exit 1, no `.md` and a
   uses the same windows over `intended_ns` and `event_count`.
 - **Recovery** (Pattern 11): baseline = nearest-rank p95 of the per-sample max detector
   lag (`group == "detector"`) in `[kill − baseline_window_s, kill)`. `t_recovered` is the
-  first sample time at or after the kill that starts a run of samples all `<= baseline`
-  spanning `stable_window_s` seconds; a gap between consecutive samples larger than half
-  the stable window breaks the run. `recovery_seconds = (t_recovered − kill_ns) / 1e9`.
+  first sample time at or after the kill that starts a run of samples spanning
+  `stable_window_s` seconds in which every sample is `<= baseline` **and** reports every
+  events partition (`partitions_reported == restart.partitions_expected`, 05-27). An
+  incomplete sample breaks the run like an over-baseline one, and so does a gap between
+  consecutive samples larger than half the stable window. When `restart.restarted_ns` is
+  present only samples before it count, so recovery must be observed before the restart.
+  `recovery_seconds = (t_recovered − kill_ns) / 1e9`. Max lag alone is not enough: the
+  killed member's partitions have no lag reporter until the session-timeout rebalance,
+  which is how run 20261119a showed a 0.438 s artifact. The search is
+  `report.recovery_from_samples`, reused live by the harness.
+- **Coverage after the kill** (from samples in `[kill_ns, restarted_ns)`, or all samples
+  after the kill when `restarted_ns` is absent, so the restart's own expected drop is
+  excluded): `min_partitions_reported_after_kill`, and `coverage_lost_s` = first
+  incomplete sample to the first complete one after it (0 if coverage never dropped,
+  n/a if it never came back). If coverage never dropped, Limitations says the killed
+  member may have owned no partitions or the drop was shorter than the 5 s interval.
+  A raw without coverage data in another scenario keeps the lag-only definition and says
+  so in Limitations.
 - **Detector state %**: `detector_state_peak / config.detector_limits` per dimension.
 - **Alert threshold inputs** (05-13 placeholders, tuned in 05-20): the report copies
   `ingest_requests_by_status`, the derived 5xx ratio (`Σ 5xx / Σ all`), the
@@ -253,6 +275,7 @@ the 3 fixed IDs give 11115952024367422501 = `9a43cb78a8b45c25` on both sides).
 | PostgreSQL alerts | `exec -T postgres psql -X -A -t -F <tab> -v ON_ERROR_STOP=1 -U sentinel -d sentinel -c '\bind <t>' -c 'SELECT rule_id, count(*) FROM alert_workflows WHERE tenant_id = $1 GROUP BY rule_id ORDER BY rule_id'` (psql never interpolates `:'var'` inside `-c`, so the tenant is a bound parameter) |
 | Benign hits | same binding, `SELECT rule_id, entity_key ... LIMIT 10000`; an alert counts as benign when the source IP before the first `|` is not an attack-plan source |
 | Kafka | `exec -T kafka /opt/kafka/bin/kafka-get-offsets.sh --bootstrap-server kafka:9092 --topic security.events.v1 --time -1`, per-partition end offsets before and after |
-| Lag | Prometheus `max by (group) (sentinel_kafka_consumer_lag)` every 5 s; group `sentinel-<name>` is recorded as `<name>` |
+| Lag | Prometheus `max by (group) (sentinel_kafka_consumer_lag)` every 5 s; group `sentinel-<name>` is recorded as `<name>`. Not topic-restricted, because `alert-writer` consumes the alerts topic and the drain check needs its lag |
+| Coverage | same poll: `count by (group) (count by (group, partition) (sentinel_kafka_consumer_lag{topic="security.events.v1"}))` merged into `partitions_reported` (0 for a group absent from the result) |
 | Counters | raw range-vector samples over the run plus 15 s; increase = positive deltas with reset correction; a series first seen after the start (restarted replica) counts from 0 |
 | Resources | `docker stats --no-stream` every 10 s on the containers labelled with the project; `docker inspect` before and after for RestartCount and OOMKilled |

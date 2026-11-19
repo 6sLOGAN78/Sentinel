@@ -43,6 +43,13 @@ LATEST_OFFSET = "-1"
 PROJECT_LABEL = "com.docker.compose.project"
 SERVICE_LABEL = "com.docker.compose.service"
 LAG_QUERY = "max by (group) (sentinel_kafka_consumer_lag)"
+# 05-27: distinct events-topic partitions with a live lag series, per group. A killed
+# member's partitions have no reporter until the rebalance, so max lag alone cannot see
+# them; recovery is only counted at full coverage (report.recovery_from_samples).
+LAG_COVERAGE_QUERY = (
+    "count by (group) (count by (group, partition) "
+    '(sentinel_kafka_consumer_lag{topic="security.events.v1"}))'
+)
 LAG_INTERVAL_S = 5.0
 STATS_INTERVAL_S = 10.0
 RANGE_SLACK_S = 15
@@ -634,15 +641,27 @@ def _group(label: str) -> str:
 
 
 async def lag_sample(prom: Prometheus, now_ns: int) -> list[dict[str, Any]]:
+    """Max lag and reported events-topic partitions per group (0 when none report)."""
     rows = await prom.query(LAG_QUERY)
-    return [
-        {
-            "t_ns": now_ns,
-            "group": _group(str(row.get("metric", {}).get("group", ""))),
-            "max_lag": _sample_value(row["value"]),
-        }
-        for row in rows
-    ]
+    coverage_rows = await prom.query(LAG_COVERAGE_QUERY)
+    coverage = {
+        _group(str(row.get("metric", {}).get("group", ""))): _whole(
+            _sample_value(row["value"]), "reported partitions"
+        )
+        for row in coverage_rows
+    }
+    samples = []
+    for row in rows:
+        group = _group(str(row.get("metric", {}).get("group", "")))
+        samples.append(
+            {
+                "t_ns": now_ns,
+                "group": group,
+                "max_lag": _sample_value(row["value"]),
+                "partitions_reported": coverage.get(group, 0),
+            }
+        )
+    return samples
 
 
 async def lag_sampler(

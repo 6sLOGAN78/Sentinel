@@ -632,7 +632,14 @@ def _stable(samples: list[dict[str, Any]], now_ns: int, rate_eps: int) -> bool:
     return max(lags) - min(lags) <= max(STABLE_BAND_FLOOR, rate_eps * STABLE_BAND_LOAD_S)
 
 
-async def _kill_detector(h: _Harness) -> dict[str, Any]:
+def _covered(samples: list[dict[str, Any]], now_ns: int, partitions_expected: int) -> bool:
+    """Every detector sample in the steady window reports all events partitions (05-27)."""
+    floor = now_ns - (STABLE_S + collect.LAG_INTERVAL_S) * NS
+    window = [s for s in samples if s["group"] == "detector" and s["t_ns"] >= floor]
+    return bool(window) and all(s.get("partitions_reported") == partitions_expected for s in window)
+
+
+async def _kill_detector(h: _Harness, partitions_expected: int) -> dict[str, Any]:
     # Target: docker ps --filter label=com.docker.compose.project=sentinel-bench-<id>
     #   --filter label=com.docker.compose.service=detector (collect.project_containers),
     # then an inspect-time label check (collect.verify_bench_container) before the kill.
@@ -659,11 +666,16 @@ async def _kill_detector(h: _Harness) -> dict[str, Any]:
         "baseline_window_s": BASELINE_WINDOW_S,
         "stable_window_s": RECOVERY_STABLE_S,
         "timeout_s": RECOVERY_TIMEOUT_S,
+        "partitions_expected": partitions_expected,
     }
 
 
 async def _kill_when_steady(
-    h: _Harness, progress: _Progress, sender: asyncio.Task[Any], rate_eps: int
+    h: _Harness,
+    progress: _Progress,
+    sender: asyncio.Task[Any],
+    rate_eps: int,
+    partitions_expected: int,
 ) -> dict[str, Any] | None:
     total = len(progress)
     while not sender.done():
@@ -671,13 +683,18 @@ async def _kill_when_steady(
         started = progress.started_by(now)
         if started >= KILL_LAST_FRACTION * total:
             break
-        if started >= KILL_MIN_SENT_FRACTION * total and _stable(h.lag_samples, now, rate_eps):
+        if (
+            started >= KILL_MIN_SENT_FRACTION * total
+            and _stable(h.lag_samples, now, rate_eps)
+            and _covered(h.lag_samples, now, partitions_expected)
+        ):
             h.phase("kill")
-            return await _kill_detector(h)
+            return await _kill_detector(h, partitions_expected)
         await h.ctx.sleeper(KILL_POLL_S)
     h.limitations.append(
-        f"detector kill skipped: lag was not stable for {STABLE_S} s before "
-        f"{KILL_LAST_FRACTION:.0%} of the batches were sent."
+        f"detector kill skipped: lag was not stable with all {partitions_expected} events "
+        f"partitions reported for {STABLE_S} s before {KILL_LAST_FRACTION:.0%} of the "
+        "batches were sent."
     )
     return None
 
@@ -798,7 +815,8 @@ async def sustained_restart(ctx: RunContext) -> ScenarioResult:
             raise refusal from error
 
         h.phase("main_load")
-        restart = await _kill_when_steady(h, progress, sender, cfg.rate_eps)
+        # Partition count measured from Kafka (kafka-get-offsets), not assumed from config.
+        restart = await _kill_when_steady(h, progress, sender, cfg.rate_eps, len(offsets_before))
         schedule_s = (cfg.offset_ns(len(schedule) - 1) - (ctx.clock() - _ns(schedule.t0))) / NS
         log: ClientLog = await _bounded(
             sender, max(0.0, schedule_s) + SEND_GRACE_S, ctx.sleeper, "open-loop load"
