@@ -30,10 +30,156 @@ export type EventFilters = NonNullable<
 export type EventDetail =
   paths["/api/v1/events/{event_id}"]["get"]["responses"][200]["content"]["application/json"];
 
+export type SystemStatus =
+  paths["/api/v1/system"]["get"]["responses"][200]["content"]["application/json"];
+export type ConsumerLag =
+  paths["/api/v1/metrics/lag"]["get"]["responses"][200]["content"]["application/json"];
+export type SystemMetric = ConsumerLag["consumer_lag"][number]["lag"];
+
+export const LAG_GROUPS = ["event-writer", "detector", "alert-writer"] as const;
+export const SYSTEM_SERVICES = [
+  "ingest",
+  "event-writer",
+  "detector",
+  "alert-writer",
+  "query-api",
+] as const;
+
 export class APIError extends Error {
-  constructor(readonly status: number) {
+  // serverMessage is kept only so callers can tell refusals apart; it is
+  // compared against fixed strings and never rendered.
+  constructor(
+    readonly status: number,
+    readonly serverMessage?: string,
+  ) {
     super("The API request failed.");
   }
+}
+
+async function forbiddenMessage(response: Response) {
+  try {
+    const text = await response.text();
+    if (text.length > 4096) return undefined;
+    const body: unknown = JSON.parse(text);
+    const message =
+      body && typeof body === "object" && "error" in body
+        ? (body.error as { message?: unknown } | null)?.message
+        : undefined;
+    return typeof message === "string" ? message : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// isMetric enforces the discriminated union: a value only when available,
+// a reason and never a value when unavailable.
+function isMetric(value: unknown): value is SystemMetric {
+  if (!isRecord(value)) return false;
+  if (value.state === "available")
+    return (
+      typeof value.value === "number" &&
+      Number.isFinite(value.value) &&
+      !("reason" in value)
+    );
+  return (
+    value.state === "unavailable" &&
+    typeof value.reason === "string" &&
+    !("value" in value)
+  );
+}
+
+function isTimestamp(value: unknown) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function isLagRows(rows: unknown) {
+  return (
+    Array.isArray(rows) &&
+    rows.length === LAG_GROUPS.length &&
+    LAG_GROUPS.every(
+      (group) =>
+        rows.filter(
+          (row) => isRecord(row) && row.group === group && isMetric(row.lag),
+        ).length === 1,
+    )
+  );
+}
+
+function isReadiness(value: unknown) {
+  if (!isRecord(value)) return false;
+  if (value.state === "unavailable")
+    return typeof value.reason === "string" && !("ready_replicas" in value);
+  return (
+    (value.state === "ready" ||
+      value.state === "degraded" ||
+      value.state === "not_ready") &&
+    Number.isSafeInteger(value.ready_replicas) &&
+    Number.isSafeInteger(value.probed_replicas) &&
+    (value.ready_replicas as number) >= 0 &&
+    (value.probed_replicas as number) >= 0
+  );
+}
+
+function isService(value: unknown) {
+  return (
+    isRecord(value) &&
+    Number.isSafeInteger(value.expected_replicas) &&
+    (value.expected_replicas as number) >= 0 &&
+    isMetric(value.replicas_up) &&
+    isMetric(value.restarts_15m) &&
+    isReadiness(value.readiness)
+  );
+}
+
+function allMetrics(group: unknown, keys: string[]) {
+  return isRecord(group) && keys.every((key) => isMetric(group[key]));
+}
+
+function isSystemStatus(value: unknown): value is SystemStatus {
+  if (!isRecord(value)) return false;
+  const services = value.services;
+  const source = value.metrics_source;
+  const ingest = value.ingest;
+  return (
+    isTimestamp(value.observed_at) &&
+    (value.grafana_url === undefined ||
+      typeof value.grafana_url === "string") &&
+    isRecord(source) &&
+    (source.state === "available" ||
+      (source.state === "unavailable" && typeof source.reason === "string")) &&
+    Array.isArray(services) &&
+    services.length === SYSTEM_SERVICES.length &&
+    SYSTEM_SERVICES.every(
+      (name) =>
+        services.filter((s) => isRecord(s) && s.name === name && isService(s))
+          .length === 1,
+    ) &&
+    isRecord(ingest) &&
+    isMetric(ingest.total) &&
+    allMetrics(ingest.by_result, [
+      "accepted",
+      "rejected",
+      "rate_limited",
+      "shed",
+      "unavailable",
+    ]) &&
+    allMetrics(value.http_errors, [
+      "ratio",
+      "status_5xx",
+      "status_429",
+      "status_503",
+    ]) &&
+    isMetric(value.dlq_rate) &&
+    isLagRows(value.consumer_lag) &&
+    allMetrics(value.latency, [
+      "detection_delay_p95_seconds",
+      "clickhouse_write_p95_seconds",
+    ])
+  );
 }
 
 // One verification attempt/session owns each client. Even a retained old client
@@ -64,6 +210,11 @@ export function createAPIClient(
       assertCurrent();
       if (!response.ok) {
         if (response.status === 401) unauthorized();
+        if (response.status === 403) {
+          const message = await forbiddenMessage(response);
+          assertCurrent();
+          throw new APIError(403, message);
+        }
         throw new APIError(response.status);
       }
       return response;
@@ -158,6 +309,29 @@ export function createAPIClient(
       )
         throw new APIError(503);
       return summary;
+    },
+    async consumerLag(signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const result = await client.GET("/api/v1/metrics/lag", { signal });
+      assertCurrent();
+      signal?.throwIfAborted();
+      const lag: unknown = result.data;
+      if (
+        !isRecord(lag) ||
+        !isTimestamp(lag.observed_at) ||
+        !isLagRows(lag.consumer_lag)
+      )
+        throw new APIError(503);
+      return lag as ConsumerLag;
+    },
+    async system(signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const result = await client.GET("/api/v1/system", { signal });
+      assertCurrent();
+      signal?.throwIfAborted();
+      const status: unknown = result.data;
+      if (!isSystemStatus(status)) throw new APIError(503);
+      return status;
     },
     async rules(signal?: AbortSignal) {
       signal?.throwIfAborted();

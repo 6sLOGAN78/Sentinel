@@ -20,7 +20,13 @@ const unavail = (reason = "prometheus_unavailable"): Metric => ({
   state: "unavailable",
   reason,
 });
-const names = ["ingest", "event-writer", "detector", "alert-writer", "query-api"];
+const names = [
+  "ingest",
+  "event-writer",
+  "detector",
+  "alert-writer",
+  "query-api",
+];
 type Readiness =
   | {
       state: "ready" | "degraded" | "not_ready";
@@ -103,7 +109,10 @@ function allMetrics(reason: string, source: unknown = { state: "available" }) {
       status_503: unavail(reason),
     },
     dlq_rate: unavail(reason),
-    consumer_lag: base.consumer_lag.map((r) => ({ ...r, lag: unavail(reason) })),
+    consumer_lag: base.consumer_lag.map((r) => ({
+      ...r,
+      lag: unavail(reason),
+    })),
     latency: {
       detection_delay_p95_seconds: unavail(reason),
       clickhouse_write_p95_seconds: unavail(reason),
@@ -128,6 +137,7 @@ async function start(
   read: (request: Request) => Promise<Response>,
   role = "admin",
   path = "/system",
+  strict = false,
 ) {
   window.history.replaceState(null, "", path);
   const requests: Request[] = [];
@@ -141,15 +151,25 @@ async function start(
           role,
           expires_at: new Date(Date.now() + 600000).toISOString(),
         });
+      // Like real fetch, an already-aborted request (StrictMode remount
+      // cancels the first query fetch) rejects without reaching the server.
+      if (request.signal.aborted)
+        throw new DOMException("The operation was aborted.", "AbortError");
       requests.push(request);
       return read(request);
     }),
   );
   const cache = new QueryClient();
+  // StrictMode replays effects, which cancels and repeats the first fetch;
+  // tests that count requests or sequence responses render without it.
   render(
-    <StrictMode>
+    strict ? (
+      <StrictMode>
+        <App queryClient={cache} />
+      </StrictMode>
+    ) : (
       <App queryClient={cache} />
-    </StrictMode>,
+    ),
   );
   fireEvent.change(screen.getByLabelText("Development access token"), {
     target: { value: "system-test-credential" },
@@ -244,7 +264,12 @@ describe("System page through the real App, session and guarded client", () => {
   });
 
   it("renders every section with exact copy and number formats for an admin", async () => {
-    const { requests } = await start(async () => Response.json(status()));
+    const { requests } = await start(
+      async () => Response.json(status()),
+      "admin",
+      "/system",
+      true,
+    );
     const services = await screen.findByRole("table", { name: "Services" });
     const rows = within(services).getAllByRole("row");
     expect(rows).toHaveLength(6);
@@ -260,9 +285,7 @@ describe("System page through the real App, session and guarded client", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText("Updated 12:34:56 UTC")).toBeTruthy();
-    expect(
-      screen.getByText("1 restart in the last 15 minutes"),
-    ).toBeTruthy();
+    expect(screen.getByText("1 restart in the last 15 minutes")).toBeTruthy();
     for (const name of [
       "Services",
       "Throughput and errors",
@@ -275,9 +298,7 @@ describe("System page through the real App, session and guarded client", () => {
     });
     expect(within(throughput).getByText("Ingest events")).toBeTruthy();
     expect(within(throughput).getByText("1,234.5")).toBeTruthy();
-    expect(
-      within(throughput).getByText("events/s, 1 min rate"),
-    ).toBeTruthy();
+    expect(within(throughput).getByText("events/s, 1 min rate")).toBeTruthy();
     for (const label of [
       "Accepted",
       "Rejected",
@@ -297,9 +318,7 @@ describe("System page through the real App, session and guarded client", () => {
     expect(within(throughput).getByText("1.3 requests/s")).toBeTruthy();
     expect(within(throughput).getByText("DLQ events")).toBeTruthy();
     expect(within(throughput).getByText("0.1")).toBeTruthy();
-    expect(
-      within(throughput).getByText("events/s, 5 min rate"),
-    ).toBeTruthy();
+    expect(within(throughput).getByText("events/s, 5 min rate")).toBeTruthy();
     const lag = screen.getByRole("table", { name: "Consumer lag" });
     const lagRows = within(lag).getAllByRole("row");
     expect(lagRows.map((r) => r.textContent)).toEqual([
@@ -326,7 +345,7 @@ describe("System page through the real App, session and guarded client", () => {
     ).toBeTruthy();
     expect(screen.queryByText(/No metrics recorded yet/)).toBeNull();
     expect(screen.queryByText(/Metrics source unavailable/)).toBeNull();
-    const call = systemCalls(requests)[0];
+    const call = systemCalls(requests).at(-1)!;
     expect(new URL(call.url).search).toBe("");
     expect(call.method).toBe("GET");
     expect(call.cache).toBe("no-store");
@@ -383,9 +402,10 @@ describe("System page through the real App, session and guarded client", () => {
     [
       "all unavailable",
       () =>
-        names.map(
-          (): Readiness => ({ state: "unavailable", reason: "not_reachable" }),
-        ),
+        names.map((): Readiness => ({
+          state: "unavailable",
+          reason: "not_reachable",
+        })),
       "Service health unavailable",
       "Unavailable",
       "badge",
@@ -510,9 +530,7 @@ describe("System page through the real App, session and guarded client", () => {
         name: "Retry loading system status",
       }),
     );
-    expect(
-      await screen.findByRole("table", { name: "Services" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("table", { name: "Services" })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(systemCalls(requests)).toHaveLength(2);
   });
@@ -570,6 +588,21 @@ describe("System page through the real App, session and guarded client", () => {
     expect(systemCalls(requests)).toHaveLength(3);
     expect(screen.queryByText(/Live refresh failed\./)).toBeNull();
     expect(liveRegion().textContent).toBe("Live refresh restored");
+  });
+
+  it("stops polling after a 403 so refusals are not re-audited every 15 s", async () => {
+    vi.useFakeTimers();
+    const { requests } = await start(async () =>
+      forbidden("System status is limited to operator administrators."),
+    );
+    await settle();
+    expect(
+      screen.getByRole("heading", { name: "Operator access required" }),
+    ).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(46000);
+    });
+    expect(systemCalls(requests)).toHaveLength(1);
   });
 
   it("marks data stale 60 s after the last successful fetch even when observed_at is newer", async () => {
@@ -634,26 +667,31 @@ describe("System page through the real App, session and guarded client", () => {
     ["http://127.0.0.1:3000/", true],
     [undefined, false],
     ["javascript:alert(1)", false],
-  ])("renders the Grafana link for %s only when http(s)", async (url, shown) => {
-    await start(async () =>
-      Response.json(url === undefined ? status() : status({ grafana_url: url })),
-    );
-    await screen.findByRole("table", { name: "Services" });
-    const link = screen.queryByRole("link", {
-      name: "Open Grafana dashboards (opens in a new tab)",
-    });
-    if (!shown) {
-      expect(link).toBeNull();
-      expect(document.querySelector('main a[href^="javascript"]')).toBeNull();
-      return;
-    }
-    expect(link!.getAttribute("href")).toBe(url);
-    expect(link!.getAttribute("target")).toBe("_blank");
-    expect(link!.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(
-      within(link!).getByText("(opens in a new tab)").className,
-    ).toContain("visually-hidden");
-  });
+  ])(
+    "renders the Grafana link for %s only when http(s)",
+    async (url, shown) => {
+      await start(async () =>
+        Response.json(
+          url === undefined ? status() : status({ grafana_url: url }),
+        ),
+      );
+      await screen.findByRole("table", { name: "Services" });
+      const link = screen.queryByRole("link", {
+        name: "Open Grafana dashboards (opens in a new tab)",
+      });
+      if (!shown) {
+        expect(link).toBeNull();
+        expect(document.querySelector('main a[href^="javascript"]')).toBeNull();
+        return;
+      }
+      expect(link!.getAttribute("href")).toBe(url);
+      expect(link!.getAttribute("target")).toBe("_blank");
+      expect(link!.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(
+        within(link!).getByText("(opens in a new tab)").className,
+      ).toContain("visually-hidden");
+    },
+  );
 
   it("renders services as a labelled card list below 600px", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
@@ -673,13 +711,16 @@ describe("System page through the real App, session and guarded client", () => {
   });
 
   it("clears System data on sign out", async () => {
-    const { cache, requests } = await start(async () =>
-      Response.json(status()),
+    const { cache, requests } = await start(
+      async () => Response.json(status()),
+      "admin",
+      "/system",
+      true,
     );
     await screen.findByRole("table", { name: "Services" });
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(cache.getQueryCache().getAll()).toHaveLength(0);
-    expect(systemCalls(requests)[0].signal.aborted).toBe(true);
+    expect(systemCalls(requests).every((r) => r.signal.aborted)).toBe(true);
     expect(screen.queryByText("1,234.5")).toBeNull();
   });
 });

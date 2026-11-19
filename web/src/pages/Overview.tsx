@@ -1,5 +1,139 @@
-import { useQuery } from "@tanstack/react-query";
+import { Fragment, type MouseEvent } from "react";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useSession } from "../auth/session";
+import { APIError, LAG_GROUPS, type ConsumerLag } from "../api/client";
+
+const LAG_UNAVAILABLE =
+  "Consumer lag unavailable. The metrics source is not responding.";
+const OPERATOR_ONLY_TIP =
+  "Consumer lag is platform-wide and visible only to operator tenants.";
+const records = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+function openSystem(event: MouseEvent<HTMLAnchorElement>) {
+  if (
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  )
+    return;
+  event.preventDefault();
+  if (window.location.pathname !== "/system") {
+    window.history.pushState(null, "", "/system");
+    window.dispatchEvent(new Event("sentinel:navigate"));
+  }
+  document.getElementById("main-content")?.focus();
+}
+
+function LagValues({
+  data,
+  onRetry,
+  retrying,
+}: {
+  data: ConsumerLag;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  const rows = LAG_GROUPS.map((group) =>
+    data.consumer_lag.find((row) => row.group === group)!,
+  );
+  const operatorOnly = rows.some(
+    (row) =>
+      row.lag.state === "unavailable" && row.lag.reason === "operator_only",
+  );
+  const unavailable = rows.some(
+    (row) =>
+      row.lag.state === "unavailable" && row.lag.reason !== "operator_only",
+  );
+  return (
+    <>
+      <dl className="metric-pairs">
+        {rows.map(({ group, lag }) => (
+          <Fragment key={group}>
+            <dt className="identifier">{group}</dt>
+            <dd>
+              {lag.state === "available" ? (
+                `${records.format(lag.value)} records`
+              ) : lag.reason === "operator_only" ? (
+                <span
+                  className="badge"
+                  title={OPERATOR_ONLY_TIP}
+                  aria-describedby="overview-lag-operator-note"
+                >
+                  Operator only
+                </span>
+              ) : (
+                <span className="badge">
+                  {lag.reason === "no_data" ? "No data yet" : "Unavailable"}
+                </span>
+              )}
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+      {operatorOnly && (
+        <p id="overview-lag-operator-note" className="access-note">
+          {OPERATOR_ONLY_TIP}
+        </p>
+      )}
+      {unavailable && (
+        <>
+          <p>{LAG_UNAVAILABLE}</p>
+          <button className="secondary" disabled={retrying} onClick={onRetry}>
+            Retry loading consumer lag
+          </button>
+        </>
+      )}
+    </>
+  );
+}
+
+// The lag panel has its own query and states, independent of the summary.
+function ConsumerLagPanel({
+  lag,
+  canRead,
+  isAdmin,
+}: {
+  lag: UseQueryResult<ConsumerLag>;
+  canRead: boolean;
+  isAdmin: boolean;
+}) {
+  const refused = lag.error instanceof APIError && lag.error.status === 403;
+  const retry = () => void lag.refetch();
+  let content;
+  if (!canRead || refused)
+    content = (
+      <p className="access-note">Consumer lag requires the analyst role.</p>
+    );
+  else if (lag.data)
+    content = (
+      <LagValues data={lag.data} onRetry={retry} retrying={lag.isFetching} />
+    );
+  else if (lag.isError)
+    content = (
+      <div role="alert">
+        <p>{LAG_UNAVAILABLE}</p>
+        <button className="secondary" onClick={retry}>
+          Retry loading consumer lag
+        </button>
+      </div>
+    );
+  else content = <p role="status">Loading consumer lag…</p>;
+  return (
+    <section className="overview-lag" aria-labelledby="overview-lag-title">
+      <h3 id="overview-lag-title">Consumer lag</h3>
+      {content}
+      {isAdmin && (
+        <p>
+          <a href="/system" onClick={openSystem}>
+            View system health
+          </a>
+        </p>
+      )}
+    </section>
+  );
+}
 
 export default function Overview() {
   const { session, client } = useSession();
@@ -7,6 +141,14 @@ export default function Overview() {
     queryKey: ["overview", session?.generation],
     queryFn: ({ signal }) => client!.summary(signal),
     enabled: !!session && !!client,
+    retry: false,
+  });
+  const canReadLag =
+    !!session && (session.role === "analyst" || session.role === "admin");
+  const lag = useQuery({
+    queryKey: ["consumer-lag", session?.generation],
+    queryFn: ({ signal }) => client!.consumerLag(signal),
+    enabled: canReadLag && !!client,
     retry: false,
   });
   const data = summary.data;
@@ -174,13 +316,20 @@ export default function Overview() {
           <button
             className="secondary"
             disabled={summary.isFetching}
-            onClick={() => void summary.refetch()}
+            onClick={() => {
+              void summary.refetch();
+              if (canReadLag) void lag.refetch();
+            }}
           >
             Refresh overview
           </button>
         </>
       )}
-      <p>Consumer lag — available in Phase 5</p>
+      <ConsumerLagPanel
+        lag={lag}
+        canRead={canReadLag}
+        isAdmin={!!session && session.role === "admin"}
+      />
     </section>
   );
 }

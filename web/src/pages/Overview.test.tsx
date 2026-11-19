@@ -290,9 +290,9 @@ describe("Overview consumer lag panel", () => {
       );
       const region = lagRegion();
       await within(region).findByText("12,345 records");
-      expect(within(region).getByRole("heading", { level: 3 }).textContent).toBe(
-        "Consumer lag",
-      );
+      expect(
+        within(region).getByRole("heading", { level: 3 }).textContent,
+      ).toBe("Consumer lag");
       const terms = [...region.querySelectorAll("dl dt")].map(
         (dt) => dt.textContent,
       );
@@ -304,7 +304,9 @@ describe("Overview consumer lag panel", () => {
       const lagCall = calls.find((c) => pathOf(c) === "/api/v1/metrics/lag")!;
       expect(lagCall.method).toBe("GET");
       expect(new URL(lagCall.url).search).toBe("");
-      expect(document.body.textContent).not.toContain("requires the admin role");
+      expect(document.body.textContent).not.toContain(
+        "requires the admin role",
+      );
       expect(document.body.textContent).not.toContain("available in Phase 5");
       expect(document.body.textContent).not.toContain(
         "Consumer lag requires the analyst role.",
@@ -454,7 +456,10 @@ describe("Overview consumer lag panel", () => {
   it("rejects a lag body without exactly the three pipeline groups", async () => {
     const body = lagBody();
     body.consumer_lag = body.consumer_lag.slice(0, 2);
-    await start(routes(async () => Response.json(body)), "analyst");
+    await start(
+      routes(async () => Response.json(body)),
+      "analyst",
+    );
     expect(await within(lagRegion()).findByRole("alert")).toBeTruthy();
     expect(lagRegion().textContent).not.toMatch(/\d/);
   });

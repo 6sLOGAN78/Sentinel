@@ -5,6 +5,7 @@ import Alerts from "./pages/Alerts";
 import Events from "./pages/Events";
 import Rules from "./pages/Rules";
 import Overview from "./pages/Overview";
+import System from "./pages/System";
 import "./styles.css";
 
 function SignInPanel() {
@@ -100,13 +101,22 @@ function AnalystShell() {
       </header>
       {session && (
         <nav className="app-nav" aria-label="Main navigation">
-          {["overview", "alerts", "events", "rules"].map((page) => (
+          {[
+            "overview",
+            "alerts",
+            "events",
+            "rules",
+            ...(session.role === "admin" ? ["system"] : []),
+          ].map((page) => (
             <a
               key={page}
               href={page === "overview" ? "/" : `/${page}`}
               style={
                 (
-                  path === "/events" || path === "/rules" || path === "/alerts"
+                  path === "/events" ||
+                  path === "/rules" ||
+                  path === "/alerts" ||
+                  path === "/system"
                     ? path === `/${page}`
                     : page === "overview"
                 )
@@ -118,7 +128,10 @@ function AnalystShell() {
               }
               aria-current={
                 (
-                  path === "/events" || path === "/rules" || path === "/alerts"
+                  path === "/events" ||
+                  path === "/rules" ||
+                  path === "/alerts" ||
+                  path === "/system"
                     ? path === `/${page}`
                     : page === "overview"
                 )
@@ -149,7 +162,9 @@ function AnalystShell() {
                   ? "Alerts"
                   : page === "events"
                     ? "Events"
-                    : "Rules"}
+                    : page === "rules"
+                      ? "Rules"
+                      : "System"}
             </a>
           ))}
         </nav>
@@ -163,6 +178,8 @@ function AnalystShell() {
           <Rules key={session.generation} />
         ) : path === "/alerts" ? (
           <Alerts key={session.generation} />
+        ) : path === "/system" ? (
+          <System key={session.generation} />
         ) : (
           <Overview key={session.generation} />
         )}

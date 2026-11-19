@@ -883,9 +883,12 @@ describe("System navigation gating", () => {
       signIn();
       await screen.findByText("Cached tenant alert");
       const nav = screen.getByRole("navigation", { name: "Main navigation" });
-      expect(
-        [...nav.querySelectorAll("a")].map((a) => a.textContent),
-      ).toEqual(["Overview", "Alerts", "Events", "Rules"]);
+      expect([...nav.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
+        "Overview",
+        "Alerts",
+        "Events",
+        "Rules",
+      ]);
       expect(paths).not.toContain("/api/v1/system");
     },
   );
