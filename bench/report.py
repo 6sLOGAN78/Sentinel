@@ -648,6 +648,16 @@ def recovery_from_samples(
     return None
 
 
+def recovery_baseline(
+    samples: Iterable[Mapping[str, Any]], kill_ns: int, baseline_window_s: int
+) -> float | None:
+    """p95 of max detector lag in [kill - baseline_window, kill); None without samples.
+    Shared by recovery() and the live restart decision in scenarios.py (05-28)."""
+    start = kill_ns - baseline_window_s * NS_PER_S
+    values = sorted(lag for t_ns, lag, _ in _detector_series(samples) if start <= t_ns < kill_ns)
+    return percentile(values, 95) if values else None
+
+
 def _coverage_after_kill(
     series: Series, kill: int, end: int | None, expected: int
 ) -> dict[str, Any]:
@@ -706,9 +716,11 @@ def recovery(raw: Mapping[str, Any]) -> dict[str, Any]:
     if expected is not None:
         result["baseline_incomplete_samples"] = sum(1 for _, cov in in_baseline if cov != expected)
         result.update(_coverage_after_kill(series, kill, restarted, int(expected)))
-    if not baseline_values:
+    baseline = recovery_baseline(
+        raw["prometheus"]["lag_samples"], kill, int(restart["baseline_window_s"])
+    )
+    if baseline is None:
         return result
-    baseline = percentile(baseline_values, 95)
     result["baseline_p95_lag"] = baseline
     recovered_at = recovery_from_samples(
         raw["prometheus"]["lag_samples"], kill, baseline, expected, stable_s, timeout_s,

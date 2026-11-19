@@ -2,7 +2,9 @@
 
     sustained_restart: preflight -> warm-up skew measurement -> capacity re-check ->
         open-loop benign+attack load with an SSE subscriber -> SIGKILL of one detector
-        replica at steady state -> drain -> read-only collection -> API p95 phase -> raw
+        replica at steady state -> live recovery (or its timeout) -> docker start of that
+        same container (label-verified) and a bounded rejoin wait -> drain -> read-only
+        collection -> API p95 phase -> raw
     overload: its own tenant and key, offered load above the token-bucket refill and the
         ingest in-flight capacity for 60 s, no attacks, one attempt per request
 
@@ -32,6 +34,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import collect  # noqa: E402 - sibling module loaded by path
+import report  # noqa: E402 - stdlib-only sibling: the same recovery search as offline
 import stack  # noqa: E402
 from stack import BenchError  # noqa: E402
 
@@ -79,6 +82,8 @@ BASELINE_WINDOW_S = 60
 RECOVERY_STABLE_S = 30
 RECOVERY_TIMEOUT_S = 600
 SEND_GRACE_S = 120  # retry budget 15 s + request timeout 10 s, with margin
+RESTART_REJOIN_TIMEOUT_S = 180  # docker start -> running/healthy with full coverage
+RESTART_POLL_S = collect.LAG_INTERVAL_S
 DRAIN_TIMEOUT_S = 900
 DRAIN_POLL_S = 5
 SSE_SETTLE_S = 120
@@ -98,6 +103,7 @@ OVERLOAD_BATCH = 100
 OVERLOAD_IN_FLIGHT = 256  # > 2 ingest replicas x 64 in-flight slots
 OVERLOAD_SOURCE_POOL = 1000  # keeps benign per-key counts below every rule threshold
 OVERLOAD_TENANT_SUFFIX = "ovl"
+OVERLOAD_STEADY_SKIP_S = 10  # steady-state threshold window skips the first 10 s
 INGEST_IN_FLIGHT = 64  # ingest max_in_flight per replica (config default)
 
 KEY_FILE_LIMIT = 4096
@@ -308,6 +314,7 @@ class _Harness:
         self.lag_failures: list[str] = []
         self.stats_failures: list[str] = []
         self.limitations: list[str] = []
+        self.killed_id: str | None = None
         self.stop_samplers = asyncio.Event()
         self.tasks: list[asyncio.Task[Any]] = []
         self.prom = collect.Prometheus(ctx.info["urls"]["prometheus"], ctx.http_factory)
@@ -482,6 +489,9 @@ async def _collect(
     end_ns: int,
     offsets_before: Mapping[int, int],
     state_before: Mapping[str, Mapping[str, Any]],
+    *,
+    steady_start_ns: int,
+    main_load: Mapping[str, Any],
 ) -> dict[str, Any]:
     tenant = h.tenant
     offsets_after = await h.read(collect.kafka_end_offsets)
@@ -491,9 +501,12 @@ async def _collect(
     pg_alerts = await h.read(collect.postgres_alerts_by_rule, tenant)
     entities = await h.read(collect.postgres_alert_entities, tenant)
     snapshot = await collect.prometheus_snapshot(h.prom, start_ns, end_ns)
+    snapshot["pin_retention_margin_steady_min"] = await collect.pin_margin_steady_min(
+        h.prom, steady_start_ns, end_ns
+    )
     state_after = await h.read(collect.inspect_state)
     return {
-        "kafka": {"events_records_delta": sum(delta.values())},
+        "kafka": {"events_records_delta": sum(delta.values()), "main_load": dict(main_load)},
         "clickhouse": {**counts, "alerts_unique_by_rule": ch_alerts},
         "postgres": {
             "alerts_by_rule": pg_alerts,
@@ -521,6 +534,7 @@ def _assemble(
     restart: dict[str, Any] | None,
     preflight: dict[str, Any],
     warmup: dict[str, Any] | None,
+    replicas_running: dict[str, dict[str, int]],
 ) -> dict[str, Any]:
     info = h.ctx.info
     replicas = info["replicas"]
@@ -536,6 +550,7 @@ def _assemble(
         "image_tag": f"{info['project']}-<service> (compose build, revision {info['git_sha']})",
         "compose_project": str(info["project"]),
         "drained": drained,
+        "replicas_running": replicas_running,
     }
     if warmup is not None:
         run["warmup"] = warmup
@@ -651,6 +666,7 @@ async def _kill_detector(h: _Harness, partitions_expected: int) -> dict[str, Any
     if not targets:
         raise BenchError("no running detector container carries the bench project labels")
     target = targets[0]
+    h.killed_id = target.id
     name = await h.call(
         collect.verify_bench_container, ctx.run_id, target.id, "detector", runner=ctx.runner,
         root=ctx.root,
@@ -697,6 +713,88 @@ async def _kill_when_steady(
         "batches were sent."
     )
     return None
+
+
+async def _await_live_recovery(h: _Harness, restart: Mapping[str, Any]) -> int | None:
+    """Poll report.recovery_from_samples (05-27) on the lag samples so far, every
+    LAG_INTERVAL_S, until it reports recovery or restart.timeout_s passes. Uses the same
+    baseline and windows as report.recovery, so live and offline cannot disagree."""
+    ctx = h.ctx
+    kill = int(restart["kill_ns"])
+    deadline = kill + int(restart["timeout_s"]) * NS
+    while True:
+        samples = list(h.lag_samples)
+        baseline = report.recovery_baseline(samples, kill, int(restart["baseline_window_s"]))
+        if baseline is not None:
+            recovered_at = report.recovery_from_samples(
+                samples, kill, baseline, restart["partitions_expected"],
+                int(restart["stable_window_s"]), int(restart["timeout_s"]),
+            )  # fmt: skip
+            if recovered_at is not None:
+                # restarted_ns must be strictly after the confirming sample, which the
+                # report keeps only while t_ns < restarted_ns.
+                newest = max(int(s["t_ns"]) for s in samples)
+                if ctx.clock() <= newest:
+                    await ctx.sleeper((newest + 1_000_000 - ctx.clock()) / NS)
+                return recovered_at
+        if ctx.clock() >= deadline:
+            return None
+        await ctx.sleeper(collect.LAG_INTERVAL_S)
+
+
+def _covered_since(samples: list[dict[str, Any]], since_ns: int, expected: int) -> bool:
+    """The newest detector sample at or after since_ns reports every events partition."""
+    after = [s for s in samples if s["group"] == "detector" and s["t_ns"] >= since_ns]
+    if not after:
+        return False
+    newest = max(after, key=lambda s: s["t_ns"])
+    return newest.get("partitions_reported") == expected
+
+
+async def _restart_killed_detector(h: _Harness, restart: dict[str, Any]) -> None:
+    """docker start the recorded killed container after its label check, then wait
+    (bounded) until it is running/healthy and full partition coverage is back."""
+    ctx = h.ctx
+    cid = h.killed_id
+    if cid is None:  # pragma: no cover - set by _kill_detector before any restart
+        raise BenchError("no killed detector container id was recorded")
+    await h.call(
+        collect.verify_bench_container, ctx.run_id, cid, "detector", runner=ctx.runner,
+        root=ctx.root,
+    )  # fmt: skip
+    # docker start runs only after the label check above, on the killed id only (T-05-28-01).
+    await h.call(
+        ctx.runner, ["docker", "start", cid], cwd=ctx.root,
+        env=stack.child_environment("docker"), timeout=collect.QUERY_TIMEOUT,
+    )  # fmt: skip
+    restarted = ctx.clock()
+    restart["restarted_ns"] = restarted
+    restart["rejoined_ns"] = None
+    expected = int(restart["partitions_expected"])
+    deadline = restarted + RESTART_REJOIN_TIMEOUT_S * NS
+    while True:
+        ready = await h.call(
+            collect.container_ready, ctx.run_id, cid, "detector", runner=ctx.runner,
+            root=ctx.root,
+        )  # fmt: skip
+        if ready and _covered_since(h.lag_samples, restarted, expected):
+            restart["rejoined_ns"] = ctx.clock()
+            return
+        if ctx.clock() >= deadline:
+            h.limitations.append(
+                f"the killed detector was restarted but did not rejoin (running and healthy "
+                f"with all {expected} events partitions reported) within "
+                f"{RESTART_REJOIN_TIMEOUT_S} s; the run continued with fewer detectors."
+            )
+            return
+        await ctx.sleeper(RESTART_POLL_S)
+
+
+async def _recover_then_restart(h: _Harness, restart: dict[str, Any]) -> None:
+    recovered_at = await _await_live_recovery(h, restart)
+    outcome = "recovered" if recovered_at is not None else "recovery timeout"
+    h.ctx.emit(f"bench: {h.scenario} {outcome}; restarting the killed detector")
+    await _restart_killed_detector(h, restart)
 
 
 async def _api_phase(h: _Harness) -> dict[str, Any]:
@@ -779,6 +877,7 @@ async def sustained_restart(ctx: RunContext) -> ScenarioResult:
         host_note = h.host_load_note()
         offsets_before = await h.read(collect.kafka_end_offsets)
         state_before = await h.read(collect.inspect_state)
+        replicas_start = await h.read(collect.running_replicas)
         start_ns = ctx.clock()
         h.start_samplers()
         sse_stop = asyncio.Event()
@@ -815,12 +914,23 @@ async def sustained_restart(ctx: RunContext) -> ScenarioResult:
             raise refusal from error
 
         h.phase("main_load")
+        main_before = await h.read(collect.kafka_end_offsets)
+        main_start_ns = ctx.clock()
         # Partition count measured from Kafka (kafka-get-offsets), not assumed from config.
         restart = await _kill_when_steady(h, progress, sender, cfg.rate_eps, len(offsets_before))
+        restarter = None if restart is None else h.spawn(_recover_then_restart(h, restart))
         schedule_s = (cfg.offset_ns(len(schedule) - 1) - (ctx.clock() - _ns(schedule.t0))) / NS
         log: ClientLog = await _bounded(
             sender, max(0.0, schedule_s) + SEND_GRACE_S, ctx.sleeper, "open-loop load"
         )
+        main_load = collect.main_load_offsets(
+            main_start_ns, ctx.clock(), main_before, await h.read(collect.kafka_end_offsets)
+        )
+        if restarter is not None:
+            await _bounded(
+                restarter, RECOVERY_TIMEOUT_S + RESTART_REJOIN_TIMEOUT_S + SEND_GRACE_S,
+                ctx.sleeper, "detector recovery and restart",
+            )  # fmt: skip
 
         h.phase("drain")
         drained = await h.drain()
@@ -831,17 +941,16 @@ async def sustained_restart(ctx: RunContext) -> ScenarioResult:
 
         h.phase("collect")
         end_ns = ctx.clock()
-        collected = await _collect(h, plan, start_ns, end_ns, offsets_before, state_before)
+        collected = await _collect(
+            h, plan, start_ns, end_ns, offsets_before, state_before,
+            steady_start_ns=main_start_ns, main_load=main_load,
+        )  # fmt: skip
+        replicas_end = await h.read(collect.running_replicas)
         if restart is not None:
             h.limitations.append(
                 "counter increments on the killed detector between its last scrape (5 s "
                 "interval) and the SIGKILL are not observable."
             )
-            if collected["restart_delta"].get("detector", 0) == 0:
-                h.limitations.append(
-                    "the killed detector was not restarted by its restart policy before "
-                    "collection; recovery ran on the surviving replicas."
-                )
         _sse_limitations(h, sse_stats, arrivals, plan)
         h.sampler_limitations()
 
@@ -853,7 +962,7 @@ async def sustained_restart(ctx: RunContext) -> ScenarioResult:
             h, cfg=cfg, schedule=schedule, sender_cfg=sender_cfg, log=log, collected=collected,
             start_ns=start_ns, drained=drained, host_note=host_note,
             sse=sse_section(arrivals, plan), api=api, restart=restart, preflight=preflight,
-            warmup=warmup,
+            warmup=warmup, replicas_running={"start": replicas_start, "end": replicas_end},
         )  # fmt: skip
         path = write_private(ctx.root, ctx.run_id, f"raw-{SUSTAINED}.json", raw)
         return ScenarioResult(list(h.phases), raw, path)
@@ -942,15 +1051,21 @@ async def overload(ctx: RunContext) -> ScenarioResult:
         host_note = h.host_load_note()
         offsets_before = await h.read(collect.kafka_end_offsets)
         state_before = await h.read(collect.inspect_state)
+        replicas_start = await h.read(collect.running_replicas)
         start_ns = ctx.clock()
         h.start_samplers()
 
         h.phase("load")
+        load_before = await h.read(collect.kafka_end_offsets)
+        load_start_ns = ctx.clock()
         sender = h.spawn(
             ctx.send(_Progress(schedule), sender_cfg, api_key, clock=ctx.clock, sleeper=ctx.sleeper)
         )
         log: ClientLog = await _bounded(
             sender, START_LEAD_S + OVERLOAD_S + SEND_GRACE_S, ctx.sleeper, "overload load"
+        )
+        main_load = collect.main_load_offsets(
+            load_start_ns, ctx.clock(), load_before, await h.read(collect.kafka_end_offsets)
         )
 
         h.phase("drain")
@@ -959,7 +1074,12 @@ async def overload(ctx: RunContext) -> ScenarioResult:
 
         h.phase("collect")
         end_ns = ctx.clock()
-        collected = await _collect(h, schedule.plan, start_ns, end_ns, offsets_before, state_before)
+        collected = await _collect(
+            h, schedule.plan, start_ns, end_ns, offsets_before, state_before,
+            steady_start_ns=min(end_ns - NS, start_ns + OVERLOAD_STEADY_SKIP_S * NS),
+            main_load=main_load,
+        )  # fmt: skip
+        replicas_end = await h.read(collect.running_replicas)
         h.sampler_limitations()
         h.limitations.append(
             "overload sends one attempt per request (no retries), so client.status_counts are "
@@ -974,6 +1094,7 @@ async def overload(ctx: RunContext) -> ScenarioResult:
             api={"samples": [], "concurrency": 0,
                  "dataset_note": "API latency is not measured in the overload scenario"},
             restart=None, preflight=preflight, warmup=None,
+            replicas_running={"start": replicas_start, "end": replicas_end},
         )  # fmt: skip
         path = write_private(ctx.root, ctx.run_id, f"raw-{OVERLOAD}.json", raw)
         return ScenarioResult(list(h.phases), raw, path)

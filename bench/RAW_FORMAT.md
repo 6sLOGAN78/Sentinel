@@ -19,6 +19,14 @@ Exit codes:
 | 2 | provenance refusal: non-`measured` data aimed at `benchmarks/results` | nothing |
 | 3 | a target file already exists (reports are never overwritten) | nothing |
 
+`--supersede` (05-28, `make bench ... SUPERSEDE=1`): when `<date>-<scenario>.md` and
+`.json` already exist and the existing JSON's `run.run_id` differs from the new run's,
+both files are moved byte-for-byte (`Path.replace`, never edited) to
+`superseded/<date>-<scenario>-<old run_id>.{md,json}` under the output directory (created
+0755), and the new pair keeps the BENCH-03 name. The same run id, a lone `.md` without
+its `.json`, an unreadable old JSON or an existing superseded target still exit 3 with
+nothing moved.
+
 `<date>` is the UTC calendar date of `run.started_at`, never the wall clock of the
 machine running `report.py`.
 
@@ -78,14 +86,18 @@ missing one refuses with `overload_recorded`. None of them is listed as an unkno
 | `resources.restart_delta` | `{service: int}` *overload* | increase of `docker inspect` `RestartCount` summed per compose service over the run |
 | `prometheus.lag_samples[].partitions_reported` | int | 05-27: distinct events-topic partitions with a live `sentinel_kafka_consumer_lag` series for the group at `t_ns` (0 when the group reports none). Required on every detector sample for `sustained-restart` (`recovery_coverage_unknown`) |
 | `restart.partitions_expected` | int > 0 | 05-27: events-topic partition count measured from `kafka-get-offsets` before the run (not assumed from config). Required for `sustained-restart` (`recovery_coverage_unknown`) |
-| `restart.restarted_ns` | int >= `kill_ns` | 05-28: when the killed detector was restarted. When present, recovery and the coverage figures use only samples before it |
+| `restart.restarted_ns` | int >= `kill_ns` | 05-28: when the harness ran `docker start` on the killed detector (after live recovery or the recovery timeout). When present, recovery and the coverage figures use only samples before it |
+| `restart.rejoined_ns` | int \| null | 05-28: when the restarted detector was running (and healthy, if it has a healthcheck) and the newest detector lag sample reported every events partition; null when that did not happen within 180 s (`RESTART_REJOIN_TIMEOUT_S`), which adds a Limitations line |
+| `run.replicas_running` | `{start: {service: int}, end: {service: int}}` | 05-28: running containers per compose service (`docker ps` on the project labels, which lists running containers only) before the load and at collection. `start.detector < config.replicas.detector` refuses (`replicas_degraded`) for every scenario; absence adds no refusal (older raws) |
+| `kafka.main_load` | `{start_ns: int, end_ns: int, partition_delta: {partition: int}}` | 05-28: per-partition events-topic end-offset delta over the main load (sustained-restart: from the end of the warm-up to the sender finishing; overload: the load phase). `end_ns > start_ns` is required when present. Threshold input `partition_rate_eps_max` |
+| `prometheus.pin_retention_margin_steady_min` | int \| null | 05-28: `min(min_over_time(sentinel_detector_pin_retention_margin_offsets[w]))` at collection, where `w` is the main load to collection (sustained-restart) or the scenario window after its first 10 s (overload). Excludes the fresh-topic start, where the whole-run minimum is 0 |
 | `preflight` | object | `static` / `recheck` (05-04 `capacity_preflight` output before the run and with the measured warm-up share), `benign_maxima` (`benign_threshold_check`), and for overload `overload{accept_bound_events, ...}`. Reported verbatim; no equation reads it |
 
 ### `run`
 
 `run_id`, `scenario` (`sustained-restart` \| `overload` \| `api-latency`), `tenant`
 (`bench-<run_id>`), `started_at`, `ended_at` (RFC 3339 UTC), `git_sha`, `image_tag`,
-`compose_project`.
+`compose_project`. Optional: `drained`, `warmup`, `replicas_running` (see above).
 
 ### `config`
 
@@ -125,7 +137,8 @@ what ClickHouse `toString(event_id)` returns.
 
 ### `kafka`
 
-`events_records_delta`: sum of end-offset deltas on the fresh events topic.
+`events_records_delta`: sum of end-offset deltas on the fresh events topic. Optional
+`main_load` (05-28, see above).
 
 ### `clickhouse`
 
@@ -178,7 +191,7 @@ measure the API.
 ### `restart`
 
 `{kill_ns, killed_container, baseline_window_s, stable_window_s: 30, timeout_s,
-partitions_expected, restarted_ns?}` or `null`. Required (non-null) for scenario
+partitions_expected, restarted_ns?, rejoined_ns?}` or `null`. Required (non-null) for scenario
 `sustained-restart`, and for that scenario `partitions_expected` is required too (05-27).
 
 ## Reconciliation equations
@@ -208,6 +221,7 @@ Every equation is checked on every run. Any failure means exit 1, no `.md` and a
 | `recovery_coverage_unknown` | scenario `sustained-restart` (or any raw with `restart.partitions_expected`) ⇒ `restart.partitions_expected` present and every detector `lag_samples[]` entry has `partitions_reported` | partition coverage is not recorded (restart.partitions_expected or prometheus.lag_samples[].partitions_reported missing), so recovery cannot count partitions orphaned by the kill |
 | `recovery_coverage_baseline` | every detector sample in `[kill − baseline_window_s, kill)` has `partitions_reported == partitions_expected` | pre-kill baseline samples do not report every events partition |
 | `recovery_timeout` | recovery reached with `t_recovered − kill_ns <= timeout_s` (and before `restarted_ns` when present) | detector lag did not recover with full partition coverage within the timeout [and before the killed detector restarted] |
+| `replicas_degraded` | `run.replicas_running` present ⇒ `replicas_running.start.detector >= config.replicas.detector` (missing = 0), every scenario | the scenario started with fewer running detectors than configured |
 | `api_non_2xx` | scenario `sustained-restart` ⇒ every `api.samples[].status` is 2xx | API phase returned non-2xx responses: `<endpoint> <n> of <total>`, ... (observed `{endpoint: n}`) |
 | `drained` | `run.drained` is not `false` | consumer lag did not drain to 0 before collection |
 | `status_counts` | `client.status_counts` (when present) equals the counts of `client.requests[].status` | recorded status counts differ from the request records |
@@ -259,7 +273,22 @@ Every equation is checked on every run. Any failure means exit 1, no `.md` and a
 - **Detector state %**: `detector_state_peak / config.detector_limits` per dimension.
 - **Alert threshold inputs** (05-13 placeholders, tuned in 05-20): the report copies
   `ingest_requests_by_status`, the derived 5xx ratio (`Σ 5xx / Σ all`), the
-  `pin_retention_margin_min` and the warm-up partition share into `threshold_inputs`.
+  `pin_retention_margin_min` (whole run, including the fresh-topic start) and the warm-up
+  partition share into `threshold_inputs`. 05-28 adds `pin_retention_margin_steady_min`
+  (copied, null when absent) and `partition_rate_eps_max =
+  max(kafka.main_load.partition_delta) / ((end_ns − start_ns) / 1e9)` (null without
+  `kafka.main_load`).
+- **Exercised shed paths** (overload, 05-28): `shed_paths{429, 503}` is true when the
+  recomputed status counts contain that status. When 503 is 0 the report names
+  `TestChaosOverloadBounded` (`backend/test/chaos_overload_test.go`) and
+  `TestChaosKafkaBrokerRestart` (`backend/test/chaos_broker_test.go`) as the
+  deterministic proofs of the 503 paths. No 503 number is invented.
+- **Restart of the killed detector** (05-28): `docker kill` bypasses the `unless-stopped`
+  restart policy, so the harness polls `report.recovery_from_samples` (same baseline and
+  windows as the report) every 5 s after the kill. When it reports recovery, or
+  `timeout_s` passes, the harness runs `verify_bench_container` on the recorded killed id
+  and only then `docker start <id>`, records `restarted_ns` strictly after the sample that
+  confirmed recovery, and waits up to 180 s for `rejoined_ns`.
 
 ## Collection (05-18 harness)
 

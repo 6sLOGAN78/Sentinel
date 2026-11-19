@@ -3,8 +3,9 @@
 Every count is scoped to the run tenant through a query parameter, never string
 formatting: ClickHouse `--param_tenant` with `{tenant:String}`, and psql `\\bind` with `$1`
 (psql never interpolates `:'var'` inside `-c`). No query uses FINAL or OPTIMIZE. Docker is
-only listed, inspected and sampled here; the one mutating command (the detector kill)
-lives in scenarios.py behind `verify_bench_container`.
+only listed, inspected and sampled here; the two mutating commands (the detector kill
+and the restart of that same container) live in scenarios.py behind
+`verify_bench_container`.
 
 Commands run through `stack.compose_argv` (the isolated `sentinel-bench-<run>` project)
 with a bounded timeout. Prometheus is read over its HTTP API with httpx.
@@ -50,6 +51,13 @@ LAG_COVERAGE_QUERY = (
     "count by (group) (count by (group, partition) "
     '(sentinel_kafka_consumer_lag{topic="security.events.v1"}))'
 )
+# 05-28: steady-state pin retention margin over a caller-chosen window (main load for
+# sustained-restart, the scenario after its first 10 s for overload). Only the integer
+# window length is substituted into this fixed template.
+PIN_MARGIN_STEADY_QUERY = (
+    "min(min_over_time(sentinel_detector_pin_retention_margin_offsets[{seconds}s]))"
+)
+HEALTHY = "healthy"
 LAG_INTERVAL_S = 5.0
 STATS_INTERVAL_S = 10.0
 RANGE_SLACK_S = 15
@@ -296,6 +304,20 @@ def offset_delta(before: Mapping[int, int], after: Mapping[int, int]) -> dict[in
     return delta
 
 
+def main_load_offsets(
+    start_ns: int, end_ns: int, before: Mapping[int, int], after: Mapping[int, int]
+) -> dict[str, Any]:
+    """Raw kafka.main_load: per-partition end-offset delta over [start_ns, end_ns]."""
+    if end_ns <= start_ns:
+        raise BenchError("main-load offset window is empty")
+    delta = offset_delta(before, after)
+    return {
+        "start_ns": start_ns,
+        "end_ns": end_ns,
+        "partition_delta": {str(p): n for p, n in delta.items()},
+    }
+
+
 def partition_share_max(delta: Mapping[int, int]) -> float:
     total = sum(delta.values())
     if total <= 0:
@@ -325,6 +347,14 @@ def project_containers(
     return sorted(found, key=lambda c: c.name)
 
 
+def running_replicas(run_id: str, *, runner: Runner, root: Path) -> dict[str, int]:
+    """Running containers per compose service (docker ps lists running ones only)."""
+    counts: dict[str, int] = {}
+    for container in project_containers(run_id, runner=runner, root=root):
+        counts[container.service] = counts.get(container.service, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _inspect(ids: Sequence[str], *, runner: Runner, root: Path) -> list[dict[str, Any]]:
     for cid in ids:
         if not CONTAINER_ID_PATTERN.fullmatch(cid):
@@ -344,10 +374,9 @@ def _labels(item: Mapping[str, Any]) -> dict[str, str]:
     return {str(k): str(v) for k, v in labels.items()} if isinstance(labels, dict) else {}
 
 
-def verify_bench_container(
+def _verified(
     run_id: str, container_id: str, service: str, *, runner: Runner, root: Path
-) -> str:
-    """Refuse unless the container's compose labels are exactly this project and service."""
+) -> dict[str, Any]:
     project = stack.project_name(run_id)
     items = _inspect([container_id], runner=runner, root=root)
     if len(items) != 1:
@@ -357,7 +386,27 @@ def verify_bench_container(
         raise BenchError(
             f"refusing to touch container {container_id}: labels are not {project}/{service}"
         )
-    return str(items[0].get("Name", container_id)).lstrip("/")
+    return items[0]
+
+
+def verify_bench_container(
+    run_id: str, container_id: str, service: str, *, runner: Runner, root: Path
+) -> str:
+    """Refuse unless the container's compose labels are exactly this project and service."""
+    item = _verified(run_id, container_id, service, runner=runner, root=root)
+    return str(item.get("Name", container_id)).lstrip("/")
+
+
+def container_ready(
+    run_id: str, container_id: str, service: str, *, runner: Runner, root: Path
+) -> bool:
+    """Running, and healthy when the container has a healthcheck (labels verified)."""
+    item = _verified(run_id, container_id, service, runner=runner, root=root)
+    state = item.get("State")
+    if not isinstance(state, dict) or state.get("Running") is not True:
+        return False
+    health = state.get("Health")
+    return not isinstance(health, dict) or health.get("Status") == HEALTHY
 
 
 def inspect_state(run_id: str, *, runner: Runner, root: Path) -> dict[str, dict[str, Any]]:
@@ -634,6 +683,13 @@ async def prometheus_snapshot(prom: Prometheus, start_ns: int, end_ns: int) -> d
         "ingest_requests_by_status": dict(sorted(statuses.items())),
         "pin_retention_margin_min": None if margin is None else int(margin),
     }
+
+
+async def pin_margin_steady_min(prom: Prometheus, start_ns: int, end_ns: int) -> int | None:
+    """Minimum pin retention margin over [start, end] (None when the series is absent)."""
+    seconds = max(1, math.ceil((end_ns - start_ns) / NS_PER_SECOND))
+    margin = await prom.maybe_scalar(PIN_MARGIN_STEADY_QUERY.format(seconds=seconds), end_ns)
+    return None if margin is None else int(margin)
 
 
 def _group(label: str) -> str:
