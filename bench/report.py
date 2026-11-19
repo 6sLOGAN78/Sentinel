@@ -7,7 +7,8 @@ format_version 1). If any reconciliation equation fails, no report is written: o
 benchmarks/results. Stdlib only, so the report reproduces offline.
 
 Exit codes: 0 written, 1 refused (equation failed or malformed raw), 2 provenance
-refusal, 3 a target file already exists.
+refusal, 3 a target file already exists. With --supersede, an existing pair from a
+different run id is first moved unedited to <out>/superseded/ (05-28).
 """
 
 from __future__ import annotations
@@ -92,6 +93,15 @@ _OBJECT = "object"  # opaque JSON object, reported verbatim, read by no equation
 _OPTIONAL = "optional"  # 05-18 keys: type-checked when present, never "unknown"
 OVERLOAD = "overload"
 OVERLOAD_STATUSES = (202, 429, 503)
+SHED_STATUSES = ("429", "503")
+SUPERSEDED_DIR = "superseded"
+SUPERSEDED_DIR_MODE = 0o755
+CHAOS_503_NOTE = (
+    "This run did not exercise the 503 shed paths (ingest in-flight cap, producer buffer "
+    "full or broker unavailable). They are proven deterministically, with bounded queues, "
+    "by TestChaosOverloadBounded (backend/test/chaos_overload_test.go) and "
+    "TestChaosKafkaBrokerRestart (backend/test/chaos_broker_test.go)."
+)
 
 _REQUEST = {
     "batch_seq": _INT,
@@ -118,6 +128,7 @@ SCHEMA: dict[str, Any] = {
         "compose_project": _STR,
         "drained": (_OPTIONAL, _BOOL),
         "warmup": (_OPTIONAL, {"partition_share_max": _NUM, "rate_eps": _NUM}),
+        "replicas_running": (_OPTIONAL, {"start": (_MAP, _INT), "end": (_MAP, _INT)}),
     },
     "config": {
         "events_partitions": _INT,
@@ -164,7 +175,13 @@ SCHEMA: dict[str, Any] = {
         "expected_dlq": _INT,
         "expected_late": _INT,
     },
-    "kafka": {"events_records_delta": _INT},
+    "kafka": {
+        "events_records_delta": _INT,
+        "main_load": (
+            _OPTIONAL,
+            {"start_ns": _INT, "end_ns": _INT, "partition_delta": (_MAP, _INT)},
+        ),
+    },
     "clickhouse": {
         "unique": _INT,
         "physical": _INT,
@@ -192,6 +209,7 @@ SCHEMA: dict[str, Any] = {
         "producer_buffered_limit": (_OPTIONAL, _INT),
         "ingest_requests_by_status": (_OPTIONAL, (_MAP, _INT)),
         "pin_retention_margin_min": (_OPTIONAL, (_NULLABLE, _INT)),
+        "pin_retention_margin_steady_min": (_OPTIONAL, (_NULLABLE, _INT)),
     },
     "sse": {
         "arrivals": [
@@ -231,6 +249,7 @@ SCHEMA: dict[str, Any] = {
             "timeout_s": _INT,
             "partitions_expected": (_OPTIONAL, _INT),
             "restarted_ns": (_OPTIONAL, _INT),
+            "rejoined_ns": (_OPTIONAL, (_NULLABLE, _INT)),
         },
     ),
     "limitations": [_STR],
@@ -446,6 +465,12 @@ def _validate_semantics(raw: Mapping[str, Any]) -> None:
             raise ReportError("restart.partitions_expected must be positive")
         if restart.get("restarted_ns", restart["kill_ns"]) < restart["kill_ns"]:
             raise ReportError("restart.restarted_ns precedes restart.kill_ns")
+        rejoined = restart.get("rejoined_ns")
+        if rejoined is not None and rejoined < restart.get("restarted_ns", restart["kill_ns"]):
+            raise ReportError("restart.rejoined_ns precedes restart.restarted_ns")
+    main_load = raw["kafka"].get("main_load")
+    if main_load is not None and main_load["end_ns"] <= main_load["start_ns"]:
+        raise ReportError("kafka.main_load.end_ns must be after start_ns")
 
 
 def load_raw(path: Path) -> dict[str, Any]:
@@ -969,6 +994,25 @@ def _api_failures(raw: Mapping[str, Any]) -> list[Failure]:
     ]
 
 
+def _replica_failures(raw: Mapping[str, Any]) -> list[Failure]:
+    """Every scenario: the run must start with every configured detector running."""
+    running = raw["run"].get("replicas_running")
+    if running is None:
+        return []
+    configured = int(raw["config"]["replicas"]["detector"])
+    started = int(running["start"].get("detector", 0))
+    if started >= configured:
+        return []
+    return [
+        Failure(
+            "replicas_degraded",
+            "the scenario started with fewer running detectors than configured",
+            configured,
+            started,
+        )
+    ]
+
+
 def _recomputed_statuses(raw: Mapping[str, Any]) -> dict[str, int]:
     counts = Counter(str(request["status"]) for request in raw["client"]["requests"])
     return dict(sorted(counts.items()))
@@ -1060,6 +1104,7 @@ def reconcile(raw: Mapping[str, Any]) -> list[Failure]:
         failures.append(histogram)
     failures += _recovery_failures(raw)
     failures += _api_failures(raw)
+    failures += _replica_failures(raw)
     failures += _state_failures(raw)
     failures += _overload_failures(raw)
     return failures
@@ -1235,8 +1280,10 @@ def _overload_summary(raw: Mapping[str, Any]) -> dict[str, Any] | None:
     prometheus = raw["prometheus"]
     limit = int(prometheus["producer_buffered_limit"])
     buffered = int(prometheus["producer_buffered_max"])
+    statuses = _recomputed_statuses(raw)
     return {
-        "status_counts": _recomputed_statuses(raw),
+        "status_counts": statuses,
+        "shed_paths": {status: statuses.get(status, 0) > 0 for status in SHED_STATUSES},
         "producer_buffered_max": buffered,
         "producer_buffered_limit": limit,
         "producer_buffered_ratio": _rounded(buffered / limit) if limit else None,
@@ -1245,12 +1292,25 @@ def _overload_summary(raw: Mapping[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _partition_rate_max(main_load: Mapping[str, Any] | None) -> float | None:
+    """max over partitions of the main-load end-offset delta / main-load seconds."""
+    if main_load is None or not main_load["partition_delta"]:
+        return None
+    seconds = (int(main_load["end_ns"]) - int(main_load["start_ns"])) / NS_PER_S
+    return _rounded(max(int(v) for v in main_load["partition_delta"].values()) / seconds)
+
+
 def _threshold_inputs(raw: Mapping[str, Any]) -> dict[str, Any] | None:
     """Measured inputs for the 05-13 placeholder alert thresholds (tuned in 05-20)."""
     prometheus = raw["prometheus"]
     warmup = raw["run"].get("warmup")
-    keys = ("ingest_requests_by_status", "pin_retention_margin_min")
-    if warmup is None and not any(key in prometheus for key in keys):
+    keys = (
+        "ingest_requests_by_status",
+        "pin_retention_margin_min",
+        "pin_retention_margin_steady_min",
+    )
+    main_load = raw["kafka"].get("main_load")
+    if warmup is None and main_load is None and not any(key in prometheus for key in keys):
         return None
     statuses = prometheus.get("ingest_requests_by_status")
     ratio = None
@@ -1262,6 +1322,8 @@ def _threshold_inputs(raw: Mapping[str, Any]) -> dict[str, Any] | None:
         "ingest_requests_by_status": dict(sorted(statuses.items())) if statuses else None,
         "ingest_5xx_ratio": ratio,
         "pin_retention_margin_min": prometheus.get("pin_retention_margin_min"),
+        "pin_retention_margin_steady_min": prometheus.get("pin_retention_margin_steady_min"),
+        "partition_rate_eps_max": _partition_rate_max(main_load),
         "warmup_partition_share_max": warmup["partition_share_max"] if warmup else None,
         "warmup_rate_eps": warmup["rate_eps"] if warmup else None,
     }
@@ -1371,6 +1433,16 @@ def _md_header(summary: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _running_rows(running: Mapping[str, Any] | None) -> list[list[object]]:
+    if running is None:
+        return []
+    start, end = running["start"], running["end"]
+    return [
+        [f"Running at start/end: {name}", f"{_fmt(start.get(name))} / {_fmt(end.get(name))}"]
+        for name in sorted(set(start) | set(end))
+    ]
+
+
 def _md_hardware_config(summary: Mapping[str, Any]) -> list[str]:
     hw = summary["hardware"]
     cfg = summary["config"]
@@ -1397,6 +1469,7 @@ def _md_hardware_config(summary: Mapping[str, Any]) -> list[str]:
             ["Kafka events partitions", cfg["events_partitions"]],
             ["Kafka replication factor", cfg["replication_factor"]],
             *[[f"Replicas: {name}", count] for name, count in sorted(replicas.items())],
+            *_running_rows(summary["run"].get("replicas_running")),
             ["Target rate (ev/s)", cfg["target_rate_eps"]],
             ["Batch size (events/request)", cfg["batch_size"]],
             ["Max in-flight requests", cfg["max_in_flight_requests"]],
@@ -1582,7 +1655,13 @@ def _md_overload_thresholds(summary: Mapping[str, Any]) -> list[str]:
             "- Restarts during the run: "
             + (", ".join(f"{k} {v}" for k, v in overload["restart_delta"].items()) or "none"),
             "",
+            "### Exercised shed paths",
+            "",
         ]
+        shed = overload["shed_paths"]
+        lines += _table(["status", "exercised"], [[status, shed[status]] for status in shed])
+        if not shed["503"]:
+            lines += [CHAOS_503_NOTE, ""]
     inputs = summary.get("threshold_inputs")
     if inputs is not None:
         lines += ["## Alert threshold inputs", ""]
@@ -1591,7 +1670,18 @@ def _md_overload_thresholds(summary: Mapping[str, Any]) -> list[str]:
             [
                 ["ingest requests by status", _fmt(inputs["ingest_requests_by_status"])],
                 ["ingest 5xx ratio", _fmt(inputs["ingest_5xx_ratio"])],
-                ["min pin retention margin (offsets)", _fmt(inputs["pin_retention_margin_min"])],
+                [
+                    "min pin retention margin, whole run incl. fresh topic (offsets)",
+                    _fmt(inputs["pin_retention_margin_min"]),
+                ],
+                [
+                    "steady-state min pin retention margin (offsets)",
+                    _fmt(inputs["pin_retention_margin_steady_min"]),
+                ],
+                [
+                    "max per-partition append rate, main load (events/s)",
+                    _fmt(inputs["partition_rate_eps_max"]),
+                ],
                 ["warm-up max partition share", _fmt(inputs["warmup_partition_share_max"])],
                 ["warm-up rate (events/s)", _fmt(inputs["warmup_rate_eps"])],
             ],
@@ -1683,7 +1773,44 @@ def _write_outputs(out: Path, files: Sequence[tuple[Path, str]]) -> int:
     return EXIT_OK
 
 
-def _run(raw_path: Path, out: Path) -> int:
+def _existing_run_id(path: Path) -> str | None:
+    """run.run_id of an existing report JSON, or None when it cannot be read safely."""
+    try:
+        data = json.loads(_read_bounded(path).decode("utf-8"))
+    except (ReportError, UnicodeDecodeError, ValueError):
+        return None
+    run = data.get("run") if isinstance(data, dict) else None
+    run_id = run.get("run_id") if isinstance(run, dict) else None
+    return run_id if isinstance(run_id, str) and RUN_ID_RE.match(run_id) else None
+
+
+def _supersede(out: Path, stem: str, run_id: str) -> bool:
+    """Move an existing <stem>.md/.json pair from another run, byte-for-byte, into
+    <out>/superseded/<stem>-<old run id>.*; False (nothing moved) if that is unsafe."""
+    pair = [out / f"{stem}.json", out / f"{stem}.md"]
+    present = [path.exists() for path in pair]
+    if not any(present):
+        return True
+    if not all(present):
+        return False
+    old_id = _existing_run_id(pair[0])
+    if old_id is None or old_id == run_id:
+        return False
+    target_dir = out / SUPERSEDED_DIR
+    targets = [target_dir / f"{stem}-{old_id}{path.suffix}" for path in pair]
+    if any(target.exists() or target.is_symlink() for target in targets):
+        return False
+    if not target_dir.exists():
+        target_dir.mkdir(mode=SUPERSEDED_DIR_MODE)
+        target_dir.chmod(SUPERSEDED_DIR_MODE)
+    if target_dir.is_symlink() or not target_dir.is_dir():
+        return False
+    for path, target in zip(pair, targets, strict=True):
+        path.replace(target)
+    return True
+
+
+def _run(raw_path: Path, out: Path, supersede: bool = False) -> int:
     raw = load_raw(raw_path)
     if raw["provenance"] != PROVENANCE_MEASURED and _inside_results(out):
         print(
@@ -1719,6 +1846,13 @@ def _run(raw_path: Path, out: Path) -> int:
     markdown = render_markdown(summary)
     summary_json = _dumps(summary)
     _refuse_secrets(markdown, summary_json)
+    if supersede and not _supersede(out, stem, run["run_id"]):
+        print(
+            "report.py: refused: the existing report cannot be superseded (same run id, "
+            "incomplete pair, unreadable JSON or superseded target exists)",
+            file=sys.stderr,
+        )
+        return EXIT_EXISTS
     return _write_outputs(
         out, [(out / f"{stem}.json", summary_json), (out / f"{stem}.md", markdown)]
     )
@@ -1741,6 +1875,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--raw", type=Path, help="raw-run JSON (bench/RAW_FORMAT.md)")
     parser.add_argument("--out", type=Path, help="output directory for the report")
     parser.add_argument("--selftest", action="store_true", help="run the bundled fixture")
+    parser.add_argument(
+        "--supersede",
+        action="store_true",
+        help="move an existing same-date report from another run to <out>/superseded/",
+    )
     args = parser.parse_args(None if argv is None else list(argv))
     try:
         if args.selftest:
@@ -1748,7 +1887,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.raw is None or args.out is None:
             print("report.py: --raw and --out are required", file=sys.stderr)
             return EXIT_REFUSED
-        return _run(args.raw, args.out)
+        return _run(args.raw, args.out, supersede=args.supersede)
     except ReportError as error:
         print(f"report.py: refused: {error}", file=sys.stderr)
         return EXIT_REFUSED

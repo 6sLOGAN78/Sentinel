@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Bench CLI: run | up | down | purge for an isolated sentinel-bench-<run> stack.
 
-    make bench SCENARIO=<s> RUN=<id>    run a scenario, then the refusing report (05-18)
+    make bench SCENARIO=<s> RUN=<id>    run a scenario, then the refusing report (05-18);
+                                        SUPERSEDE=1 moves a same-date report from another
+                                        run to benchmarks/results/superseded/ (05-28)
     make bench-up RUN=<id>              start a disposable multi-replica stack
     make bench-down RUN=<id>            stop it (volumes kept)
     make bench-purge RUN=<id> CONFIRM=1 remove its volumes, built images and private dir
@@ -51,6 +53,11 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--events", type=int, default=1_000_000, help="sustained-restart events")
     run.add_argument("--rate", type=int, default=400, help="sustained-restart events/s")
     run.add_argument("--keep-up", action="store_true", help="leave the stack running")
+    run.add_argument(
+        "--supersede",
+        action="store_true",
+        help="pass --supersede to report.py (set by SUPERSEDE=1)",
+    )
     for name, help_text in (
         ("up", "start an isolated sentinel-bench-<run> stack"),
         ("down", "stop the stack, keeping volumes"),
@@ -114,6 +121,12 @@ def _running_info(run_id: str, runner: stack.Runner) -> dict[str, Any] | None:
     }
 
 
+def _report_args(raw_path: Path, *, supersede: bool) -> list[str]:
+    """report.py arguments for a finished scenario (05-28: --supersede passthrough)."""
+    args = ["--raw", str(raw_path), "--out", str(RESULTS)]
+    return [*args, "--supersede"] if supersede else args
+
+
 def _run_scenario(args: argparse.Namespace, dry_run: bool) -> int:
     disk = _floor("BENCH_MIN_DISK_GIB", stack.MIN_DISK_GIB)
     mem = _floor("BENCH_MIN_MEM_GIB", stack.MIN_MEM_GIB)
@@ -146,7 +159,7 @@ def _run_scenario(args: argparse.Namespace, dry_run: bool) -> int:
             print(json.dumps(error.details, indent=2, sort_keys=True), file=sys.stderr)
             return 1
         print(f"bench: raw data written to {result.raw_path}", file=sys.stderr)
-        code: int = report.main(["--raw", str(result.raw_path), "--out", str(RESULTS)])
+        code: int = report.main(_report_args(result.raw_path, supersede=args.supersede))
         return code
     finally:
         if args.keep_up:

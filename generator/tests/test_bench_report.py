@@ -909,6 +909,7 @@ def test_degraded_detector_replicas_at_start_refuse_both_scenarios(tmp_path: Pat
     assert "replicas_degraded" in _refusal_ids(tmp_path / "a", overload)
     sustained = _sustained_raw()
     sustained["run"]["replicas_running"] = {"start": {**RUNNING, "detector": 2}, "end": RUNNING}
+    (tmp_path / "b").mkdir()
     ids = _failure_ids(tmp_path / "b", sustained)
     assert ids["replicas_degraded"]["expected"] == 3
     assert ids["replicas_degraded"]["observed"] == 2
