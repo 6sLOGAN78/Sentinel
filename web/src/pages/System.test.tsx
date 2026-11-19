@@ -494,6 +494,27 @@ describe("System page through the real App, session and guarded client", () => {
     expect(within(throughput).getByText("1,234.5")).toBeTruthy();
   });
 
+  it("renders a partial_coverage lag row as Unavailable, never 0", async () => {
+    const body = status({
+      consumer_lag: [
+        { group: "event-writer", lag: avail(12345) },
+        { group: "detector", lag: unavail("partial_coverage") },
+        { group: "alert-writer", lag: avail(7) },
+      ],
+    });
+    await start(async () => Response.json(body));
+    const lag = await screen.findByRole("table", { name: "Consumer lag" });
+    const detector = within(lag).getAllByRole("row")[2];
+    expect(detector.textContent).toBe("detectorUnavailable");
+    expect(detector.textContent).not.toMatch(/\d/);
+    expect(within(lag).getAllByRole("row")[1].textContent).toBe(
+      "event-writer12,345",
+    );
+    expect(within(lag).getAllByRole("row")[3].textContent).toBe(
+      "alert-writer7",
+    );
+  });
+
   it("keeps the header while loading and shows no numbers or toolbar", async () => {
     await start(() => new Promise<Response>(() => {}));
     expect(await screen.findByText("Loading system status…")).toBeTruthy();

@@ -400,6 +400,29 @@ describe("Overview consumer lag panel", () => {
     },
   );
 
+  it("renders a partial_coverage row as Unavailable, never 0, beside real values", async () => {
+    await start(
+      routes(async () =>
+        Response.json(
+          lagBody([
+            available(12345),
+            { state: "unavailable", reason: "partial_coverage" },
+            available(7),
+          ]),
+        ),
+      ),
+      "analyst",
+    );
+    const region = lagRegion();
+    await within(region).findByText("12,345 records");
+    const detector = within(region).getByText("detector")
+      .nextElementSibling as HTMLElement;
+    expect(detector.textContent).toBe("Unavailable");
+    expect(detector.textContent).not.toMatch(/\d/);
+    expect(within(region).queryByText("0 records")).toBeNull();
+    expect(within(region).getByText("7 records")).toBeTruthy();
+  });
+
   it("reports a lag request error in an alert without hiding the summary", async () => {
     await start(
       routes(async () => new Response("private internals", { status: 503 })),
