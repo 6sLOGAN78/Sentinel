@@ -133,6 +133,37 @@ func TestDetectorLagSeedsFromCommittedPinAndDropsOnLoss(t *testing.T) {
 	c.lost(t.Context(), nil, map[string][]int32{"events": {3}})
 	_, ok = gaugeFor(t, reg, "sentinel_kafka_consumer_lag", 3)
 	require.False(t, ok, "loss deletes the lag series")
+
+	// The detector owning nothing still exports the denominator, so a lost
+	// partition shows as count(lag) < topic partitions instead of vanishing.
+	ends.offsets = map[int32]int64{0: 1, 1: 2, 2: 3, 3: 40}
+	require.NoError(t, tracker.Tick(t.Context()))
+	count, ok := topicPartitionsFor(t, reg, "detector-test", "events")
+	require.True(t, ok, "the topic partition gauge exists with zero owned partitions")
+	require.InDelta(t, 4, count, 0)
+	_, ok = gaugeFor(t, reg, "sentinel_kafka_consumer_lag", 3)
+	require.False(t, ok, "zero-owned ticks never recreate lag series")
+}
+
+func topicPartitionsFor(t *testing.T, reg prometheus.Gatherer, group, topic string) (float64, bool) {
+	t.Helper()
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "sentinel_kafka_topic_partitions" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, pair := range metric.GetLabel() {
+				labels[pair.GetName()] = pair.GetValue()
+			}
+			if labels["group"] == group && labels["topic"] == topic {
+				return metric.GetGauge().GetValue(), true
+			}
+		}
+	}
+	return 0, false
 }
 
 func pinConsumer(starts *staticOffsets) *DetectorConsumer {

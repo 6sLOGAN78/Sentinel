@@ -50,6 +50,32 @@ func TestConsumerMetricsLagSetAndDelete(t *testing.T) {
 		map[string]string{"partition": "1"}))
 }
 
+func TestConsumerMetricsTopicPartitionsGauge(t *testing.T) {
+	reg := telemetry.NewRegistry()
+	metrics := telemetry.NewConsumerMetrics(reg)
+	metrics.SetTopicPartitions("detector", "security.events.v1", 6)
+
+	family := findFamily(t, reg, "sentinel_kafka_topic_partitions")
+	require.NotNil(t, family)
+	require.Equal(t, dto.MetricType_GAUGE, family.GetType())
+	require.Equal(t, "Partitions of the consumed topic as listed by the broker; "+
+		"coverage denominator for sentinel_kafka_consumer_lag.", family.GetHelp())
+	require.Len(t, family.GetMetric(), 1)
+	names := map[string]string{}
+	for _, pair := range family.GetMetric()[0].GetLabel() {
+		names[pair.GetName()] = pair.GetValue()
+	}
+	require.Equal(t, map[string]string{"group": "detector", "topic": "security.events.v1"}, names,
+		"labels are exactly group and topic: no partition, tenant or ID labels")
+	require.InDelta(t, 6, family.GetMetric()[0].GetGauge().GetValue(), 0)
+
+	metrics.SetTopicPartitions("detector", "security.events.v1", 12)
+	got := labeledMetric(t, reg, "sentinel_kafka_topic_partitions",
+		map[string]string{"group": "detector", "topic": "security.events.v1"})
+	require.NotNil(t, got)
+	require.InDelta(t, 12, got.GetGauge().GetValue(), 0, "a partition increase replaces the value")
+}
+
 func TestConsumerMetricsWriteDurationByResult(t *testing.T) {
 	reg := telemetry.NewRegistry()
 	metrics := telemetry.NewConsumerMetrics(reg)
@@ -81,6 +107,7 @@ func TestConsumerMetricsLabelsInsideAllowlistAndNilSafe(t *testing.T) {
 	reg := telemetry.NewRegistry()
 	metrics := telemetry.NewConsumerMetrics(reg)
 	metrics.SetLag("g", "t", 3, 1)
+	metrics.SetTopicPartitions("g", "t", 6)
 	metrics.ObserveWrite(true, time.Millisecond)
 	metrics.ObserveWrite(false, time.Millisecond)
 	metrics.IncDLQ("missing_received_at")
@@ -93,6 +120,7 @@ func TestConsumerMetricsLabelsInsideAllowlistAndNilSafe(t *testing.T) {
 	require.NotPanics(t, func() {
 		none.SetLag("g", "t", 0, 1)
 		none.DeleteLag("g", "t", 0)
+		none.SetTopicPartitions("g", "t", 6)
 		none.ObserveWrite(true, time.Second)
 		none.IncDLQ("decode_error")
 	})

@@ -20,7 +20,101 @@ const (
 	lagGroup = "event-writer"
 	lagTopic = "security.events.v1"
 	lagName  = "sentinel_kafka_consumer_lag"
+	// partitionsName is the coverage denominator for lagName.
+	partitionsName = "sentinel_kafka_topic_partitions"
 )
+
+func sixPartitions() map[int32]int64 {
+	return map[int32]int64{0: 100, 1: 100, 2: 100, 3: 100, 4: 100, 5: 100}
+}
+
+// recordingSink is a test-local LagSink that records every call and
+// optionally forwards to a real sink.
+type recordingSink struct {
+	mu         sync.Mutex
+	lag        map[int32]int64
+	partitions []int
+	keys       []string
+	next       kafkax.LagSink
+}
+
+func newRecordingSink() *recordingSink {
+	return &recordingSink{lag: map[int32]int64{}}
+}
+
+func (s *recordingSink) SetLag(group, topic string, partition int32, lag int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lag[partition] = lag
+	if s.next != nil {
+		s.next.SetLag(group, topic, partition, lag)
+	}
+}
+
+func (s *recordingSink) DeleteLag(group, topic string, partition int32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.lag, partition)
+	if s.next != nil {
+		s.next.DeleteLag(group, topic, partition)
+	}
+}
+
+func (s *recordingSink) SetTopicPartitions(group, topic string, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.partitions = append(s.partitions, n)
+	s.keys = append(s.keys, group+"/"+topic)
+	if forward, ok := s.next.(interface {
+		SetTopicPartitions(group, topic string, n int)
+	}); ok {
+		forward.SetTopicPartitions(group, topic, n)
+	}
+}
+
+func (s *recordingSink) lags() map[int32]int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[int32]int64, len(s.lag))
+	for partition, lag := range s.lag {
+		out[partition] = lag
+	}
+	return out
+}
+
+func (s *recordingSink) partitionCalls() []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]int(nil), s.partitions...)
+}
+
+func (s *recordingSink) partitionKeys() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.keys...)
+}
+
+func requireTopicPartitions(t *testing.T, reg prometheus.Gatherer, want float64) {
+	t.Helper()
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != partitionsName {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, pair := range metric.GetLabel() {
+				labels[pair.GetName()] = pair.GetValue()
+			}
+			if labels["group"] == lagGroup && labels["topic"] == lagTopic {
+				require.InDelta(t, want, metric.GetGauge().GetValue(), 0)
+				return
+			}
+		}
+	}
+	t.Fatalf("%s{group=%q,topic=%q} must exist", partitionsName, lagGroup, lagTopic)
+}
 
 // fakeEnds is a test-local EndOffsetLister with mutable broker end offsets.
 type fakeEnds struct {
@@ -288,12 +382,82 @@ func TestLagTickBoundsEveryQueryWithTimeout(t *testing.T) {
 	require.LessOrEqual(t, ends.deadlines[0], 2*time.Second, "query timeout is 2s")
 }
 
-func TestLagTickWithoutOwnedPartitionsSkipsQuery(t *testing.T) {
-	ends := newFakeEnds(map[int32]int64{0: 10})
-	tracker, reg := lagTracker(t, ends)
+func TestLagTickWithoutOwnedPartitionsStillPublishesTopicPartitions(t *testing.T) {
+	ends := newFakeEnds(sixPartitions())
+	sink := newRecordingSink()
+	tracker := kafkax.NewLagTracker(ends, sink, lagGroup, lagTopic, 0)
+	require.NoError(t, tracker.Tick(context.Background()))
+
+	require.Equal(t, 1, ends.callCount(), "a process owning nothing still lists end offsets")
+	require.Equal(t, []int{6}, sink.partitionCalls(), "the coverage denominator is published with zero owned")
+	require.Empty(t, sink.lags(), "no lag series without owned partitions")
+	ends.mu.Lock()
+	defer ends.mu.Unlock()
+	require.Positive(t, ends.deadlines[0], "the zero-owned listing is bounded too")
+	require.LessOrEqual(t, ends.deadlines[0], 2*time.Second)
+}
+
+func TestLagTickPublishesTopicPartitionCountIndependentOfOwnership(t *testing.T) {
+	ends := newFakeEnds(sixPartitions())
+	sink := newRecordingSink()
+	tracker := kafkax.NewLagTracker(ends, sink, lagGroup, lagTopic, 0)
+	tracker.Assigned(map[int32]int64{0: 90, 1: 95})
+
 	require.NoError(t, tracker.Tick(t.Context()))
-	require.Zero(t, ends.callCount(), "no admin call when nothing is owned")
-	requireAbsent(t, reg, 0)
+	require.Equal(t, []int{6}, sink.partitionCalls(), "exactly one count per tick: all listed partitions")
+	require.Equal(t, map[int32]int64{0: 10, 1: 5}, sink.lags(), "lag only for the owned partitions")
+	require.Equal(t, []string{lagGroup + "/" + lagTopic}, sink.partitionKeys())
+}
+
+func TestLagTopicPartitionsNeverShrinkOnListingErrors(t *testing.T) {
+	ends := newFakeEnds(sixPartitions())
+	reg := telemetry.NewRegistry()
+	sink := newRecordingSink()
+	sink.next = telemetry.NewConsumerMetrics(reg)
+	tracker := kafkax.NewLagTracker(ends, sink, lagGroup, lagTopic, 0)
+	tracker.Assigned(map[int32]int64{0: 90})
+	require.NoError(t, tracker.Tick(t.Context()))
+	requireTopicPartitions(t, reg, 6)
+
+	// A per-partition load error must not shrink (or even rewrite) the denominator.
+	ends.mu.Lock()
+	ends.errs[5] = errors.New("leader not available")
+	ends.mu.Unlock()
+	require.NoError(t, tracker.Tick(t.Context()))
+	require.Equal(t, []int{6}, sink.partitionCalls(), "no count published on a tick with a partition error")
+	requireTopicPartitions(t, reg, 6)
+	requireLag(t, reg, 0, 10)
+
+	// A negative offset is as untrustworthy as an error.
+	ends.mu.Lock()
+	delete(ends.errs, 5)
+	ends.ends[4] = -1
+	ends.mu.Unlock()
+	require.NoError(t, tracker.Tick(t.Context()))
+	require.Equal(t, []int{6}, sink.partitionCalls())
+
+	// A whole-listing failure keeps the previous count and returns the error.
+	ends.set(4, 100)
+	ends.fail(context.DeadlineExceeded)
+	require.Error(t, tracker.Tick(t.Context()))
+	require.Equal(t, []int{6}, sink.partitionCalls())
+	requireTopicPartitions(t, reg, 6)
+
+	// A listing that omits the topic entirely is not a zero-partition topic.
+	ends.fail(nil)
+	ends.mu.Lock()
+	ends.ends = map[int32]int64{}
+	ends.mu.Unlock()
+	require.NoError(t, tracker.Tick(t.Context()))
+	require.Equal(t, []int{6}, sink.partitionCalls())
+	requireTopicPartitions(t, reg, 6)
+
+	// Recovery publishes again.
+	ends.mu.Lock()
+	ends.ends = sixPartitions()
+	ends.mu.Unlock()
+	require.NoError(t, tracker.Tick(t.Context()))
+	require.Equal(t, []int{6, 6}, sink.partitionCalls())
 }
 
 func TestLagRunSurvivesTransientErrorsAndExitsOnCancel(t *testing.T) {

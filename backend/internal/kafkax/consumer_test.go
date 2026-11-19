@@ -35,9 +35,22 @@ func TestConsumerCloseHonorsContext(t *testing.T) {
 }
 
 type hookSink struct {
-	mu      sync.Mutex
-	lag     map[int32]int64
-	deleted []int32
+	mu         sync.Mutex
+	lag        map[int32]int64
+	deleted    []int32
+	partitions []int
+}
+
+func (s *hookSink) SetTopicPartitions(_, _ string, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.partitions = append(s.partitions, n)
+}
+
+func (s *hookSink) partitionCalls() []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]int(nil), s.partitions...)
 }
 
 func (s *hookSink) SetLag(_, _ string, partition int32, lag int64) {
@@ -91,6 +104,7 @@ func TestConsumerLagHooksTrackAssignmentCommitAndRevoke(t *testing.T) {
 	consumer.onAssigned(t.Context(), nil, map[string][]int32{"events": {0, 1}, "other": {7}})
 	require.NoError(t, tracker.Tick(t.Context()))
 	require.Equal(t, map[int32]int64{0: 90, 1: 60}, sink.lag, "seeded from committed offsets")
+	require.Equal(t, []int{2}, sink.partitionCalls(), "the topic partition count is published each tick")
 
 	consumer.recordProcessed([]*kgo.Record{
 		{Topic: "events", Partition: 0, Offset: 41}, {Topic: "events", Partition: 0, Offset: 39},
@@ -105,6 +119,8 @@ func TestConsumerLagHooksTrackAssignmentCommitAndRevoke(t *testing.T) {
 	require.ElementsMatch(t, []int32{1, 0}, sink.deleted)
 	require.NoError(t, tracker.Tick(t.Context()))
 	require.Empty(t, sink.lag)
+	require.Equal(t, []int{2, 2, 2}, sink.partitionCalls(),
+		"a writer owning nothing after revoke still reports the coverage denominator")
 }
 
 func TestConsumerWithoutLagTrackerIgnoresHooks(t *testing.T) {
