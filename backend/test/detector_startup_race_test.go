@@ -331,13 +331,9 @@ func startupFailureLines(output string) string {
 	return strings.Join(lines, "\n")
 }
 
-// TestDetectorRestoreRetryWithoutAckedCheckpoint is the deterministic PG half
-// of the reproduced interleaving. A first restore binds the rules manifest in
-// PostgreSQL, but its first Kafka checkpoint commit is never acknowledged (the
-// startup rebalance rejected or misreported it). The same member retries the
-// restore of the same partition at the next generation, still with no Kafka
-// checkpoint, and PrepareRestore rejects the state it wrote itself.
-func TestDetectorRestoreRetryWithoutAckedCheckpoint(t *testing.T) {
+func restoreRetryStore(t *testing.T) (*database.Database, *postgres.DetectionDecisionStore,
+	postgres.DetectionOwnership, *detection.Rules) {
+	t.Helper()
 	db, err := database.New(t.Context(), pgCfg, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
@@ -349,23 +345,104 @@ func TestDetectorRestoreRetryWithoutAckedCheckpoint(t *testing.T) {
 	store := postgres.NewDetectionDecisionStore(db.Pool, config.DetectorPGConfig{AcquireTimeout: time.Second,
 		TransactionTimeout: 3 * time.Second, LockTimeout: time.Second, StatementTimeout: 2 * time.Second,
 		CleanupTimeout: time.Second}, rules)
-	first := postgres.DetectionOwnership{Group: kafka.DetectorGroup,
+	owner := postgres.DetectionOwnership{Group: kafka.DetectorGroup,
 		Incarnation: postgres.DetectionGroupIncarnation(kafka.DetectorGroup), Member: "kgo-member-a", Generation: 1,
 		Token: 1, Source: detection.TopicPartition{Topic: kafka.EventsTopic, Partition: 1}, Config: rules.Fingerprint()}
-	_, err = store.PrepareRestore(t.Context(), first, nil, false)
-	require.NoError(t, err, "fresh group first restore binds the manifest")
+	return db, store, owner, rules
+}
+
+func fenceManifestBound(t *testing.T, db *database.Database, o postgres.DetectionOwnership) bool {
+	t.Helper()
+	var bound bool
+	require.NoError(t, db.Pool.QueryRow(t.Context(), `SELECT rules_manifest IS NOT NULL FROM detection_partition_fences
+		WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition).Scan(&bound))
+	return bound
+}
+
+func emptyCheckpoint(t *testing.T, rules *detection.Rules) detection.Checkpoint {
+	t.Helper()
+	state := detection.NewPartitionState(rules)
+	require.NoError(t, state.BeginAt(0))
+	cp, err := state.Checkpoint()
+	require.NoError(t, err)
+	return cp
+}
+
+// TestDetectorRestoreRetryWithoutAckedCheckpoint is the deterministic PG half
+// of the GAP-3 interleaving. A first restore registers its fence, but its first
+// Kafka checkpoint commit is never acknowledged (the startup rebalance rejected
+// it). Retrying without a checkpoint must succeed, for the same member at a
+// later generation and for a new owner, because the manifest is bound only by
+// CheckpointCommitted. Once a checkpoint was acknowledged, losing it still
+// fails closed.
+func TestDetectorRestoreRetryWithoutAckedCheckpoint(t *testing.T) {
+	db, store, first, rules := restoreRetryStore(t)
+	_, err := store.PrepareRestore(t.Context(), first, nil, false)
+	require.NoError(t, err, "fresh group first restore")
+	require.False(t, fenceManifestBound(t, db, first), "restore alone must not bind the manifest")
 	// No Kafka commit and no CheckpointCommitted: the restore commit failed.
 	retry := first
 	retry.Generation = 3 // cooperative rebalance retained the partition with the same token
 	_, err = store.PrepareRestore(t.Context(), retry, nil, false)
-	require.ErrorIs(t, err, postgres.ErrDecisionInvariant)
-	require.NotErrorIs(t, err, postgres.ErrOwnershipSuperseded)
-	require.NotErrorIs(t, err, postgres.ErrDecisionTransient)
-	require.ErrorContains(t, err, "existing detector group lost its Kafka checkpoint")
+	require.NoError(t, err, "same member retries after an unacknowledged first checkpoint")
 	moved := first
 	moved.Member, moved.Generation, moved.Token = "kgo-member-b", 4, 1
 	_, err = store.PrepareRestore(t.Context(), moved, nil, false)
-	require.ErrorIs(t, err, postgres.ErrDecisionInvariant, "a different new owner hits the same state")
+	require.NoError(t, err, "a new owner restores the never-acknowledged partition")
+	cp := emptyCheckpoint(t, rules)
+	require.NoError(t, store.CheckpointCommitted(t.Context(), moved, cp))
+	require.True(t, fenceManifestBound(t, db, moved), "acknowledged checkpoint binds the manifest")
+	_, err = store.PrepareRestore(t.Context(), moved, &cp, false)
+	require.NoError(t, err, "restore from the acknowledged checkpoint")
+	lost := moved
+	lost.Generation = 5
+	_, err = store.PrepareRestore(t.Context(), lost, nil, false)
+	require.ErrorIs(t, err, postgres.ErrDecisionInvariant, "real checkpoint loss stays fail-closed")
 	require.ErrorContains(t, err, "existing detector group lost its Kafka checkpoint")
-	t.Logf("restore retry with unacknowledged first checkpoint: %v", err)
+}
+
+// TestDetectorManifestUpgradePath covers fences written by the previous code,
+// which bound the manifest during restore. A group whose checkpoint Kafka had
+// acknowledged restores unchanged and keeps its manifest. A legacy partition
+// left with a bound manifest and no Kafka checkpoint cannot be told apart from
+// real checkpoint loss, so it still fails closed (operator escalation, ADR 0012).
+func TestDetectorManifestUpgradePath(t *testing.T) {
+	db, store, owner, rules := restoreRetryStore(t)
+	legacyBind := func(o postgres.DetectionOwnership) {
+		t.Helper()
+		raw, err := json.Marshal(rules)
+		require.NoError(t, err)
+		_, err = db.Pool.Exec(t.Context(), `UPDATE detection_partition_fences SET rules_manifest=$4
+			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition, raw)
+		require.NoError(t, err)
+	}
+	_, err := store.PrepareRestore(t.Context(), owner, nil, false)
+	require.NoError(t, err)
+	legacyBind(owner)
+	cp := emptyCheckpoint(t, rules)
+	require.NoError(t, store.CheckpointCommitted(t.Context(), owner, cp))
+	var before []byte
+	require.NoError(t, db.Pool.QueryRow(t.Context(), `SELECT rules_manifest FROM detection_partition_fences
+		WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, owner.Group, owner.Source.Topic, owner.Source.Partition).
+		Scan(&before))
+	upgraded := owner
+	upgraded.Member, upgraded.Generation = "kgo-upgraded", 2
+	_, err = store.PrepareRestore(t.Context(), upgraded, &cp, false)
+	require.NoError(t, err, "a legacy-bound group with an acknowledged checkpoint restores unchanged")
+	require.NoError(t, store.CheckpointCommitted(t.Context(), upgraded, cp))
+	var after []byte
+	require.NoError(t, db.Pool.QueryRow(t.Context(), `SELECT rules_manifest FROM detection_partition_fences
+		WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, owner.Group, owner.Source.Topic, owner.Source.Partition).
+		Scan(&after))
+	require.JSONEq(t, string(before), string(after), "an existing manifest is validated, never replaced")
+
+	wedged := owner
+	wedged.Source.Partition = 2
+	_, err = store.PrepareRestore(t.Context(), wedged, nil, false)
+	require.NoError(t, err)
+	legacyBind(wedged) // old code bound it, then the first Kafka commit failed
+	wedged.Generation = 3
+	_, err = store.PrepareRestore(t.Context(), wedged, nil, false)
+	require.ErrorIs(t, err, postgres.ErrDecisionInvariant, "legacy wedged state stays fail-closed")
+	require.ErrorContains(t, err, "existing detector group lost its Kafka checkpoint")
 }

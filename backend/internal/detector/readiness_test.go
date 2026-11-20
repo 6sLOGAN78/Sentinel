@@ -98,6 +98,9 @@ func (*readinessConsumer) CommitCheckpoints(context.Context,
 	return nil
 }
 func (*readinessConsumer) AllowRebalance() {}
+func (*readinessConsumer) RefreshCheckpoint(context.Context, detection.TopicPartition, uint64) error {
+	return nil
+}
 
 func TestWorkerReadiness(t *testing.T) {
 	c := &readinessConsumer{snapshot: kafkax.DetectorReadiness{Generation: -1}}
