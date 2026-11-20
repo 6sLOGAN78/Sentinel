@@ -248,6 +248,10 @@ func (s *DetectionDecisionStore) restoreConfigFrontier(
 	return m.DecisionFrontier, false, detection.NewPartitionState(s.rules).Restore(*cp)
 }
 
+// bindConfigManifest validates restore input against the fence. It never writes
+// the manifest: CheckpointCommitted binds it after Kafka acknowledges the first
+// checkpoint, so a saved manifest proves a Kafka checkpoint once existed. A
+// restore whose first commit failed can therefore retry without a checkpoint.
 func (s *DetectionDecisionStore) bindConfigManifest(ctx context.Context, o DetectionOwnership,
 	cp *detection.Checkpoint) error {
 	return s.transaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
@@ -267,18 +271,10 @@ func (s *DetectionDecisionStore) bindConfigManifest(ctx context.Context, o Detec
 		if len(manifest) > 0 && !matchingRulesManifest(manifest, o.Config) {
 			return decisionFaultError("saved semantic manifest mismatch")
 		}
-		if len(handover) > 0 {
-			if cp == nil || !validHandoverGates(handover, *cp) {
-				return decisionFaultError("saved handover gates missing or changed")
-			}
+		if len(handover) > 0 && (cp == nil || !validHandoverGates(handover, *cp)) {
+			return decisionFaultError("saved handover gates missing or changed")
 		}
-		data, err := json.Marshal(s.rules)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET rules_manifest=$4
-			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition, data)
-		return err
+		return nil
 	})
 }
 
@@ -474,10 +470,18 @@ func (s *DetectionDecisionStore) CheckpointCommitted(ctx context.Context, o Dete
 		if err != nil {
 			return err
 		}
-		var proof []byte
-		if err = tx.QueryRow(ctx, `SELECT handover_checkpoint FROM detection_partition_fences
+		var proof, manifest []byte
+		if err = tx.QueryRow(ctx, `SELECT handover_checkpoint,rules_manifest FROM detection_partition_fences
 			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition).
-			Scan(&proof); err != nil {
+			Scan(&proof, &manifest); err != nil {
+			return err
+		}
+		if len(manifest) > 0 && !matchingRulesManifest(manifest, o.Config) {
+			return decisionFaultError("saved semantic manifest mismatch")
+		}
+		// Bind the manifest only now, after Kafka acknowledged this checkpoint.
+		rules, err := json.Marshal(s.rules)
+		if err != nil {
 			return err
 		}
 		var drain []byte
@@ -493,9 +497,10 @@ func (s *DetectionDecisionStore) CheckpointCommitted(ctx context.Context, o Dete
 			at := time.UnixMilli(*m.SealedThrough)
 			sealed = &at
 		}
-		_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET drained=$4,sealed_through=$5,drain_checkpoint=$6
+		_, err = tx.Exec(ctx, `UPDATE detection_partition_fences SET drained=$4,sealed_through=$5,drain_checkpoint=$6,
+			rules_manifest=COALESCE(rules_manifest,$7)
 			WHERE group_id=$1 AND topic=$2 AND partition_id=$3`, o.Group, o.Source.Topic, o.Source.Partition,
-			drained, sealed, drain)
+			drained, sealed, drain, rules)
 		return err
 	})
 }

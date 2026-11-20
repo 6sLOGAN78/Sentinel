@@ -38,6 +38,9 @@ type Consumer interface {
 	GroupMetadata() (string, int32)
 	ReadinessSnapshot() kafkax.DetectorReadiness
 	AllowRebalance()
+	// RefreshCheckpoint re-reads the broker's committed checkpoint for a
+	// retained assignment token before a restore is retried.
+	RefreshCheckpoint(context.Context, detection.TopicPartition, uint64) error
 }
 
 // Ready reports whether the current assignment has completed required restore.
@@ -109,6 +112,9 @@ type Worker struct {
 	settings   config.WriterConfig
 	limits     contracts.Limits
 	partitions map[detection.TopicPartition]partition
+	// retry holds the token of each assignment whose restore failed; its next
+	// restore must not trust the offset-fetch snapshot taken before the failure.
+	retry      map[detection.TopicPartition]uint64
 	pool       *pgxpool.Pool
 	pg         config.DetectorPGConfig
 	decisions  decisionStore
@@ -172,6 +178,7 @@ func New(
 	return &Worker{
 		consumer: consumer, publisher: publisher, rules: rules, settings: settings, limits: limits,
 		partitions: make(map[detection.TopicPartition]partition),
+		retry:      make(map[detection.TopicPartition]uint64),
 		pool:       pool, pg: pg,
 		bounds:     detection.NewBounds(detection.StateLimits{}),
 		now:        time.Now,
@@ -347,6 +354,11 @@ func (w *Worker) syncAssignments(ctx context.Context, assigned map[detection.Top
 			delete(w.partitions, tp)
 		}
 	}
+	for tp, token := range w.retry {
+		if a, ok := assigned[tp]; !ok || a.Token != token {
+			delete(w.retry, tp) // a new token arrives with its own offset fetch
+		}
+	}
 	// Restore every assignment before processing any record. Changed-config
 	// adoption must also run on an idle drained partition.
 	for tp, assignment := range assigned {
@@ -411,7 +423,7 @@ func (w *Worker) partitionState(
 	p, ok := w.partitions[tp]
 	if !ok || p.token != a.Token {
 		var err error
-		p, err = w.restorePartition(ctx, tp, a)
+		p, err = w.retryablePartition(ctx, tp, a)
 		if err != nil {
 			return nil, err
 		}
@@ -442,6 +454,31 @@ func (w *Worker) partitionState(
 		return nil, err
 	}
 	return p.state, nil
+}
+
+// retryablePartition restores an assignment. When an earlier restore of the
+// same token failed (typically its first Kafka checkpoint commit lost a startup
+// rebalance), Kafka may now hold a checkpoint the offset-fetch snapshot
+// predates, so the committed checkpoint is re-read before retrying.
+func (w *Worker) retryablePartition(ctx context.Context, tp detection.TopicPartition,
+	a Assignment) (partition, error) {
+	if token, retried := w.retry[tp]; retried && token == a.Token {
+		if err := w.consumer.RefreshCheckpoint(ctx, tp, a.Token); err != nil {
+			return partition{}, err
+		}
+		refreshed, owned := w.consumer.Assignments()[tp]
+		if !owned || refreshed.Token != a.Token || refreshed.RestorePending {
+			return partition{}, errors.New("detector partition ownership lost")
+		}
+		a = refreshed
+	}
+	p, err := w.restorePartition(ctx, tp, a)
+	if err != nil {
+		w.retry[tp] = a.Token
+		return partition{}, err
+	}
+	delete(w.retry, tp)
+	return p, nil
 }
 
 func (w *Worker) restorePartition(ctx context.Context, tp detection.TopicPartition, a Assignment) (partition, error) {

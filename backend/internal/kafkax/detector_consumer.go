@@ -66,10 +66,19 @@ type DetectorConsumer struct {
 	topic                 string
 	lag                   *LagTracker
 	starts                startOffsetLister
+	admin                 checkpointAdmin
 }
 
 type startOffsetLister interface {
 	ListStartOffsets(ctx context.Context, topics ...string) (kadm.ListedOffsets, error)
+}
+
+// checkpointAdmin re-reads a committed checkpoint and its history bounds.
+// *kadm.Client satisfies it.
+type checkpointAdmin interface {
+	FetchOffsets(ctx context.Context, group string) (kadm.OffsetResponses, error)
+	ListStartOffsets(ctx context.Context, topics ...string) (kadm.ListedOffsets, error)
+	ListEndOffsets(ctx context.Context, topics ...string) (kadm.ListedOffsets, error)
 }
 
 // PinMarginSink publishes and removes per-partition pin retention margins.
@@ -182,6 +191,7 @@ func NewDetectorConsumer(
 	c.client = client
 	admin := kadm.NewClient(client)
 	c.starts = admin
+	c.admin = admin
 	if c.lag != nil {
 		c.lag.bind(admin)
 	}
@@ -592,6 +602,7 @@ func (c *DetectorConsumer) restorePartition(
 		return errors.New("invalid detector absent offset")
 	}
 	assignment.HistoryStart = start.Offset
+	assignment.Checkpoint = nil // the broker response is authoritative, also on refresh
 	if p.Offset >= 0 {
 		if p.Offset < start.Offset || p.Offset > end.Offset || p.Metadata == nil {
 			//nolint:lll // One literal keeps the runbook hint greppable next to the original phrase.
@@ -611,6 +622,45 @@ func (c *DetectorConsumer) restorePartition(
 	}
 	c.assignments[tp] = assignment
 	return nil
+}
+
+// RefreshCheckpoint re-reads the committed checkpoint of a retained partition
+// from the broker. A restore that failed after its assignment moved may have
+// left a checkpoint in Kafka that this member's offset-fetch snapshot predates;
+// the worker calls this before retrying so it never restores from that stale
+// snapshot. The token must still be current; validation matches the fetch hook.
+func (c *DetectorConsumer) RefreshCheckpoint(ctx context.Context, tp detection.TopicPartition, token uint64) error {
+	if c.admin == nil {
+		return errors.New("detector checkpoint refresh unavailable")
+	}
+	if a, owned := c.Assignments()[tp]; !owned || a.Token != token || a.RestorePending {
+		return errors.New("detector assignment changed during restore")
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, c.settings.OperationTimeout)
+	defer cancel()
+	committed, err := c.admin.FetchOffsets(fetchCtx, c.group)
+	if err != nil {
+		return errors.New("detector committed checkpoint unavailable")
+	}
+	starts, err := c.admin.ListStartOffsets(fetchCtx, tp.Topic)
+	if err != nil {
+		return errors.New("detector retained history unavailable")
+	}
+	ends, err := c.admin.ListEndOffsets(fetchCtx, tp.Topic)
+	if err != nil {
+		return errors.New("detector history end unavailable")
+	}
+	p := kmsg.OffsetFetchResponseTopicPartition{Partition: tp.Partition, Offset: -1}
+	if o, ok := committed.Lookup(tp.Topic, tp.Partition); ok {
+		if o.Err != nil {
+			return errors.New("detector committed checkpoint unavailable")
+		}
+		if o.At >= 0 {
+			metadata := o.Metadata
+			p.Offset, p.Metadata = o.At, &metadata
+		}
+	}
+	return c.restorePartition(tp, p, starts, ends)
 }
 
 func (c *DetectorConsumer) validateConfigCheckpoint(cp detection.Checkpoint) error {
@@ -681,13 +731,13 @@ func (c *DetectorConsumer) CommitCheckpoints(
 	})
 	result := errors.New("detector commit callback missing")
 	c.client.CommitOffsetsSync(commitCtx, offsets, func(
-		_ *kgo.Client, _ *kmsg.OffsetCommitRequest, response *kmsg.OffsetCommitResponse, err error,
+		_ *kgo.Client, request *kmsg.OffsetCommitRequest, response *kmsg.OffsetCommitResponse, err error,
 	) {
 		result = err
 		if err != nil {
 			return
 		}
-		result = checkCommitResponse(response, checkpoints)
+		result = checkCommitResponse(request, response, checkpoints)
 	})
 	if result != nil {
 		return result
@@ -736,17 +786,34 @@ func attachMetadata(
 	return nil
 }
 
-func checkCommitResponse(
+// checkCommitResponse requires one result per committed partition and surfaces
+// each partition's real Kafka error. OffsetCommit v10+ responses identify a
+// topic only by ID. franz-go fills in the names, except when the commit's
+// generation or session ended mid-flight, which is a rebalance. Names are
+// therefore resolved from the request's topic IDs here.
+func checkCommitResponse(request *kmsg.OffsetCommitRequest,
 	response *kmsg.OffsetCommitResponse, checkpoints map[detection.TopicPartition]detection.Checkpoint,
 ) error {
 	if response == nil {
 		return errors.New("detector commit response missing")
 	}
+	names := make(map[[16]byte]string)
+	if request != nil {
+		for _, topic := range request.Topics {
+			if topic.TopicID != ([16]byte{}) && topic.Topic != "" {
+				names[topic.TopicID] = topic.Topic
+			}
+		}
+	}
 	var result error
 	seen := make(map[detection.TopicPartition]bool)
 	for _, topic := range response.Topics {
+		name := topic.Topic
+		if name == "" {
+			name = names[topic.TopicID]
+		}
 		for _, p := range topic.Partitions {
-			tp := detection.TopicPartition{Topic: topic.Topic, Partition: p.Partition}
+			tp := detection.TopicPartition{Topic: name, Partition: p.Partition}
 			if _, ok := checkpoints[tp]; !ok || seen[tp] {
 				result = errors.Join(result, errors.New("detector commit response mismatch"))
 			}
