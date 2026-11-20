@@ -2,17 +2,56 @@
 phase: 05-observability-resilience-scale
 plan: "20"
 subsystem: bench
-tags: [benchmark, sustained-restart, overload, results]
+tags: [benchmark, sustained-restart, overload, results, alert-thresholds, adr-0011]
 requirements: [BENCH-01, BENCH-02, BENCH-03, BENCH-04, REL-04, OBS-05, UI-05]
-status: "DRAFT - resume run 20261120a: Tasks 1-2 done (both reports exit 0, committed 4e3f355); stopped at Task 3 (checkpoint:human-verify) with the bench stack up; Tasks 4-6 not started"
+status: complete
+requires:
+  - phase: 05-observability-resilience-scale
+    provides: "bench harness/report (05-08, 05-17, 05-18), gap closures 05-22..05-28, operator allowlist (05-21a, ADR 0014)"
+provides:
+  - "Measured, reconciled results benchmarks/results/2026-11-20-{sustained-restart,overload}.{md,json} (run 20261120a)"
+  - "ADR 0011 benchmark method; benchmarks/README.md with linked results; 2026-11-19 results marked superseded"
+  - "SentinelPinRetentionLow < 133098 (measured rate x R=1800) and SentinelIngestErrorRate > 1% (policy)"
+  - "Bench stack operator tenant = run tenant (BENCH_OPERATOR_TENANTS)"
+affects: [phase 5 verification, Phase 6 docs refresh]
+tech-stack:
+  added: []
+  patterns: [threshold = ceil(measured per-partition rate x response policy) checked below measured steady minimum, policy thresholds labelled as policy, docs numbers verbatim from linked report files]
+key-files:
+  created:
+    - benchmarks/results/2026-11-20-sustained-restart.md
+    - benchmarks/results/2026-11-20-sustained-restart.json
+    - benchmarks/results/2026-11-20-overload.md
+    - benchmarks/results/2026-11-20-overload.json
+    - docs/decisions/0011-benchmark-method.md
+  modified:
+    - benchmarks/README.md
+    - docs/decisions/README.md
+    - docs/decisions/0010-observability-and-tracing.md
+    - docs/decisions/0014-operator-tenant-allowlist.md
+    - docs/operations.md
+    - docs/threat-model.md
+    - observability/prometheus/alerts.yml
+    - observability/prometheus/alerts_test.yml
+    - bench/stack.py
+    - deployments/compose/docker-compose.bench.yml
+    - generator/tests/test_bench_stack.py
+    - scripts/test_observability_config.py
+decisions:
+  - "SentinelPinRetentionLow threshold 133098 offsets = ceil(73.943224 x 1800); R=1800 s user policy; checked below overload steady min 134793 (largest valid R 1822 s)"
+  - "SentinelIngestErrorRate 1% over 5m as a labelled policy value (measured 5xx ratio 0)"
+  - "Bench run tenant bench-<run> is the bench stack's only operator tenant; unset fails closed"
+  - "2026-11-19 results stay in place unedited and are marked superseded in benchmarks/README.md (different date, so no SUPERSEDE move)"
+metrics:
+  completed: 2026-11-20
+  resume_run_active: "01:53Z-02:55Z (Tasks 1-3 prep), 12:37Z-12:50Z (Tasks 5-6)"
 ---
 
-# Phase 5 Plan 20: Real benchmark run and live verification Summary (DRAFT)
+# Phase 5 Plan 20: Real benchmark run and live verification Summary
 
-> Draft. The first run (20261119a) is kept below as history. Its findings were closed by gap
-> plans 05-22..05-28, and Tasks 1-2 were re-run on RUN=20261120a per the amended resume
-> protocol. Tasks 3-6 have not run. The final summary, closing and self-check come after them.
-> Per the resume protocol, no number from the 20261119a reports may be reused in docs.
+One measured run (20261120a) at git `8424348` reconciled exactly: 1,000,000 events, loss 0, 30/30/30 alerts per rule, events/alerts API 0 non-2xx, and a coverage-gated detector-kill recovery of 53.759 s. Overload stayed bounded, with only 202/429. The run produced ADR 0011, a linked benchmarks README, and two alert thresholds set from measured inputs and user policy. The user approved the live check, and the stack was purged.
+
+The first run (20261119a) is kept at the end as history. Its findings were closed by gap plans 05-22..05-28, and Tasks 1-2 were re-run on RUN=20261120a per the amended resume protocol. No number from the 20261119a reports is reused in docs.
 
 ## Resume run 20261120a (2026-11-20 UTC)
 
@@ -74,7 +113,7 @@ status: "DRAFT - resume run 20261120a: Tasks 1-2 done (both reports exit 0, comm
 - Peak detector state: windows 24.85%, ledger 45.413%, bytes 15.004% (max 45.413%).
 - Threshold inputs: 5xx ratio 0, whole-run min pin margin 128,573, steady-state min pin margin 134,793, max per-partition append rate 403.496 ev/s.
 
-### Observations from the resume run (reported, not fixed)
+### Observations from the resume run
 
 1. **sustained-restart `pin_retention_margin_steady_min` is 0, which is not a steady-state value (affects Task 4).** The 05-28 window runs from main-load start to collection. Read-only Prometheus queries on the live bench stack showed `sentinel_detector_pin_retention_margin_offsets` at 0 on all 6 partitions from 01:56:22Z (main-load start) through 01:56:52Z, 7 samples at 5 s. That is the fresh-topic state, which the window was meant to exclude. After that every partition grows from tens of offsets to over 130,000. Task 4's check "candidate below the steady minimum" is therefore degenerate on the sustained report: every candidate ≥ 0 would be flagged. The overload steady minimum (134,793) is a genuine steady value. Possible remedies are a gap fix to the window start or using the overload input; that is a Task 4 decision. No value was computed or written here.
 2. **Detection delay p99 is 281.6 s (bucket 204.8-409.6 s), while p95 is 0.175 s.** This is well beyond the 45.107 s coverage loss. The histogram's resolution at that tail is coarse (n=125). It is worth explaining in ADR 0011. Not diagnosed.
@@ -82,12 +121,117 @@ status: "DRAFT - resume run 20261120a: Tasks 1-2 done (both reports exit 0, comm
 4. **Task 3 step 2 may lack `store_alert`.** Jaeger holds 103 ingest traces. The richest contain `ingest POST /api/v1/events:batch`, `ingest publish`, `detector detect` and `event-writer store` (2 span links), but alert-writer reports no operations. alert-writer has tracing enabled. `store_alert` is emitted only for alerts whose detect span was sampled, and at ratio 0.01 with 120 alerts about one is expected, so zero is plausible sampling.
 5. **Plan interface drift for Task 3.** web/vite.config.ts hardcodes the `/api` proxy to 127.0.0.1:8081 and has no env var. A scratch-only config (session scratchpad `vite.bench.config.mjs`, not committed) proxies to 38090. The Jaeger 2.22 UI is at http://127.0.0.1:36686/ (v3 API).
 
+### Task 3: live Grafana, Jaeger and System check (approved)
+
+- Pre-checkpoint automation: printed loopback URLs and the private Grafana password path, never the password. Minted admin, analyst and viewer JWTs into `.local/bench/20261120a/tokens/*.jwt` (0600). Started Vite with a scratch-only config proxying `/api` to 127.0.0.1:38090.
+- Blocker found and fixed before handoff: the bench stack's operator tenant (commit 535357b, Observation 3).
+- Task 3 verify (`curl` Prometheus ready + Grafana health): exit 0.
+- **User reply, verbatim: "Approved"**
+
+### Task 4: alert threshold decision
+
+- **User reply, verbatim: "R=1800, err=1%"**
+- Computed only from committed reports:
+  - `SentinelPinRetentionLow` threshold = ceil(73.943224 x 1800) = **133098 offsets**. Inputs: `benchmarks/results/2026-11-20-sustained-restart.json` `threshold_inputs.partition_rate_eps_max` = 73.943224 (normal-load per-partition rate).
+  - Checked against `2026-11-20-overload.json` `threshold_inputs.pin_retention_margin_steady_min` = 134793: 133098 < 134793, so it passes. The largest R below 134793 is 1822 s.
+  - The sustained steady minimum of 0 is a fresh-topic artifact. The margin is pin minus log start offset, which starts near 0 on a new topic. It is documented: a fresh deployment fires the alert for roughly its first R seconds, until each partition holds R s of data. Suppressing it needs a log-start-offset metric (follow-up).
+  - `SentinelIngestErrorRate` = **1% over 5m, labelled policy**. The measured `ingest_5xx_ratio` is 0 in both runs, and overload sheds with 429, so any sustained 5xx indicates a fault.
+- Task 4 verify (threshold_inputs present): satisfied (both fields non-null in the sustained JSON).
+
+### Task 5: teardown and purge
+
+- **User reply, verbatim: "Yes, purge"**
+- Before teardown, the raws were re-copied to the session scratchpad `raw-20261120a/` (0600, byte-identical to `.local/bench/20261120a/raw-*.json`, not committed). Re-running report.py on them reproduces the committed files byte for byte. The Vite dev server was stopped.
+- `make bench-down RUN=20261120a`: 12:37:25Z-12:37:32Z, **exit 0**.
+- `make bench-purge RUN=20261120a CONFIRM=1`: 12:37:32Z, **exit 0**.
+- After: `docker compose ls -a` was empty, with 0 containers, 0 volumes and 0 images for the project, and `.local/bench/20261120a` removed. The other 12 Docker volumes are identical before and after. No other project existed or was touched. `df -h /`: 15G avail.
+- Task 5 verify (no sentinel-bench-* running): satisfied.
+
+### Task 6: thresholds, docs and results links
+
+- `observability/prometheus/alerts.yml`:
+  - `SentinelPinRetentionLow` < 133098, with the derivation and input citations in its annotation.
+  - `SentinelIngestErrorRate` > 0.01, with the "policy value" annotation.
+  - The "example threshold, tune per deployment" line is kept (drift-test contract).
+- `alerts_test.yml`:
+  - annotations updated
+  - error-rate fixtures moved to the 1% boundary (1.96% fires and neither status alone at 0.98% does; 0.66% with 429s does not fire)
+  - new pin boundary case (133097 fires, 133098 does not)
+- `docs/operations.md`:
+  - Alert examples rows give the value, formula and linked inputs, or "Policy".
+  - Pin retention hazard has the fresh-deployment note.
+  - Benchmark tooling links ADR 0011 and benchmarks/README.md, and no longer says "has not run yet".
+- ADR 0010 Consequences: the placeholder bullet now records the chosen values.
+- ADR 0011 written (Status/Context/Decision/Consequences) and indexed. It covers:
+  - the open-loop method, live event time and pools
+  - capacity preflight with the measured skew (0.18258064516129033, f_proc 0.547741935483871, ledger_pred 72302 = 72.3%)
+  - equations and refusals, and the md5-xor digest
+  - the coverage-gated recovery definition with the 45 s session-timeout component, quoting coverage lost 45.107 s
+  - the SSE upper bound and publications vs unique
+  - the safety rails
+  - the bottleneck section quoting the measured ledger peak 52.877%
+  - the 05-22/05-23 query scaling limits
+  - the detection-delay p99 explanation
+- `benchmarks/README.md`:
+  - reproduction steps; ports and floors are referenced in operations.md
+  - results tables copied verbatim from the 2026-11-20 reports and linked
+  - limitations copied from the reports
+  - 2026-11-19 results listed as superseded with the reason, linked, and no numbers quoted
+- Jaeger caps unchanged: `max_traces` is already 1000 (ADR 0010), and the plan gives no measured basis for changing it.
+- **Detection-delay explanation**, from the coordinator's read-only diagnosis, cross-checked here against the preserved raw:
+  - The histogram counts every acknowledged publication, including crash replays: 125 observations for 120 unique alerts.
+  - From the raw bucket deltas: 119 observations ≤ 0.2 s, 1 in 25.6-51.2 s, 1 in 51.2-102.4 s, 2 in 102.4-204.8 s and 2 in 204.8-409.6 s.
+  - From the raw SSE arrivals: 119 unique alerts within 1.136984 s and PORT_SCAN `1ff8161132` at 38.424 s, the remaining ownership gap.
+  - The five slow observations are replays after the kill (kill 02:07:53Z, takeover 02:08:38Z after the 45 s session timeout, restarted detector-1 rejoined 02:09:21Z). They come from unsealed AUTH (300 s) and DENY (120 s) windows. REQUEST_FLOOD, sealed before the kill, was not replayed.
+  - The p99 of 281.6 s is interpolated from two AUTH_BRUTE_FORCE replays (about 218 s and 261 s).
+  - The explanation is in ADR 0011 Consequences and, using only report-sourced numbers, in benchmarks/README.md. The committed results files were not edited.
+- README verbatim check: all 70 numeric tokens appear in the 2026-11-20 results files, except `0011` (ADR id) and `20261119` (run id). Grep spot-check, 7 numbers:
+  - sustained-restart.md: 53.759, 45.107, 28.781, 52.877%, 57.291
+  - overload.md: 1,281, 134,793
+
+### Tests
+
+- `bash scripts/check-observability.sh` (promtool rule tests + config + dashboard + drift): PASS.
+- `python3 -B -m unittest ... test_observability_config.py`: 32 OK. `test_phase4_guards.py`: 26 OK.
+- `bash scripts/check-adrs.sh`: OK (including 0011).
+- Bench pytest (report/scenarios/collect/stack): 195 passed. `-k bench` earlier: 293 passed. ruff check/format clean. mypy clean. `report.py --selftest` ok.
+- `make test` (plan Task 6 verify): exit 0. Go `-race`: 40 packages ok, none failed. Web: 10 files / 217 tests passed. Generator: 414 passed.
+
+### Follow-ups (not done here)
+
+1. report.py: label the detection-delay row "per publication, incl. crash replays" and add a unique-alert first-detection delay. Also consider an SSE max, since the nearest-rank p99 of 120 hid the 38.424 s arrival.
+2. Optional: a DetectionDecision "already existed" flag, so replays are distinguishable in metrics.
+3. A Kafka log-start-offset metric, so `SentinelPinRetentionLow` (and the 05-28 steady window) can exclude fresh topics.
+4. The 05-28 sustained steady pin window still includes the ~30 s of fresh-topic zeros at main-load start.
+5. Runbook entry for legacy partitions wedged by the old detector code (carried from 05-26).
+
+## Deviations from Plan
+
+1. **[Rule 3 - Blocking] Bench operator tenant (commit 535357b).** The bench overlay hardcoded `SENTINEL_AUTH.OPERATOR_TENANTS: demo`, which no bench identity can hold, so Task 3 steps 3-4 could not pass. The fix was made at the coordinator's instruction under the user's standing permission:
+   - `create_env` writes `BENCH_OPERATOR_TENANTS=bench-<run>`; the overlay interpolates it, and unset fails closed.
+   - Tests and an ADR 0014 note were added.
+   - Applied live by appending the key to the private env and recreating only query-api.
+   - Verified: admin System 200; analyst lag available; viewer 403; the `-ovl` admin still gets 403 / operator_only.
+2. **Plan interface drift.** Vite has no API-base env var (the proxy is hardcoded to 8081), so a scratch config was used. Jaeger 2.22 serves its UI at `/` with the v3 API.
+3. **Detection-delay numbers placed in ADR 0011, not the README.** The per-alert diagnosis values (218 s, 261 s, 38.424 s, timestamps) are not in a results file. The plan requires every README number to be verbatim from a linked results file, so the README carries the explanation with report numbers only and points to ADR 0011 for the evidence.
+4. **Commit type.** The first results commit was amended from `bench(05-20)` to `feat(05-20)` before anything else was built on it (unpushed).
+
 ### Commits (resume run)
 
 | Task | Commit | Content |
 |---|---|---|
 | 2 | 4e3f355 | benchmarks/results/2026-11-20-{sustained-restart,overload}.{md,json} (report.py output, unedited) |
 | 3 prep | 535357b | fix: bench run tenant as the bench operator tenant (stack.py, bench overlay, tests, ADR 0014 note, threat model) |
+| docs | 0387d0c, 60a2958 | draft SUMMARY/STATE updates |
+| 6 | ba882b1 | feat: alert thresholds, promtool fixtures, operations.md, ADR 0010 |
+| 6 | ef8e1b6 | docs: ADR 0011, ADR index, benchmarks/README.md |
+
+## Self-Check: PASSED
+
+- FOUND: benchmarks/results/2026-11-20-{sustained-restart,overload}.{md,json}, docs/decisions/0011-benchmark-method.md, benchmarks/README.md
+- FOUND commits: 4e3f355, 0387d0c, 535357b, 60a2958, ba882b1, ef8e1b6
+- Plan Task 2 verify: exit 0. Task 6 verify (no bench project running, 4 ADR headings, `results/` links, `make test`): exit 0.
+- No sentinel-bench-* project exists. Nothing committed contains secrets (token/password files stayed under .local and were purged).
 
 ---
 
