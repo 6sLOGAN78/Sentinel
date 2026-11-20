@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-11-19T17:05:00Z"
+last_updated: "2026-11-20T02:30:00Z"
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 73
-  completed_plans: 70
+  completed_plans: 71
   percent: 50
 ---
 
@@ -22,6 +22,7 @@ Current focus: Phase 5 (Observability, Resilience & Scale). Phase 4 COMPLETE 202
 
 ## Current Position
 
+> 2026-11-20: gap plan 05-26 DONE (classify 6fe1752, draft 5113baf, RED d9c84f9, GREEN 7022ebc; 05-26-SUMMARY). GAP-3 closed. Root cause, reproduced in TestDetectorConcurrentStartup (3 concurrent detectors, fresh group): ErrDecisionInvariant "existing detector group lost its Kafka checkpoint". Restore wrote the PG rules manifest before the first Kafka checkpoint, and a startup rebalance failed that commit, so the retry (or any later owner) tripped over it, sometimes permanently. Second fatal: kafkax "detector commit response mismatch" (franz-go skips v10 topic-name resolution mid-rebalance). User decision verbatim "Option C + kafkax fix": the manifest is bound in CheckpointCommitted after Kafka acks; the worker re-reads the broker checkpoint (RefreshCheckpoint) before retrying a failed restore; checkCommitResponse resolves topic IDs. ADR 0007 got a clarifying note only. Typed decision tx errors ErrOwnershipSuperseded/ErrDecisionTransient/ErrDecisionInvariant (SQLSTATE-only). Startup race 0 fatals in 20 iterations (twice; it was 4/20 before); 40 detector/lifecycle integration tests pass incl. ADR 0012 history recovery; lint 0/0; -race all pass. Open: legacy partitions wedged by the old code (manifest, no checkpoint) still fail closed and need a runbook entry. TestDetectionScenarios preserved-live tests need the live stack (not run).
 > 2026-11-19: Phase 4 closed (2026-11-16). Phase 5: 20 of 21 plans complete (05-01..05-19, 05-21, plus gap 05-21a operator tenant allowlist, ADR 0014, user-approved). User decisions: Option A producers (ADR 0013, amends D-11); Prometheus API modules approved (json-iterator, modern-go/concurrent, modern-go/reflect2); operator allowlist. Remaining: 05-20 Tasks 1-2 DONE (RUN=20261119a, devrag stopped; both reports written by report.py and committed a05f0c0: 1M events loss 0 dup 0 120/120 alerts; overload 202/429 only; stack torn down + purged). Next: 05-20 Task 3 live check (needs a fresh bench-up), Task 4 ADR 0011 + benchmarks/README. Findings for gaps: GET /api/v1/events 503 at 1M events/tenant (full-tenant dedupe before range, 5 s timeout); recovery 0.438 s is a lag-metric artifact (lost partitions unreported during session timeout); detector-3 startup crash "postgres decision invariant". Placeholder thresholds (5%, 100000) still unchanged. Open: test_seed_scenarios.py py3.10 datetime.UTC; 22 phase4-tag lint findings; TestDetectorCooldownOwners hosted flake watch; old sentinel_*/p4-demo volumes missing since 2026-11-17. Older notes below are historical.
 
 > 2026-11-19: gap plan 05-23 DONE (RED cb5bc90, GREEN 19e52bf; 05-23-SUMMARY). GAP-1 second half closed: SummarizeEvents (Overview) has no whole-tenant argMin. Main pass = one GROUP BY event_id min/max(occurred_at) reading only tenant_id/event_id/occurred_at (lo=hi identities bucketed directly); correction round trip = unchanged canonical argMin only for conflicting ids with hi>=start AND lo<now (event_id IN {ids:Array(String)}), skipped when none; >10,000 conflicts -> ErrSummaryConflictsExceeded (503). 1M rows/tenant: 70-106 ms / 48.0 MB / ~250 MB mem vs old 438-945 ms / 135.0 MB / 1.8 GB. Oracle-equal incl. conflicts across 24 h start and rate boundary; colliding-id tenant isolation tested. Round trips tagged by log_comment (driver cannot expose caller query id, so no -correction suffix). ADR 0002 records snapshot semantics + O(tenant identities over 7-day TTL) limit. queryTimeout unchanged, no schema/dep change. TestPhase4SummaryRules not run (live stack off-limits). uniqueEventRowsSQL now has no production caller (pinned by an out-of-scope unit test).

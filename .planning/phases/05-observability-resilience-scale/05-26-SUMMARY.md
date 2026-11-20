@@ -1,60 +1,113 @@
 ---
 phase: 05-observability-resilience-scale
 plan: "26"
-status: draft-at-checkpoint
-subsystem: detector / postgres decision store
+status: complete
+subsystem: detector / postgres decision store / kafkax commit adapter
 tags: [gap-closure, GAP-3, detector, fencing, startup-race]
 requirements: [REL-01, REL-02]
+dependency-graph:
+  requires: [05-24]
+  provides: [crash-free concurrent detector startup, classified decision-transaction errors]
+  affects: [ADR 0007 (clarifying note only)]
+tech-stack:
+  added: []
+  patterns: [errors.Is failure classes with SQLSTATE-only detail, manifest bound after first acknowledged checkpoint, broker re-read before a restore retry]
 key-files:
   created:
     - backend/test/detector_startup_race_test.go
+    - backend/internal/kafkax/detector_refresh_test.go
+    - backend/internal/detector/restore_retry_test.go
   modified:
     - backend/internal/storage/postgres/detection_decisions.go
     - backend/internal/storage/postgres/detection_decisions_test.go
+    - backend/internal/kafkax/detector_consumer.go
+    - backend/internal/detector/worker.go
+    - backend/internal/detector/readiness_test.go
+    - docs/decisions/0007-event-time-state-pin-recovery.md
+decisions:
+  - "Task 2: user chose option-c plus the kafkax commit-response fix (verbatim: \"Option C + kafkax fix\")"
+  - "The rules manifest is bound in CheckpointCommitted, after Kafka acknowledges a checkpoint; bindConfigManifest only validates"
+  - "A failed restore of an unchanged assignment token re-reads the broker's committed checkpoint before retrying"
+  - "checkCommitResponse resolves OffsetCommit v10+ topic IDs from the request"
+  - "Legacy fences with a bound manifest and no Kafka checkpoint still fail closed (indistinguishable from real loss)"
+metrics:
+  completed: 2026-11-20
+  tasks: 3
 ---
 
-# Phase 5 Plan 26: Concurrent detector startup fatal (GAP-3) - DRAFT at Task 2 checkpoint
+# Phase 5 Plan 26: Concurrent detector startup fatal (GAP-3) Summary
 
-Task 1 is done; Task 2 (decision) is pending; Task 3 has not started. This draft holds the diagnosis for the continuation agent.
+Three detectors starting at once on a fresh group no longer crash. Two changes fix it: the PostgreSQL rules manifest is bound only after Kafka acknowledges a partition's first checkpoint, and the detector re-reads the broker checkpoint before retrying a restore. The Kafka commit adapter now resolves OffsetCommit v10 topic IDs, so real per-partition codes replace a synthetic "mismatch". Decision-transaction errors carry typed, SQLSTATE-only classes.
 
-## Task 1 result: diagnosis
+## Diagnosis (Task 1)
 
-The bench logs (scratchpad/diag) were gone, so this diagnosis rests only on the reproduction.
+The bench logs (scratchpad/diag) were gone, so the diagnosis rests only on reproduction.
 
-**Reproduced.** TestDetectorConcurrentStartup starts 3 detector processes (integration binary) at once on a fresh group and a 6-partition topic, using real Kafka 4.3.1 (initial rebalance delay 0, the same as compose) and PostgreSQL 18.6. Two 20-iteration runs gave these fatals:
+TestDetectorConcurrentStartup starts 3 detector processes at once on a fresh group and a 6-partition topic. It uses real Kafka 4.3.1 (initial rebalance delay 0, the same as compose) and PostgreSQL 18.6. Before the fix:
 
-| Run | Iterations with a fatal | `postgres decision invariant: existing detector group lost its Kafka checkpoint` | `detector commit response mismatch` | Healed after restarting the failed replica |
-|-----|-------------------------|----------------------------------------------------|-------------------------------------|---------------------------------|
-| race2 (no restart probe) | 2/20 (first at 1) | 1 | 3 | n/a |
-| race3 | 4/20 (first at 1) | 4 | 3 | 2 of 4 iterations (1, 18); NOT healed in iterations 5 and 17 |
+| Run | Iterations with a fatal | `postgres decision invariant: existing detector group lost its Kafka checkpoint` | `detector commit response mismatch` | Healed after a Docker-style restart |
+|-----|----|----|----|----|
+| race2 | 2/20 (first at 1) | 1 | 3 | not probed |
+| race3 | 4/20 (first at 1) | 4 | 3 | 2 of 4; iterations 5 and 17 stayed wedged |
 
-**Class: ErrDecisionInvariant.** It is not ErrOwnershipSuperseded and not ErrDecisionTransient. The plan's hypothesis (a stale generation or lock_timeout in Register) was not observed in 40 iterations. The error comes from `bindConfigManifest`: `cp == nil && (len(manifest) > 0 || f.offset != -1)`.
+**Class: ErrDecisionInvariant.** It is not superseded ownership and not a transient SQLSTATE; the plan's hypothesis was not observed in 40 iterations. The error comes from `bindConfigManifest`: `cp == nil && (len(manifest) > 0 || f.offset != -1)`.
 
-**Interleaving, from race2 iteration 6 observations:**
-1. At gen 1, two members split the 6 partitions (A: p1, p2, p5; B: p0, p3, p4). Each worker calls `restorePartition` → `PrepareRestore` → `Register` and then `bindConfigManifest`. That **commits rules_manifest to PostgreSQL**. Next, `finishRestore` → `CommitCheckpoints` (the first Kafka checkpoint).
-2. The third member joins, which triggers cooperative rebalances to gen 2 and gen 3. The in-flight first Kafka commit fails. Either the broker rejects it, or the response comes back after the local kgo session ended (see the second finding). Because the generation has moved, `syncAssignments` skips the error (`err != nil && assignmentCurrent` is false). PG now has a bound manifest and Kafka has no checkpoint.
-3. At gen 3, A keeps p1/p2 with the same token, so the worker restores again. The local `Assignment.Checkpoint` is still nil from the gen-1 offset fetch. `bindConfigManifest` sees manifest-present plus cp-nil, returns "existing detector group lost its Kafka checkpoint", and `assignmentCurrent` is true. The worker returns the error, the process gets "background worker failed", then exit 1.
-4. If the first commit never reached the broker, the state is **permanent**. Every later restorer of that partition, including a different member at a higher generation and a Docker restart, hits the same error (race3 iterations 5 and 17: `kafka_checkpoint=none manifest=true`). The bench healed after one restart because, in that run, every manifest-bound partition already had a Kafka checkpoint (as in race3 iterations 1 and 18).
+**Interleaving (race2 iteration 6):**
+1. At gen 1, two members split the partitions. Each restore runs Register and then bindConfigManifest, which **wrote** the manifest to PG. finishRestore then commits the first Kafka checkpoint.
+2. The third member joins and triggers cooperative rebalances to gen 2 and gen 3. The first Kafka commit fails. `syncAssignments` skips the error because the generation moved.
+3. At gen 3 the member keeps the partition with the same token and retries with its gen-1 snapshot (cp nil). It hits the manifest it wrote itself, the assignment is now current, and the process gets "background worker failed", then exit 1.
+4. If the first commit never reached the broker, the partition is wedged for every later restorer: other members, higher generations and restarts (race3 iterations 5 and 17: `kafka_checkpoint=none manifest=true`). The bench healed only because its affected partitions already had Kafka checkpoints.
 
-Deterministic PG half: TestDetectorRestoreRetryWithoutAckedCheckpoint runs PrepareRestore(gen 1, cp nil), skips the commit, then runs PrepareRestore(gen 3, same member and token, cp nil). Result: ErrDecisionInvariant "existing detector group lost its Kafka checkpoint". A different member at gen 4 gets the same error.
+**Why only at startup:** every partition writes its first checkpoint during restore, and on a fresh group three near-simultaneous joins rebalance while those first commits are in flight.
 
-**Why at startup:** the first Kafka checkpoint for every partition is written during the restore. On a fresh group, three members joining within ~10 ms produce gen 1 → 2 → 3 cooperative rebalances while those first commits are in flight. Later rebalances do not hit this, because partitions then already have Kafka checkpoints (cp != nil).
-
-**Second startup fatal found (kafkax, outside Task 1 files): `detector commit response mismatch`.** In franz-go v1.22.1, `groupConsumer.commit` sends OffsetCommit v10+ with topic IDs, and the broker response has only TopicID with an empty Topic name. `updateCommitted` fills in names from the request, but it returns early when the commit's generation is no longer current or the session ended (`g.uncommitted == nil`). That happens during a rebalance. `kafkax.checkCommitResponse` then keys partitions by an empty topic, which reports "mismatch" and hides the real per-partition code. It fired in 3 of 40 iterations. It is also the commit failure that feeds step 2 above.
-
-## Task 1 code (classification only; no control-flow change)
-
-- `ErrOwnershipSuperseded`, `ErrDecisionTransient`, `ErrDecisionInvariant` (errors.Is-able). transaction() classifies via `classifyDecisionError`: PgError → SQLSTATE only (55P03/40001/40P01/57014 are transient, everything else is invariant); package constant faults (`decisionFaultError`) → invariant plus constant text; ErrNoRows/context errors → invariant wrapping the constant; anything else → `invariant: unclassified <type>`. Detail, Message, Hint and row values are never included. "begin failed" and "commit uncertain" are unchanged. The opaque string is gone.
-- Register's combined stale check is split into two branches. Incarnation/config mismatch → ErrDecisionInvariant. Generation/member/token supersession → ErrOwnershipSuperseded.
-- The "detector ownership fence lost", "configuration ownership lost" and "committed checkpoint ownership lost" sites go through `lockedOwnedFence`. A fence mismatch → ErrOwnershipSuperseded. A lock/read error keeps its own class instead of being reported as an ownership loss.
-
-## Deviations
-
-- [Rule 2] CheckpointCommitted's "committed checkpoint ownership lost" is also classified as superseded. It is the same fence-mismatch check, and finishRestore reaches it at startup. A lock error at all three sites now keeps its SQLSTATE class instead of being folded into an ownership-loss string. That is still classification only.
-- The failpoint files (postgres/failpoint.go, failpoint_integration.go) were not created. The plan made them conditional ("If 10 natural iterations do not reproduce"), and the natural run reproduced. A store-level deterministic test replaces the hook for the PG half. The plan's Register-delay hook targets the superseded hypothesis, which was ruled out.
-- TestDetectorConcurrentStartup defaults to 20 iterations (the plan says at least 10). On a fatal it does not stop: it records class frequency, a per-partition Kafka/PG snapshot, and whether a Docker-style restart heals.
-- The restore/register call site is `internal/detector/worker.go` (restorePartition/partitionState/syncAssignments), not `kafkax/detector_consumer.go` as the plan's key_links assume.
+**Second fatal: `detector commit response mismatch`.** franz-go v1.22.1 `updateCommitted` resolves v10 topic names only while the commit's generation and session are still current. Mid-rebalance, our `checkCommitResponse` keyed partitions by an empty topic name, which reported "mismatch" and hid the real code.
 
 ## Task 2 decision
 
-Pending (blocking checkpoint). The user's verbatim reply goes here.
+User reply, verbatim: **"Option C + kafkax fix"**. Scope as relayed: (1) bind the manifest only after the first acknowledged checkpoint, with no schema change; (2) do not reuse the stale empty checkpoint after a restore failure; (3) checkCommitResponse matches by topic ID; (4) invert the deterministic test and make TestDetectorConcurrentStartup pass 20 iterations including the restart probe. ADR 0007 text is unchanged and gets a clarifying note. Also cover the upgrade path.
+
+## Task 3 implementation
+
+1. **Manifest binding.** `bindConfigManifest` validates only: the existing manifest must match, handover gates must hold, and a missing checkpoint is rejected when a manifest exists or the frontier is set. `CheckpointCommitted` validates any existing manifest and binds `rules_manifest=COALESCE(rules_manifest,$7)` after Kafka acknowledged the checkpoint. A saved manifest now proves a checkpoint was once acknowledged. No schema change.
+2. **Restore retry.** `Worker.retry` records the token of each failed restore. `retryablePartition` calls the new `Consumer.RefreshCheckpoint` (kafkax: kadm FetchOffsets plus history bounds, then the same validation as the offset-fetch hook; the broker is authoritative, so no committed offset clears the snapshot) before retrying the same token. A refresh failure fails closed. A new token clears the mark, because it brings its own offset fetch.
+3. **Commit responses.** `checkCommitResponse(request, response, checkpoints)` maps response TopicIDs to names from the request. Accepted partitions now pass; REBALANCE_IN_PROGRESS, ILLEGAL_GENERATION and UNKNOWN_MEMBER_ID surface as kerr errors. An unknown ID or a missing request is still a mismatch.
+4. **Tests.** TestDetectorRestoreRetryWithoutAckedCheckpoint is inverted. The retry and a new owner both succeed without a checkpoint, and acknowledged-then-lost still fails closed with ErrDecisionInvariant. TestDetectorManifestUpgradePath checks two cases: a legacy-bound fence with an acknowledged checkpoint restores unchanged and keeps its exact manifest, and a legacy wedged fence (manifest, no checkpoint) still fails closed.
+
+**Upgrade path:** existing groups with a bound manifest and Kafka checkpoints are unaffected. Their manifest is validated, never replaced. A partition already wedged by the old code still refuses to start, because it cannot be told apart from real loss. That case stays an operator escalation, as before.
+
+## Commits
+
+- `6fe1752` test(05-26): classify decision tx errors and reproduce concurrent detector startup fatal
+- `5113baf` docs(05-26): draft GAP-3 diagnosis at Task 2 decision checkpoint
+- `d9c84f9` test(05-26): add failing tests for restore retry without an acknowledged checkpoint (RED)
+- `7022ebc` fix(05-26): bind detector manifest after first acked checkpoint and resolve commit topic IDs for concurrent startup (GREEN)
+
+## Verification
+
+- gofmt clean. golangci-lint `./...` and `--build-tags=integration ./...`: 0 issues each.
+- `go test -race ./...`: all pass, including the new kafkax refresh/topic-ID, worker retry and postgres classification tests. `tools/detector-recover`: pass.
+- RED: against HEAD production code, the kafkax and detector unit tests failed to compile and TestDetectorRestoreRetryWithoutAckedCheckpoint failed ("restore alone must not bind the manifest").
+- TestDetectorConcurrentStartup: **no startup fatal in 20 iterations of 3 concurrent replicas**, in two separate runs (green1, and green2 within the full family).
+- Integration (isolated testcontainers), all 40 pass: TestChaosGracefulShutdownDetector, TestDetectionDecisionsSchema, TestDetectorCapacity, TestDetectorCheckpoint, TestDetectorRetention, TestDetectorConfigRestart, TestConfigLedgerHandover, 8× TestDetectorCooldown*, TestDetectorPoison, TestDetectorHistoryRecovery (ADR 0012), TestDetectorIncorporatedOwnerSnapshot, TestDetectorPGDependency, TestDetectionPipelineAuth/Scan/Volume, TestDetectorThirdReplicaRebalance, TestDetectorCooperativeAcquisition, TestDetectorMidWindowRecovery, TestDetectorCrashBoundaries, TestDetectorConcurrentStartup, TestDetectorRestoreRetryWithoutAckedCheckpoint, TestDetectorManifestUpgradePath, TestHealthz, TestReadyz*, TestTracingPipelinePropagation, TestBinaryLifecycle*.
+- `scripts/check-adrs.sh`: OK.
+- Not counted: TestDetectionScenarios/preserved-live-edges and TestDetectionScenariosPreservedRepeat were matched by accident by the `-run TestDetection` pattern. They drive the live operator stack (`scripts/seed.py`, `make seed-scenarios`), which is not running, and they failed immediately with no effect: no sentinel containers exist and `.local/last-send.json` is unchanged since 2026-11-18. They are environmental and unrelated to this plan.
+
+## Deviations from Plan
+
+- **[Rule 2] Third superseded site.** CheckpointCommitted's "committed checkpoint ownership lost" is also classified as superseded, through the shared `lockedOwnedFence`. Lock errors at all three fence sites keep their SQLSTATE class.
+- **No failpoint files.** postgres/failpoint.go and failpoint_integration.go were not created. They were conditional on the natural run failing to reproduce, and their Register-delay design targeted the ruled-out superseded hypothesis. The deterministic store-level test covers the PG half.
+- **Plan file list.** The restore call site is `internal/detector/worker.go`, not `kafkax/detector_consumer.go` as the plan's file list and key_links assume. Option-c touched worker.go, readiness_test.go (fake RefreshCheckpoint), a new restore_retry_test.go and kafkax/detector_refresh_test.go.
+- **Option-a artifacts not built.** The option-a superseded-revocation and transient-retry behaviour is not implemented, because the user chose option-c. ErrOwnershipSuperseded and ErrDecisionTransient remain classification-only (still fatal).
+- **Iteration count.** TestDetectorConcurrentStartup defaults to 20 iterations (`SENTINEL_TEST_STARTUP_RACE_ITERATIONS` overrides). On failure it records class frequency, a per-partition Kafka/PG snapshot, and the result of a restart probe.
+
+## Known Stubs
+
+None.
+
+## Follow-ups (not in scope)
+
+- docs/operations.md has no runbook entry for a partition wedged by an earlier release (bound manifest, no Kafka checkpoint). It still needs manual escalation.
+
+## Self-Check: PASSED
+
+All files listed above exist, and commits 6fe1752, 5113baf, d9c84f9 and 7022ebc are present in `git log`.
