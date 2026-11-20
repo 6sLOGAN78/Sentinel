@@ -4,14 +4,93 @@ plan: "20"
 subsystem: bench
 tags: [benchmark, sustained-restart, overload, results]
 requirements: [BENCH-01, BENCH-02, BENCH-03, BENCH-04, REL-04, OBS-05, UI-05]
-status: "DRAFT - Tasks 1-2 done; stopped at Task 3 (checkpoint:human-verify); Task 4 not started"
+status: "DRAFT - resume run 20261120a: Tasks 1-2 done (both reports exit 0, committed 4e3f355); stopped at Task 3 (checkpoint:human-verify) with the bench stack up; Tasks 4-6 not started"
 ---
 
 # Phase 5 Plan 20: Real benchmark run and live verification Summary (DRAFT)
 
-> Draft. Tasks 1 and 2 are recorded below. Task 3 (live Grafana/Jaeger/System check) and
-> Task 4 (ADR 0011, benchmarks/README.md) have not run. The final summary, closing and
-> self-check come after them.
+> Draft. The first run (20261119a) is kept below as history. Its findings were closed by gap
+> plans 05-22..05-28, and Tasks 1-2 were re-run on RUN=20261120a per the amended resume
+> protocol. Tasks 3-6 have not run. The final summary, closing and self-check come after them.
+> Per the resume protocol, no number from the 20261119a reports may be reused in docs.
+
+## Resume run 20261120a (2026-11-20 UTC)
+
+### Task 1: host resources (resolved)
+
+- User decision, as relayed by the orchestrator: free space and stop/delete devrag. devrag-stack was deleted entirely. **devrag=removed.** Run id `20261120a`. The Go build cache had already been cleared by the user. No cache was cleared by the agent.
+- Read-only checks at 01:53:24Z:
+  - `df -h /`: 183G size, 158G used, 16G avail (92%).
+  - `MemAvailable: 10679544 kB`.
+  - `docker compose ls -a`: no projects.
+  - `docker system df`: images 11 (6.09GB), containers 0, local volumes 6 (0B), build cache 33 (2.775GB). Nothing pruned.
+- `MIN_FREE_GIB=15 MIN_MEM_GIB=6 bash scripts/check-resources.sh`: exit 0.
+  - repo 15.36 GiB, docker-root 15.36 GiB, MemAvailable 10.16 GiB, PASS.
+- Plan Task 1 automated verify (df ≥ 15 GiB and MemAvailable ≥ 6 GiB): exit 0.
+
+### Task 2: commands, exits and timings
+
+| Command | Start | End | Exit |
+|---|---|---|---|
+| `make bench-up RUN=20261120a` (timeout 30m) | 01:53:42Z | 01:55:01Z | 0 |
+| `make bench SCENARIO=sustained-restart RUN=20261120a KEEP_UP=1` (timeout 90m) | 01:55:13Z | 02:40:18Z | 0 (report.py wrote results) |
+| `make bench SCENARIO=overload RUN=20261120a KEEP_UP=1` (timeout 30m) | 02:40:33Z | 02:41:53Z | 0 (report.py wrote results) |
+
+- Git SHA and image tag: `8424348f217194499ab45bdeb1559b1f51fbb1eb`, images `sentinel-bench-20261120a-<service>`. `BENCH_GIT_DIRTY=1`; the only dirty items are the uncommitted `.planning/config.json` and the untracked `.serena/`.
+- bench-up preflight: free 16,492,744,704 B on the repo and the docker root, MemAvailable 10,812,379,136 B. Replicas: ingest 2, detector 3, event-writer 2, alert-writer 1, query-api 2. 6 partitions, tracing sample ratio 0.01.
+- After bench-up all 17 containers were healthy, and **every detector had RestartCount 0** (the 20261119a startup crash, Finding 3, did not recur; 05-26).
+- No `SUPERSEDE=1`: the run date 2026-11-20 differs from the 2026-11-19 results, which stay in place as history (Task 6 marks them superseded).
+- Plan Task 2 automated verify (nested keys): **exit 0**.
+- Re-running `report.py` on both raw files into a scratch directory: exit 0 each, and all four files byte-identical to the committed ones.
+- Raw files were also copied privately (0600) to the session scratchpad (`raw-20261120a/`). Nothing from them is committed.
+
+### Results (copied from the committed reports)
+
+- [benchmarks/results/2026-11-20-sustained-restart.md](../../../benchmarks/results/2026-11-20-sustained-restart.md) and `.json`
+- [benchmarks/results/2026-11-20-overload.md](../../../benchmarks/results/2026-11-20-overload.md) and `.json`
+
+**sustained-restart** (started 2026-11-20T01:55:24.976Z, duration 2,693.102 s)
+
+- Generated, accepted unique, Kafka records, ClickHouse unique and physical: 1,000,000 each. Loss 0, producer duplicates 0, physical duplicates 0, rejected 4xx 0, unaccepted 0, digest match yes, DLQ delta 0, late delta 0.
+- Rules: AUTH_BRUTE_FORCE, DENY_SPIKE, PORT_SCAN, REQUEST_FLOOD each 30 expected / 30 PG / 30 CH. Benign hits 0.
+- Sustained accepted rate p50 400 / p95 400 ev/s over 249 windows.
+- Ingest done-intended per 200-event request (n=5,000): p50 28.781 / p95 35.15 / p99 42.938 ms. Done-sent: 20.879 / 26.549 / 36.804 ms. Schedule slip max 6,069.076 ms, p99 11.748 ms.
+- Detection delay histogram (n=125): p50 0.036 s (bucket 0-0.05 s), p95 0.175 s (bucket 0.1-0.2 s), p99 281.6 s (bucket 204.8-409.6 s).
+- SSE notification (n=120): p50 596.802 / p95 1,080.951 / p99 1,136.984 ms. SSE: 0 malformed frames, 6 reconnects.
+- API phase: /api/v1/alerts n=150, p50 7.937 ms, p95 9.835 ms, **non-2xx 0**. /api/v1/events n=150, p50 43.159 ms, p95 57.291 ms, **non-2xx 0** (GAP-1 closed by 05-22/05-23).
+- Recovery (coverage-gated, 05-27): killed sentinel-bench-20261120a-detector-1. Baseline window 60 s, baseline p95 lag 0, peak lag after kill 33, partitions expected 6, min partitions reported after kill 4, **coverage lost 45.107 s**, recovered yes, **recovery time 53.759 s**, timeout 600 s. JSON: `coverage_checked` true, `coverage_dropped` true, `samples_without_coverage` 0, `baseline_incomplete_samples` 0.
+- Restart (05-28): the harness restarted the killed detector after live recovery (`restarted_ns` and `rejoined_ns` both set; no rejoin-timeout limitation). Running at start/end: detector 3 / 3, ingest 2 / 2, event-writer 2 / 2, alert-writer 1 / 1, query-api 2 / 2.
+- Peak detector state: windows 8.3%, ledger 52.877%, bytes 9.634% (max 52.877%).
+- Threshold inputs: ingest requests {'202': 5000}, 5xx ratio 0, whole-run min pin margin 0, **steady-state min pin margin 0**, max per-partition append rate 73.943 ev/s, warm-up max partition share 0.183, warm-up rate 413.333 ev/s.
+
+**overload** (started 2026-11-20T02:40:37.921Z, duration 75.048 s, tenant bench-20261120a-ovl)
+
+- Running at start/end: detector 3 / 3 (all configured detectors; 05-28 `replicas_running`), every other service at its configured count.
+- Status counts: 202 × 1,281, 429 × 2,319. No 503, no 5xx. Exercised shed paths: 429 yes, 503 no. The report names TestChaosOverloadBounded and TestChaosKafkaBrokerRestart as the deterministic 503 proofs.
+- Producer buffer max/limit 0 / 50000 (ratio 0). OOM-killed none. Restart delta 0 for every service.
+- Generated 360,000 at target 6,000 ev/s. Accepted unique 128,100 = Kafka records = ClickHouse unique = physical. Loss 0, duplicates 0, unaccepted 231,900, digest match yes.
+- Accepted rate p50 2,000 / p95 2,800 ev/s over 6 windows.
+- Ingest done-intended per 100-event request (n=3,600): p50 9.704 / p95 23.748 / p99 514.023 ms. Done-sent: 4.796 / 18.326 / 74.162 ms. Schedule slip max 915.796 ms, p99 401.53 ms.
+- Peak detector state: windows 24.85%, ledger 45.413%, bytes 15.004% (max 45.413%).
+- Threshold inputs: 5xx ratio 0, whole-run min pin margin 128,573, steady-state min pin margin 134,793, max per-partition append rate 403.496 ev/s.
+
+### Observations from the resume run (reported, not fixed)
+
+1. **sustained-restart `pin_retention_margin_steady_min` is 0, which is not a steady-state value (affects Task 4).** The 05-28 window runs from main-load start to collection. Read-only Prometheus queries on the live bench stack showed `sentinel_detector_pin_retention_margin_offsets` at 0 on all 6 partitions from 01:56:22Z (main-load start) through 01:56:52Z, 7 samples at 5 s. That is the fresh-topic state, which the window was meant to exclude. After that every partition grows from tens of offsets to over 130,000. Task 4's check "candidate below the steady minimum" is therefore degenerate on the sustained report: every candidate ≥ 0 would be flagged. The overload steady minimum (134,793) is a genuine steady value. Possible remedies are a gap fix to the window start or using the overload input; that is a Task 4 decision. No value was computed or written here.
+2. **Detection delay p99 is 281.6 s (bucket 204.8-409.6 s), while p95 is 0.175 s.** This is well beyond the 45.107 s coverage loss. The histogram's resolution at that tail is coarse (n=125). It is worth explaining in ADR 0011. Not diagnosed.
+3. **Task 3 blocker: the bench stack cannot show System or Overview lag numbers to any bench identity.** `deployments/compose/docker-compose.bench.yml` (query-api) sets `SENTINEL_AUTH.OPERATOR_TENANTS: demo`. `bench/stack.py` `_check_tenant` only mints JWTs for `bench-<run>[-suffix]` tenants, so no bench identity is an operator tenant (ADR 0014). Through the web proxy, an admin token gets 403 "System status is limited to operator administrators." on /api/v1/system. Admin and analyst get `operator_only` for every group on /api/v1/metrics/lag. So Task 3 steps 3-4 (System replica counts, analyst Overview lag numbers) cannot pass as-is. Proposed fix (needs approval; not applied): have the bench override set the operator tenant to the run's tenant, for example from an env value written by `stack.write_env`, then recreate query-api.
+4. **Task 3 step 2 may lack `store_alert`.** Jaeger holds 103 ingest traces. The richest contain `ingest POST /api/v1/events:batch`, `ingest publish`, `detector detect` and `event-writer store` (2 span links), but alert-writer reports no operations. alert-writer has tracing enabled. `store_alert` is emitted only for alerts whose detect span was sampled, and at ratio 0.01 with 120 alerts about one is expected, so zero is plausible sampling.
+5. **Plan interface drift for Task 3.** web/vite.config.ts hardcodes the `/api` proxy to 127.0.0.1:8081 and has no env var. A scratch-only config (session scratchpad `vite.bench.config.mjs`, not committed) proxies to 38090. The Jaeger 2.22 UI is at http://127.0.0.1:36686/ (v3 API).
+
+### Commits (resume run)
+
+| Task | Commit | Content |
+|---|---|---|
+| 2 | 4e3f355 | benchmarks/results/2026-11-20-{sustained-restart,overload}.{md,json} (report.py output, unedited) |
+
+---
+
+# First run 20261119a (history; superseded by the resume run)
 
 ## Task 1: host resources (checkpoint resolved)
 
