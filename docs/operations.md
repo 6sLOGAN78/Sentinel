@@ -849,6 +849,25 @@ alone cannot establish a pass. Production builds exclude integration hook
 files and read no fault-control environment settings. Fault tests alone build
 integration binaries; there is no public failure-control endpoint.
 
+### Phase 5 job families
+
+```sh
+bash scripts/check-phase5-tests.sh chaos   # five testcontainers chaos families
+bash scripts/check-phase5-tests.sh scale   # 1M-row events scale + detector startup race
+python3 -B -m unittest discover -s scripts -p test_phase5_guards.py
+```
+
+`make test-integ` skips exactly the Phase 5 tests listed in
+`scripts/check-phase5-tests.sh` (the Makefile reads `--skip-regex` from it), and the
+`phase5` CI job runs them in two matrix groups, so the aggregate keeps its 32m
+ceiling. `chaos` runs the chaos-broker, chaos-clickhouse, chaos-shutdown,
+slow-consumer and overload families through `scripts/check-chaos.sh` (resource
+gate, `-race`, family ceilings). `scale` runs the ListEvents/SummarizeEvents scale
+tests and the detector startup-race tests as one anchored selector under
+`-timeout 20m`. Each group checks that every named test exists before it runs and
+prints its own `--- PASS:` line. Both groups use only testcontainers, so no dev
+stack is needed. Each CI group has a 30m job budget.
+
 ### Phase 4 gates
 
 ```sh

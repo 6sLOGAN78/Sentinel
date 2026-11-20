@@ -263,6 +263,12 @@ Historical closure before the repeat failure:
 
 5. Stop beforePhase4. Next work requires a new explicit user request.
 
+## Quick Tasks Completed
+
+| ID | Date | Description | Directory |
+| --- | --- | --- | --- |
+| 261120-x5u | 2026-11-20 | Separate `phase5` CI job (chaos/scale); `make test-integ` skips exactly those tests; hosted run pending push | `.planning/quick/261120-x5u-separate-phase5-ci-job-for-chaos-and-sca/` |
+
 ## Binding Decisions / Limits
 
 - User approved automaticPhase3completion and specialist agents; no routine approvals.

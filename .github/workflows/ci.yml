@@ -105,6 +105,9 @@ jobs:
       - name: phase 4 selector and CI guards
         working-directory: .
         run: python3 -B -m unittest discover -s scripts -p test_phase4_guards.py
+      - name: phase 5 job, aggregate skip and CI guards
+        working-directory: .
+        run: python3 -B -m unittest discover -s scripts -p test_phase5_guards.py
       - name: five application stack configuration guards
         working-directory: .
         run: python3 -B -m unittest discover -s scripts -p test_stack_config.py
@@ -217,6 +220,30 @@ jobs:
       - name: tear down
         if: always()
         run: make dev-down
+
+  # Phase 5 chaos and scale families, moved out of `make test-integ` (which skips
+  # exactly these names) so the aggregate keeps its 32m/45m budget. The single
+  # list is scripts/check-phase5-tests.sh. Testcontainers only, so no dev stack.
+  phase5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.minutes }}
+    needs: [go]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: chaos
+            minutes: 30
+          - group: scale
+            minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: independently nonempty Phase 5 group
+        run: bash scripts/check-phase5-tests.sh '${{ matrix.group }}'
 
   # Phase 4 native families (backend/testphase4, phase4 build tag only, so the
   # legacy integration suite above is unchanged). Eight independent jobs each run

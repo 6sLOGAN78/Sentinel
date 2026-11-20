@@ -57,8 +57,12 @@ test: web/node_modules generator/.venv ## Run unit tests for backend, web and ge
 # The measured full suite exhausted 10m before scenarios. It now includes all
 # causal crash cuts plus 16m scheduled / 32m preserved-repeat subtests, so the
 # aggregate gate has a finite 32m ceiling. Individual family caps stay unchanged.
-test-integ: ## Run all integration tests (needs Docker and make dev-up)
-	cd backend && go test -tags=integration -timeout 32m -p 1 ./test/...
+# Phase 5 chaos and scale families run in the separate `phase5` CI job; the
+# aggregate skips exactly those names, taken from the single list in
+# scripts/check-phase5-tests.sh (empty output aborts make instead of skipping nothing).
+PHASE5_SKIP = $(or $(shell bash '$(CURDIR)/scripts/check-phase5-tests.sh' --skip-regex),$(error scripts/check-phase5-tests.sh --skip-regex printed nothing))
+test-integ: ## Run all integration tests except the Phase 5 job families (needs Docker and make dev-up)
+	cd backend && go test -tags=integration -timeout 32m -p 1 -skip '$(PHASE5_SKIP)' ./test/...
 
 # Ordinary groups 6m, cooldown 8m, scheduled scenario 16m, preserved repeat 32m.
 test-phase3: ## Run each exact Phase 3 acceptance family (needs healthy dev stack)
