@@ -14,6 +14,7 @@ Short MADR-style records. Each has Status, Context, Decision and Consequences se
 | [0008](0008-alert-list-source-and-conflicts.md) | Alert list authority and immutable conflicts |
 | [0009](0009-gap-safe-alert-delivery.md) | Gap-safe alert delivery projection |
 | [0010](0010-observability-and-tracing.md) | Observability and tracing |
+| [0011](0011-benchmark-method.md) | Benchmark method: open-loop load, exact reconciliation and refusing reports |
 | [0012](0012-detector-history-recovery.md) | Detector expired-history recovery |
 | [0013](0013-non-idempotent-bounded-producers.md) | Non-idempotent bounded Kafka producers |
 | [0014](0014-operator-tenant-allowlist.md) | Operator tenant allowlist for platform-wide views |
