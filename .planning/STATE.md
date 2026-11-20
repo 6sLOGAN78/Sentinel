@@ -269,6 +269,7 @@ Historical closure before the repeat failure:
 | ID | Date | Description | Directory |
 | --- | --- | --- | --- |
 | 261120-x5u | 2026-11-20 | Separate `phase5` CI job (chaos/scale); `make test-integ` skips exactly those tests; hosted run pending push | `.planning/quick/261120-x5u-separate-phase5-ci-job-for-chaos-and-sca/` |
+| 261121-q7t | 2026-11-21 | Trim integration aggregate: `make test-integ` also skips the 40 phase3-owned `./test/...` families (still run once in `phase3`); local aggregate 249s 64/64 PASS; predicted hosted job ~18m of 45m; 557cd43; not pushed | `.planning/quick/261121-q7t-trim-integration-aggregate-phase3-owned/` |
 
 ## Binding Decisions / Limits
 
