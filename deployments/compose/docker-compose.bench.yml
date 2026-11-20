@@ -134,8 +134,11 @@ services:
     mem_limit: 256m
     cpus: 1.0
     environment:
-      # ADR 0014: demo is the only operator tenant; demo2 is not.
-      SENTINEL_AUTH.OPERATOR_TENANTS: demo
+      # ADR 0014: the run's own tenant (bench-<run>, the only tenant bench
+      # tooling mints JWTs for) is the sole operator tenant, written to the
+      # private env by bench/stack.py create_env. Unset renders empty, which
+      # fails closed (no operator). bench-<run>-<suffix> tenants stay non-operators.
+      SENTINEL_AUTH.OPERATOR_TENANTS: "${BENCH_OPERATOR_TENANTS:-}"
       SENTINEL_OBSERVABILITY.PROMETHEUS_URL: http://prometheus:9090
       SENTINEL_OBSERVABILITY.GRAFANA_URL: http://127.0.0.1:33000
       SENTINEL_OBSERVABILITY.SYSTEM.INGEST.ADDRESS: ingest:9101

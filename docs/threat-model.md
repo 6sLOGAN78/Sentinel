@@ -152,6 +152,8 @@ the operator 403. Residual limits: the allowlist is static config (changes
 need a query-api restart), and operator status is per tenant, so every admin
 of an operator tenant is a platform operator. The local stacks make `demo` the
 only operator tenant; `demo2` is deliberately not one.
+The isolated bench stack makes its run tenant `bench-<run>` the only operator
+tenant; suffixed bench tenants are not.
 
 ## Phase 4 acceptance gates (T04-35, T04-36)
 

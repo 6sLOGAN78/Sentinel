@@ -493,6 +493,9 @@ def create_env(run_id: str, settings: BenchSettings, *, root: Path = ROOT) -> Pa
     settings.validate()
     values = {key: secrets.token_urlsafe(SECRET_BYTES) for key in SECRET_KEYS}
     values.update(settings.env_values())
+    # ADR 0014: only the run tenant (the one mint_jwt serves) is an operator tenant,
+    # so System and lag work for bench-<run> admins/analysts and suffixed tenants do not.
+    values["BENCH_OPERATOR_TENANTS"] = tenant_for(run_id)
     body = "".join(f"{key}={value}\n" for key, value in values.items())
     try:
         descriptor = _open_private_dir(root, (".local", "bench", run_id), create_last=True)

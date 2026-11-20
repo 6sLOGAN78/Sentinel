@@ -27,7 +27,7 @@ A server-side allowlist decides which tenants are operator tenants.
 - System: data is returned only to an admin whose tenant is on the list. Check order: 401, role 403 (`role_forbidden`, unchanged), 400 for any query string, then the operator 403 with the message "System status is limited to operator administrators." and the audit reason `operator_forbidden`. A denied caller never reaches Prometheus or the readiness probes.
 - Lag: viewers keep their audited 403. Analysts and admins of a non-operator tenant get 200 with all three rows `{"state":"unavailable","reason":"operator_only"}` and no value, and Prometheus is not queried. Returning rows keeps the Overview panel honest: it shows "operator only", not an error and never a zero.
 - OpenAPI adds `operator_only` to the `SystemMetric` reason enum. The rule that an unavailable metric never carries a value still applies.
-- The dev, observability and bench Compose stacks set `demo` (the primary demo tenant used by `make seed`, keyctl and the docs) as the only operator tenant. `demo2` is deliberately not an operator, so the cross-tenant refusal can be shown.
+- The dev and observability Compose stacks set `demo` (the primary demo tenant used by `make seed`, keyctl and the docs) as the only operator tenant. `demo2` is deliberately not an operator, so the cross-tenant refusal can be shown. Note (2026-11-20, 05-20): the isolated bench stack instead sets its run tenant `bench-<run>` (the only tenant bench tooling mints tokens for) as the only operator tenant, via `BENCH_OPERATOR_TENANTS` in its private env. Suffixed bench tenants such as `bench-<run>-ovl` stay non-operators, and an unset value fails closed.
 
 Rejected alternatives:
 

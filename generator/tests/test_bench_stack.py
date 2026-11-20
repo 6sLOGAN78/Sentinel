@@ -386,6 +386,30 @@ def test_preflight_ok_returns_hardware_and_config(stack: ModuleType) -> None:
 # --- private env -----------------------------------------------------------------------
 
 
+def test_create_env_sets_the_run_tenant_as_the_only_operator_tenant(
+    stack: ModuleType, tmp_path: Path
+) -> None:
+    # ADR 0014: the bench mints JWTs only for bench-<run>[-suffix]; the run tenant
+    # itself is the single operator tenant, so suffixed tenants stay non-operators.
+    values = _created_env(stack, tmp_path)
+    assert values["BENCH_OPERATOR_TENANTS"] == stack.tenant_for(RUN_ID) == f"bench-{RUN_ID}"
+    assert "," not in values["BENCH_OPERATOR_TENANTS"]
+    with pytest.raises(stack.BenchError):
+        stack.mint_jwt(RUN_ID, "admin", "demo", root=tmp_path, runner=_never_runs)
+
+
+def test_bench_overlay_maps_operator_tenants_from_the_private_env_to_query_api_only() -> None:
+    text = (REPO_ROOT / BENCH).read_text(encoding="utf-8")
+    lines = [line for line in text.splitlines() if "SENTINEL_AUTH.OPERATOR_TENANTS" in line]
+    assert lines == ['      SENTINEL_AUTH.OPERATOR_TENANTS: "${BENCH_OPERATOR_TENANTS:-}"']
+    query_api = re.split(r"\n  [a-z#]", text.split("\n  query-api:\n", 1)[1], maxsplit=1)[0]
+    assert lines[0] in query_api.splitlines()
+
+
+def _never_runs(*_args: object, **_kwargs: object) -> str:
+    raise AssertionError("mint_jwt must refuse the tenant before running anything")
+
+
 def test_create_env_is_private_random_and_complete(stack: ModuleType, tmp_path: Path) -> None:
     values = _created_env(stack, tmp_path)
     run_dir = tmp_path / ".local/bench" / RUN_ID

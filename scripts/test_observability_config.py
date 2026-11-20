@@ -461,31 +461,41 @@ class OverlayComposeTests(unittest.TestCase):
         )
 
     def test_operator_tenant_is_demo_only_in_every_stack(self):
-        # ADR 0014: demo is the operator tenant in the dev, observability and
-        # bench stacks; demo2 must stay a non-operator; only query-api has it.
+        # ADR 0014: demo is the operator tenant in the dev and observability
+        # stacks; demo2 must stay a non-operator; only query-api has it. The
+        # bench stack uses its run tenant from the private env instead (and
+        # fails closed to no operator when the key is absent).
         bench = ROOT / "deployments/compose/docker-compose.bench.yml"
-        for files in ((BASE,), (BASE, OVERLAY), (BASE, OVERLAY, bench)):
-            result = self.render_files(files)
+        cases = (
+            ((BASE,), "", "demo"),
+            ((BASE, OVERLAY), "", "demo"),
+            ((BASE, OVERLAY, bench), "BENCH_OPERATOR_TENANTS=bench-20261030a\n", "bench-20261030a"),
+            ((BASE, OVERLAY, bench), "", ""),
+        )
+        for files, extra, expected in cases:
+            result = self.render_files(files, extra)
             self.assertEqual(result.returncode, 0, result.stderr)
             services = json.loads(result.stdout)["services"]
             for service, _ in APP_PORTS:
                 env = services[service].get("environment") or {}
-                with self.subTest(files=[f.name for f in files], service=service):
+                with self.subTest(files=[f.name for f in files], extra=extra, service=service):
                     if service == "query-api":
-                        self.assertEqual(env["SENTINEL_AUTH.OPERATOR_TENANTS"], "demo")
+                        self.assertEqual(env["SENTINEL_AUTH.OPERATOR_TENANTS"], expected)
                     else:
                         self.assertNotIn("SENTINEL_AUTH.OPERATOR_TENANTS", env)
         template = (ROOT / ".env.example").read_text()
         self.assertRegex(template, r"(?m)^SENTINEL_AUTH\.OPERATOR_TENANTS=demo$")
 
-    def render_files(self, files: tuple[Path, ...]) -> subprocess.CompletedProcess[str]:
+    def render_files(
+        self, files: tuple[Path, ...], extra_env: str = ""
+    ) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / "env"
             env_file.write_text(
                 f"SENTINEL_POSTGRES_PASSWORD={SYNTHETIC}\n"
                 f"SENTINEL_CLICKHOUSE_PASSWORD={SYNTHETIC}\n"
                 f"SENTINEL_GRAFANA_ADMIN_PASSWORD={SYNTHETIC}\n"
-                f"BENCH_GIT_SHA={'0' * 40}\n"
+                f"BENCH_GIT_SHA={'0' * 40}\n" + extra_env
             )
             argv = ["docker", "compose", "-p", PROJECT, "--env-file", str(env_file)]
             for f in files:
