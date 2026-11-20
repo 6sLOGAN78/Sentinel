@@ -1,0 +1,424 @@
+{
+  "config": {
+    "batch_size": 200,
+    "detector_limits": {
+      "bytes": 67108864,
+      "ledger_entries": 100000,
+      "windows": 10000
+    },
+    "events_partitions": 6,
+    "lateness_seconds": 30,
+    "max_in_flight_requests": 64,
+    "rate_limit": {
+      "capacity": 10000,
+      "refill_per_second": 2000
+    },
+    "replicas": {
+      "alert_writer": 1,
+      "detector": 3,
+      "event_writer": 2,
+      "ingest": 2,
+      "query_api": 2
+    },
+    "replication_factor": 1,
+    "retry_budget_seconds": 15.0,
+    "target_rate_eps": 400
+  },
+  "format_version": 1,
+  "hardware": {
+    "compose_version": "5.6.1",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500H",
+    "docker_version": "29.9.2",
+    "free_space_bytes_start": 15583739904,
+    "host_load_note": "MemAvailable at preflight 8.90 GiB; other running compose projects: none",
+    "kernel": "6.8.0-138-generic",
+    "logical_cpus": 16,
+    "ram_bytes": 16439390208
+  },
+  "latency": {
+    "api_ms": {
+      "/api/v1/alerts": {
+        "n": 150,
+        "non_2xx": 0,
+        "p50": 7.936784,
+        "p95": 9.834574
+      },
+      "/api/v1/events": {
+        "n": 150,
+        "non_2xx": 0,
+        "p50": 43.159022,
+        "p95": 57.290663
+      }
+    },
+    "detection_delay_seconds": {
+      "n": 125,
+      "p50": {
+        "lower": 0.0,
+        "upper": 0.05,
+        "value": 0.036337
+      },
+      "p95": {
+        "lower": 0.1,
+        "upper": 0.2,
+        "value": 0.175
+      },
+      "p99": {
+        "lower": 204.8,
+        "upper": 409.6,
+        "value": 281.6
+      }
+    },
+    "ingest_batch_size": 200,
+    "ingest_done_minus_intended_ms": {
+      "p50": 28.781488,
+      "p95": 35.149976,
+      "p99": 42.93787
+    },
+    "ingest_done_minus_sent_ms": {
+      "p50": 20.879072,
+      "p95": 26.548573,
+      "p99": 36.804455
+    },
+    "ingest_requests": 5000,
+    "schedule_slip_ms": {
+      "max": 6069.075902,
+      "p99": 11.747851
+    },
+    "sse_notify_ms": {
+      "n": 120,
+      "p50": 596.801928,
+      "p95": 1080.950576,
+      "p99": 1136.984268
+    }
+  },
+  "limitations": [
+    "counter increments on the killed detector between its last scrape (5 s interval) and the SIGKILL are not observable.",
+    "SSE subscriber: 0 malformed frames, 6 reconnects, fatal status None.",
+    "resources.samples rss_bytes is docker stats MemUsage (cgroup memory usage without page cache), the closest per-container RSS docker exposes.",
+    "SSE notification latency is an upper bound on persistence latency: there is no wall-clock persistence column, and PostgreSQL persistence precedes SSE delivery.",
+    "Event size distribution is summarized by the harness; per-event sizes are not stored."
+  ],
+  "overload": null,
+  "preflight": {
+    "benign_maxima": {
+      "AUTH_BRUTE_FORCE": 6,
+      "DENY_SPIKE": 8,
+      "PORT_SCAN": 16,
+      "REQUEST_FLOOD": 36
+    },
+    "recheck": {
+      "attack_windows": 240,
+      "bytes_cap": 67108864,
+      "bytes_limit": 53687091,
+      "bytes_pct": 13.19,
+      "bytes_pred": 8852905,
+      "events_by_rule": {
+        "AUTH_BRUTE_FORCE": 724,
+        "DENY_SPIKE": 986,
+        "PORT_SCAN": 7888,
+        "REQUEST_FLOOD": 5916
+      },
+      "f_proc": 0.547741935483871,
+      "failed": [],
+      "horizon_seconds": 330,
+      "ledger_cap": 100000,
+      "ledger_limit": 80000,
+      "ledger_pct": 72.3,
+      "ledger_pred": 72302,
+      "partition_share_max": 0.18258064516129033,
+      "r_proc_eps": 219.09677419354838,
+      "windows_by_rule": {
+        "AUTH_BRUTE_FORCE": 220,
+        "DENY_SPIKE": 220,
+        "PORT_SCAN": 439,
+        "REQUEST_FLOOD": 220
+      },
+      "windows_cap": 10000,
+      "windows_limit": 8000,
+      "windows_pct": 13.39,
+      "windows_pred": 1339
+    },
+    "seed": 2484815802,
+    "static": {
+      "attack_windows": 240,
+      "bytes_cap": 67108864,
+      "bytes_limit": 53687091,
+      "bytes_pct": 12.07,
+      "bytes_pred": 8100160,
+      "events_by_rule": {
+        "AUTH_BRUTE_FORCE": 660,
+        "DENY_SPIKE": 900,
+        "PORT_SCAN": 7200,
+        "REQUEST_FLOOD": 5400
+      },
+      "f_proc": 0.5,
+      "failed": [],
+      "horizon_seconds": 330,
+      "ledger_cap": 100000,
+      "ledger_limit": 80000,
+      "ledger_pct": 66.0,
+      "ledger_pred": 66000,
+      "partition_share_max": 0.16666666666666666,
+      "r_proc_eps": 200.0,
+      "windows_by_rule": {
+        "AUTH_BRUTE_FORCE": 200,
+        "DENY_SPIKE": 200,
+        "PORT_SCAN": 400,
+        "REQUEST_FLOOD": 200
+      },
+      "windows_cap": 10000,
+      "windows_limit": 8000,
+      "windows_pct": 12.4,
+      "windows_pred": 1240
+    }
+  },
+  "provenance": "measured",
+  "reconciliation": {
+    "accepted_unique": 1000000,
+    "benign_hits": 0,
+    "ch_physical": 1000000,
+    "ch_unique": 1000000,
+    "dlq_delta": 0,
+    "generated": 1000000,
+    "id_digest_match": true,
+    "kafka_records": 1000000,
+    "late_delta": 0,
+    "loss": 0,
+    "physical_duplicates": 0,
+    "producer_duplicates": 0,
+    "rejected_4xx": 0,
+    "unaccepted_final": 0
+  },
+  "recovery": {
+    "applicable": true,
+    "baseline_incomplete_samples": 0,
+    "baseline_p95_lag": 0.0,
+    "baseline_samples": 12,
+    "baseline_window_s": 60,
+    "coverage_checked": true,
+    "coverage_dropped": true,
+    "coverage_lost_s": 45.10682,
+    "killed_container": "sentinel-bench-20261120a-detector-1",
+    "min_partitions_reported_after_kill": 4,
+    "partitions_expected": 6,
+    "peak_lag_after_kill": 33.0,
+    "recovered": true,
+    "recovery_seconds": 53.759078,
+    "restarted_ns": 1795140558341512635,
+    "samples_without_coverage": 0,
+    "stable_window_s": 30,
+    "timeout_s": 600
+  },
+  "reproduction": {
+    "bench_command": "make bench SCENARIO=sustained-restart RUN=20261120a",
+    "compose_project": "sentinel-bench-20261120a",
+    "git_sha": "8424348f217194499ab45bdeb1559b1f51fbb1eb",
+    "image_tag": "sentinel-bench-20261120a-<service> (compose build, revision 8424348f217194499ab45bdeb1559b1f51fbb1eb)",
+    "report_command": "python3 bench/report.py --raw <raw.json> --out benchmarks/results"
+  },
+  "resources": {
+    "detector_state_peak": {
+      "bytes": 6465274,
+      "ledger_entries": 52877,
+      "windows": 830
+    },
+    "detector_state_peak_percent": {
+      "bytes": 9.634009,
+      "ledger_entries": 52.877,
+      "max": 52.877,
+      "windows": 8.3
+    },
+    "harness_cpu_percent_max": 2.75,
+    "peaks": {
+      "sentinel-bench-20261120a-alert-writer-1": {
+        "cpu_percent_max": 7.99,
+        "rss_bytes_max": 14176747,
+        "service": "alert-writer"
+      },
+      "sentinel-bench-20261120a-clickhouse-1": {
+        "cpu_percent_max": 40.48,
+        "rss_bytes_max": 940992102,
+        "service": "clickhouse"
+      },
+      "sentinel-bench-20261120a-detector-1": {
+        "cpu_percent_max": 7.8,
+        "rss_bytes_max": 24358420,
+        "service": "detector"
+      },
+      "sentinel-bench-20261120a-detector-2": {
+        "cpu_percent_max": 11.98,
+        "rss_bytes_max": 21946695,
+        "service": "detector"
+      },
+      "sentinel-bench-20261120a-detector-3": {
+        "cpu_percent_max": 9.52,
+        "rss_bytes_max": 23561502,
+        "service": "detector"
+      },
+      "sentinel-bench-20261120a-event-writer-1": {
+        "cpu_percent_max": 9.9,
+        "rss_bytes_max": 16850616,
+        "service": "event-writer"
+      },
+      "sentinel-bench-20261120a-event-writer-2": {
+        "cpu_percent_max": 9.67,
+        "rss_bytes_max": 17815306,
+        "service": "event-writer"
+      },
+      "sentinel-bench-20261120a-grafana-1": {
+        "cpu_percent_max": 17.31,
+        "rss_bytes_max": 474690355,
+        "service": "grafana"
+      },
+      "sentinel-bench-20261120a-ingest-1": {
+        "cpu_percent_max": 9.76,
+        "rss_bytes_max": 15089008,
+        "service": "ingest"
+      },
+      "sentinel-bench-20261120a-ingest-2": {
+        "cpu_percent_max": 8.72,
+        "rss_bytes_max": 12488540,
+        "service": "ingest"
+      },
+      "sentinel-bench-20261120a-jaeger-1": {
+        "cpu_percent_max": 2.44,
+        "rss_bytes_max": 74857840,
+        "service": "jaeger"
+      },
+      "sentinel-bench-20261120a-kafka-1": {
+        "cpu_percent_max": 177.17,
+        "rss_bytes_max": 675492659,
+        "service": "kafka"
+      },
+      "sentinel-bench-20261120a-postgres-1": {
+        "cpu_percent_max": 8.81,
+        "rss_bytes_max": 104637399,
+        "service": "postgres"
+      },
+      "sentinel-bench-20261120a-prometheus-1": {
+        "cpu_percent_max": 5.89,
+        "rss_bytes_max": 141033472,
+        "service": "prometheus"
+      },
+      "sentinel-bench-20261120a-query-api-1": {
+        "cpu_percent_max": 8.01,
+        "rss_bytes_max": 14659092,
+        "service": "query-api"
+      },
+      "sentinel-bench-20261120a-query-api-2": {
+        "cpu_percent_max": 8.14,
+        "rss_bytes_max": 13820231,
+        "service": "query-api"
+      },
+      "sentinel-bench-20261120a-redis-1": {
+        "cpu_percent_max": 4.39,
+        "rss_bytes_max": 42289070,
+        "service": "redis"
+      }
+    }
+  },
+  "rules": {
+    "AUTH_BRUTE_FORCE": {
+      "expected": 30,
+      "observed_ch": 30,
+      "observed_pg": 30
+    },
+    "DENY_SPIKE": {
+      "expected": 30,
+      "observed_ch": 30,
+      "observed_pg": 30
+    },
+    "PORT_SCAN": {
+      "expected": 30,
+      "observed_ch": 30,
+      "observed_pg": 30
+    },
+    "REQUEST_FLOOD": {
+      "expected": 30,
+      "observed_ch": 30,
+      "observed_pg": 30
+    }
+  },
+  "run": {
+    "compose_project": "sentinel-bench-20261120a",
+    "drained": true,
+    "ended_at": "2026-11-20T02:40:18.078Z",
+    "git_sha": "8424348f217194499ab45bdeb1559b1f51fbb1eb",
+    "image_tag": "sentinel-bench-20261120a-<service> (compose build, revision 8424348f217194499ab45bdeb1559b1f51fbb1eb)",
+    "replicas_running": {
+      "end": {
+        "alert-writer": 1,
+        "clickhouse": 1,
+        "detector": 3,
+        "event-writer": 2,
+        "grafana": 1,
+        "ingest": 2,
+        "jaeger": 1,
+        "kafka": 1,
+        "postgres": 1,
+        "prometheus": 1,
+        "query-api": 2,
+        "redis": 1
+      },
+      "start": {
+        "alert-writer": 1,
+        "clickhouse": 1,
+        "detector": 3,
+        "event-writer": 2,
+        "grafana": 1,
+        "ingest": 2,
+        "jaeger": 1,
+        "kafka": 1,
+        "postgres": 1,
+        "prometheus": 1,
+        "query-api": 2,
+        "redis": 1
+      }
+    },
+    "run_id": "20261120a",
+    "scenario": "sustained-restart",
+    "started_at": "2026-11-20T01:55:24.976Z",
+    "tenant": "bench-20261120a",
+    "warmup": {
+      "partition_share_max": 0.18258064516129033,
+      "rate_eps": 413.3333333333333
+    }
+  },
+  "threshold_inputs": {
+    "ingest_5xx_ratio": 0.0,
+    "ingest_requests_by_status": {
+      "202": 5000
+    },
+    "partition_rate_eps_max": 73.943224,
+    "pin_retention_margin_min": 0,
+    "pin_retention_margin_steady_min": 0,
+    "warmup_partition_share_max": 0.18258064516129033,
+    "warmup_rate_eps": 413.3333333333333
+  },
+  "throughput": {
+    "sustained_accepted_eps": {
+      "p50": 400.0,
+      "p95": 400.0,
+      "windows": 249
+    },
+    "target_rate_eps": 400
+  },
+  "workload": {
+    "batch_size": 200,
+    "duration_seconds": 2693.102,
+    "event_size_bytes": {
+      "max": 415,
+      "min": 389,
+      "p50": 394,
+      "p95": 398
+    },
+    "generated": 1000000,
+    "offered_eps": {
+      "p50": 400.0,
+      "p95": 400.0,
+      "windows": 249
+    },
+    "requests": 5000,
+    "target_rate_eps": 400
+  }
+}
