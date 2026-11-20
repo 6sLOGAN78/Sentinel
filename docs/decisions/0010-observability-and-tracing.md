@@ -111,5 +111,9 @@ process.
 - Fixed queries mean System cannot be extended through the API. A new panel
   needs a code change and a contract update. Readiness still works when
   Prometheus is down.
-- Alert rules are examples. Two thresholds (ingest 5xx ratio 5%, pin margin
-  100000 offsets) are placeholders until benchmark data exists.
+- Alert rules are examples. The two former placeholders were set in 05-20 from
+  the 2026-11-20 benchmark (ADR 0011): the ingest 5xx ratio is a policy value
+  of 1% over 5m (the measured ratio was 0), and the pin margin threshold is
+  133098 offsets = ceil(73.943224 ev/s measured per-partition rate x 1800 s
+  response policy), below the measured steady-state minimum margin 134793. A
+  fresh topic fires the pin alert until it holds about 1800 s of data.

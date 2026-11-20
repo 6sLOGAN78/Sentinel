@@ -27,15 +27,15 @@ groups:
       - alert: SentinelIngestErrorRate
         expr: >-
           sum(rate(sentinel_ingest_requests_total{status=~"5.."}[5m]))
-          / clamp_min(sum(rate(sentinel_ingest_requests_total[5m])), 1e-9) > 0.05
+          / clamp_min(sum(rate(sentinel_ingest_requests_total[5m])), 1e-9) > 0.01
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: Ingest is answering more than 5% of batch requests with 5xx
+          summary: Ingest is answering more than 1% of batch requests with 5xx
           description: >-
-            500/503 responses exceeded 5% of ingest batch requests for 5m. 503 is the deliberate load-shedding response (spec 11.1, producer buffer full or in-flight cap), so short bursts are expected and only a sustained ratio alerts.
-            5% is a placeholder: the spec defines no ingest error SLO; replace it with a value from the 05-20 benchmark.
+            500/503 responses exceeded 1% of ingest batch requests for 5m. 503 is the deliberate load-shedding response (spec 11.1, producer buffer full or in-flight cap), so short bursts are expected and only a sustained ratio alerts.
+            1% is a policy value (user decision, 05-20), not a measurement: the 2026-11-20 benchmark measured an ingest 5xx ratio of 0 at steady load and under 3x overload, where the rate limiter sheds with 429 (benchmarks/results/2026-11-20-*.json threshold_inputs.ingest_5xx_ratio), so any sustained 5xx indicates a fault.
             example threshold, tune per deployment
 
       - alert: SentinelClickHouseWriteErrors
@@ -74,13 +74,13 @@ groups:
             example threshold, tune per deployment
 
       - alert: SentinelPinRetentionLow
-        expr: min by (topic, partition) (sentinel_detector_pin_retention_margin_offsets) < 100000
+        expr: min by (topic, partition) (sentinel_detector_pin_retention_margin_offsets) < 133098
         for: 10m
         labels:
           severity: critical
         annotations:
           summary: Detector pin on {{ $labels.topic }}/{{ $labels.partition }} is close to Kafka log start
           description: >-
-            The committed detector pin is less than 100000 offsets ahead of the partition log start offset for 10m (20 consecutive 30s polls). At 0 Kafka retention has deleted records the detector needs to rebuild window state: checkpoint history lost, recovery needs the ADR 0012 procedure. Usually caused by an idle or stuck detector group while retention advances.
-            100000 is a placeholder: size it to the events one partition receives during your response time.
+            The committed detector pin is less than 133098 offsets ahead of the partition log start offset for 10m (20 consecutive 30s polls). At 0 Kafka retention has deleted records the detector needs to rebuild window state: checkpoint history lost, recovery needs the ADR 0012 procedure. Usually caused by an idle or stuck detector group while retention advances.
+            133098 = ceil(73.943224 ev/s x 1800 s): the measured max per-partition append rate under normal load (benchmarks/results/2026-11-20-sustained-restart.json threshold_inputs.partition_rate_eps_max) times a 30-minute operator response policy R (user decision, 05-20). It stays below the measured steady-state minimum margin 134793 (2026-11-20-overload.json threshold_inputs.pin_retention_margin_steady_min). A fresh topic starts near 0 and fires this alert for roughly its first R seconds (docs/operations.md, Pin retention hazard).
             example threshold, tune per deployment

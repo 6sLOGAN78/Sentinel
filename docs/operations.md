@@ -428,11 +428,11 @@ to tune per deployment.
 | Alert | Fires when | For | Severity | Threshold basis |
 | --- | --- | --- | --- | --- |
 | `SentinelConsumerLagSustained` | `max by (group)` lag > 10000 | 5m | warning | Two default event-writer batches (5000 each). |
-| `SentinelIngestErrorRate` | 5xx / all ingest requests > 5% | 5m | critical | **Placeholder.** The spec has no ingest error SLO. Replace it with a value from the benchmark run (plan 05-20), which has not run yet. |
+| `SentinelIngestErrorRate` | 5xx / all ingest requests > 1% | 5m | critical | **Policy** (user decision, 05-20), not a measurement. The [2026-11-20 benchmark](../benchmarks/results/2026-11-20-sustained-restart.json) measured `threshold_inputs.ingest_5xx_ratio` = 0 at steady load and under 3x [overload](../benchmarks/results/2026-11-20-overload.json), where the rate limiter sheds with 429, so any sustained 5xx indicates a fault. |
 | `SentinelClickHouseWriteErrors` | any failed ClickHouse insert attempts per job | 5m | warning | A transient failure clears within the writer retry budget. |
 | `SentinelRestartLoop` | `changes(process_start_time_seconds[15m]) > 2` | none | critical | More than two restarts in 15 minutes. |
 | `SentinelDetectorCapacityHigh` | any detector state gauge > 80% of its limit | 2m | warning | Warns before admission refusal (spec §11.1). |
-| `SentinelPinRetentionLow` | pin margin < 100000 offsets | 10m | critical | **Placeholder.** Size it to the events one partition receives during your response time. Benchmark data (05-20) has not been collected yet. |
+| `SentinelPinRetentionLow` | pin margin < 133098 offsets | 10m | critical | `ceil(partition_rate_eps_max × R)` = ceil(73.943224 × 1800) = 133098: the measured max per-partition append rate under normal load ([sustained-restart](../benchmarks/results/2026-11-20-sustained-restart.json) `threshold_inputs.partition_rate_eps_max`) times a 30-minute response policy R = 1800 s (user decision, 05-20). It stays below the measured steady-state minimum margin 134793 ([overload](../benchmarks/results/2026-11-20-overload.json) `threshold_inputs.pin_retention_margin_steady_min`); the largest R below it is 1822 s. A fresh deployment fires it at first (see the next section). |
 
 No Alertmanager is configured. The rules show in the Prometheus UI under
 Alerts.
@@ -448,6 +448,17 @@ the records at the pin, and the detector then refuses to start (see
 show the margin shrinking. Start long-lived stacks at least once a day, and tear
 down bench and other disposable stacks (`make bench-down`, then
 `make bench-purge`) instead of leaving them idle.
+
+**Fresh deployments fire `SentinelPinRetentionLow` at first.** The margin is the
+pin minus the partition's log start offset, and on a new topic the log start is
+0, so the margin starts near 0 and grows with the data appended. The alert fires
+until each partition holds about R = 1800 s of records at its rate (longer on a
+quiet partition), then clears. Expect it after a fresh `make dev-up` or bench
+start and do not treat it as checkpoint-history risk while the log start is
+still 0. Suppressing it would need a log-start-offset metric, which is a
+follow-up. The 2026-11-20 sustained-restart run shows this: its steady-state
+minimum margin is 0 because the first ~30 s of main load still read 0 on every
+partition.
 
 ## Failure, replay and retention
 
@@ -761,9 +772,11 @@ all checked before any Docker command that changes state:
 Ports (all 127.0.0.1): ingest 38080-38081, query-api 38090-38091, ClickHouse HTTP
 38123, PostgreSQL 35432, Prometheus 39090, Grafana 33000, Jaeger 36686. The ops
 ports are not published. Results are written to `benchmarks/results/`, or to a
-`.FAILED.json` with exit 1 when a consistency check fails. The benchmark has
-not run yet: plan 05-20 runs it and documents the method and results. This
-document makes no throughput or latency claim.
+`.FAILED.json` with exit 1 when a consistency check fails. The method is
+[ADR 0011](decisions/0011-benchmark-method.md). Measured results and their
+limitations are in [benchmarks/README.md](../benchmarks/README.md), which links
+each results file (current: `benchmarks/results/2026-11-20-*`). This document
+makes no throughput or latency claim of its own.
 
 ## Reservation protocol rollout
 
