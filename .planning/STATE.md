@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v2.8.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-11-20T12:50:00Z"
+status: phase-complete
+last_updated: "2026-11-21T09:00:00Z"
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 73
   completed_plans: 71
   percent: 50
@@ -22,6 +22,7 @@ Current focus: Phase 5 (Observability, Resilience & Scale). Phase 4 COMPLETE 202
 
 ## Current Position
 
+> 2026-11-21: PHASE 5 COMPLETE (05-VERIFICATION status passed, 6/6, 13/13 requirements). All 28 plans have SUMMARYs (05-01..05-28 + 05-21a). First hosted run 44738994392 at 210330a failed only on the aggregate integration 32m timeout; user decision "Separate Phase 5 job" -> quick 261120-x5u f8b47ff (phase5 CI job: chaos + scale groups, 18 tests skipped in make test-integ, scripts/test_phase5_guards.py; no budget raised). Hosted run 44792806720 at f8b47ff: success 21/21 jobs. Watch: integration job 44m58s of its 45m cap (thin margin; trimming the aggregate is a recommended follow-up). ADR 0011 denominator fixed acf1e1d. ROADMAP Phase 5 28/28 Complete; REQUIREMENTS OBS-02..05, REL-01..04, BENCH-01..04, UI-05 Complete. Next: Phase 6 (Kubernetes, hardened CI, docs). Open follow-ups: 05-20 list (report.py per-publication label + unique first-detection delay, DetectionDecision replay flag, log-start-offset metric, sustained steady-window fresh-topic zeros, legacy-wedged-partition runbook), integration CI margin, Overview partial_coverage copy, TestDetectorCooldownOwners flake watch.
 > 2026-11-20: plan 05-20 COMPLETE (05-20-SUMMARY, Self-Check PASSED). Task 3 user reply "Approved"; Task 4 "R=1800, err=1%"; Task 5 "Yes, purge" (bench-down exit 0, bench-purge exit 0, nothing of sentinel-bench-20261120a remains; raws kept privately in the session scratchpad). Task 6: SentinelPinRetentionLow < 133098 = ceil(73.943224 x 1800) (sustained partition_rate_eps_max x R), below overload steady min 134793 (largest R 1822 s); fresh topics fire it for ~R s (operations.md note; log-start-offset metric is a follow-up). SentinelIngestErrorRate > 1% over 5m as policy (measured 0). ba882b1. ADR 0011 + benchmarks/README.md (numbers verbatim from 2026-11-20 results; 2026-11-19 marked superseded, unedited) ef8e1b6. Detection-delay p99 281.6 s = crash-replay publications (n=125 publications for 120 unique alerts); one unique alert late 38.424 s (ownership gap). Tests: check-observability PASS, drift 32 OK, phase4 guards 26 OK, check-adrs OK, bench 195 passed, make test exit 0. Follow-ups: report.py per-publication label + unique first-detection delay (+ SSE max); DetectionDecision already-existed flag; log-start-offset metric; 05-28 sustained steady pin window; legacy-wedged-partition runbook. Phase 5: all numbered plans have SUMMARYs; next is phase verification.
 
 > 2026-11-20: 05-20 RESUMED on RUN=20261120a (devrag=removed). Task 1 gate PASS (15.36 GiB, MemAvailable 10.16 GiB). Task 2: bench-up/sustained-restart/overload all exit 0 at 8424348; report.py results committed unedited 4e3f355 (benchmarks/results/2026-11-20-*; re-derivation byte-identical); plan Task 2 verify exit 0. sustained-restart: 1,000,000 generated, loss 0, dup 0, 30/30/30 per rule x4, /api/v1/events and /api/v1/alerts non-2xx 0, coverage-gated recovery 53.759 s (coverage lost 45.107 s, min 4/6 partitions), killed detector restarted and rejoined, detectors 3/3 start/end, ledger peak 52.877%. overload: 202 x1,281 / 429 x2,319, no 503 (shed path 503 not exercised; chaos tests cited), buffer 0/50000, detectors 3/3. Open for Task 4: sustained pin_retention_margin_steady_min = 0 because the 05-28 window includes ~30 s of fresh-topic zeros at main-load start (overload steady min 134,793). Task 3 operator-tenant blocker FIXED 535357b (bench env BENCH_OPERATOR_TENANTS=bench-<run>, applied live by recreating only query-api; admin System 200, analyst lag available, viewer 403, -ovl admin still 403); store_alert span absent (1% sampling). (Stack later torn down and purged in Task 5.) 2026-11-19 results not superseded yet (Task 6).

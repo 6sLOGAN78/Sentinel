@@ -83,7 +83,7 @@
 - [x] **UI-02**: An analyst sees the Alerts page (`/alerts`): a live SSE feed, severity/status filters, search, pagination, a detail drawer with evidence and history, and acknowledge/resolve controls (hidden or disabled for viewers) [§9, FR-07, FR-08]
 - [x] **UI-03**: An analyst sees the Events page (`/events`): time range, IP, type and outcome search, plus event detail JSON rendered safely (no unsafe HTML) [§9]
 - [x] **UI-04**: An analyst sees the Rules page (`/rules`): read-only descriptions, thresholds and enabled/disabled state [§9]
-- [ ] **UI-05**: An operator sees the System page (`/system`): pipeline and consumer health, ingest throughput, detection lag and errors, optionally linking to Grafana [§9]
+- [x] **UI-05**: An operator sees the System page (`/system`): pipeline and consumer health, ingest throughput, detection lag and errors, optionally linking to Grafana [§9]
 - [x] **UI-06**: The UI uses a typed client generated from OpenAPI and React Query, handles loading, empty, error and reconnecting states, debounces searches, prevents unbounded page loads, and has accessible labels and keyboard-operable controls [§9]
 
 ### Generator (GEN)
@@ -95,24 +95,24 @@
 ### Observability (OBS)
 
 - [x] **OBS-01**: Every service exposes `/healthz` (liveness) and `/readyz`, which reflects real dependency capability (Kafka, ClickHouse, Postgres, Redis as applicable) [FR-10, §11.1]
-- [ ] **OBS-02**: Services expose the spec-required Prometheus metrics (ingest events/requests/duration, consumer lag, detection alerts, detection delay, ClickHouse write duration, DLQ events, SSE clients) on an internal `/metrics` with no high-cardinality labels. Consumer lag is position-based [FR-10, §11.2]
-- [ ] **OBS-03**: Services emit JSON logs with service, timestamp, level, request_id and trace_id, scrub sensitive fields, and never log secrets or request bodies [§11.3]
-- [ ] **OBS-04**: OpenTelemetry spans cover ingestion, publishing, detection and storage, propagate through Kafka headers, and use configurable sampling [§11.3]
-- [ ] **OBS-05**: Grafana dashboards (as code) show ingest rate, error rates, consumer lag, detection delay, write latency and DLQ. Prometheus alert examples cover sustained lag, ingest error rate, write errors and restart loops [FR-15, §11.2]
+- [x] **OBS-02**: Services expose the spec-required Prometheus metrics (ingest events/requests/duration, consumer lag, detection alerts, detection delay, ClickHouse write duration, DLQ events, SSE clients) on an internal `/metrics` with no high-cardinality labels. Consumer lag is position-based [FR-10, §11.2]
+- [x] **OBS-03**: Services emit JSON logs with service, timestamp, level, request_id and trace_id, scrub sensitive fields, and never log secrets or request bodies [§11.3]
+- [x] **OBS-04**: OpenTelemetry spans cover ingestion, publishing, detection and storage, propagate through Kafka headers, and use configurable sampling [§11.3]
+- [x] **OBS-05**: Grafana dashboards (as code) show ingest rate, error rates, consumer lag, detection delay, write latency and DLQ. Prometheus alert examples cover sustained lag, ingest error rate, write errors and restart loops [FR-15, §11.2]
 
 ### Resilience (REL)
 
-- [ ] **REL-01**: Transient Kafka/ClickHouse failures are retried with exponential backoff, jitter and bounded retries, with clear terminal handling [§11.1]
-- [ ] **REL-02**: Each service shuts down gracefully: it stops accepting work, finishes or aborts in-flight work within a deadline, and commits only completed offsets [§11.1]
-- [ ] **REL-03**: Failure test suites cover event-writer restart mid-batch, temporarily unreachable ClickHouse, Kafka broker restart in dev, slow consumers, malformed messages to the DLQ, SSE disconnect/reconnect and rate-limit overload [§15]
-- [ ] **REL-04**: Under excess load, memory and queues stay bounded and clients receive the expected 429/503 [§12]
+- [x] **REL-01**: Transient Kafka/ClickHouse failures are retried with exponential backoff, jitter and bounded retries, with clear terminal handling [§11.1]
+- [x] **REL-02**: Each service shuts down gracefully: it stops accepting work, finishes or aborts in-flight work within a deadline, and commits only completed offsets [§11.1]
+- [x] **REL-03**: Failure test suites cover event-writer restart mid-batch, temporarily unreachable ClickHouse, Kafka broker restart in dev, slow consumers, malformed messages to the DLQ, SSE disconnect/reconnect and rate-limit overload [§15]
+- [x] **REL-04**: Under excess load, memory and queues stay bounded and clients receive the expected 429/503 [§12]
 
 ### Scale and Benchmarks (BENCH)
 
-- [ ] **BENCH-01**: A tester can run `make bench` for a bounded, configurable multi-replica load scenario (open-loop generator with benign plus malicious mix) [FR-16, §16]
-- [ ] **BENCH-02**: A benchmark run with ≥1,000,000 generated events reconciles client-sent, Kafka-accepted, rejected and unique-persisted counts, plus expected vs observed rule hits [FR-16, §12]
-- [ ] **BENCH-03**: `bench/report.py` writes `benchmarks/results/<date>-<scenario>.md` with hardware, configuration, sustained throughput, p50/p95/p99 ingest and detection latency, API p95, resources, lag, loss/duplicate counts and limitations, and refuses to emit a report when the counts don't reconcile [FR-16, §12]
-- [ ] **BENCH-04**: A detector replica restart under load is demonstrated to recover the backlog without losing acknowledged events, and the measured recovery time is reported [§12, §17]
+- [x] **BENCH-01**: A tester can run `make bench` for a bounded, configurable multi-replica load scenario (open-loop generator with benign plus malicious mix) [FR-16, §16]
+- [x] **BENCH-02**: A benchmark run with ≥1,000,000 generated events reconciles client-sent, Kafka-accepted, rejected and unique-persisted counts, plus expected vs observed rule hits [FR-16, §12]
+- [x] **BENCH-03**: `bench/report.py` writes `benchmarks/results/<date>-<scenario>.md` with hardware, configuration, sustained throughput, p50/p95/p99 ingest and detection latency, API p95, resources, lag, loss/duplicate counts and limitations, and refuses to emit a report when the counts don't reconcile [FR-16, §12]
+- [x] **BENCH-04**: A detector replica restart under load is demonstrated to recover the backlog without losing acknowledged events, and the measured recovery time is reported [§12, §17]
 
 ### Deployment and Docs (DEP)
 
@@ -214,19 +214,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-03 | Phase 4 | Complete |
 | UI-04 | Phase 4 | Complete |
 | UI-06 | Phase 4 | Complete |
-| OBS-02 | Phase 5 | Pending |
-| OBS-03 | Phase 5 | Pending |
-| OBS-04 | Phase 5 | Pending |
-| OBS-05 | Phase 5 | Pending |
-| REL-01 | Phase 5 | Pending |
-| REL-02 | Phase 5 | Pending |
-| REL-03 | Phase 5 | Pending |
-| REL-04 | Phase 5 | Pending |
-| BENCH-01 | Phase 5 | Pending |
-| BENCH-02 | Phase 5 | Pending |
-| BENCH-03 | Phase 5 | Pending |
-| BENCH-04 | Phase 5 | Pending |
-| UI-05 | Phase 5 | Pending |
+| OBS-02 | Phase 5 | Complete |
+| OBS-03 | Phase 5 | Complete |
+| OBS-04 | Phase 5 | Complete |
+| OBS-05 | Phase 5 | Complete |
+| REL-01 | Phase 5 | Complete |
+| REL-02 | Phase 5 | Complete |
+| REL-03 | Phase 5 | Complete |
+| REL-04 | Phase 5 | Complete |
+| BENCH-01 | Phase 5 | Complete |
+| BENCH-02 | Phase 5 | Complete |
+| BENCH-03 | Phase 5 | Complete |
+| BENCH-04 | Phase 5 | Complete |
+| UI-05 | Phase 5 | Complete |
 | DEP-01 | Phase 6 | Pending |
 | DEP-02 | Phase 6 | Pending |
 | DEP-03 | Phase 6 | Pending |

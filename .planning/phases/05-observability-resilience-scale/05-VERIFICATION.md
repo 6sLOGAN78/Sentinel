@@ -1,15 +1,15 @@
 ---
 phase: 05-observability-resilience-scale
 verified: 2026-11-20T12:58:00Z
-status: human_needed
-score: 5/6 must-haves verified (roadmap SC1-SC5 VERIFIED; SC6 "Definition of Done: CI green" UNCERTAIN, hosted run 44738994392 at 210330a in progress, static jobs green, container jobs pending)
+status: passed
+score: 6/6 must-haves verified (roadmap SC1-SC5 VERIFIED; SC6 CI green VERIFIED by hosted run 44792806720 at f8b47ff, 21/21 jobs success)
 overrides_applied: 0
 verified_at_head: 210330a535d363aa24977eacdf22131503375202
-requirements_score: 13/13 SATISFIED in code and recorded evidence (hosted CI confirmation pending)
+requirements_score: 13/13 SATISFIED (hosted CI confirmed)
 gaps: []
 warnings:
   - id: W1
-    item: "ADR 0011 capacity-preflight sentence misstates its denominator"
+    item: "ADR 0011 capacity-preflight sentence misstates its denominator (FIXED in acf1e1d)"
     detail: "docs/decisions/0011-benchmark-method.md:17 says 'a predicted ledger of 72302 entries, 72.3% of the 80000 admission limit'. The JSON preflight.recheck has ledger_pct 72.3 = 72302 / ledger_cap 100000. 72302 of the 80000 limit is 90.4%. The number traces to the results file but the sentence is wrong. Fix: '72.3% of the 100000 cap (admission limit 80000 = 80%)'."
   - id: W2
     item: "ADR 0011 cites per-alert diagnosis values that are not in any committed results file"
@@ -184,3 +184,12 @@ Two documentation warnings in ADR 0011 (W1 wrong denominator, W2 raw-only diagno
 
 _Verified: 2026-11-20T12:58:00Z_
 _Verifier: Claude (gsd-verifier)_
+
+## Re-verification 2026-11-21 (CI)
+
+The first hosted run 44738994392 at 210330a failed only in `integration`: the aggregate `make test-integ` hit its 32m go test timeout (no failing test). Per the user's decision ("Separate Phase 5 job"), quick task 261120-x5u (f8b47ff) moved the 18 Phase 5 chaos and scale integration tests into a new `phase5` CI job (groups chaos and scale) and skips exactly those in the aggregate, with guards in scripts/test_phase5_guards.py; no existing budget was raised.
+
+Hosted run 44792806720 at f8b47ff: **success, 21/21 jobs** (hygiene, secrets, go, python, web, schema, phase3 core and scenarios, phase5 chaos and scale, phase4-browser, 8 phase4 families, compose-smoke, integration). SC6 is VERIFIED; status moves to passed.
+
+Watch item: the `integration` job took 44m58s against its 45m job cap (the `integration tests` step 32m57s including compile). The margin is thin; trimming the aggregate further is recommended as a follow-up.
+

@@ -12,7 +12,7 @@ Sentinel is built as vertical slices following spec §14. Each phase leaves the 
 - [x] **Phase 2: Ingestion & Durable Event Storage** - Authenticated, rate-limited batch ingest to Kafka and ClickHouse with read-time dedupe and DLQ (22/22 plans; verified complete 2026-10-17)
 - [x] **Phase 3: Detection & Alert Pipeline** - 21/21 numbered plans; replacement CI39613182464 all10jobs and final59/59verification passed (completed 2026-10-21)
 - [x] **Phase 4: Query API & Analyst Dashboard** - Auth/RBAC, tenant-scoped REST, triage workflow, SSE live alerts, React pages
-- [ ] **Phase 5: Observability, Resilience & Scale** - Metrics, tracing, Grafana, failure suites, overload behavior, benchmark report
+- [x] **Phase 5: Observability, Resilience & Scale** - Metrics, tracing, Grafana, failure suites, overload behavior, benchmark report
 - [ ] **Phase 6: Kubernetes, Hardening & Docs** - Kustomize manifests, hardened CI, threat model, docs, end-to-end demo
 
 ## Phase Details
@@ -299,64 +299,64 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — Legitimacy checkpoint for 8 Go modules + 3 images; ingest metrics + producer-buffer gauges on an injected registry (/metrics)
-- [ ] 05-02-PLAN.md — Shared full-jitter retry policy for event-writer, alert-writer and detector poison retries
-- [ ] 05-03-PLAN.md — Raw benchmark contract + stdlib bench/report.py that refuses on any reconciliation mismatch
-- [ ] 05-04-PLAN.md — Live-time, bounded-pool 1M-event workload with exact mix/attack plan and three-cap capacity + benign preflights
+- [x] 05-01-PLAN.md — Legitimacy checkpoint for 8 Go modules + 3 images; ingest metrics + producer-buffer gauges on an injected registry (/metrics)
+- [x] 05-02-PLAN.md — Shared full-jitter retry policy for event-writer, alert-writer and detector poison retries
+- [x] 05-03-PLAN.md — Raw benchmark contract + stdlib bench/report.py that refuses on any reconciliation mismatch
+- [x] 05-04-PLAN.md — Live-time, bounded-pool 1M-event workload with exact mix/attack plan and three-cap capacity + benign preflights
 
 **Wave 2**
 
-- [ ] 05-05-PLAN.md — Writers: position-based consumer lag, ClickHouse write latency, DLQ counters
-- [ ] 05-06-PLAN.md — JSON-by-default logs with timestamp/request_id/trace_id and scrubbing tests
-- [ ] 05-07-PLAN.md — Resource gate + chaos suite A (broker restart, CH outages, graceful SIGTERM, writer restart), check-chaos.sh (human-action before first run)
-- [ ] 05-08-PLAN.md — Open-loop async sender + SSE arrival subscriber producing the raw client/sse sections
+- [x] 05-05-PLAN.md — Writers: position-based consumer lag, ClickHouse write latency, DLQ counters
+- [x] 05-06-PLAN.md — JSON-by-default logs with timestamp/request_id/trace_id and scrubbing tests
+- [x] 05-07-PLAN.md — Resource gate + chaos suite A (broker restart, CH outages, graceful SIGTERM, writer restart), check-chaos.sh (human-action before first run)
+- [x] 05-08-PLAN.md — Open-loop async sender + SSE arrival subscriber producing the raw client/sse sections
 
 **Wave 3**
 
-- [ ] 05-09-PLAN.md — Detector metrics (alerts, delay, late rename, processed-position lag, capacity, pin margin)
-- [ ] 05-10-PLAN.md — Edge tracing: config, sampler, OTLP exporter, Kafka traceparent headers, ingest spans
-- [ ] 05-11-PLAN.md — Chaos suite B: slow-consumer lag rise/recovery and bounded overload (429/503)
+- [x] 05-09-PLAN.md — Detector metrics (alerts, delay, late rename, processed-position lag, capacity, pin margin)
+- [x] 05-10-PLAN.md — Edge tracing: config, sampler, OTLP exporter, Kafka traceparent headers, ingest spans
+- [x] 05-11-PLAN.md — Chaos suite B: slow-consumer lag rise/recovery and bounded overload (429/503)
 
 **Wave 4**
 
-- [ ] 05-12-PLAN.md — Worker tracing: detect/store/store_alert spans through Kafka headers, end-to-end trace test
-- [ ] 05-13-PLAN.md — Observability as code: Prometheus/Grafana/Jaeger overlay, dashboards, alert rules + promtool tests
+- [x] 05-12-PLAN.md — Worker tracing: detect/store/store_alert spans through Kafka headers, end-to-end trace test
+- [x] 05-13-PLAN.md — Observability as code: Prometheus/Grafana/Jaeger overlay, dashboards, alert rules + promtool tests
 
 **Wave 5** *(requires Phase 4 closed: 04-16 accepted)*
 
-- [ ] 05-14-PLAN.md — query-api telemetry: sentinel_sse_clients, spans, jittered LISTEN/delivery backoff
-- [ ] 05-17-PLAN.md — Isolated sentinel-bench-<id> multi-replica stack, safety preflights, bench-up/down/purge + test-chaos targets
+- [x] 05-14-PLAN.md — query-api telemetry: sentinel_sse_clients, spans, jittered LISTEN/delivery backoff
+- [x] 05-17-PLAN.md — Isolated sentinel-bench-<id> multi-replica stack, safety preflights, bench-up/down/purge + test-chaos targets
 
 **Wave 6**
 
-- [ ] 05-15-PLAN.md — Analyst/admin lag-only GET /api/v1/metrics/lag (viewer audited 403; fixed PromQL; per-field unavailable) + OpenAPI
-- [ ] 05-18-PLAN.md — Bench scenarios (sustained-restart with detector kill, overload), read-only collectors, make bench
+- [x] 05-15-PLAN.md — Analyst/admin lag-only GET /api/v1/metrics/lag (viewer audited 403; fixed PromQL; per-field unavailable) + OpenAPI
+- [x] 05-18-PLAN.md — Bench scenarios (sustained-restart with detector kill, overload), read-only collectors, make bench
 
 **Wave 7**
 
-- [ ] 05-21-PLAN.md — Admin-only GET /api/v1/system (fixed PromQL, readiness probes, per-field availability) + OpenAPI
+- [x] 05-21-PLAN.md — Admin-only GET /api/v1/system (fixed PromQL, readiness probes, per-field availability) + OpenAPI
 
 **Wave 8**
 
-- [ ] 05-16-PLAN.md — Admin-only System page + Overview consumer-lag panel (numbers for analyst/admin, notice for viewers) (05-UI-SPEC)
-- [ ] 05-19-PLAN.md — ADR 0010, operations/architecture docs (metric rename), CI observability checks
+- [x] 05-16-PLAN.md — Admin-only System page + Overview consumer-lag panel (numbers for analyst/admin, notice for viewers) (05-UI-SPEC)
+- [x] 05-19-PLAN.md — ADR 0010, operations/architecture docs (metric rename), CI observability checks
 
 **Wave 9** *(gap closure from run 20261119a; one Go module, no worktrees: run 05-22 then 05-24; Python-only 05-27 may run alongside)*
 
-- [ ] 05-22-PLAN.md — GAP-1: bounded two-stage ListEvents (candidate keys, then winner dedupe) with exact-prefix proof and a 1M-row scale regression
-- [ ] 05-24-PLAN.md — GAP-2 product: sentinel_kafka_topic_partitions{group,topic} gauge as the lag coverage denominator
-- [ ] 05-27-PLAN.md — GAP-2 bench: coverage-gated recovery time, refusals for missing coverage and API non-2xx
+- [x] 05-22-PLAN.md — GAP-1: bounded two-stage ListEvents (candidate keys, then winner dedupe) with exact-prefix proof and a 1M-row scale regression
+- [x] 05-24-PLAN.md — GAP-2 product: sentinel_kafka_topic_partitions{group,topic} gauge as the lag coverage denominator
+- [x] 05-27-PLAN.md — GAP-2 bench: coverage-gated recovery time, refusals for missing coverage and API non-2xx
 
 **Wave 10** *(gap closure; Go plans in order 05-23, 05-25, 05-26; Python-only 05-28 may run alongside)*
 
-- [ ] 05-23-PLAN.md — GAP-1: bounded SummarizeEvents (identical-retry fast path + exact conflict correction)
-- [ ] 05-25-PLAN.md — GAP-2 API/UI: lag and System report partial_coverage instead of a false 0 (additive OpenAPI enum)
-- [ ] 05-26-PLAN.md — GAP-3: classify decision tx errors, reproduce the concurrent detector startup crash, fix per user decision (ADR 0007 checkpoint)
-- [ ] 05-28-PLAN.md — GAP-4: restart killed detector, replica snapshots, exercised shed paths, steady-state threshold inputs, same-day supersede
+- [x] 05-23-PLAN.md — GAP-1: bounded SummarizeEvents (identical-retry fast path + exact conflict correction)
+- [x] 05-25-PLAN.md — GAP-2 API/UI: lag and System report partial_coverage instead of a false 0 (additive OpenAPI enum)
+- [x] 05-26-PLAN.md — GAP-3: classify decision tx errors, reproduce the concurrent detector startup crash, fix per user decision (ADR 0007 checkpoint)
+- [x] 05-28-PLAN.md — GAP-4: restart killed detector, replica snapshots, exercised shed paths, steady-state threshold inputs, same-day supersede
 
 **Wave 11** *(resume; human checkpoints: resources, live verification, threshold policy)*
 
-- [ ] 05-20-PLAN.md — Real ≥1M-event and overload benchmark runs (re-run Task 1-2 on a new RUN id after 05-22..05-28), live Grafana/Jaeger/System verification, threshold decision, ADR 0011 + results
+- [x] 05-20-PLAN.md — Real ≥1M-event and overload benchmark runs (re-run Task 1-2 on a new RUN id after 05-22..05-28), live Grafana/Jaeger/System verification, threshold decision, ADR 0011 + results
 
 **UI hint**: yes
 **Research flag**: Needs research. Open-loop benchmark method, cost of `FINAL` at the pinned ClickHouse version, detector restart catch-up (horizon × partition rate).
@@ -387,7 +387,7 @@ Plans:
 | 2. Ingestion & Durable Event Storage | 22/22 | Complete | 2026-10-17 |
 | 3. Detection & Alert Pipeline | 21/21 | Complete    | 2026-10-21 |
 | 4. Query API & Analyst Dashboard | 26/26 | Complete | 2026-11-16 |
-| 5. Observability, Resilience & Scale | 0/21 | Planned | - |
+| 5. Observability, Resilience & Scale | 28/28 | Complete | 2026-11-21 |
 | 6. Kubernetes, Hardening & Docs | 0/TBD | Not started | - |
 
 ## Coverage
