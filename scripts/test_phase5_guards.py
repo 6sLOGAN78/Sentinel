@@ -1,10 +1,12 @@
-"""Phase 5 CI job, its single moved-test list and the aggregate `-skip` stay in lockstep.
+"""Phase 5 CI job, the phase3-owned list and the aggregate `-skip` stay in lockstep.
 
 scripts/check-phase5-tests.sh is the single list. The Makefile derives the
-aggregate skip from it, CI runs each of its groups, and these guards prove
-that every moved test runs in exactly one group and is skipped by the
-aggregate, that the regex skips nothing else, and that the job cannot be
-skipped, masked or given a larger budget without updating this approval.
+aggregate skip from it, CI runs each of its phase5 groups, and the phase3 job
+runs each phase3-owned family. These guards prove that every skipped test has
+exactly one owner (one phase5 group or the phase3 runner), that the regex skips
+nothing else, that the aggregate still selects every other test, and that
+neither owning job can be skipped, masked or given a larger budget without
+updating this approval.
 """
 
 from __future__ import annotations
@@ -22,6 +24,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import test_phase3_guards as phase3  # noqa: E402  (sibling guard module, deliberate approval)
+
 RUNNER = ROOT / "scripts" / "check-phase5-tests.sh"
 GROUPS = ("chaos", "scale")
 # group -> exact moved tests (deliberate approval; order matches the runner).
@@ -40,12 +45,28 @@ NAMES = {
         "TestDetectorManifestUpgradePath",
     ),
 }
+# Owned by the phase3 job (scripts/check-phase3-tests.sh, one anchored nonempty
+# selector each): exactly the ./test/... integration families of the phase3
+# approval, in runner order. Skipped by the aggregate so each runs once in CI.
+PHASE3_OWNED = tuple(name for package, name, _, integration in phase3.EXPECTED
+                     if package == "./test/..." and integration)
+# Owners of every skipped name, in --skip-regex order.
+OWNERS = {"chaos": NAMES["chaos"], "scale": NAMES["scale"], "phase3": PHASE3_OWNED}
+# Kept in the aggregate on purpose: no other job runs them (01-SECURITY.md
+# lifecycle/migration/Redis evidence included) or they are rerun only by the
+# integration job's own nonempty group steps.
+AGGREGATE_ONLY = (
+    "TestConnectSpecialPassword", "TestDetectorIncorporatedOwnerSnapshot", "TestMigrateClickHouseIdempotent",
+    "TestMigrateClickHouseUsesConfiguredDatabase", "TestMigratePostgresIdempotent", "TestRedisIntegration",
+    "TestTopicRetentionOverridesReapply", "TestTracingEdgePropagation", "TestTracingPipelinePropagation",
+    "TestWriterInsertFailureNoCommit",
+)
 CHAOS_FAMILIES = ("chaos-broker", "chaos-clickhouse", "chaos-shutdown", "slow-consumer", "overload")
 # Job budgets in minutes; they may shrink but never grow past the existing 45.
 BUDGETS = {"chaos": 30, "scale": 30}
-AGGREGATE = "\tcd backend && go test -tags=integration -timeout 32m -p 1 -skip '$(PHASE5_SKIP)' ./test/...\n"
+AGGREGATE = "\tcd backend && go test -tags=integration -timeout 32m -p 1 -skip '$(INTEG_SKIP)' ./test/...\n"
 SKIP_VARIABLE = (
-    "PHASE5_SKIP = $(or $(shell bash '$(CURDIR)/scripts/check-phase5-tests.sh' --skip-regex),"
+    "INTEG_SKIP = $(or $(shell bash '$(CURDIR)/scripts/check-phase5-tests.sh' --skip-regex),"
     "$(error scripts/check-phase5-tests.sh --skip-regex printed nothing))\n"
 )
 
@@ -166,12 +187,67 @@ class Phase5GuardTests(unittest.TestCase):
                 self.assertEqual(tuple(runner("--names", group).stdout.split()), NAMES[group])
 
     def test_every_moved_test_is_in_exactly_one_group_and_in_the_skip(self):
-        counts = collections.Counter(name for group in GROUPS for name in NAMES[group])
+        counts = collections.Counter(name for owner in OWNERS.values() for name in owner)
         self.assertTrue(counts, "the moved list must be nonempty")
         for name, count in counts.items():
-            self.assertEqual(count, 1, f"{name} is selected by {count} groups")
-        ordered = [name for group in GROUPS for name in NAMES[group]]
+            self.assertEqual(count, 1, f"{name} is owned by {count} groups")
+        ordered = [name for owner in OWNERS.values() for name in owner]
         self.assertEqual(skip_regex(), "^(" + "|".join(ordered) + ")$")
+
+    def test_phase3_owned_list_is_exactly_the_phase3_runner_integration_families(self):
+        self.assertEqual(len(PHASE3_OWNED), 40, "31 ordinary + 7 cooldown + 2 scenario families")
+        self.assertEqual(tuple(runner("--phase3-owned").stdout.split()), PHASE3_OWNED)
+        self.assertEqual(set(PHASE3_OWNED) & {n for group in GROUPS for n in NAMES[group]}, set())
+        # The phase3 runner executes each one through its own anchored nonempty
+        # selector; test_phase3_guards.py models the exact invocations.
+        source = (ROOT / "scripts" / "check-phase3-tests.sh").read_text(encoding="utf-8")
+        for name in PHASE3_OWNED:
+            with self.subTest(test=name):
+                suffix = name.removeprefix("TestDetectorCooldown")
+                self.assertTrue(re.search(r"\b" + re.escape(name) + r"\b", source)
+                                or re.search(r"\b" + re.escape(suffix) + r"\b", source), name)
+        self.assertIn("'./test/...' \"^${name}$\" -tags=integration -timeout 6m -p 1", source)
+        self.assertIn("'./test/...' \"^TestDetectorCooldown${suffix}$\" -tags=integration -timeout 8m -p 1", source)
+
+    def test_ci_still_runs_the_phase3_job_that_owns_the_skipped_families(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        owner = phase3.Phase3GuardTests("test_ci_runs_exactly_both_groups_without_relaxing_budgets_or_failures")
+        owner.assert_phase3_workflow(workflow)  # closed policy: both groups, 45m, no skip/mask
+        python = job_block(workflow, "python")
+        self.assertEqual(python.count("-p test_phase3_guards.py"), 1)
+        with self.assertRaises(AssertionError):
+            owner.assert_phase3_workflow(workflow.replace("group: [core, scenarios]", "group: [core]", 1))
+
+    def test_aggregate_accounting_loses_and_duplicates_no_test(self):
+        found = integration_tests()
+        self.assertEqual(set(found.values()), {1}, "every integration test name is unique")
+        pattern = re.compile(skip_regex())
+        retained = {name for name in found if not pattern.search(name)}
+        skipped = {name for name in found if pattern.search(name)}
+        owned = [name for owner in OWNERS.values() for name in owner]
+        self.assertEqual(sorted(skipped), sorted(owned))
+        self.assertEqual(retained | skipped, set(found))
+        self.assertFalse(retained & skipped)
+        self.assertTrue(set(AGGREGATE_ONLY) <= retained, set(AGGREGATE_ONLY) - retained)
+        # Untagged ./test files (the OpenAPI contract tests) also compile under
+        # -tags=integration; the aggregate keeps every one of them.
+        untagged = collections.Counter()
+        for path in sorted((ROOT / "backend" / "test").glob("*_test.go")):
+            source = path.read_text(encoding="utf-8")
+            if not source.startswith("//go:build"):
+                untagged.update(re.findall(r"^func (Test[A-Za-z0-9_]+)\(t \*testing\.T\)", source, re.M))
+        self.assertTrue(untagged)
+        self.assertFalse(set(untagged) & set(found))
+        self.assertFalse([name for name in untagged if pattern.search(name)])
+        # Tests rerun by the integration job's own group steps stay in the aggregate.
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        steps = re.findall(r"run: scripts/go-test-nonempty\.sh '\./test/\.\.\.' '([^']+)'",
+                           job_block(workflow, "integration"))
+        self.assertEqual(len(steps), 8)
+        for regex in steps:
+            for name in found:
+                if re.search(regex, name):
+                    self.assertIn(name, retained, f"{name} is rerun by an integration group step")
 
     def test_every_skipped_name_exists_once_as_an_integration_test(self):
         found = integration_tests()
@@ -185,10 +261,13 @@ class Phase5GuardTests(unittest.TestCase):
     def test_skip_regex_matches_only_the_moved_tests(self):
         pattern = re.compile(skip_regex())
         matched = {name for name in integration_tests() if pattern.search(name)}
-        self.assertEqual(matched, {name for group in GROUPS for name in NAMES[group]})
+        self.assertEqual(matched, {name for owner in OWNERS.values() for name in owner})
         # Subtest and prefix lookalikes are not swallowed by the anchors.
-        for lookalike in ("TestChaosKafkaBrokerRestartX", "XTestListEventsScale", "TestDetectorCapacity"):
-            self.assertIsNone(pattern.search(lookalike))
+        for lookalike in ("TestChaosKafkaBrokerRestartX", "XTestListEventsScale", "TestDetectorCapacityX",
+                          "TestDetectorCooldown", "TestDetectionScenariosX", "TestDetectionScenario",
+                          "TestAlertWriterReservationRestartX", "TestWriterCrashRestart",
+                          "TestDetectorHistoryRecovery", "TestTopicRetentionOverridesReapply"):
+            self.assertIsNone(pattern.search(lookalike), lookalike)
 
     def test_chaos_group_is_exactly_the_testcontainers_check_chaos_families(self):
         source = RUNNER.read_text(encoding="utf-8")
@@ -340,7 +419,8 @@ class Phase5GuardTests(unittest.TestCase):
 
     def test_runner_rejects_unknown_empty_or_extra_arguments(self):
         for arguments in ((), ("tracing",), ("chaos", "scale"), ("--names",), ("--names", "bogus"),
-                          ("--skip-regex", "extra")):
+                          ("--skip-regex", "extra"), ("phase3",), ("--names", "phase3"),
+                          ("--phase3-owned", "extra")):
             with self.subTest(arguments=arguments):
                 result = runner(*arguments)
                 self.assertEqual(result.returncode, 2)

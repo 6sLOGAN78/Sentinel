@@ -167,9 +167,9 @@ preserving `SENTINEL_ENV_FILE`. Valid service names are `ingest`, `detector`,
 ```sh
 make dev-down     # stops containers; named volumes are preserved
 make test         # Go, web, and generator unit tests
-make test-integ   # full real-dependency suite; healthy dev stack required; 32m ceiling
+make test-integ   # integration tests not owned by phase3/phase5 runners; Docker; 32m ceiling
 bash scripts/check-phase5-tests.sh chaos  # Phase 5 families skipped by test-integ (also: scale)
-make test-phase3  # each exact Phase 3 family; healthy dev stack required
+make test-phase3  # each exact Phase 3 family (also skipped by test-integ); healthy dev stack required
 make lint         # Go, web, and generator linters/type checks
 ```
 

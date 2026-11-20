@@ -271,10 +271,10 @@ class Phase4GuardTests(unittest.TestCase):
         for path in (ROOT / "backend" / "test").glob("*.go"):
             self.assertNotIn("phase4", path.read_text(encoding="utf-8"), path.name)
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        # The Phase 5 job families are skipped here and run in the phase5 CI job
+        # Families owned by the phase5 and phase3 jobs are skipped here
         # (scripts/test_phase5_guards.py); the 32m aggregate ceiling is unchanged.
         self.assertIn(
-            "\tcd backend && go test -tags=integration -timeout 32m -p 1 -skip '$(PHASE5_SKIP)' ./test/...\n",
+            "\tcd backend && go test -tags=integration -timeout 32m -p 1 -skip '$(INTEG_SKIP)' ./test/...\n",
             makefile)
         self.assertNotIn("-tags=phase4", makefile.split("test-integ:", 1)[1].split("\n\n", 1)[0])
 

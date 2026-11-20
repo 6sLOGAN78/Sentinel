@@ -54,15 +54,16 @@ test: web/node_modules generator/.venv ## Run unit tests for backend, web and ge
 	cd web && npm test
 	cd generator && uv run --locked pytest
 
-# The measured full suite exhausted 10m before scenarios. It now includes all
-# causal crash cuts plus 16m scheduled / 32m preserved-repeat subtests, so the
-# aggregate gate has a finite 32m ceiling. Individual family caps stay unchanged.
-# Phase 5 chaos and scale families run in the separate `phase5` CI job; the
-# aggregate skips exactly those names, taken from the single list in
-# scripts/check-phase5-tests.sh (empty output aborts make instead of skipping nothing).
-PHASE5_SKIP = $(or $(shell bash '$(CURDIR)/scripts/check-phase5-tests.sh' --skip-regex),$(error scripts/check-phase5-tests.sh --skip-regex printed nothing))
-test-integ: ## Run all integration tests except the Phase 5 job families (needs Docker and make dev-up)
-	cd backend && go test -tags=integration -timeout 32m -p 1 -skip '$(PHASE5_SKIP)' ./test/...
+# The aggregate gate keeps its finite 32m ceiling. It skips exactly the tests
+# that one other required CI job owns, taken from the single list in
+# scripts/check-phase5-tests.sh: the Phase 5 chaos and scale groups (`phase5`
+# job) and the Phase 3 ./test/... families, including both scenario commands
+# (`phase3` job, scripts/check-phase3-tests.sh). Empty output aborts make
+# instead of skipping nothing. Full coverage: test-integ + test-phase3 + the
+# phase5 groups. Individual family caps stay unchanged.
+INTEG_SKIP = $(or $(shell bash '$(CURDIR)/scripts/check-phase5-tests.sh' --skip-regex),$(error scripts/check-phase5-tests.sh --skip-regex printed nothing))
+test-integ: ## Run integration tests not owned by the phase3/phase5 runners (needs Docker)
+	cd backend && go test -tags=integration -timeout 32m -p 1 -skip '$(INTEG_SKIP)' ./test/...
 
 # Ordinary groups 6m, cooldown 8m, scheduled scenario 16m, preserved repeat 32m.
 test-phase3: ## Run each exact Phase 3 acceptance family (needs healthy dev stack)

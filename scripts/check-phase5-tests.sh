@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Phase 5 integration families that run in the separate `phase5` CI job instead
-# of the aggregate `make test-integ`. This file is the single list of moved
-# tests: the Makefile derives its `-skip` regex from --skip-regex, CI runs one
-# group per matrix entry, and scripts/test_phase5_guards.py cross-checks both.
+# The single list of integration tests that the aggregate `make test-integ`
+# skips because exactly one other required CI job owns them:
+#   - groups chaos and scale run in the separate `phase5` CI job (this script);
+#   - the phase3 list is run one anchored, nonempty selector at a time by
+#     scripts/check-phase3-tests.sh in the `phase3` CI job (core and scenarios).
+#     It is not runnable here; it equals the ./test/... families pinned in
+#     scripts/test_phase3_guards.py.
+# The Makefile derives its `-skip` regex from --skip-regex, CI runs one phase5
+# group per matrix entry, and scripts/test_phase5_guards.py cross-checks all of it.
 #
 # Usage: bash scripts/check-phase5-tests.sh <chaos|scale>   run one group
-#        bash scripts/check-phase5-tests.sh --groups        list the groups
+#        bash scripts/check-phase5-tests.sh --groups        list the phase5 groups
 #        bash scripts/check-phase5-tests.sh --names <group> list a group's tests
+#        bash scripts/check-phase5-tests.sh --phase3-owned  list the phase3-owned tests
 #        bash scripts/check-phase5-tests.sh --skip-regex    anchored union regex
 #
 # Both groups use only backend/test's testcontainers (TestMain); no dev stack.
@@ -24,9 +30,11 @@ readonly chaos_families="chaos-broker,chaos-clickhouse,chaos-shutdown,slow-consu
 readonly chaos_tests="TestChaosKafkaBrokerRestart TestChaosClickHouseShortOutageAbsorbed TestChaosClickHouseLongOutageRestart TestChaosGracefulShutdownEventWriter TestChaosGracefulShutdownDetector TestChaosSlowConsumerLag TestChaosLagAfterRebalance TestChaosOverloadBounded"
 readonly scale_tests="TestListEventsScale TestListEventsOracleEquivalence TestListEventsTenantIsolation TestSummarizeEventsScale TestSummarizeEventsOracleEquivalence TestSummarizeEventsNoConflictsSkipsCorrection TestSummarizeEventsConflictCap TestDetectorConcurrentStartup TestDetectorRestoreRetryWithoutAckedCheckpoint TestDetectorManifestUpgradePath"
 readonly scale_timeout=20m
+# Phase 3 ./test/... families (31 ordinary, 7 cooldown, 2 scenarios), in runner order.
+readonly phase3_owned="TestDetectionPipelineAuth TestDetectionPipelineScan TestDetectionPipelineVolume TestDetectorCheckpoint TestDetectorRetention TestDetectorConfigRestart TestDetectorCapacity TestDetectorMidWindowRecovery TestDetectorThirdReplicaRebalance TestDetectorCrashBoundaries TestAlertWriterPipeline TestAlertWriterConflict TestAlertWriterConcurrentReplay TestAlertWriterPartialStorage TestAlertWriterPoison TestAlertWorkflowReplay TestDetectorPoison TestConfigLedgerHandover TestDetectorPGDependency TestAlertsSchema TestDetectionDecisionsSchema TestDetectorCooldownFixtureIsolation TestDetectorCooperativeAcquisition TestAlertWriterLockLifetime TestAlertWriterDifferingPayloadLockLifetime TestAlertWriterCancellationLockLifetime TestAlertReservationsSchema TestAlertWriterReservation TestAlertWriterReservationAmbiguity TestAlertWriterReservationRestart TestAlertWriterReservationNativeAckLoss TestDetectorCooldownVisible TestDetectorCooldownExpiry TestDetectorCooldownReplay TestDetectorCooldownCrash TestDetectorCooldownOutage TestDetectorCooldownOwners TestDetectorCooldownRestoreBehindCheckpoint TestDetectionScenarios TestDetectionScenariosPreservedRepeat"
 
 usage() {
-  echo "usage: $0 <chaos|scale> | --groups | --names <group> | --skip-regex" >&2
+  echo "usage: $0 <chaos|scale> | --groups | --names <group> | --phase3-owned | --skip-regex" >&2
   exit 2
 }
 
@@ -53,9 +61,14 @@ case "${1-}" in
     names_for "$2" | tr ' ' '\n'
     exit 0
     ;;
+  --phase3-owned)
+    (( $# == 1 )) || usage
+    tr ' ' '\n' <<<"$phase3_owned"
+    exit 0
+    ;;
   --skip-regex)
     (( $# == 1 )) || usage
-    anchored "$chaos_tests $scale_tests"
+    anchored "$chaos_tests $scale_tests $phase3_owned"
     echo
     exit 0
     ;;

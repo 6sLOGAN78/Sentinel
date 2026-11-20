@@ -837,8 +837,10 @@ make test-integ
 bash scripts/check-phase3-tests.sh
 ```
 
-The full suite has a finite 32m aggregate ceiling: a measured previous 10m run
-exhausted its limit before scenarios. Each exact Phase 3 family has its own
+The aggregate `make test-integ` has a finite 32m ceiling. It skips every test
+that exactly one other required CI job owns (see "Phase 5 job families" below),
+so the full set is `make test-integ` plus `scripts/check-phase3-tests.sh` plus the
+two Phase 5 groups. Each exact Phase 3 family has its own
 nonempty runner invocation: ordinary 6m, cooldown 8m, pure families 60s,
 scheduled scenario 16m, preserved repeat 32m. The relevant CI jobs use 45m.
 The local acceptance record reports actual passing exits, including the repaired
@@ -857,10 +859,19 @@ bash scripts/check-phase5-tests.sh scale   # 1M-row events scale + detector star
 python3 -B -m unittest discover -s scripts -p test_phase5_guards.py
 ```
 
-`make test-integ` skips exactly the Phase 5 tests listed in
-`scripts/check-phase5-tests.sh` (the Makefile reads `--skip-regex` from it), and the
-`phase5` CI job runs them in two matrix groups, so the aggregate keeps its 32m
-ceiling. `chaos` runs the chaos-broker, chaos-clickhouse, chaos-shutdown,
+`make test-integ` skips exactly the tests listed in `scripts/check-phase5-tests.sh`
+(the Makefile reads `--skip-regex` from it into `INTEG_SKIP`). The `phase5` CI job
+runs the Phase 5 tests in two matrix groups. The 40 Phase 3 `./test/...`
+families (`--phase3-owned`: 31 ordinary, 7 cooldown and both scenario commands)
+run only in the `phase3` job, each through its own anchored nonempty selector.
+Before this change they also ran a second time inside the aggregate. On hosted run
+44792806720 they accounted for about 1600s of the 1924s aggregate, which left the
+integration job at 44m58s of its 45m budget. The tests that the integration job's
+own nonempty group steps rerun, and the ten tests no other job runs (migrations,
+special-password connect, Redis, owner snapshot, topic retention, tracing and
+writer insert failure), stay in the aggregate.
+`test_phase5_guards.py` proves the skipped and retained sets partition the suite
+and that each skipped test has exactly one owner. `chaos` runs the chaos-broker, chaos-clickhouse, chaos-shutdown,
 slow-consumer and overload families through `scripts/check-chaos.sh` (resource
 gate, `-race`, family ceilings). `scale` runs the ListEvents/SummarizeEvents scale
 tests and the detector startup-race tests as one anchored selector under

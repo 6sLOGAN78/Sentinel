@@ -175,7 +175,9 @@ jobs:
   # Integration tests (Testcontainers: Kafka, ClickHouse, PostgreSQL, Redis) run on
   # every push. They hold the binary lifecycle, migration and Redis evidence cited in
   # 01-SECURITY.md. ubuntu-24.04 runners ship Docker; the job is bounded by the
-  # job timeout and by `go test -timeout` inside `make test-integ`.
+  # job timeout and by `go test -timeout` inside `make test-integ`. The aggregate
+  # skips the tests owned by the phase3 and phase5 jobs (single list:
+  # scripts/check-phase5-tests.sh), so each of those runs once in CI.
   integration:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -222,8 +224,9 @@ jobs:
         run: make dev-down
 
   # Phase 5 chaos and scale families, moved out of `make test-integ` (which skips
-  # exactly these names) so the aggregate keeps its 32m/45m budget. The single
-  # list is scripts/check-phase5-tests.sh. Testcontainers only, so no dev stack.
+  # these names and the phase3-owned families) so the aggregate keeps its 32m/45m
+  # budget. The single list is scripts/check-phase5-tests.sh. Testcontainers only,
+  # so no dev stack.
   phase5:
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.minutes }}
