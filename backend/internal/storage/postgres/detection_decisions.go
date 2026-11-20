@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/6sLOGAN78/sentinel/internal/config"
@@ -25,6 +26,64 @@ const (
 	floodDecisionOrdinal = 2
 	denyDecisionOrdinal  = 3
 )
+
+// Decision transaction failure classes. Every error returned from a decision
+// transaction body matches exactly one of them with errors.Is. The text names
+// the class plus a constant description or a SQLSTATE; it never carries
+// PostgreSQL Message/Detail/Hint or row values.
+var (
+	// ErrOwnershipSuperseded: the partition fence names a newer or equal Kafka
+	// generation owned by another member or a later assignment token.
+	ErrOwnershipSuperseded = errors.New("detector ownership superseded")
+	// ErrDecisionTransient: PostgreSQL rejected the transaction for contention
+	// or a timeout (SQLSTATE 55P03, 40001, 40P01 or 57014).
+	ErrDecisionTransient = errors.New("postgres decision transient")
+	// ErrDecisionInvariant: any other failure, including fence incarnation or
+	// configuration mismatch and durable frontier or decision divergence.
+	ErrDecisionInvariant = errors.New("postgres decision invariant")
+)
+
+// decisionFaultError is a constant-text invariant raised inside a decision
+// transaction. Its text is safe to log because it never includes data.
+type decisionFaultError string
+
+func (e decisionFaultError) Error() string { return string(e) }
+
+// transientSQLStates are contention/timeout outcomes; nothing was committed.
+//
+//nolint:gochecknoglobals // immutable lookup table of PostgreSQL SQLSTATE codes
+var transientSQLStates = map[string]bool{
+	"55P03": true, // lock_not_available (lock_timeout)
+	"40001": true, // serialization_failure
+	"40P01": true, // deadlock_detected
+	"57014": true, // query_canceled (statement_timeout)
+}
+
+// classifyDecisionError maps a failed transaction body to one class.
+func classifyDecisionError(err error) error {
+	if errors.Is(err, ErrOwnershipSuperseded) || errors.Is(err, ErrDecisionInvariant) {
+		return err // already classified with constant package text
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		if transientSQLStates[pgErr.Code] {
+			return fmt.Errorf("%w: sqlstate=%s", ErrDecisionTransient, pgErr.Code)
+		}
+		return fmt.Errorf("%w: sqlstate=%s", ErrDecisionInvariant, pgErr.Code)
+	}
+	var fault decisionFaultError
+	switch {
+	case errors.As(err, &fault):
+		return fmt.Errorf("%w: %s", ErrDecisionInvariant, string(fault))
+	case errors.Is(err, pgx.ErrNoRows):
+		return fmt.Errorf("%w: %w", ErrDecisionInvariant, pgx.ErrNoRows)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("%w: %w", ErrDecisionInvariant, context.DeadlineExceeded)
+	case errors.Is(err, context.Canceled):
+		return fmt.Errorf("%w: %w", ErrDecisionInvariant, context.Canceled)
+	}
+	return fmt.Errorf("%w: unclassified %T", ErrDecisionInvariant, err)
+}
 
 // DetectionOwnership binds an assignment to its configured Kafka group.
 type DetectionOwnership struct {
@@ -126,7 +185,7 @@ func (s *DetectionDecisionStore) transaction(ctx context.Context, fn func(contex
 		err = fn(txCtx, tx)
 	}
 	if err != nil {
-		return errors.New("postgres decision invariant or transaction failed")
+		return classifyDecisionError(err)
 	}
 	if err = tx.Commit(txCtx); err != nil {
 		// Outcome is uncertain: stop without publication/checkpoint. Restart looks
@@ -192,9 +251,9 @@ func (s *DetectionDecisionStore) restoreConfigFrontier(
 func (s *DetectionDecisionStore) bindConfigManifest(ctx context.Context, o DetectionOwnership,
 	cp *detection.Checkpoint) error {
 	return s.transaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		f, err := lockedDecisionFence(ctx, tx, o)
-		if err != nil || !f.matches(o) {
-			return errors.New("configuration ownership lost")
+		f, err := lockedOwnedFence(ctx, tx, o, "configuration ownership lost")
+		if err != nil {
+			return err
 		}
 		var manifest, handover []byte
 		if err = tx.QueryRow(ctx, `SELECT rules_manifest,handover_checkpoint FROM detection_partition_fences
@@ -203,14 +262,14 @@ func (s *DetectionDecisionStore) bindConfigManifest(ctx context.Context, o Detec
 			return err
 		}
 		if cp == nil && (len(manifest) > 0 || f.offset != -1) {
-			return errors.New("existing detector group lost its Kafka checkpoint")
+			return decisionFaultError("existing detector group lost its Kafka checkpoint")
 		}
 		if len(manifest) > 0 && !matchingRulesManifest(manifest, o.Config) {
-			return errors.New("saved semantic manifest mismatch")
+			return decisionFaultError("saved semantic manifest mismatch")
 		}
 		if len(handover) > 0 {
 			if cp == nil || !validHandoverGates(handover, *cp) {
-				return errors.New("saved handover gates missing or changed")
+				return decisionFaultError("saved handover gates missing or changed")
 			}
 		}
 		data, err := json.Marshal(s.rules)
@@ -282,23 +341,23 @@ func sharedConfigFloor(fences []configFence, previous, next string) (int64, erro
 	var sealed int64
 	for _, f := range fences {
 		if !f.drained {
-			return 0, errors.New("all old partitions must have acknowledged drains")
+			return 0, decisionFaultError("all old partitions must have acknowledged drains")
 		}
 		var cp detection.Checkpoint
 		if f.config == previous {
 			if json.Unmarshal(f.drain, &cp) != nil {
-				return 0, errors.New("missing drain checkpoint")
+				return 0, decisionFaultError("missing drain checkpoint")
 			}
 		} else {
 			var proof configHandover
 			if f.config != next || json.Unmarshal(f.handover, &proof) != nil {
-				return 0, errors.New("mixed configuration owners")
+				return 0, decisionFaultError("mixed configuration owners")
 			}
 			cp = proof.Previous
 		}
 		m, err := detection.CheckpointMetadata(cp)
 		if err != nil || !m.Drained || m.ConfigFingerprint != previous {
-			return 0, errors.New("mixed drain metadata")
+			return 0, decisionFaultError("mixed drain metadata")
 		}
 		if m.SealedThrough != nil {
 			sealed = max(sealed, *m.SealedThrough)
@@ -328,7 +387,7 @@ func (s *DetectionDecisionStore) transitionConfig(ctx context.Context, o Detecti
 				return s.adoptConfigFence(ctx, tx, o, cp, f, sealed, &adopted)
 			}
 		}
-		return errors.New("configuration fence missing; no fresh namespace adoption")
+		return decisionFaultError("configuration fence missing; no fresh namespace adoption")
 	})
 	if err != nil {
 		return nil, err
@@ -340,13 +399,13 @@ func (s *DetectionDecisionStore) adoptConfigFence(ctx context.Context, tx pgx.Tx
 	cp detection.Checkpoint, f configFence, sealed int64, adopted *detection.Checkpoint) error {
 	if f.incarnation != o.Incarnation || o.Generation <= f.generation &&
 		(o.Generation != f.generation || o.Member != f.member || o.tokenValue() < f.token) {
-		return errors.New("stale handover owner")
+		return decisionFaultError("stale handover owner")
 	}
 	if f.config == o.Config {
 		var proof configHandover
 		if json.Unmarshal(f.handover, &proof) != nil || proof.Previous != cp ||
 			!validHandoverGates(f.handover, proof.Next) {
-			return errors.New("inconsistent pending handover")
+			return decisionFaultError("inconsistent pending handover")
 		}
 		*adopted = proof.Next
 	} else if err := s.adoptOldConfig(ctx, tx, o, cp, f, sealed, adopted); err != nil {
@@ -373,11 +432,11 @@ func (s *DetectionDecisionStore) adoptOldConfig(ctx context.Context, tx pgx.Tx, 
 	var acknowledged detection.Checkpoint
 	if json.Unmarshal(f.manifest, &saved) != nil || json.Unmarshal(f.drain, &acknowledged) != nil ||
 		acknowledged != cp || saved.Fingerprint() != f.config {
-		return errors.New("handover does not match saved semantic manifest and acknowledged drain")
+		return decisionFaultError("handover does not match saved semantic manifest and acknowledged drain")
 	}
 	m, err := detection.CheckpointMetadata(cp)
 	if err != nil || !fullyEffectedConfig(f, m, f.handover) {
-		return errors.New("pending old decisions prevent handover")
+		return decisionFaultError("pending old decisions prevent handover")
 	}
 	oldOwner := o
 	oldOwner.Config = f.config
@@ -411,9 +470,9 @@ func (s *DetectionDecisionStore) CheckpointCommitted(ctx context.Context, o Dete
 		return errors.New("invalid committed config checkpoint")
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		f, err := lockedDecisionFence(ctx, tx, o)
-		if err != nil || !f.matches(o) {
-			return errors.New("committed checkpoint ownership lost")
+		f, err := lockedOwnedFence(ctx, tx, o, "committed checkpoint ownership lost")
+		if err != nil {
+			return err
 		}
 		var proof []byte
 		if err = tx.QueryRow(ctx, `SELECT handover_checkpoint FROM detection_partition_fences
@@ -450,6 +509,19 @@ func lockedDecisionFence(ctx context.Context, tx pgx.Tx, o DetectionOwnership) (
 	return f, err
 }
 
+// lockedOwnedFence locks the fence and requires it to name exactly this owner.
+// A lock or read failure keeps its own class; a mismatch is superseded ownership.
+func lockedOwnedFence(ctx context.Context, tx pgx.Tx, o DetectionOwnership, site string) (decisionFence, error) {
+	f, err := lockedDecisionFence(ctx, tx, o)
+	if err != nil {
+		return decisionFence{}, err
+	}
+	if !f.matches(o) {
+		return decisionFence{}, fmt.Errorf("%w: %s", ErrOwnershipSuperseded, site)
+	}
+	return f, nil
+}
+
 func (f decisionFence) matches(o DetectionOwnership) bool {
 	return f.incarnation == o.Incarnation && f.member == o.Member && f.generation == o.Generation &&
 		f.token == o.tokenValue() && f.config == o.Config
@@ -477,9 +549,12 @@ func (s *DetectionDecisionStore) Register(ctx context.Context, o DetectionOwners
 		if err != nil {
 			return err
 		}
-		if f.incarnation != o.Incarnation || f.config != o.Config || o.Generation < f.generation ||
+		if f.incarnation != o.Incarnation || f.config != o.Config {
+			return fmt.Errorf("%w: detector fence incarnation or config mismatch", ErrDecisionInvariant)
+		}
+		if o.Generation < f.generation ||
 			o.Generation == f.generation && (o.Member != f.member || o.tokenValue() < f.token) {
-			return errors.New("stale detector assignment")
+			return fmt.Errorf("%w: stale detector assignment", ErrOwnershipSuperseded)
 		}
 		if err = verifyDecisionFrontier(ctx, tx, o, f, frontier); err != nil {
 			return err
@@ -497,7 +572,7 @@ func verifyDecisionFrontier(ctx context.Context, tx pgx.Tx, o DetectionOwnership
 		return nil
 	}
 	if positionBefore(f.offset, f.ordinal, frontier.Offset, frontier.RuleOrdinal) {
-		return errors.New("postgres decision frontier behind checkpoint")
+		return decisionFaultError("postgres decision frontier behind checkpoint")
 	}
 	var fingerprint, configuration string
 	var offset int64
@@ -510,7 +585,7 @@ func verifyDecisionFrontier(ctx context.Context, tx pgx.Tx, o DetectionOwnership
 	}
 	if fingerprint != frontier.Fingerprint || configuration != o.Config ||
 		offset != frontier.Offset || ordinal != frontier.RuleOrdinal {
-		return errors.New("postgres checkpoint decision mismatch")
+		return decisionFaultError("postgres checkpoint decision mismatch")
 	}
 	return nil
 }
@@ -594,12 +669,9 @@ func (s *DetectionDecisionStore) Decide(ctx context.Context, o DetectionOwnershi
 	}
 	var result DetectionDecision
 	err = s.transaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		f, lockErr := lockedDecisionFence(ctx, tx, o)
+		f, lockErr := lockedOwnedFence(ctx, tx, o, "detector ownership fence lost")
 		if lockErr != nil {
 			return lockErr
-		}
-		if !f.matches(o) {
-			return errors.New("detector ownership fence lost")
 		}
 		stored, found, findErr := findDecision(ctx, tx, o, candidate)
 		if findErr != nil {
@@ -609,7 +681,7 @@ func (s *DetectionDecisionStore) Decide(ctx context.Context, o DetectionOwnershi
 			result = stored
 		} else {
 			if !positionBefore(f.offset, f.ordinal, c.Offset(), c.RuleOrdinal()) {
-				return errors.New("missing older immutable decision")
+				return decisionFaultError("missing older immutable decision")
 			}
 			result, findErr = s.createDecision(ctx, tx, o, candidate)
 			if findErr != nil {
@@ -663,7 +735,7 @@ func findDecision(ctx context.Context, tx pgx.Tx, o DetectionOwnership,
 		configuration != o.Config || group != o.Group || topic != o.Source.Topic || partition != o.Source.Partition ||
 		offset != c.value.Offset() || ordinal != c.value.RuleOrdinal() ||
 		!trigger.Equal(c.value.TriggerOccurredAt().Time) {
-		return DetectionDecision{}, false, errors.New("immutable decision reconstruction mismatch")
+		return DetectionDecision{}, false, decisionFaultError("immutable decision reconstruction mismatch")
 	}
 	return result, true, nil
 }
@@ -688,7 +760,7 @@ func (s *DetectionDecisionStore) createDecision(ctx context.Context, tx pgx.Tx, 
 		return DetectionDecision{}, err
 	}
 	if topic != o.Source.Topic || partition != o.Source.Partition {
-		return DetectionDecision{}, errors.New("entity source changed")
+		return DetectionDecision{}, decisionFaultError("entity source changed")
 	}
 	var maxTime, eligible time.Time
 	if previous != nil {
